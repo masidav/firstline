@@ -109,7 +109,8 @@ public static class MeEndpoints
     public sealed record DeleteMeRequest(string? AppleAuthorizationCode);
 
     // The users_delete triggers scrub personal fields, Spotify and library data, sessions, and sign-in
-    // identities in the same statement. Later content cleanup waits on the retention decision (PROJECT_TODO.md).
+    // identities in the same statement. The worker purges the account's content 30 days later
+    // (workers/account-retention).
     // Apple sign-ins are then revoked with Apple, as the App Store requires.
     private static async Task<IResult> DeleteAsync(
         ClaimsPrincipal user, [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] DeleteMeRequest? request, NpgsqlDataSource db, AppleClient apple, CancellationToken cancellationToken)

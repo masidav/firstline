@@ -34,14 +34,15 @@ Details: [API](services/api/TODO.md) · [Database](database/TODO.md) · [Tests](
 ## Phase 2 — Identity and access
 - [x] Implement authentication and session lifecycle. Apple/Google sign-in, rotating refresh tokens with reuse detection, sign-out ([ADR 0003](docs/adr/0003-authentication.md)). Verified 2026-10-18: `dotnet test` 27/27.
 - [x] Implement user profile and authorization rules. `/me` read, update, and delete; bearer auth on all of `/v1`; staff policy for `/admin` (checked per request). Verified 2026-10-18: `dotnet test` 36/36.
-- [ ] Implement account recovery and account deletion policy. Recovery is provider sign-in (no passwords). Deletion request done; content retention is still an open decision.
+- [x] Implement account recovery and account deletion policy. Recovery is provider sign-in (no passwords). Deletion scrubs personal data at once; content is hard-deleted after 30 days (`accounts.purge_deleted` job). Verified 2026-10-18: `dotnet test` 45/45.
 - [x] Apple follow-ups: server-to-server notifications (`POST /v1/webhooks/apple`) and Apple sign-in revocation on account deletion. Verified 2026-10-18: AppleTests 8/8.
 
 Details: [Authentication](services/api/src/features/authentication/TODO.md) · [Users](services/api/src/features/users/TODO.md) · [Privacy](services/api/src/features/privacy/TODO.md)
 
 ## Phase 3 — Tracked artists and catalog
 - [ ] Implement artist search with tracked/untracked status.
-- [ ] Implement shared tracked-artist addition and daily limit.
+- [ ] Implement shared tracked-artist addition and daily limit (50 per user per UTC day, decided 2026-10-18; enforced by `track_artist()`).
+- [x] Background job queue: Postgres `jobs` table and `workers/` process ([ADR 0004](docs/adr/0004-postgres-job-queue.md)). Verified 2026-10-18: JobQueueTests 9/9.
 - [ ] Implement asynchronous artist onboarding and failure recovery.
 - [ ] Load album/track catalog and seed a baseline before activation.
 
@@ -173,12 +174,13 @@ Details: [Agent tooling](docs/agent-tooling.md) · [Developer tooling](docs/TODO
 - [ ] Document decisions that remain proposed or open in the source README.
 
 ## Open decisions
-- [ ] Confirm backend framework and job-queue choice. Framework confirmed (ASP.NET Core, [ADR 0001](docs/adr/0001-backend-csharp-dotnet.md)); job library open.
+- [x] Confirm backend framework and job-queue choice. ASP.NET Core ([ADR 0001](docs/adr/0001-backend-csharp-dotnet.md)); small Postgres queue ([ADR 0004](docs/adr/0004-postgres-job-queue.md)).
 - [ ] Confirm album catalog provider and its caching/artwork terms.
 - [ ] Confirm ticketing partner and purchase-confirmation capability.
 - [ ] Confirm archive meaning and user-facing archive requirements.
 - [ ] Confirm verification thresholds and baseline blend parameters.
-- [ ] Define data retention and account deletion behavior.
+- [x] Define data retention and account deletion behavior. Deleted accounts: personal data scrubbed at once, content hard-deleted after 30 days, comments others replied to kept as "[deleted]", ledger kept anonymously (decided 2026-10-18). File retention (quarantine/archive) still to define with submissions.
+- [x] Artist add limit: 50 new artists per user per UTC day (decided 2026-10-18).
 - [x] Account linking: no. One email per account; a second provider with the same email gets `409 email_in_use`. (Decided 2026-10-18.)
 - [ ] Confirm exact Spotify signals available under current API access.
 - [ ] Decide how to handle co-credited albums and collaborations.

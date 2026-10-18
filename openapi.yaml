@@ -32,7 +32,7 @@ info:
     | Area | Limit |
     | --- | --- |
     | Sign-in and token refresh (`/auth/sessions`, `/auth/refresh`) | 20 per minute per client IP |
-    | Add artist (`POST /artists`) | 10 new artists per user per UTC day (`artist_add_limit`) |
+    | Add artist (`POST /artists`) | 50 new artists per user per UTC day (`artist_add_limit`) |
     | Artist search | 30 per minute per user |
     | Manual Spotify sync / score refresh | 1 per 15 minutes per user (automatic sync runs on a schedule) |
     | Submissions | 20 per day per user |
@@ -198,8 +198,10 @@ paths:
       description: |
         Starts account deletion. Email, handle, display name, avatar, Spotify tokens, and library data are
         removed immediately, and the handle and email become available to new accounts. All sessions end
-        and the Apple/Google sign-in is released, so signing in again creates a new account. Profile content
-        is removed within the retention window. Deletion cannot be undone.
+        and the Apple/Google sign-in is released, so signing in again creates a new account. Deletion cannot
+        be undone. 30 days later, the account's logs, lists, comments, and submissions are permanently deleted;
+        comments that others replied to remain as "[deleted]" placeholders. Until then that content shows as
+        "Deleted user". Points history is kept anonymously for fraud audits and no longer counts.
 
         For an account that signs in with Apple, the app should first get a fresh authorization code from
         Sign in with Apple and send it; the API uses it to revoke the app's Apple sign-in (App Store

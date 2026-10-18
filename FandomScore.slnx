@@ -6,6 +6,9 @@
   <Folder Name="/services/api/">
     <Project Path="services/api/FandomScore.Api.csproj" />
   </Folder>
+  <Folder Name="/workers/">
+    <Project Path="workers/FandomScore.Worker.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/FandomScore.Tests/FandomScore.Tests.csproj" />
   </Folder>

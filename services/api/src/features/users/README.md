@@ -29,6 +29,6 @@ Rules shared with the database: handle `^[A-Za-z0-9_]{3,30}$`, unique ignoring c
 `database/tests/invariants.sql`.
 
 ## Known limitations
-- Content removal after deletion (logs, comments, lists, submissions) waits on the retention decision.
+- Content is removed 30 days after deletion by the worker's `accounts.purge_deleted` job (see the privacy feature).
 - Avatar uploads need `POST /uploads` (object storage).
 - Privacy preferences for journal and social features are not defined yet.

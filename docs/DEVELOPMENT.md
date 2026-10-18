@@ -9,6 +9,7 @@
 | --- | --- |
 | `FandomScore.slnx` | Solution |
 | `services/api` | `FandomScore.Api`: ASP.NET Core API. Feature code goes in `src/features/<feature>`. |
+| `workers` | `FandomScore.Worker`: background jobs from the Postgres queue ([README](../workers/README.md)). |
 | `database` | `FandomScore.Database`: migration runner. SQL migrations in `database/migrations`. |
 | `database/tests/invariants.sql` | Database invariant tests (run by the test suite). |
 | `tests/FandomScore.Tests` | xUnit tests: migrations, invariants, API. |
@@ -22,6 +23,7 @@ docker compose --env-file .env -f infrastructure/docker-compose.yml up -d
 set -a; . ./.env; set +a                   # export ConnectionStrings__Database
 dotnet run --project database              # apply migrations
 dotnet run --project services/api          # http://localhost:5271/v1/health
+dotnet run --project workers               # background jobs (separate terminal)
 ```
 
 ## Tests

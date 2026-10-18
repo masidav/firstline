@@ -10,11 +10,13 @@ dotnet build FandomScore.slnx                 # analyzer warnings are errors
 dotnet test FandomScore.slnx                  # needs Docker (Testcontainers starts PostgreSQL 16)
 dotnet run --project database                 # apply migrations (needs ConnectionStrings__Database)
 dotnet run --project services/api             # http://localhost:5271/v1/health
+dotnet run --project workers                  # background jobs (Postgres queue)
 ```
 Local setup: `docs/DEVELOPMENT.md`. If the .NET SDK isn't installed, run these in `mcr.microsoft.com/dotnet/sdk:10.0`.
 
 ## Layout
 - `services/api`: ASP.NET Core minimal API (.NET 10). Feature code in `src/features/<feature>`.
+- `workers`: the worker process. Job handlers (`IJobHandler`) in `workers/<feature>`; queue in `workers/jobs` (ADR 0004).
 - `database/migrations`: plain SQL migrations, applied in name order by DbUp (`database/`).
 - `database/tests/invariants.sql`: database invariant tests, run by the test suite.
 - `tests/FandomScore.Tests`: xUnit tests (migrations, invariants, API).
@@ -34,6 +36,7 @@ Local setup: `docs/DEVELOPMENT.md`. If the .NET SDK isn't installed, run these i
   `RequireAuthorization(AuthSetup.StaffPolicy)`.
 - JSON is snake_case. Every API change updates `openapi.yaml` in the same pull request.
 - New triggers or constraints get a check in `database/tests/invariants.sql`.
+- Work that can wait or retry goes to the job queue: `enqueue_job()` in the same transaction. Handlers are idempotent.
 - Mark a TODO `[x]` only after it is implemented and verified; record what was actually run.
 - Open product decisions are listed in `PROJECT_TODO.md`. Don't silently decide them in code.
 

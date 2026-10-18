@@ -25,6 +25,5 @@
   OpenCvSharp or SkiaSharp avoid that.
 
 ## Still open
-- **Background job library:** Hangfire (Postgres storage), Quartz.NET, or Wolverine. Decide when the
-  first worker (artist onboarding, Phase 3) is built.
+- ~~Background job library~~ Decided: a small Postgres queue, [ADR 0004](0004-postgres-job-queue.md).
 - **OCR/vision provider** for submission verification.

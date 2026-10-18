@@ -27,6 +27,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\services\api\FandomScore.Api.csproj" />
     <ProjectReference Include="..\..\database\FandomScore.Database.csproj" />
+    <ProjectReference Include="..\..\workers\FandomScore.Worker.csproj" />
   </ItemGroup>
 
 </Project>

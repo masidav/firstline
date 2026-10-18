@@ -268,4 +268,99 @@ INSERT INTO users (id, handle, email) VALUES ('00000000-0000-0000-0000-000000000
 INSERT INTO auth_identities (provider, subject, user_id) VALUES
   ('google', 'g-dave', '00000000-0000-0000-0000-000000000005');
 
+-- ------------------------------------------------------------ jobs (0004)
+DO $$ DECLARE a bigint; BEGIN
+  a := enqueue_job('test.kind', '{"x": 1}', 'k1');
+  ASSERT a IS NOT NULL, 'enqueue returns the job id';
+  ASSERT enqueue_job('test.kind', '{"x": 2}', 'k1') IS NULL, 'queued jobs dedupe by key';
+  UPDATE jobs SET status = 'running', locked_until = now() + interval '1 minute' WHERE id = a;
+  ASSERT enqueue_job('test.kind', '{}', 'k1') IS NOT NULL, 'a running job does not block a new queued one';
+  ASSERT enqueue_job('test.kind') IS NOT NULL AND enqueue_job('test.kind') IS NOT NULL, 'no key, no dedupe';
+END $$;
+SELECT pg_temp.expect_error($$INSERT INTO jobs (kind) VALUES ('Bad Kind')$$, 'jobs_kind_check');
+SELECT pg_temp.expect_error($$INSERT INTO jobs (kind, status) VALUES ('x', 'running')$$, 'jobs_check');
+SELECT pg_temp.expect_error($$INSERT INTO jobs (kind, status) VALUES ('x', 'succeeded')$$, 'jobs_check');
+
+INSERT INTO job_schedules (kind, every) VALUES ('test.recurring', interval '1 hour');
+DO $$ BEGIN
+  ASSERT fire_due_schedules() = 1, 'a due schedule fires';
+  ASSERT fire_due_schedules() = 0, 'and only once per interval';
+  ASSERT (SELECT count(*) FROM jobs WHERE kind = 'test.recurring') = 1, 'one job enqueued';
+  ASSERT (SELECT next_run_at > now() + interval '59 minutes' FROM job_schedules WHERE kind = 'test.recurring'),
+         'next run moves forward by the interval';
+END $$;
+
+-- ------------------------------------------------------------ deleted-account purge (0004)
+INSERT INTO users (id, handle, email) VALUES ('00000000-0000-0000-0000-000000000006', 'erin', 'erin@example.test');
+INSERT INTO album_logs (id, user_id, album_id) VALUES
+  ('20000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-000000000006', '10000000-0000-0000-0000-000000000001'),
+  ('20000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001');
+INSERT INTO comments (id, album_log_id, user_id, parent_id, body) VALUES
+  -- Erin on Alice's log: answered by Alice (tombstone), unanswered (deleted), and a reply to Alice (deleted).
+  ('30000000-0000-0000-0000-0000000000e1', '20000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000006', NULL,
+   'erin comment that alice answers later'),
+  ('30000000-0000-0000-0000-0000000000e2', '20000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000006', NULL,
+   'erin comment that nobody answered'),
+  ('30000000-0000-0000-0000-0000000000a1', '20000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000001', NULL,
+   'alice comment on her own log'),
+  -- Alice on Erin's log: goes with the log.
+  ('30000000-0000-0000-0000-0000000000a3', '20000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-000000000001', NULL,
+   'alice comment on erin log');
+INSERT INTO comments (id, album_log_id, user_id, parent_id, body) VALUES
+  ('30000000-0000-0000-0000-0000000000a2', '20000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000001',
+   '30000000-0000-0000-0000-0000000000e1', 'alice reply to erin'),
+  ('30000000-0000-0000-0000-0000000000e3', '20000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000006',
+   '30000000-0000-0000-0000-0000000000a1', 'erin reply to alice');
+INSERT INTO lists (user_id, title) VALUES ('00000000-0000-0000-0000-000000000006', 'Favourites');
+INSERT INTO submissions (id, user_id, artist_id, kind)
+  SELECT '40000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-000000000006', id, 'ticket'
+    FROM artists WHERE spotify_artist_id = 'sp-active';
+INSERT INTO outbound_clicks (user_id, artist_id, kind)
+  SELECT '00000000-0000-0000-0000-000000000006', id, 'ticket' FROM artists WHERE spotify_artist_id = 'sp-active';
+DO $$ BEGIN
+  ASSERT EXISTS (SELECT 1 FROM score_events WHERE user_id = '00000000-0000-0000-0000-000000000006' AND reversed_at IS NULL),
+         'erin earned points';
+END $$;
+
+SELECT pg_temp.expect_error($$SELECT purge_deleted_user('00000000-0000-0000-0000-000000000006')$$, 'is not deleted');
+UPDATE users SET deleted_at = now() WHERE id = '00000000-0000-0000-0000-000000000006';
+SELECT pg_temp.expect_error($$SELECT purge_deleted_user('00000000-0000-0000-0000-000000000006')$$, 'retention window');
+UPDATE users SET deleted_at = now() - interval '31 days' WHERE id = '00000000-0000-0000-0000-000000000006';
+INSERT INTO submission_files (submission_id, storage_key, sha256, mime_type, bytes) VALUES
+  ('40000000-0000-0000-0000-0000000000e1', 'quarantine/erin.jpg', '\x00', 'image/jpeg', 1);
+SELECT pg_temp.expect_error($$SELECT purge_deleted_user('00000000-0000-0000-0000-000000000006')$$, 'delete them from storage first');
+DELETE FROM submission_files WHERE storage_key = 'quarantine/erin.jpg';
+
+DO $$ DECLARE erin uuid := '00000000-0000-0000-0000-000000000006'; BEGIN
+  ASSERT purge_deleted_user(erin), 'purge runs after the retention window';
+  ASSERT NOT purge_deleted_user(erin), 'purge is idempotent';
+  ASSERT (SELECT content_purged_at IS NOT NULL FROM users WHERE id = erin), 'purge is recorded';
+  ASSERT NOT EXISTS (SELECT 1 FROM album_logs WHERE user_id = erin), 'logs deleted';
+  ASSERT NOT EXISTS (SELECT 1 FROM comments WHERE id = '30000000-0000-0000-0000-0000000000a3'), 'comments on the logs go too';
+  ASSERT (SELECT body = '[deleted]' AND deleted_at IS NOT NULL FROM comments WHERE id = '30000000-0000-0000-0000-0000000000e1'),
+         'answered comment becomes a tombstone';
+  ASSERT EXISTS (SELECT 1 FROM comments WHERE id = '30000000-0000-0000-0000-0000000000a2'), 'the reply to it stays';
+  ASSERT NOT EXISTS (SELECT 1 FROM comments WHERE id IN ('30000000-0000-0000-0000-0000000000e2',
+                                                         '30000000-0000-0000-0000-0000000000e3')),
+         'unanswered comments and replies deleted';
+  ASSERT EXISTS (SELECT 1 FROM comments WHERE id = '30000000-0000-0000-0000-0000000000a1'), 'other users'' comments stay';
+  ASSERT NOT EXISTS (SELECT 1 FROM lists WHERE user_id = erin), 'lists deleted';
+  ASSERT NOT EXISTS (SELECT 1 FROM submissions WHERE user_id = erin), 'submissions deleted';
+  ASSERT NOT EXISTS (SELECT 1 FROM outbound_clicks WHERE user_id = erin), 'clicks unlinked';
+  ASSERT EXISTS (SELECT 1 FROM score_events WHERE user_id = erin), 'ledger rows kept';
+  ASSERT NOT EXISTS (SELECT 1 FROM score_events WHERE user_id = erin AND reversed_at IS NULL), 'and no longer count';
+END $$;
+
+-- ------------------------------------------------------------ artist add limit is 50 (0004)
+DO $$ DECLARE n integer; BEGIN
+  SELECT count(*) INTO n FROM artists WHERE added_by = '00000000-0000-0000-0000-000000000001'
+     AND tracked_at >= (date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC');
+  FOR i IN n + 1 .. 50 LOOP
+    PERFORM track_artist('00000000-0000-0000-0000-000000000001', 'sp-bulk-' || i, 'Bulk ' || i);
+  END LOOP;
+END $$;
+SELECT pg_temp.expect_error(
+  $$SELECT track_artist('00000000-0000-0000-0000-000000000001', 'sp-bulk-51', 'Bulk 51')$$,
+  'daily artist add limit reached');
+
 \echo ALL INVARIANT TESTS PASSED
