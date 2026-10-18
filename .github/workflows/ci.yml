@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend build and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore FandomScore.slnx
+
+      # Analyzer warnings are errors (Directory.Build.props), so this also enforces code style.
+      - name: Build
+        run: dotnet build FandomScore.slnx --configuration Release --no-restore
+
+      # Testcontainers starts PostgreSQL 16 using the runner's Docker.
+      - name: Test
+        run: >
+          dotnet test FandomScore.slnx --configuration Release --no-build
+          --logger "trx;LogFileName=results.trx" --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/
+          if-no-files-found: ignore
