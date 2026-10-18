@@ -240,6 +240,15 @@ UPDATE auth_sessions SET revoked_at = now(), revoked_reason = 'sign_out'
 SELECT pg_temp.expect_error($$UPDATE auth_sessions SET revoked_at = NULL, revoked_reason = NULL
   WHERE id = '00000000-0000-0000-0000-0000000000a1'$$, 'revocation is permanent');
 
+-- Revocation reasons are a closed list (0003 adds provider_revoked).
+INSERT INTO auth_sessions (id, user_id, expires_at) VALUES
+  ('00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-000000000004', now() + interval '1 day');
+UPDATE auth_sessions SET revoked_at = now(), revoked_reason = 'provider_revoked'
+  WHERE id = '00000000-0000-0000-0000-0000000000a2';
+SELECT pg_temp.expect_error($$INSERT INTO auth_sessions (user_id, expires_at, revoked_at, revoked_reason)
+  VALUES ('00000000-0000-0000-0000-000000000004', now() + interval '1 day', now(), 'bored')$$,
+  'auth_sessions_revoked_reason_check');
+
 -- Deletion removes sessions, tokens, and identities, and a deleted user cannot get new ones.
 INSERT INTO auth_sessions (user_id, expires_at) VALUES ('00000000-0000-0000-0000-000000000004', now() + interval '1 day');
 UPDATE users SET deleted_at = now() WHERE id = '00000000-0000-0000-0000-000000000004';

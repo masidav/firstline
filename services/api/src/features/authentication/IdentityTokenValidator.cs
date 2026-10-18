@@ -17,6 +17,13 @@ public interface IIdentityTokenValidator
 
     /// <summary>Returns null when the token is not a valid, current token for this app.</summary>
     Task<ProviderIdentity?> ValidateAsync(string provider, string idToken, string? nonce, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Checks another JWT the provider signs for this app, such as Apple's server-to-server notifications.
+    /// Returns its claims, or null when it is not valid.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, object>?> ValidateProviderJwtAsync(
+        string provider, string jwt, CancellationToken cancellationToken);
 }
 
 /// <summary>One OpenID Connect provider: where its signing keys live and which issuers and audiences to accept.</summary>
@@ -64,20 +71,8 @@ public sealed class OidcIdentityTokenValidator(IReadOnlyDictionary<string, OidcP
     public async Task<ProviderIdentity?> ValidateAsync(
         string provider, string idToken, string? nonce, CancellationToken cancellationToken)
     {
-        if (!providers.TryGetValue(provider, out var oidc))
-        {
-            return null;
-        }
-
-        var result = await ValidateSignatureAsync(oidc, idToken, cancellationToken);
-        if (result.Exception is SecurityTokenSignatureKeyNotFoundException)
-        {
-            // The provider rotated its keys since we cached them.
-            oidc.Configuration.RequestRefresh();
-            result = await ValidateSignatureAsync(oidc, idToken, cancellationToken);
-        }
-
-        if (!result.IsValid
+        var result = await ValidateJwtAsync(provider, idToken, requireExpiry: true, cancellationToken);
+        if (result is null || !result.IsValid
             || Claim(result, "sub") is not string subject || subject.Length == 0
             || !NonceMatches(Claim(result, "nonce") as string, nonce))
         {
@@ -90,11 +85,38 @@ public sealed class OidcIdentityTokenValidator(IReadOnlyDictionary<string, OidcP
             IsTrue(Claim(result, "email_verified")));
     }
 
+    // Apple's notification tokens carry no expiry; their effects are idempotent, so a replay changes nothing.
+    public async Task<IReadOnlyDictionary<string, object>?> ValidateProviderJwtAsync(
+        string provider, string jwt, CancellationToken cancellationToken)
+    {
+        var result = await ValidateJwtAsync(provider, jwt, requireExpiry: false, cancellationToken);
+        return result is { IsValid: true } ? result.Claims.AsReadOnly() : null;
+    }
+
+    private async Task<TokenValidationResult?> ValidateJwtAsync(
+        string provider, string jwt, bool requireExpiry, CancellationToken cancellationToken)
+    {
+        if (!providers.TryGetValue(provider, out var oidc))
+        {
+            return null;
+        }
+
+        var result = await ValidateSignatureAsync(oidc, jwt, requireExpiry, cancellationToken);
+        if (result.Exception is SecurityTokenSignatureKeyNotFoundException)
+        {
+            // The provider rotated its keys since we cached them.
+            oidc.Configuration.RequestRefresh();
+            result = await ValidateSignatureAsync(oidc, jwt, requireExpiry, cancellationToken);
+        }
+
+        return result;
+    }
+
     private static object? Claim(TokenValidationResult result, string name) =>
         result.Claims.TryGetValue(name, out var value) ? value : null;
 
     private static async Task<TokenValidationResult> ValidateSignatureAsync(
-        OidcProvider oidc, string idToken, CancellationToken cancellationToken)
+        OidcProvider oidc, string idToken, bool requireExpiry, CancellationToken cancellationToken)
     {
         var configuration = await oidc.Configuration.GetConfigurationAsync(cancellationToken);
         return await Handler.ValidateTokenAsync(idToken, new TokenValidationParameters
@@ -103,7 +125,7 @@ public sealed class OidcIdentityTokenValidator(IReadOnlyDictionary<string, OidcP
             ValidAudiences = oidc.Audiences,
             IssuerSigningKeys = configuration.SigningKeys,
             ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
-            RequireExpirationTime = true,
+            RequireExpirationTime = requireExpiry,
             RequireSignedTokens = true,
             ClockSkew = TimeSpan.FromMinutes(1),
         });

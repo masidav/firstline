@@ -17,6 +17,9 @@
 | Refresh tokens | 256-bit random, opaque, stored only as SHA-256. **Rotated on every use.** Presenting a used token revokes the whole session (reuse detection). Unused tokens expire after **30 days**, and a session ends after **180 days** at most. |
 | Sign-out | Ends the calling device's session only. |
 | Account deletion | `DELETE /me` sets `users.deleted_at`. Triggers scrub personal fields (0001), and delete sessions, refresh tokens, and provider identities (0002), so the same Apple/Google account can start over as a new user. |
+| Apple account deletion | We store no Apple tokens. When an Apple user deletes their account, the app sends a fresh Sign in with Apple authorization code with `DELETE /me`; the API exchanges it (client secret: ES256 JWT signed with our Sign in with Apple key), checks it is the same Apple account, and revokes the resulting token. Best effort: deletion never waits on Apple succeeding. |
+| Apple notifications | `POST /webhooks/apple`, verified with Apple's signing keys. `consent-revoked` ends all the user's sessions (`revoked_reason = provider_revoked`, migration 0003); `account-delete` deletes the account, since it can never be signed in to again; email relay events change nothing. |
+| Staff access | Policy `AuthSetup.StaffPolicy` for `/admin` routes: reads `is_staff` from the database on each request, so removing staff access is immediate. |
 | Abuse limits | Sign-in and refresh: 20 requests per minute per client IP (ASP.NET Core rate limiter). Cloud Armor adds edge limits in Phase 12. |
 
 ## Why
@@ -36,9 +39,8 @@
   We can add a short grace window if this shows up in practice.
 - **One provider per account.** Signing in with Google using an email that already belongs to an Apple account gets
   `409 email_in_use`. Decided 2026-10-18: one email per account, no account linking.
-- **Apple-specific follow-ups:** handle Apple's server-to-server notifications (consent revoked, email changes,
-  account deleted) and revoke Apple tokens when an account is deleted, as App Store guidelines require. Those
-  need Apple's client secret and are tracked in the authentication TODO.
+- **Apple revocation depends on the app** sending a fresh authorization code with the deletion request. If it is
+  missing or Apple fails, the deletion still happens and a warning is logged (retry needs the job queue).
 - **Client IP behind the load balancer:** the rate limiter uses the connection's IP. Before going live behind GKE,
   configure forwarded headers to trust only the load balancer (infrastructure TODO).
 - Identity tokens, access tokens, and refresh tokens are never logged. A test checks this.
@@ -48,6 +50,7 @@
 | --- | --- |
 | `Auth__SigningKey` | Secret. Base64 of at least 32 random bytes (`openssl rand -base64 32`). The API refuses to start without it. |
 | `Auth__Apple__ClientIds` | Comma-separated: iOS bundle ID, Services ID. Empty disables Apple sign-in. |
+| `Auth__Apple__TeamId`, `Auth__Apple__KeyId`, `Auth__Apple__PrivateKey` | Sign in with Apple key from the Apple Developer account, for revocation. The private key (`.p8` PEM) is a secret; a malformed key stops startup. The first Apple client ID (the iOS bundle ID) is used for revocation. |
 | `Auth__Google__ClientIds` | Comma-separated: iOS, Android, and web OAuth client IDs. Empty disables Google sign-in. |
 | `Auth__AccessTokenLifetime`, `Auth__RefreshTokenLifetime`, `Auth__SessionLifetime`, `Auth__PermitsPerMinute` | Optional overrides of the defaults above. |
 

@@ -33,9 +33,9 @@ Details: [API](services/api/TODO.md) · [Database](database/TODO.md) · [Tests](
 
 ## Phase 2 — Identity and access
 - [x] Implement authentication and session lifecycle. Apple/Google sign-in, rotating refresh tokens with reuse detection, sign-out ([ADR 0003](docs/adr/0003-authentication.md)). Verified 2026-10-18: `dotnet test` 27/27.
-- [ ] Implement user profile and authorization rules. `/me` read, update, and delete done; staff-only (`/admin`) authorization comes with the first admin endpoint.
+- [x] Implement user profile and authorization rules. `/me` read, update, and delete; bearer auth on all of `/v1`; staff policy for `/admin` (checked per request). Verified 2026-10-18: `dotnet test` 36/36.
 - [ ] Implement account recovery and account deletion policy. Recovery is provider sign-in (no passwords). Deletion request done; content retention is still an open decision.
-- [ ] Apple follow-ups: server-to-server notifications and token revocation on account deletion.
+- [x] Apple follow-ups: server-to-server notifications (`POST /v1/webhooks/apple`) and Apple sign-in revocation on account deletion. Verified 2026-10-18: AppleTests 8/8.
 
 Details: [Authentication](services/api/src/features/authentication/TODO.md) · [Users](services/api/src/features/users/TODO.md) · [Privacy](services/api/src/features/privacy/TODO.md)
 

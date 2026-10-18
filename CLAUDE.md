@@ -30,6 +30,8 @@ Local setup: `docs/DEVELOPMENT.md`. If the .NET SDK isn't installed, run these i
 - **No secrets in the repo, in `appsettings*.json`, or in logs.** Configuration comes from environment variables;
   `.env.example` holds placeholders only. Never read or edit `.env`.
 - Errors are RFC 9457 problem+json with a stable `code` from `openapi.yaml` (`ApiProblemException`).
+- Every `/v1` endpoint requires sign-in unless it calls `AllowAnonymous()`. Staff-only (`/admin`) endpoints add
+  `RequireAuthorization(AuthSetup.StaffPolicy)`.
 - JSON is snake_case. Every API change updates `openapi.yaml` in the same pull request.
 - New triggers or constraints get a check in `database/tests/invariants.sql`.
 - Mark a TODO `[x]` only after it is implemented and verified; record what was actually run.

@@ -11,7 +11,7 @@ info:
 
     - **Versioning:** URL prefix `/v1`. Breaking changes ship as `/v2`.
     - **Auth:** `Authorization: Bearer <access token>` (JWT, 15 minutes). Refresh tokens rotate on every use.
-      Staff-only routes live under `/admin` and require `is_staff`.
+      Staff-only routes live under `/admin` and require `is_staff` (checked on every request; `403 forbidden` otherwise).
     - **Format:** JSON, `snake_case`, UUID ids, RFC 3339 UTC timestamps.
     - **Pagination:** cursor based. Send `limit` (1 to 100, default 25) and `cursor`; read `next_cursor`
       (null on the last page).
@@ -200,6 +200,18 @@ paths:
         removed immediately, and the handle and email become available to new accounts. All sessions end
         and the Apple/Google sign-in is released, so signing in again creates a new account. Profile content
         is removed within the retention window. Deletion cannot be undone.
+
+        For an account that signs in with Apple, the app should first get a fresh authorization code from
+        Sign in with Apple and send it; the API uses it to revoke the app's Apple sign-in (App Store
+        requirement). Deletion goes ahead even if the code is missing or revocation fails.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                apple_authorization_code: {type: string}
       responses:
         '202': {description: Deletion scheduled}
         '401': {$ref: '#/components/responses/Unauthorized'}
@@ -1127,6 +1139,30 @@ paths:
         '204': {description: Processed}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+  /webhooks/apple:
+    post:
+      tags: [Webhooks]
+      operationId: receiveAppleNotification
+      summary: Sign in with Apple server-to-server notifications
+      description: |
+        Apple posts a JWT signed with its Sign in with Apple keys (audience: our client ID). Configure this URL
+        in the Apple Developer account. Effects are idempotent:
+        - `consent-revoked`: the user's sessions end; signing in with Apple again returns to the same account.
+        - `account-delete`: the Apple ID is gone, so the account is deleted like `DELETE /me`.
+        - `email-disabled`, `email-enabled`, and unknown users: accepted, no change.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payload]
+              properties:
+                payload: {type: string, description: JWT signed by Apple; its `events` claim names the event.}
+      responses:
+        '200': {description: Processed}
+        '401': {$ref: '#/components/responses/Unauthorized'}
 
   # ------------------------------------------------------------------ Admin
   /admin/reviews:

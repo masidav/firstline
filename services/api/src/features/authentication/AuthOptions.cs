@@ -27,12 +27,12 @@ public sealed class AuthOptions
     /// <summary>Sign-in and refresh calls allowed per client IP per minute.</summary>
     public int PermitsPerMinute { get; set; } = 20;
 
-    public ProviderOptions Apple { get; set; } = new();
+    public AppleOptions Apple { get; set; } = new();
 
     public ProviderOptions Google { get; set; } = new();
 }
 
-public sealed class ProviderOptions
+public class ProviderOptions
 {
     /// <summary>
     /// Comma-separated OAuth client IDs whose identity tokens are accepted (the token's <c>aud</c>):
@@ -43,4 +43,21 @@ public sealed class ProviderOptions
 
     public IReadOnlyList<string> ClientIdList =>
         ClientIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+}
+
+/// <summary>
+/// Apple also needs a Sign in with Apple key to revoke a user's Apple sign-in when they delete their account
+/// (App Store requirement). All three values come from the Apple Developer account; the key is a secret.
+/// </summary>
+public sealed class AppleOptions : ProviderOptions
+{
+    public string TeamId { get; set; } = "";
+
+    public string KeyId { get; set; } = "";
+
+    /// <summary>The <c>.p8</c> private key, PEM text.</summary>
+    public string PrivateKey { get; set; } = "";
+
+    public bool CanRevoke =>
+        ClientIdList.Count > 0 && TeamId.Length > 0 && KeyId.Length > 0 && PrivateKey.Length > 0;
 }

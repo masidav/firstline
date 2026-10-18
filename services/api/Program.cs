@@ -31,6 +31,7 @@ app.UseRateLimiter();
 var v1 = app.MapGroup("/v1").RequireAuthorization();
 v1.MapGet("/health", () => Results.Ok(new { Status = "ok" })).AllowAnonymous();
 v1.MapAuth();
+v1.MapAppleNotifications();
 v1.MapMe();
 
 app.Run();

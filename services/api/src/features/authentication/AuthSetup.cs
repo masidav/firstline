@@ -1,16 +1,22 @@
 using System.Globalization;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
+using Dapper;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
+using Npgsql;
 
 namespace FandomScore.Api.Features.Authentication;
 
 public static class AuthSetup
 {
     public const string SignInRateLimit = "sign-in";
+
+    /// <summary>Staff-only routes (openapi <c>/admin</c>): <c>group.RequireAuthorization(AuthSetup.StaffPolicy)</c>.</summary>
+    public const string StaffPolicy = "staff";
 
     /// <summary>
     /// Bearer access tokens, checked against a live session on every request. Program.cs requires them on
@@ -27,8 +33,11 @@ public static class AuthSetup
                 "Auth:SigningKey must be base64 for at least 32 random bytes (openssl rand -base64 32). See .env.example.");
         }
 
+        AppleClient.ValidateKey(options.Apple);
+
         services.Configure<AuthOptions>(section);
         services.AddSingleton<SessionService>();
+        services.AddHttpClient<AppleClient>(http => http.BaseAddress = AppleClient.BaseAddress);
         services.AddSingleton<IIdentityTokenValidator>(sp =>
             OidcIdentityTokenValidator.FromOptions(sp.GetRequiredService<IOptions<AuthOptions>>().Value));
 
@@ -45,7 +54,9 @@ public static class AuthSetup
             };
             jwt.Events = new JwtBearerEvents { OnTokenValidated = RequireActiveSessionAsync };
         });
-        services.AddAuthorization();
+        services.AddSingleton<IAuthorizationHandler, StaffHandler>();
+        services.AddAuthorizationBuilder()
+            .AddPolicy(StaffPolicy, policy => policy.RequireAuthenticatedUser().AddRequirements(new StaffRequirement()));
 
         services.AddRateLimiter(limiter =>
         {
@@ -92,6 +103,28 @@ public static class AuthSetup
         if (!await sessions.IsActiveAsync(userId, sessionId, context.HttpContext.RequestAborted))
         {
             context.Fail("The session has ended.");
+        }
+    }
+
+    public sealed class StaffRequirement : IAuthorizationRequirement;
+
+    // Read from the database on each request, so removing staff access takes effect at once.
+    private sealed class StaffHandler(NpgsqlDataSource db) : AuthorizationHandler<StaffRequirement>
+    {
+        protected override async Task HandleRequirementAsync(AuthorizationHandlerContext context, StaffRequirement requirement)
+        {
+            if (context.User.FindFirstValue(JwtRegisteredClaimNames.Sub) is not { } sub || !Guid.TryParse(sub, out var userId))
+            {
+                return;
+            }
+
+            var cancellationToken = (context.Resource as HttpContext)?.RequestAborted ?? CancellationToken.None;
+            await using var connection = await db.OpenConnectionAsync(cancellationToken);
+            if (await connection.ExecuteScalarAsync<bool>(
+                    "SELECT EXISTS (SELECT 1 FROM users WHERE id = @userId AND is_staff AND deleted_at IS NULL)", new { userId }))
+            {
+                context.Succeed(requirement);
+            }
         }
     }
 

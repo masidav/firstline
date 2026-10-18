@@ -13,8 +13,10 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [x] Apply rate limits and abuse protection to login and recovery endpoints. (20/min per IP; forwarded headers still needed behind GKE)
 - [x] Ensure tokens and credentials are never written to logs. (`Credentials_are_never_logged`)
 - [x] Add tests for successful flows, invalid credentials, expiration, revocation, and authorization.
-- [ ] Handle Sign in with Apple server-to-server notifications (consent revoked, email changed, account deleted).
-- [ ] Revoke the Apple token when an account is deleted (needs the Apple client secret / key in Secret Manager).
+- [x] Handle Sign in with Apple server-to-server notifications (consent revoked, email changed, account deleted). (`POST /v1/webhooks/apple`, AppleTests)
+- [x] Revoke the Apple token when an account is deleted. (code sent with `DELETE /me`; AppleTests with a fake Apple API)
+- [ ] Retry failed Apple revocations once the job queue exists (Phase 3).
+- [ ] Register the notification URL and create the Sign in with Apple key in the Apple Developer account; store the key in Secret Manager.
 - [x] ~~Account linking~~ *Decided 2026-10-18: one email per account, no linking (`409 email_in_use`).*
 
 ## Verification

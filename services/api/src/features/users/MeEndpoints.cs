@@ -3,6 +3,8 @@ using System.Text.Json;
 using Dapper;
 using FandomScore.Api.Features.Authentication;
 using FandomScore.Api.Infrastructure;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Npgsql;
 
 namespace FandomScore.Api.Features.Users;
@@ -104,13 +106,26 @@ public static class MeEndpoints
         return Results.Ok(await LoadAsync(connection, user.UserId()));
     }
 
+    public sealed record DeleteMeRequest(string? AppleAuthorizationCode);
+
     // The users_delete triggers scrub personal fields, Spotify and library data, sessions, and sign-in
     // identities in the same statement. Later content cleanup waits on the retention decision (PROJECT_TODO.md).
-    private static async Task<IResult> DeleteAsync(ClaimsPrincipal user, NpgsqlDataSource db, CancellationToken cancellationToken)
+    // Apple sign-ins are then revoked with Apple, as the App Store requires.
+    private static async Task<IResult> DeleteAsync(
+        ClaimsPrincipal user, [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] DeleteMeRequest? request, NpgsqlDataSource db, AppleClient apple, CancellationToken cancellationToken)
     {
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        // Read the Apple identity first: deletion removes it.
+        var appleSubject = await connection.QuerySingleOrDefaultAsync<string?>(
+            "SELECT subject FROM auth_identities WHERE provider = 'apple' AND user_id = @id", new { id = user.UserId() });
         await connection.ExecuteAsync(
             "UPDATE users SET deleted_at = now() WHERE id = @id AND deleted_at IS NULL", new { id = user.UserId() });
+
+        if (appleSubject is not null)
+        {
+            await apple.RevokeAsync(request?.AppleAuthorizationCode, appleSubject, cancellationToken);
+        }
+
         return Results.Accepted();
     }
 

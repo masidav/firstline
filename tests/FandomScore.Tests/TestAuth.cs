@@ -28,6 +28,10 @@ public sealed class FakeIdentityTokenValidator : IIdentityTokenValidator
             : null;
         return Task.FromResult(identity);
     }
+
+    public Task<IReadOnlyDictionary<string, object>?> ValidateProviderJwtAsync(
+        string provider, string jwt, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyDictionary<string, object>?>(null);
 }
 
 /// <summary>Keeps every log message so tests can check that no credential is ever logged.</summary>

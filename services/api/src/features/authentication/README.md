@@ -9,20 +9,24 @@ Design and reasoning: [ADR 0003](../../../../../docs/adr/0003-authentication.md)
 | `POST /v1/auth/sessions` | none, rate limited | Identity token → session. `201` and a new account on first sign-in (needs `handle`); `200` after that. |
 | `POST /v1/auth/refresh` | none, rate limited | Rotates the refresh token. Reusing an old one revokes the session. |
 | `DELETE /v1/auth/sessions/current` | bearer | Ends this device's session. |
+| `POST /v1/webhooks/apple` | Apple-signed JWT | Sign in with Apple notifications: `consent-revoked` signs out everywhere, `account-delete` deletes the account. |
 
 ## Files
 | File | Role |
 | --- | --- |
-| `AuthSetup.cs` | DI: options, JWT bearer validation with a live-session check, rate limiter. `UserId()`/`SessionId()` claim helpers. |
+| `AuthSetup.cs` | DI: options, JWT bearer validation with a live-session check, staff policy (`StaffPolicy`), rate limiter. `UserId()`/`SessionId()` claim helpers. |
 | `AuthEndpoints.cs` | The three endpoints; account creation on first sign-in. |
 | `SessionService.cs` | Sessions, refresh-token rotation and reuse detection, access-token issuing. |
+| `AppleClient.cs` | Revokes the Apple sign-in on account deletion (code exchange, then revoke). |
+| `AppleNotificationEndpoints.cs` | `POST /v1/webhooks/apple`. |
 | `IdentityTokenValidator.cs` | Checks Apple/Google identity tokens against their OpenID configuration (`IIdentityTokenValidator`). |
 | `AuthOptions.cs` | `Auth` configuration section. |
 
-Tables: `auth_identities`, `auth_sessions`, `refresh_tokens` (`database/migrations/0002_auth_sessions.sql`).
+Tables: `auth_identities`, `auth_sessions`, `refresh_tokens` (`database/migrations/0002_auth_sessions.sql`, `0003_session_provider_revoked.sql`).
 
 ## Configuration
-`Auth__SigningKey` (required secret), `Auth__Apple__ClientIds`, `Auth__Google__ClientIds`. See `.env.example`
+`Auth__SigningKey` (required secret), `Auth__Apple__ClientIds`, `Auth__Google__ClientIds`, and for Apple revocation
+`Auth__Apple__TeamId`, `Auth__Apple__KeyId`, `Auth__Apple__PrivateKey` (secret). See `.env.example`
 and the ADR. With no client IDs set, sign-in returns `422` for that provider; tests replace the validator.
 
 ## Tests
@@ -31,12 +35,15 @@ and the ADR. With no client IDs set, sign-in returns `422` for that provider; te
 - `tests/FandomScore.Tests/OidcIdentityTokenValidatorTests.cs`: the real token checks (signature, issuer, audience,
   expiry, nonce, `email_verified`) with a local RSA key.
 - `tests/FandomScore.Tests/RateLimitTests.cs`: `429 rate_limited` with `Retry-After`.
+- `tests/FandomScore.Tests/AppleTests.cs`: real Apple token validation, deletion revoking the Apple sign-in (fake Apple API),
+  notifications, forged notifications.
+- `tests/FandomScore.Tests/StaffAuthorizationTests.cs`: 401/403/200 and immediate removal of staff access.
 - `database/tests/invariants.sql` (auth section): one live refresh token per session, permanent revocation,
   deletion cleanup, no sessions for deleted users.
 
 ## Known limitations
 - One email per account, by decision (2026-10-18): accounts are not linked across providers, so the same email from
   another provider gets `409 email_in_use`.
-- Apple server-to-server notifications and Apple token revocation on account deletion are not done yet.
+- Apple revocation is best effort and relies on the app sending a fresh authorization code; no retry yet.
 - Concurrent refreshes with one token end the session; the app must serialize refreshes.
 - Rate limiting is per connection IP until forwarded headers are configured for the GKE load balancer.
