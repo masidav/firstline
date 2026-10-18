@@ -44,3 +44,49 @@ jobs:
           name: test-results
           path: TestResults/
           if-no-files-found: ignore
+
+  migrations:
+    name: Applied migrations unchanged
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Migrations already on the base branch may have run somewhere; only new files are allowed.
+      # Pull requests compare with their base branch; pushes compare with the commit before the push.
+      - name: Check for modified, renamed, or deleted migrations
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -n "$BASE_REF" ]; then
+            range="origin/${BASE_REF}...HEAD"
+          elif [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            range="${BEFORE}..HEAD"
+          else
+            echo "No previous commit to compare with (new branch)."
+            exit 0
+          fi
+          changed=$(git diff --name-status --no-renames "$range" -- database/migrations | grep -v '^A' || true)
+          if [ -n "$changed" ]; then
+            echo "::error::Applied migrations must not change. Add a new migration instead."
+            echo "$changed"
+            exit 1
+          fi
+          echo "Only new migrations added (or none)."
+
+  agent-hooks:
+    name: Agent hook tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Test hook scripts
+        run: python -m unittest discover -s tools/agent-hooks -v

@@ -14,13 +14,13 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Verify all documentation links and paths after the repository structure is finalized.
 
 ## Developer tooling (Phase 14)
-- [ ] Initialize git, add a private remote, and protect `main`.
-- [ ] Add CI for build and tests on pull requests.
-- [ ] Write `CLAUDE.md` with commands and conventions.
-- [ ] Add `.claude/agents/` definitions and `.claude/settings.json` hooks; document what each one does.
+- [x] Initialize git and add a private remote. (Protecting `main` deferred.)
+- [x] Add CI for build and tests on pull requests.
+- [x] Write `CLAUDE.md` with commands and conventions.
+- [x] Add `.claude/agents/` definitions and `.claude/settings.json` hooks; document what each one does.
 - [ ] Set up Claude Code remote access (Remote Control or Claude Code on the web) and GitHub Actions.
-- [ ] Install OpenClaw on an isolated host with a repo-scoped token; review every skill before enabling it.
-- [ ] Document agent access, audit, and revocation steps.
+- [ ] *Deferred.* Install OpenClaw on an isolated host with a repo-scoped token; review every skill before enabling it.
+- [x] Document agent access, audit, and revocation steps. (`agent-tooling.md`)
 
 ## Verification
 - [ ] Add or update automated tests for the behavior above.

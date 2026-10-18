@@ -27,7 +27,7 @@ Details: [Project setup](docs/TODO.md)
 - [x] Establish local development and test commands. See [Development](docs/DEVELOPMENT.md).
 - [ ] Verify PostgreSQL connectivity and existing schema.
 - [ ] Establish API error handling, request validation, logging, and configuration.
-- [ ] Establish automated checks and baseline tests.
+- [x] Establish automated checks and baseline tests. (Backend only: CI build with analyzers + migration, invariant, and API tests.)
 
 Details: [API](services/api/TODO.md) · [Database](database/TODO.md) · [Tests](tests/TODO.md) · [Infrastructure](infrastructure/TODO.md)
 
@@ -148,18 +148,19 @@ Details: [UI testing and launch plan](docs/plans/ui-testing-and-launch.md)
 
 ## Phase 14 — Developer tooling and remote code management
 Can run in parallel with any phase; the first two items unblock the rest.
-- [ ] Put the repo under git and push to a private remote (e.g. GitHub) with branch protection on `main`.
-- [ ] Add CI that runs `dotnet build` and `dotnet test` (and later mobile/web checks) on every pull request.
-- [ ] Add a project `CLAUDE.md` with build/test commands, conventions, and the "never edit an applied migration" rule.
-- [ ] Add Claude Code project agents (`.claude/agents/`) for recurring work, e.g. a migration reviewer and an OpenAPI contract checker.
-- [ ] Add Claude Code hooks (`.claude/settings.json`): run tests or `dotnet build` after edits, block edits to applied migrations and to `.env`/secrets.
+- [x] Put the repo under git and push to a private remote (GitHub: `masidav/firstline`).
+- [ ] Branch protection on `main` and pull-request workflow. *Deferred: committing directly to `main` for now.*
+- [x] Add CI that runs `dotnet build` and `dotnet test` (and later mobile/web checks) on every pull request. (`.github/workflows/ci.yml`; first run green 2026-10-18.)
+- [x] Add a project `CLAUDE.md` with build/test commands, conventions, and the "never edit an applied migration" rule.
+- [x] Add Claude Code project agents (`.claude/agents/`) for recurring work, e.g. a migration reviewer and an OpenAPI contract checker.
+- [x] Add Claude Code hooks (`.claude/settings.json`): run `dotnet build` after edits, block edits to applied migrations and to `.env`/secrets. Scripts in `tools/agent-hooks/` (tested in CI).
 - [ ] Set up remote code management: Claude Code Remote Control / Claude Code on the web, and GitHub Actions for agent-driven pull requests.
-- [ ] Set up OpenClaw for remote control from chat: run it on a dedicated machine or VM (not a laptop with personal data),
+- [ ] *Deferred.* Set up OpenClaw for remote control from chat: run it on a dedicated machine or VM (not a laptop with personal data),
       with access limited to this repo, a scoped GitHub token, no production credentials, and only reviewed skills.
-- [ ] Require every agent change (Claude Code, OpenClaw, CI bots) to land through a reviewed pull request; agents never push to `main` or deploy to prod.
-- [ ] Document how to start, stop, and audit remote agent sessions, and how to revoke their access.
+- [ ] Require every agent change (Claude Code, OpenClaw, CI bots) to land through a reviewed pull request; agents never push to `main` or deploy to prod. *Deferred with branch protection.*
+- [x] Document how to start, stop, and audit remote agent sessions, and how to revoke their access. See [Agent tooling](docs/agent-tooling.md).
 
-Details: [Developer tooling](docs/TODO.md)
+Details: [Agent tooling](docs/agent-tooling.md) · [Developer tooling](docs/TODO.md)
 
 ## Cross-cutting requirements
 - [ ] Keep all score awards idempotent and ledger-based.
