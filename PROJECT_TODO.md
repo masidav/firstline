@@ -49,12 +49,14 @@ Details: [Authentication](services/api/src/features/authentication/TODO.md) · [
 Details: [Artists](services/api/src/features/artists/TODO.md) · [Artist search UI](apps/mobile/src/features/artist-search/TODO.md) · [Artist onboarding worker](workers/artist-onboarding/TODO.md)
 
 ## Phase 4 — Spotify data
-- [ ] Implement Spotify OAuth and secure token storage.
-- [ ] Implement initial and scheduled syncs.
-- [ ] Filter to tracked artists before persisting signals.
-- [ ] Handle API limits, token expiry, retries, and sync status.
+- [x] Implement Spotify OAuth and secure token storage (backend: PKCE code exchange, AES-GCM refresh tokens; [ADR 0005](docs/adr/0005-spotify-integration.md)). Verified 2026-10-18: `dotnet test` 67/67.
+- [x] Implement initial and scheduled syncs (worker `spotify.sync`, hourly `spotify.schedule_syncs`, daily per user). Verified 2026-10-18 with a faked Spotify.
+- [x] Filter to tracked artists before persisting signals. Verified 2026-10-18 (SpotifySyncJobTests).
+- [x] Handle API limits, token expiry, retries, and sync status. Verified 2026-10-18 with a faked Spotify.
+- [ ] Check the flow end to end against real Spotify (development-mode app, allowlisted account).
+- [ ] Mobile connect screen (see Spotify mobile UI).
 
-Details: [Spotify API feature](services/api/src/features/spotify-sync/TODO.md) · [Spotify integration](services/api/src/integrations/spotify/TODO.md) · [Spotify mobile UI](apps/mobile/src/features/spotify/TODO.md) · [Sync worker](workers/spotify-sync/TODO.md)
+Details: [Spotify API feature](services/api/src/features/spotify-sync/TODO.md) · [Spotify integration](packages/spotify/TODO.md) · [Spotify mobile UI](apps/mobile/src/features/spotify/TODO.md) · [Sync worker](workers/spotify-sync/TODO.md)
 
 ## Phase 5 — Scores and ranking
 - [ ] Implement append-only points ledger and configurable scoring rules.
@@ -182,13 +184,17 @@ Details: [Agent tooling](docs/agent-tooling.md) · [Developer tooling](docs/TODO
 - [x] Define data retention and account deletion behavior. Deleted accounts: personal data scrubbed at once, content hard-deleted after 30 days, comments others replied to kept as "[deleted]", ledger kept anonymously (decided 2026-10-18). File retention (quarantine/archive) still to define with submissions.
 - [x] Artist add limit: 50 new artists per user per UTC day (decided 2026-10-18).
 - [x] Account linking: no. One email per account; a second provider with the same email gets `409 email_in_use`. (Decided 2026-10-18.)
-- [ ] Confirm exact Spotify signals available under current API access.
+- [ ] Confirm exact Spotify signals available under current API access. Checked 2026-10-18 for development mode
+      (ADR 0005): saved tracks, top artists, last 50 plays, own/collaborative playlists. Track popularity is gone.
+- [ ] Decide how Spotify signals credit co-credited tracks. The sync counts the primary artist only for now
+      (`SpotifySignals.Reduce`).
 - [ ] Decide how to handle co-credited albums and collaborations.
 - [ ] Confirm the product and company name (summary proposes TrueFan Access or VerifyTicket; repo uses Fandom Score).
 - [ ] Choose the primary ticketing model: white-labeled checkout through ticketer APIs, or direct allocation links.
 - [ ] Confirm which primary ticketers will grant API access for reserved inventory, and on what terms.
 - [ ] Confirm Spotify's developer terms allow using listening data to decide ticket eligibility, and that the
-      app qualifies for extended API quota. Same check for Apple Music.
+      app qualifies for extended API quota. Same check for Apple Music. As of 2026-10-18 extended quota is
+      organizations only with 250k monthly active users; development mode allows 5 users (ADR 0005).
 - [ ] Check laws on non-transferable tickets and ticket resale in each launch market (some US states restrict non-transferable tickets).
 - [ ] Decide the selection method for oversubscribed allocations (ranked by score, lottery among eligible fans, or tiers).
 - [ ] Decide on the fan-side fee and whether App Store / Google Play payment rules apply to it.

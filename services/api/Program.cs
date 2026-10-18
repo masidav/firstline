@@ -1,7 +1,9 @@
 using System.Text.Json;
 using FandomScore.Api.Features.Authentication;
+using FandomScore.Api.Features.SpotifySync;
 using FandomScore.Api.Features.Users;
 using FandomScore.Api.Infrastructure;
+using FandomScore.Spotify;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,6 +17,7 @@ if (string.IsNullOrWhiteSpace(connectionString))
 builder.Services.AddNpgsqlDataSource(connectionString);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddAuth(builder.Configuration);
+builder.Services.AddSpotify(builder.Configuration);
 builder.Services.AddApiProblems();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower);
@@ -33,6 +36,7 @@ v1.MapGet("/health", () => Results.Ok(new { Status = "ok" })).AllowAnonymous();
 v1.MapAuth();
 v1.MapAppleNotifications();
 v1.MapMe();
+v1.MapSpotify();
 
 app.Run();
 

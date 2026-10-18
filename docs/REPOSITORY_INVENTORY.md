@@ -37,7 +37,6 @@ Recorded 2026-10-18 before any implementation work. Update this file when the fa
 ### API fields and behaviors with no backing column or table (not flagged)
 | API surface | Missing from schema |
 | --- | --- |
-| `SpotifyStatus.sync_state`, `tracked_artists_found` | No sync-state or last-sync-result storage on `spotify_connections`. |
 | `Artist.image_url`, `ArtistSearchResult.image_url` | No `artists.image_url`. |
 | `POST /admin/artists/{id}/onboarding/retry` | `artist_status` has no `failed` value and there is no column for the onboarding error. |
 | `Score.status` (`computing`) | Not stored; must be derived or added. |

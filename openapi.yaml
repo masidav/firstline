@@ -236,6 +236,14 @@ paths:
         The app runs the Spotify authorization (PKCE) and sends the resulting code here. The server
         exchanges it and stores the refresh token encrypted, so Spotify tokens never live on the device.
         Triggers a first sync of tracked artists.
+
+        Request every scope: `user-library-read`, `user-top-read`, `user-read-recently-played`,
+        `playlist-read-private`, `playlist-read-collaborative`. `redirect_uri` must be one the server allows
+        (`Spotify__RedirectUris`) and the same one used for the authorization.
+
+        `422 validation_failed` (field `code`) when Spotify rejects the code, a scope is missing, or Spotify
+        refuses the account (in development mode, only Spotify accounts on the app's allowlist can connect).
+        Connecting a different Spotify account deletes the data synced from the previous one.
       requestBody:
         required: true
         content:
@@ -247,11 +255,27 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/SpotifyStatus'}
+        '409':
+          description: 'This Spotify account is connected to another user (`code: spotify_in_use`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+        '503':
+          description: 'Spotify did not respond, or Spotify is not set up on this server (`code: spotify_unavailable`)'
+          headers:
+            Retry-After:
+              schema: {type: integer}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
     delete:
       tags: [Me]
       operationId: disconnectSpotify
       summary: Disconnect Spotify and delete synced library data
+      description: |
+        Spotify has no API to revoke an app's access; the app should tell users they can also remove it in
+        their Spotify account settings. Succeeds when nothing is connected.
       responses:
         '204': {description: Disconnected}
   /me/spotify/sync:
@@ -259,7 +283,11 @@ paths:
       tags: [Me]
       operationId: syncSpotify
       summary: Request a Spotify sync now
-      description: Only tracked, active artists are counted; everything else is discarded during sync.
+      description: |
+        Only tracked, active artists are counted; everything else is discarded during sync.
+        A sync already `queued` or `running` is returned as is. Otherwise one manual sync per 15 minutes
+        (`429 rate_limited`). `409 spotify_not_connected` without a connection; `409 spotify_reauth_required`
+        when Spotify rejected the stored authorization (connect again with `PUT /me/spotify`).
       responses:
         '202':
           description: Sync queued. Poll `GET /me/spotify` for `sync_state`.
@@ -1427,6 +1455,8 @@ components:
             - spotify_artist_not_found
             - spotify_not_connected
             - spotify_reauth_required
+            - spotify_in_use
+            - spotify_unavailable
             - duplicate_submission
             - score_not_ready
             - upload_expired
@@ -1498,7 +1528,7 @@ components:
         created_at: {type: string, format: date-time}
         spotify:
           $ref: '#/components/schemas/SpotifyStatus'
-          description: Added with the Spotify integration (Phase 4); absent until then.
+          description: Same as `GET /me/spotify`.
     MeUpdate:
       type: object
       properties:
@@ -1513,7 +1543,7 @@ components:
       required: [code, code_verifier, redirect_uri]
       properties:
         code: {type: string}
-        code_verifier: {type: string}
+        code_verifier: {type: string, minLength: 43, maxLength: 128}
         redirect_uri: {type: string}
     SpotifyStatus:
       type: object
@@ -1525,7 +1555,16 @@ components:
           items: {type: string}
         connected_at: {type: [string, 'null'], format: date-time}
         last_synced_at: {type: [string, 'null'], format: date-time}
-        sync_state: {type: string, enum: [idle, queued, running, failed, reauth_required]}
+        sync_state:
+          type: string
+          enum: [idle, queued, running, failed, reauth_required]
+          description: |
+            `failed`: gave up after retries, or Spotify refused the account; the daily automatic sync tries again.
+            `reauth_required`: Spotify no longer accepts the authorization; only reconnecting clears it.
+        sync_error:
+          type: [string, 'null']
+          enum: [spotify_unavailable, spotify_forbidden, spotify_reauth_required, internal_error, null]
+          description: Why the last sync attempt failed; null after a successful sync.
         tracked_artists_found:
           type: integer
           description: Tracked artists found in the last sync.

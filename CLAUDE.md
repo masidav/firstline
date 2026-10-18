@@ -16,6 +16,7 @@ Local setup: `docs/DEVELOPMENT.md`. If the .NET SDK isn't installed, run these i
 
 ## Layout
 - `services/api`: ASP.NET Core minimal API (.NET 10). Feature code in `src/features/<feature>`.
+- `packages/spotify`: Spotify client, token encryption, options; shared by the API and the worker (ADR 0005).
 - `workers`: the worker process. Job handlers (`IJobHandler`) in `workers/<feature>`; queue in `workers/jobs` (ADR 0004).
 - `database/migrations`: plain SQL migrations, applied in name order by DbUp (`database/`).
 - `database/tests/invariants.sql`: database invariant tests, run by the test suite.

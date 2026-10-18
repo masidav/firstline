@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 
@@ -16,6 +17,9 @@ public sealed class ApiProblemException(
     public string Title { get; } = title;
     public string? Detail { get; } = detail;
     public IReadOnlyList<FieldError>? Errors { get; } = errors;
+
+    /// <summary>Sent as the <c>Retry-After</c> header (with 429 and 503).</summary>
+    public TimeSpan? RetryAfter { get; init; }
 
     public static ApiProblemException Unauthorized(string detail) =>
         new(StatusCodes.Status401Unauthorized, "unauthorized", "Unauthorized", detail);
@@ -65,6 +69,12 @@ public static class Problems
             }
 
             http.Response.StatusCode = problem.Status;
+            if (problem.RetryAfter is { } retryAfter)
+            {
+                http.Response.Headers.RetryAfter =
+                    ((int)Math.Ceiling(Math.Max(retryAfter.TotalSeconds, 1))).ToString(CultureInfo.InvariantCulture);
+            }
+
             var details = new ProblemDetails
             {
                 Status = problem.Status,

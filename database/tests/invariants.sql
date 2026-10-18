@@ -363,4 +363,30 @@ SELECT pg_temp.expect_error(
   $$SELECT track_artist('00000000-0000-0000-0000-000000000001', 'sp-bulk-51', 'Bulk 51')$$,
   'daily artist add limit reached');
 
+-- ------------------------------------------------------------ Spotify sync state (0005)
+INSERT INTO spotify_connections (user_id, spotify_user_id, refresh_token_enc, scopes) VALUES
+  ('00000000-0000-0000-0000-000000000001', 'sp-alice', '\x00', '{}');
+SELECT pg_temp.expect_error(
+  $$UPDATE spotify_connections SET sync_state = 'done' WHERE spotify_user_id = 'sp-alice'$$,
+  'spotify_connections_sync_state');
+SELECT pg_temp.expect_error(
+  $$UPDATE spotify_connections SET sync_error = 'Spotify said: invalid token abc' WHERE spotify_user_id = 'sp-alice'$$,
+  'spotify_connections_sync_error');
+DO $$
+BEGIN
+  ASSERT (SELECT sync_state = 'idle' AND tracked_artists_found = 0 FROM spotify_connections
+           WHERE spotify_user_id = 'sp-alice'), 'new connections start idle';
+  UPDATE spotify_connections SET sync_state = 'failed', sync_error = 'spotify_unavailable'
+   WHERE spotify_user_id = 'sp-alice';
+  ASSERT request_spotify_sync('00000000-0000-0000-0000-000000000001'), 'sync requested';
+  ASSERT request_spotify_sync('00000000-0000-0000-0000-000000000001'), 'second request accepted';
+  ASSERT (SELECT sync_state = 'queued' AND sync_error IS NULL FROM spotify_connections
+           WHERE spotify_user_id = 'sp-alice'), 'request marks the connection queued and clears the error';
+  ASSERT (SELECT count(*) = 1 FROM jobs WHERE kind = 'spotify.sync' AND status = 'queued'
+             AND payload->>'user_id' = '00000000-0000-0000-0000-000000000001'), 'one queued sync job per user';
+  ASSERT NOT request_spotify_sync('00000000-0000-0000-0000-000000000002'), 'no connection, no sync';
+  ASSERT NOT EXISTS (SELECT 1 FROM jobs WHERE payload->>'user_id' = '00000000-0000-0000-0000-000000000002'),
+         'and no job';
+END $$;
+
 \echo ALL INVARIANT TESTS PASSED

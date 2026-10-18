@@ -13,7 +13,8 @@ dotnet run --project workers        # needs ConnectionStrings__Database, like th
 | `Program.cs` | Host setup and the list of registered job handlers. |
 | `jobs/` | Queue runtime: `JobQueue` (claim, finish, retry, schedules), `JobRunner` (polling loops), `IJobHandler`, `PruneJobsJob`. |
 | `account-retention/` | `PurgeDeletedAccountsJob`: hourly, purges content of accounts deleted 30+ days ago. |
-| `artist-onboarding/`, `spotify-sync/`, `scoring/`, ... | Planned job handlers (see each `TODO.md`). |
+| `spotify-sync/` | `SpotifySyncJob` (`spotify.sync`) and hourly `ScheduleSpotifySyncsJob`. See [ADR 0005](../docs/adr/0005-spotify-integration.md). |
+| `artist-onboarding/`, `scoring/`, ... | Planned job handlers (see each `TODO.md`). |
 
 ## Adding a job
 1. Write an `IJobHandler` in the feature's folder: a `Kind` like `artists.onboard`, and `Every` if it is recurring.

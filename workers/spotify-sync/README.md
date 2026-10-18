@@ -1,23 +1,18 @@
 # Spotify sync worker
 
-## Purpose
-This folder owns the spotify sync worker responsibilities for Fandom Score.
+Design and configuration: [ADR 0005](../../docs/adr/0005-spotify-integration.md).
 
-## Responsibilities
-- Implement the feature's domain behavior and interfaces.
-- Validate inputs and enforce authorization at the correct boundary.
-- Handle expected failures and avoid duplicate effects on retries.
-- Keep implementation and automated tests close to the feature where practical.
+| Job kind | Handler | When |
+| --- | --- | --- |
+| `spotify.sync` | `SpotifySyncJob` | Queued by `request_spotify_sync()` on connect, manual sync, and schedule. |
+| `spotify.schedule_syncs` | `ScheduleSpotifySyncsJob` | Hourly; queues connections not attempted within `Spotify__SyncEvery` (1 day). |
 
-## Dependencies
-Review the corresponding `TODO.md` and the repository's architecture documentation for upstream dependencies, provider choices, database contracts, and unresolved decisions.
+`SpotifySignals.Reduce` turns the Spotify library into `user_artist_signals` rows for tracked, active artists and
+drops everything else before it is stored. A track counts for its primary artist only (provisional; co-credits are
+an open decision in `PROJECT_TODO.md`).
 
-## Development
-1. Inspect existing code and tests before changing files.
-2. Implement tasks in `TODO.md` in dependency order.
-3. Add tests for success, failure, authorization, and edge cases.
-4. Run tests and document actual results.
-5. Update documentation and the root `PROJECT_TODO.md`.
+Needs the same `Spotify__ClientId` and `Spotify__TokenKey` as the API.
 
-## Scope note
-This README is a starter document. Replace generic details with the real module interfaces and setup instructions once the implementation is inspected.
+## Known limits
+- Scores are not recomputed after a sync yet (Phase 5 scoring worker).
+- A sync is capped at 5,000 saved tracks, 50 playlists, and 500 tracks per playlist.

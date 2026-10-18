@@ -1,5 +1,7 @@
 using FandomScore.Worker.AccountRetention;
+using FandomScore.Spotify;
 using FandomScore.Worker.Jobs;
+using FandomScore.Worker.SpotifySync;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -15,9 +17,12 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<JobOptions>(builder.Configuration.GetSection(JobOptions.Section));
 builder.Services.AddSingleton<JobQueue>();
 builder.Services.AddHostedService<JobRunner>();
+builder.Services.AddSpotify(builder.Configuration);
 
 // One line per job kind. Feature folders under workers/ hold the handlers.
 builder.Services.AddSingleton<IJobHandler, PruneJobsJob>();
 builder.Services.AddSingleton<IJobHandler, PurgeDeletedAccountsJob>();
+builder.Services.AddSingleton<IJobHandler, SpotifySyncJob>();
+builder.Services.AddSingleton<IJobHandler, ScheduleSpotifySyncsJob>();
 
 builder.Build().Run();

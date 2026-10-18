@@ -10,6 +10,7 @@
 | `FandomScore.slnx` | Solution |
 | `services/api` | `FandomScore.Api`: ASP.NET Core API. Feature code goes in `src/features/<feature>`. |
 | `workers` | `FandomScore.Worker`: background jobs from the Postgres queue ([README](../workers/README.md)). |
+| `packages/spotify` | `FandomScore.Spotify`: Spotify client and token encryption, shared by the API and worker. |
 | `database` | `FandomScore.Database`: migration runner. SQL migrations in `database/migrations`. |
 | `database/tests/invariants.sql` | Database invariant tests (run by the test suite). |
 | `tests/FandomScore.Tests` | xUnit tests: migrations, invariants, API. |
@@ -45,4 +46,8 @@ The suite starts its own PostgreSQL 16 container, so it needs Docker but not the
 - Sign-in needs real Apple/Google client IDs (`Auth__Apple__ClientIds`, `Auth__Google__ClientIds`); without them
   `POST /v1/auth/sessions` returns `422` for that provider. The test suite replaces the provider check with a fake.
   See [ADR 0003](adr/0003-authentication.md).
+- Spotify needs `Spotify__ClientId`, `Spotify__RedirectUris`, and `Spotify__TokenKey` (`openssl rand -base64 32`), the
+  same values for the API and the worker. Without a client ID, Spotify is off and connecting returns `503`. In the
+  Spotify dashboard, register the redirect URIs and add each tester's Spotify account under Users (development
+  mode allows 5). See [ADR 0005](adr/0005-spotify-integration.md).
 - Production logs are JSON on the console. Development uses the plain formatter.
