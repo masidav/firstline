@@ -1,0 +1,1992 @@
+openapi: 3.1.0
+info:
+  title: Fandom Score API
+  version: 0.1.0
+  summary: Mobile-first API for artist fandom scores, an album journal, and fan-proof submissions.
+  description: |
+    Companion to `database/migrations` and `README.md`. Only artists on the tracked-artist list can be scored,
+    journaled, or verified; users add artists by searching (`POST /artists`).
+
+    ## Conventions
+
+    - **Versioning:** URL prefix `/v1`. Breaking changes ship as `/v2`.
+    - **Auth:** `Authorization: Bearer <access token>` (JWT, 15 minutes). Refresh tokens rotate on every use.
+      Staff-only routes live under `/admin` and require `is_staff`.
+    - **Format:** JSON, `snake_case`, UUID ids, RFC 3339 UTC timestamps.
+    - **Pagination:** cursor based. Send `limit` (1 to 100, default 25) and `cursor`; read `next_cursor`
+      (null on the last page).
+    - **Errors:** RFC 9457 `application/problem+json`. The `code` field is stable and meant for client logic.
+    - **Idempotency:** creating endpoints accept `Idempotency-Key` (kept 24 hours). Same key and same body
+      returns the original response; same key and different body returns `409 idempotency_conflict`.
+    - **Async work lives on the resource, not on a job endpoint.** Artist onboarding is `artist.status`,
+      Spotify sync is `spotify.sync_state`, score recompute is `score.status`. Triggering calls return `202`.
+    - **Points:** write calls that can earn points return `points_awarded` (ledger rows created for that
+      action), so the UI can react immediately. Scores recompute asynchronously, so `GET .../score` may
+      lag by a few seconds.
+    - **Visibility:** logs, lists, and their comments honor `public`, `followers`, `private`. Private
+      content returns `404` to everyone but the owner.
+    - **`x-requires-schema`:** marks operations that need tables not yet in `database/migrations`.
+
+    ## Rate limits (proposed starting values)
+
+    | Area | Limit |
+    | --- | --- |
+    | Add artist (`POST /artists`) | 10 new artists per user per UTC day (`artist_add_limit`) |
+    | Artist search | 30 per minute per user |
+    | Manual Spotify sync / score refresh | 1 per 15 minutes per user (automatic sync runs on a schedule) |
+    | Submissions | 20 per day per user |
+    | Comments | 60 per hour per user |
+    | Everything else | 300 per minute per user |
+
+    Limited calls return `429` with `Retry-After`.
+servers:
+  - url: https://api.example.com/v1
+    description: Production
+  - url: https://api.staging.example.com/v1
+    description: Staging
+security:
+  - bearerAuth: []
+tags:
+  - name: Auth
+  - name: Me
+  - name: Artists
+  - name: Scores
+  - name: Albums
+  - name: Journal
+  - name: Comments
+  - name: Lists
+  - name: Submissions
+  - name: Share and shop
+  - name: Social
+  - name: Webhooks
+  - name: Admin
+  - name: Meta
+
+paths:
+  /health:
+    get:
+      tags: [Meta]
+      operationId: getHealth
+      summary: Liveness check
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, const: ok}
+
+  # ------------------------------------------------------------------ Auth
+  /auth/sessions:
+    post:
+      tags: [Auth]
+      operationId: createSession
+      summary: Sign in with a provider identity token
+      description: |
+        Exchanges an Apple or Google identity token for app tokens. Creates the account on first sign-in
+        (then `handle` is required). Spotify is connected separately (`PUT /me/spotify`).
+        App Store rules may require offering Sign in with Apple; verify against current guidelines.
+      security: []
+      x-requires-schema: [auth_identities, refresh_tokens]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SessionRequest'}
+      responses:
+        '200':
+          description: Existing user signed in
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Session'}
+        '201':
+          description: New account created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Session'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      operationId: refreshSession
+      summary: Rotate tokens
+      description: Returns a new access and refresh token. Reusing an old refresh token revokes the session.
+      security: []
+      x-requires-schema: [refresh_tokens]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: {type: string}
+      responses:
+        '200':
+          description: New tokens
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Session'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /auth/sessions/current:
+    delete:
+      tags: [Auth]
+      operationId: deleteSession
+      summary: Sign out (revokes the current refresh token)
+      x-requires-schema: [refresh_tokens]
+      responses:
+        '204': {description: Signed out}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  # ------------------------------------------------------------------ Me
+  /me:
+    get:
+      tags: [Me]
+      operationId: getMe
+      summary: Current user
+      responses:
+        '200':
+          description: Profile
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Me'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+    patch:
+      tags: [Me]
+      operationId: updateMe
+      summary: Update profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MeUpdate'}
+      responses:
+        '200':
+          description: Updated profile
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Me'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+    delete:
+      tags: [Me]
+      operationId: deleteMe
+      summary: Delete account
+      description: |
+        Starts account deletion. Email, handle, display name, avatar, Spotify tokens, and library data are
+        removed immediately, and the handle and email become available to new accounts. Profile content
+        is removed within the retention window. Sessions are revoked. Deletion cannot be undone.
+      responses:
+        '202': {description: Deletion scheduled}
+  /me/spotify:
+    get:
+      tags: [Me]
+      operationId: getSpotifyConnection
+      summary: Spotify connection and sync status
+      responses:
+        '200':
+          description: Status
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SpotifyStatus'}
+    put:
+      tags: [Me]
+      operationId: connectSpotify
+      summary: Connect Spotify
+      description: |
+        The app runs the Spotify authorization (PKCE) and sends the resulting code here. The server
+        exchanges it and stores the refresh token encrypted, so Spotify tokens never live on the device.
+        Triggers a first sync of tracked artists.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SpotifyConnect'}
+      responses:
+        '200':
+          description: Connected
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SpotifyStatus'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+    delete:
+      tags: [Me]
+      operationId: disconnectSpotify
+      summary: Disconnect Spotify and delete synced library data
+      responses:
+        '204': {description: Disconnected}
+  /me/spotify/sync:
+    post:
+      tags: [Me]
+      operationId: syncSpotify
+      summary: Request a Spotify sync now
+      description: Only tracked, active artists are counted; everything else is discarded during sync.
+      responses:
+        '202':
+          description: Sync queued. Poll `GET /me/spotify` for `sync_state`.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SpotifyStatus'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /me/devices/{deviceId}:
+    parameters:
+      - name: deviceId
+        in: path
+        required: true
+        schema: {type: string, maxLength: 128}
+    put:
+      tags: [Me]
+      operationId: registerDevice
+      summary: Register or update a push device
+      x-requires-schema: [push_devices]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeviceRegistration'}
+      responses:
+        '204': {description: Registered}
+    delete:
+      tags: [Me]
+      operationId: unregisterDevice
+      summary: Remove a push device
+      x-requires-schema: [push_devices]
+      responses:
+        '204': {description: Removed}
+  /uploads:
+    post:
+      tags: [Me]
+      operationId: createUpload
+      summary: Get a presigned upload URL
+      description: |
+        Used for submission images and avatars. The client PUTs the file to `url`; files land in a
+        quarantine bucket. Declaring `sha256` up front lets the server reject same-user duplicates early.
+      x-requires-schema: [uploads]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UploadIntentRequest'}
+      responses:
+        '201':
+          description: Upload intent
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UploadIntent'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  # ------------------------------------------------------------------ Artists
+  /artists/search:
+    get:
+      tags: [Artists]
+      operationId: searchArtists
+      summary: Search Spotify for artists
+      description: |
+        Searches Spotify and marks each result as tracked or not yet tracked (matched on
+        `spotify_artist_id`). Untracked results are not stored. Debounce on the client.
+      parameters:
+        - {name: q, in: query, required: true, schema: {type: string, minLength: 2, maxLength: 100}}
+        - {$ref: '#/components/parameters/Limit'}
+      responses:
+        '200':
+          description: Results
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/ArtistSearchResult'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /artists:
+    get:
+      tags: [Artists]
+      operationId: listArtists
+      summary: Browse tracked artists
+      parameters:
+        - {name: q, in: query, schema: {type: string, maxLength: 100}, description: Name prefix filter}
+        - {name: status, in: query, schema: {type: string, enum: [onboarding, active], default: active}}
+        - {name: sort, in: query, schema: {type: string, enum: [recent, name, fans], default: fans}}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page of artists
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ArtistPage'}
+    post:
+      tags: [Artists]
+      operationId: trackArtist
+      summary: Add an artist to the tracked list
+      description: |
+        Takes a Spotify artist id from search; the server fetches the name and image from Spotify
+        (client-supplied names are never trusted) and calls `track_artist()`. A new artist starts as
+        `onboarding`; a worker loads the catalog and baseline and then marks it `active`. The adding user
+        is synced immediately after activation.
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [spotify_artist_id]
+              properties:
+                spotify_artist_id: {type: string}
+      responses:
+        '201':
+          description: Artist added and onboarding started
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Artist'}
+        '200':
+          description: Artist was already tracked
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Artist'}
+        '404':
+          description: Spotify does not know this artist (`code: spotify_artist_not_found`)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '429':
+          description: Daily add limit reached (`code: artist_add_limit`)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+  /artists/{artistId}:
+    parameters:
+      - {$ref: '#/components/parameters/ArtistId'}
+    get:
+      tags: [Artists]
+      operationId: getArtist
+      summary: Artist detail
+      responses:
+        '200':
+          description: Artist, including my score summary when one exists
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Artist'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /artists/{artistId}/albums:
+    parameters:
+      - {$ref: '#/components/parameters/ArtistId'}
+    get:
+      tags: [Artists]
+      operationId: listArtistAlbums
+      summary: Albums by a tracked artist
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page of albums (newest first)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AlbumPage'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /artists/{artistId}/events:
+    parameters:
+      - {$ref: '#/components/parameters/ArtistId'}
+    get:
+      tags: [Artists]
+      operationId: listArtistEvents
+      summary: Upcoming events
+      parameters:
+        - {name: include_past, in: query, schema: {type: boolean, default: false}}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page of events
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EventPage'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /artists/{artistId}/stats:
+    parameters:
+      - {$ref: '#/components/parameters/ArtistId'}
+    get:
+      tags: [Artists]
+      operationId: getArtistStats
+      summary: Fan base size and score distribution
+      description: Aggregate only. No individual users are exposed.
+      responses:
+        '200':
+          description: Stats
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ArtistStats'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  # ------------------------------------------------------------------ Scores
+  /me/scores:
+    get:
+      tags: [Scores]
+      operationId: listMyScores
+      summary: My scores across artists
+      parameters:
+        - {name: sort, in: query, schema: {type: string, enum: [percentile, recent], default: percentile}}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page of score summaries
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ScoreSummaryPage'}
+  /artists/{artistId}/score:
+    parameters:
+      - {$ref: '#/components/parameters/ArtistId'}
+    get:
+      tags: [Scores]
+      operationId: getMyScore
+      summary: My score for an artist
+      description: |
+        Always `200` for a tracked artist. `status` says whether numbers are available:
+        `ready`, `computing` (active artist, score not computed yet), or `artist_onboarding`.
+        `is_estimated` is true while the synthetic baseline dominates the percentile.
+      responses:
+        '200':
+          description: Score
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Score'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /artists/{artistId}/score/refresh:
+    post:
+      tags: [Scores]
+      operationId: refreshMyScore
+      summary: Request a recompute
+      parameters:
+        - {$ref: '#/components/parameters/ArtistId'}
+      responses:
+        '202':
+          description: Queued. Poll `GET /artists/{artistId}/score`.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Score'}
+        '409':
+          description: Artist is not active (`code: artist_not_active`)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+
+  # ------------------------------------------------------------------ Albums
+  /albums/search:
+    get:
+      tags: [Albums]
+      operationId: searchAlbums
+      summary: Search albums
+      description: |
+        Searches the local catalog (tracked artists only). `untracked_artists` lists Spotify artists that
+        match the query but are not tracked, so the app can prompt "Add this artist first".
+      parameters:
+        - {name: q, in: query, required: true, schema: {type: string, minLength: 2, maxLength: 100}}
+        - {name: artist_id, in: query, schema: {type: string, format: uuid}}
+        - {$ref: '#/components/parameters/Limit'}
+      responses:
+        '200':
+          description: Results
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, untracked_artists]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/Album'}
+                  untracked_artists:
+                    type: array
+                    items: {$ref: '#/components/schemas/ArtistSearchResult'}
+  /albums/{albumId}:
+    get:
+      tags: [Albums]
+      operationId: getAlbum
+      summary: Album detail
+      parameters:
+        - {$ref: '#/components/parameters/AlbumId'}
+      responses:
+        '200':
+          description: Album with tracks, community rating, and my most recent log
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AlbumDetail'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /albums/{albumId}/logs:
+    get:
+      tags: [Journal]
+      operationId: listAlbumLogs
+      summary: Community logs for an album
+      parameters:
+        - {$ref: '#/components/parameters/AlbumId'}
+        - {name: sort, in: query, schema: {type: string, enum: [recent, discussed], default: recent}}
+        - {name: with_review, in: query, schema: {type: boolean, default: false}}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page of visible logs
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LogPage'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  # ------------------------------------------------------------------ Journal
+  /logs:
+    post:
+      tags: [Journal]
+      operationId: createLog
+      summary: Log an album
+      description: |
+        Whether this counts as a relisten is decided by the server (a later log of an album the user
+        already logged), not the client. Returns the points earned.
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LogCreate'}
+      responses:
+        '201':
+          description: Log created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LogResult'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /logs/{logId}:
+    parameters:
+      - {$ref: '#/components/parameters/LogId'}
+    get:
+      tags: [Journal]
+      operationId: getLog
+      summary: Get a log
+      responses:
+        '200':
+          description: Log
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AlbumLog'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      tags: [Journal]
+      operationId: updateLog
+      summary: Edit my log
+      description: Adding a review of 100+ characters later can earn `review_written` once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LogUpdate'}
+      responses:
+        '200':
+          description: Updated log
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LogResult'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [Journal]
+      operationId: deleteLog
+      summary: Delete my log (soft delete)
+      description: Points earned by this log are reversed.
+      responses:
+        '204': {description: Deleted}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /me/logs:
+    get:
+      tags: [Journal]
+      operationId: listMyLogs
+      summary: My diary
+      parameters:
+        - {name: artist_id, in: query, schema: {type: string, format: uuid}}
+        - {name: year, in: query, schema: {type: integer, minimum: 1900, maximum: 2100}}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page of my logs, newest listen first
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LogPage'}
+
+  # ------------------------------------------------------------------ Comments
+  /logs/{logId}/comments:
+    parameters:
+      - {$ref: '#/components/parameters/LogId'}
+    get:
+      tags: [Comments]
+      operationId: listComments
+      summary: Comments on a log
+      description: Deleted comments that still have replies come back as tombstones (`deleted: true`, no body).
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page of comments, oldest first
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CommentPage'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      tags: [Comments]
+      operationId: createComment
+      summary: Comment on a log
+      description: |
+        Earns `comment_posted` only if the body is at least 20 characters, the log belongs to someone
+        else, and the daily cap has room. Otherwise the comment is still created with an empty
+        `points_awarded`.
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CommentCreate'}
+      responses:
+        '201':
+          description: Comment created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CommentResult'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /comments/{commentId}:
+    parameters:
+      - {$ref: '#/components/parameters/CommentId'}
+    patch:
+      tags: [Comments]
+      operationId: updateComment
+      summary: Edit my comment
+      description: Sets `edited_at`. Editing never creates or changes points.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: {type: string, minLength: 1, maxLength: 2000}
+      responses:
+        '200':
+          description: Updated comment
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Comment'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [Comments]
+      operationId: deleteComment
+      summary: Delete my comment (soft delete)
+      description: Points earned by this comment are reversed.
+      responses:
+        '204': {description: Deleted}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  # ------------------------------------------------------------------ Lists
+  /lists:
+    post:
+      tags: [Lists]
+      operationId: createList
+      summary: Create a list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ListWrite'}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AlbumList'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /me/lists:
+    get:
+      tags: [Lists]
+      operationId: listMyLists
+      summary: My lists
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page of lists
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ListPage'}
+  /lists/{listId}:
+    parameters:
+      - {$ref: '#/components/parameters/ListId'}
+    get:
+      tags: [Lists]
+      operationId: getList
+      summary: List with ordered items
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AlbumListDetail'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      tags: [Lists]
+      operationId: updateList
+      summary: Edit list details
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ListWrite'}
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AlbumList'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [Lists]
+      operationId: deleteList
+      summary: Delete a list
+      responses:
+        '204': {description: Deleted}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /lists/{listId}/items:
+    post:
+      tags: [Lists]
+      operationId: addListItem
+      summary: Add an album to a list
+      description: Appends unless `position` is given; later items shift down.
+      parameters:
+        - {$ref: '#/components/parameters/ListId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [album_id]
+              properties:
+                album_id: {type: string, format: uuid}
+                note: {type: string, maxLength: 500}
+                position: {type: integer, minimum: 1}
+      responses:
+        '201':
+          description: Added
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AlbumListDetail'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /lists/{listId}/items/{albumId}:
+    parameters:
+      - {$ref: '#/components/parameters/ListId'}
+      - {$ref: '#/components/parameters/AlbumId'}
+    patch:
+      tags: [Lists]
+      operationId: updateListItem
+      summary: Change note or position
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: {type: [string, 'null'], maxLength: 500}
+                position: {type: integer, minimum: 1}
+      responses:
+        '200':
+          description: Updated list
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AlbumListDetail'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [Lists]
+      operationId: removeListItem
+      summary: Remove an album from a list
+      responses:
+        '204': {description: Removed}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  # ------------------------------------------------------------------ Submissions
+  /submissions:
+    post:
+      tags: [Submissions]
+      operationId: createSubmission
+      summary: Submit a ticket, merch purchase, or screenshot
+      description: |
+        Upload files first (`POST /uploads`), then submit their ids. The submission starts as `pending`
+        and runs the verification pipeline. A same-user duplicate returns `409 duplicate_submission`.
+        Duplicates against other users are handled silently by verification (never revealed).
+        `client_extracted` carries optional on-device OCR text; the server still verifies on its own.
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SubmissionCreate'}
+      responses:
+        '201':
+          description: Accepted for verification
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Submission'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /me/submissions:
+    get:
+      tags: [Submissions]
+      operationId: listMySubmissions
+      summary: My submissions
+      parameters:
+        - {name: artist_id, in: query, schema: {type: string, format: uuid}}
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/SubmissionStatus'}}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page of submissions
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubmissionPage'}
+  /submissions/{submissionId}:
+    parameters:
+      - {$ref: '#/components/parameters/SubmissionId'}
+    get:
+      tags: [Submissions]
+      operationId: getSubmission
+      summary: Submission status and details
+      description: |
+        File URLs are short-lived signed links. After archiving, only the redacted copy is available.
+        `rejection_reason` is user-facing and generic; fraud signals are never exposed.
+      responses:
+        '200':
+          description: Submission
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Submission'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [Submissions]
+      operationId: withdrawSubmission
+      summary: Withdraw a submission
+      description: Allowed while `pending`, `processing`, `needs_review`, or `rejected`. Verified submissions cannot be withdrawn.
+      responses:
+        '204': {description: Withdrawn}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  # ------------------------------------------------------------------ Share and shop
+  /artists/{artistId}/share-cards:
+    post:
+      tags: [Share and shop]
+      operationId: createShareCard
+      summary: Generate a share card from my current score
+      description: |
+        Snapshots the score and renders an image. Returns ready-to-use targets: an X intent URL and the
+        assets for Instagram Stories (shared through the native share sheet on the device).
+        Cards for estimated percentiles are labeled "estimated" in the image.
+      parameters:
+        - {$ref: '#/components/parameters/ArtistId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                template: {type: string, enum: [default, minimal, dark], default: default}
+      responses:
+        '201':
+          description: Card created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ShareCard'}
+        '409':
+          description: No score available yet (`code: score_not_ready`)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /share-cards/{cardId}:
+    get:
+      tags: [Share and shop]
+      operationId: getShareCard
+      summary: Get a share card
+      description: Public. The unguessable card id is the share link; the web landing page serves Open Graph tags from it.
+      security: []
+      parameters:
+        - {name: cardId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Card
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ShareCard'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /share-cards/{cardId}/shares:
+    post:
+      tags: [Share and shop]
+      operationId: recordShare
+      summary: Record where a card was shared
+      description: Call after the user completes a share. Appends to `shared_to`.
+      parameters:
+        - {name: cardId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [destination]
+              properties:
+                destination: {type: string, enum: [x, instagram_stories, instagram_feed, other]}
+      responses:
+        '204': {description: Recorded}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /outbound-clicks:
+    post:
+      tags: [Share and shop]
+      operationId: createOutboundClick
+      summary: Get a tracked link to tickets, merch, or the artist site
+      description: |
+        Logs the click and returns the destination URL to open in an in-app browser. Ticket links carry
+        a sub id so partner purchase confirmations can be matched back to the user (see ticketing webhook).
+        Tickets and merch are real-world goods; confirm current App Store and Play rules on external checkout.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OutboundClickRequest'}
+      responses:
+        '201':
+          description: Click recorded
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OutboundClick'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  # ------------------------------------------------------------------ Social
+  /users/{handle}:
+    parameters:
+      - {$ref: '#/components/parameters/Handle'}
+    get:
+      tags: [Social]
+      operationId: getUser
+      summary: Public profile
+      description: Scores are not part of the public profile (open question: whether to allow opt-in public scores).
+      responses:
+        '200':
+          description: Profile
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UserPublic'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /users/{handle}/logs:
+    parameters:
+      - {$ref: '#/components/parameters/Handle'}
+    get:
+      tags: [Social]
+      operationId: listUserLogs
+      summary: A user's visible logs
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page of logs visible to the caller
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LogPage'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /users/{handle}/lists:
+    parameters:
+      - {$ref: '#/components/parameters/Handle'}
+    get:
+      tags: [Social]
+      operationId: listUserLists
+      summary: A user's visible lists
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page of lists visible to the caller
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ListPage'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /users/{handle}/follow:
+    parameters:
+      - {$ref: '#/components/parameters/Handle'}
+    put:
+      tags: [Social]
+      operationId: followUser
+      summary: Follow a user
+      description: Needed for the `followers` visibility level, which has no follow graph in the schema yet.
+      x-requires-schema: [follows]
+      responses:
+        '204': {description: Following}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [Social]
+      operationId: unfollowUser
+      summary: Unfollow a user
+      x-requires-schema: [follows]
+      responses:
+        '204': {description: Not following}
+  /reports:
+    post:
+      tags: [Social]
+      operationId: createReport
+      summary: Report content or a user
+      x-requires-schema: [reports]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ReportCreate'}
+      responses:
+        '202': {description: Report received}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  # ------------------------------------------------------------------ Webhooks
+  /webhooks/ticketing/{partner}:
+    post:
+      tags: [Webhooks]
+      operationId: ticketingWebhook
+      summary: Ticket partner purchase confirmation
+      description: |
+        Server-to-server. Verified by HMAC signature. A confirmed purchase matched through the sub id
+        creates a submission that auto-verifies via a `partner_confirm` check (the strongest signal).
+        Must be idempotent on `partner_order_id`.
+      security:
+        - webhookSignature: []
+      parameters:
+        - {name: partner, in: path, required: true, schema: {type: string, maxLength: 64}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TicketingWebhook'}
+      responses:
+        '204': {description: Processed}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  # ------------------------------------------------------------------ Admin
+  /admin/reviews:
+    get:
+      tags: [Admin]
+      operationId: listReviewQueue
+      summary: Manual review queue
+      description: Submissions in `needs_review`, oldest first.
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page of queue items
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminSubmissionPage'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/submissions/{submissionId}:
+    get:
+      tags: [Admin]
+      operationId: getAdminSubmission
+      summary: Full submission with checks and original files
+      parameters:
+        - {$ref: '#/components/parameters/SubmissionId'}
+      responses:
+        '200':
+          description: Submission for review
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminSubmission'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/submissions/{submissionId}/decision:
+    post:
+      tags: [Admin]
+      operationId: decideSubmission
+      summary: Approve or reject a submission
+      description: |
+        Writes a `manual` verification check with the reviewer id, then sets the status. Approval awards
+        points; approval of an already-verified order reference fails with `409`. A later `reject` of a
+        verified submission reverses its points.
+      parameters:
+        - {$ref: '#/components/parameters/SubmissionId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DecisionRequest'}
+      responses:
+        '200':
+          description: Updated submission
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminSubmission'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /admin/artists:
+    post:
+      tags: [Admin]
+      operationId: seedArtist
+      summary: Seed an artist onto the tracked list
+      description: Same as `POST /artists` but with no `added_by` and no daily limit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [spotify_artist_id]
+              properties:
+                spotify_artist_id: {type: string}
+      responses:
+        '201':
+          description: Created, onboarding started
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Artist'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/artists/{artistId}:
+    patch:
+      tags: [Admin]
+      operationId: updateArtistAdmin
+      summary: Pause, resume, or edit an artist
+      description: |
+        `status` may switch between `active` and `paused` (pausing stops sync and point awards).
+        Resuming fails with `409` if the artist has no baseline.
+      parameters:
+        - {$ref: '#/components/parameters/ArtistId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: {type: string, enum: [active, paused]}
+                website_url: {type: [string, 'null'], format: uri}
+                merch_url: {type: [string, 'null'], format: uri}
+                musicbrainz_id: {type: [string, 'null'], format: uuid}
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Artist'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /admin/artists/{artistId}/onboarding/retry:
+    post:
+      tags: [Admin]
+      operationId: retryOnboarding
+      summary: Re-run onboarding for a stuck artist
+      parameters:
+        - {$ref: '#/components/parameters/ArtistId'}
+      responses:
+        '202': {description: Onboarding re-queued}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /admin/scoring-rules:
+    get:
+      tags: [Admin]
+      operationId: listScoringRules
+      summary: Scoring weights
+      responses:
+        '200':
+          description: All rules
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/ScoringRule'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/scoring-rules/{ruleKey}:
+    put:
+      tags: [Admin]
+      operationId: updateScoringRule
+      summary: Change a weight or cap
+      description: Affects future awards only. Existing ledger rows keep the points they were awarded with.
+      parameters:
+        - {name: ruleKey, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ScoringRuleUpdate'}
+      responses:
+        '200':
+          description: Updated rule
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ScoringRule'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    webhookSignature:
+      type: apiKey
+      in: header
+      name: X-Signature
+      description: HMAC-SHA256 of the raw body with the partner shared secret.
+
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 100, default: 25}
+    Cursor:
+      name: cursor
+      in: query
+      schema: {type: string}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      schema: {type: string, maxLength: 64}
+    ArtistId:
+      {name: artistId, in: path, required: true, schema: {type: string, format: uuid}}
+    AlbumId:
+      {name: albumId, in: path, required: true, schema: {type: string, format: uuid}}
+    LogId:
+      {name: logId, in: path, required: true, schema: {type: string, format: uuid}}
+    CommentId:
+      {name: commentId, in: path, required: true, schema: {type: string, format: uuid}}
+    ListId:
+      {name: listId, in: path, required: true, schema: {type: string, format: uuid}}
+    SubmissionId:
+      {name: submissionId, in: path, required: true, schema: {type: string, format: uuid}}
+    Handle:
+      {name: handle, in: path, required: true, schema: {type: string, maxLength: 40}}
+
+  responses:
+    Unauthorized:
+      description: Missing, expired, or invalid credentials
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Forbidden:
+      description: Not allowed
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    NotFound:
+      description: Resource does not exist or is not visible to the caller
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Conflict:
+      description: State conflict
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    ValidationFailed:
+      description: Request body or parameters are invalid
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    RateLimited:
+      description: Too many requests
+      headers:
+        Retry-After:
+          schema: {type: integer}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: {type: string, format: uri-reference}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+        code:
+          type: string
+          description: Stable machine-readable code.
+          enum:
+            - unauthorized
+            - forbidden
+            - not_found
+            - validation_failed
+            - conflict
+            - idempotency_conflict
+            - rate_limited
+            - artist_add_limit
+            - artist_not_active
+            - spotify_artist_not_found
+            - spotify_not_connected
+            - spotify_reauth_required
+            - duplicate_submission
+            - score_not_ready
+            - upload_expired
+            - internal_error
+            - file_too_large
+            - unsupported_media_type
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: {type: string}
+              message: {type: string}
+    PointsAward:
+      type: object
+      required: [rule_key, points]
+      properties:
+        rule_key: {type: string}
+        points: {type: number}
+    UserRef:
+      type: object
+      required: [handle, deleted]
+      properties:
+        handle: {type: [string, 'null'], description: Null when the account was deleted.}
+        deleted: {type: boolean, description: True for deleted accounts; render as "Deleted user".}
+        display_name: {type: [string, 'null']}
+        avatar_url: {type: [string, 'null'], format: uri}
+    UserPublic:
+      allOf:
+        - $ref: '#/components/schemas/UserRef'
+        - type: object
+          properties:
+            created_at: {type: string, format: date-time}
+            log_count: {type: integer}
+            list_count: {type: integer}
+            followed_by_me: {type: boolean}
+
+    SessionRequest:
+      type: object
+      required: [provider, id_token]
+      properties:
+        provider: {type: string, enum: [apple, google]}
+        id_token: {type: string}
+        nonce: {type: string}
+        handle:
+          type: string
+          pattern: '^[A-Za-z0-9_]{3,30}$'
+          description: Required when this sign-in creates a new account.
+    Session:
+      type: object
+      required: [access_token, refresh_token, expires_in, token_type, user, is_new_user]
+      properties:
+        access_token: {type: string}
+        refresh_token: {type: string}
+        expires_in: {type: integer, description: Seconds}
+        token_type: {type: string, const: Bearer}
+        is_new_user: {type: boolean}
+        user: {$ref: '#/components/schemas/Me'}
+    Me:
+      type: object
+      required: [id, handle, email, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        handle: {type: string}
+        email: {type: string, format: email}
+        display_name: {type: [string, 'null']}
+        avatar_url: {type: [string, 'null'], format: uri}
+        is_staff: {type: boolean}
+        created_at: {type: string, format: date-time}
+        spotify: {$ref: '#/components/schemas/SpotifyStatus'}
+    MeUpdate:
+      type: object
+      properties:
+        handle: {type: string, pattern: '^[A-Za-z0-9_]{3,30}$'}
+        display_name: {type: [string, 'null'], maxLength: 60}
+        avatar_upload_id: {type: [string, 'null'], format: uuid}
+    SpotifyConnect:
+      type: object
+      required: [code, code_verifier, redirect_uri]
+      properties:
+        code: {type: string}
+        code_verifier: {type: string}
+        redirect_uri: {type: string}
+    SpotifyStatus:
+      type: object
+      required: [connected, sync_state]
+      properties:
+        connected: {type: boolean}
+        scopes:
+          type: array
+          items: {type: string}
+        connected_at: {type: [string, 'null'], format: date-time}
+        last_synced_at: {type: [string, 'null'], format: date-time}
+        sync_state: {type: string, enum: [idle, queued, running, failed, reauth_required]}
+        tracked_artists_found:
+          type: integer
+          description: Tracked artists found in the last sync.
+    DeviceRegistration:
+      type: object
+      required: [push_token, platform]
+      properties:
+        push_token: {type: string}
+        platform: {type: string, enum: [ios, android]}
+        app_version: {type: string}
+    UploadIntentRequest:
+      type: object
+      required: [purpose, mime_type, bytes]
+      properties:
+        purpose: {type: string, enum: [submission, avatar]}
+        mime_type: {type: string, enum: [image/jpeg, image/png, image/heic, image/webp]}
+        bytes: {type: integer, minimum: 1, maximum: 15728640}
+        sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+    UploadIntent:
+      type: object
+      required: [upload_id, method, url, expires_at]
+      properties:
+        upload_id: {type: string, format: uuid}
+        method: {type: string, const: PUT}
+        url: {type: string, format: uri}
+        headers:
+          type: object
+          additionalProperties: {type: string}
+        expires_at: {type: string, format: date-time}
+
+    ArtistStatus:
+      type: string
+      enum: [onboarding, active, paused]
+    ArtistSearchResult:
+      type: object
+      required: [spotify_artist_id, name, tracked]
+      properties:
+        spotify_artist_id: {type: string}
+        name: {type: string}
+        image_url: {type: [string, 'null'], format: uri}
+        genres:
+          type: array
+          items: {type: string}
+        tracked: {type: boolean}
+        artist_id: {type: [string, 'null'], format: uuid}
+        status: {oneOf: [{$ref: '#/components/schemas/ArtistStatus'}, {type: 'null'}]}
+    Artist:
+      type: object
+      required: [id, name, spotify_artist_id, status, tracked_at]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        spotify_artist_id: {type: string}
+        image_url: {type: [string, 'null'], format: uri}
+        website_url: {type: [string, 'null'], format: uri}
+        merch_url: {type: [string, 'null'], format: uri}
+        status: {$ref: '#/components/schemas/ArtistStatus'}
+        added_by_me: {type: boolean}
+        tracked_at: {type: string, format: date-time}
+        activated_at: {type: [string, 'null'], format: date-time}
+        my_score: {oneOf: [{$ref: '#/components/schemas/ScoreSummary'}, {type: 'null'}]}
+    ArtistRef:
+      type: object
+      required: [id, name]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        image_url: {type: [string, 'null'], format: uri}
+    ArtistPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Artist'}
+        next_cursor: {type: [string, 'null']}
+    ArtistStats:
+      type: object
+      required: [artist_id, scored_users, baseline_weight, is_estimated, histogram]
+      properties:
+        artist_id: {type: string, format: uuid}
+        scored_users: {type: integer}
+        baseline_weight:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Share of the percentile still coming from the synthetic baseline.
+        is_estimated: {type: boolean}
+        histogram:
+          type: array
+          items:
+            type: object
+            required: [from, to, share]
+            properties:
+              from: {type: number}
+              to: {type: number}
+              share: {type: number}
+    Event:
+      type: object
+      required: [id, artist_id, name, starts_at]
+      properties:
+        id: {type: string, format: uuid}
+        artist_id: {type: string, format: uuid}
+        name: {type: string}
+        venue: {type: [string, 'null']}
+        city: {type: [string, 'null']}
+        country: {type: [string, 'null']}
+        starts_at: {type: string, format: date-time}
+        tickets_available: {type: boolean}
+    EventPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Event'}
+        next_cursor: {type: [string, 'null']}
+
+    ScoreSummary:
+      type: object
+      required: [artist_id, percentile, raw_score, is_estimated, computed_at]
+      properties:
+        artist_id: {type: string, format: uuid}
+        artist: {$ref: '#/components/schemas/ArtistRef'}
+        percentile: {type: number, minimum: 0, maximum: 100}
+        raw_score: {type: number}
+        is_estimated: {type: boolean}
+        computed_at: {type: string, format: date-time}
+    ScoreSummaryPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ScoreSummary'}
+        next_cursor: {type: [string, 'null']}
+    Score:
+      type: object
+      required: [artist_id, status]
+      properties:
+        artist_id: {type: string, format: uuid}
+        status: {type: string, enum: [ready, computing, artist_onboarding]}
+        percentile: {type: [number, 'null'], minimum: 0, maximum: 100}
+        raw_score: {type: [number, 'null']}
+        is_estimated: {type: boolean}
+        baseline_weight: {type: [number, 'null']}
+        computed_at: {type: [string, 'null'], format: date-time}
+        breakdown:
+          type: [object, 'null']
+          description: Stored as JSON by the scoring worker; shape below is the current contract.
+          properties:
+            spotify:
+              type: object
+              properties:
+                liked_tracks: {type: integer}
+                playlist_tracks: {type: integer}
+                distinct_albums: {type: integer}
+                points: {type: number}
+            ledger:
+              type: array
+              items:
+                type: object
+                properties:
+                  rule_key: {type: string}
+                  count: {type: integer}
+                  points: {type: number}
+            total: {type: number}
+
+    Track:
+      type: object
+      required: [id, title]
+      properties:
+        id: {type: string, format: uuid}
+        title: {type: string}
+        track_number: {type: [integer, 'null']}
+    Album:
+      type: object
+      required: [id, artist, title]
+      properties:
+        id: {type: string, format: uuid}
+        artist: {$ref: '#/components/schemas/ArtistRef'}
+        title: {type: string}
+        release_date: {type: [string, 'null'], format: date}
+        cover_url: {type: [string, 'null'], format: uri}
+        community:
+          type: object
+          properties:
+            log_count: {type: integer}
+            average_rating:
+              type: [number, 'null']
+              description: 0.5 to 5.0
+    AlbumRef:
+      type: object
+      required: [id, title]
+      properties:
+        id: {type: string, format: uuid}
+        title: {type: string}
+        cover_url: {type: [string, 'null'], format: uri}
+        artist: {$ref: '#/components/schemas/ArtistRef'}
+    AlbumDetail:
+      allOf:
+        - $ref: '#/components/schemas/Album'
+        - type: object
+          properties:
+            tracks:
+              type: array
+              items: {$ref: '#/components/schemas/Track'}
+            my_latest_log: {oneOf: [{$ref: '#/components/schemas/AlbumLog'}, {type: 'null'}]}
+    AlbumPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Album'}
+        next_cursor: {type: [string, 'null']}
+
+    Visibility:
+      type: string
+      enum: [public, followers, private]
+    AlbumLog:
+      type: object
+      required: [id, user, album, listened_on, is_relisten, visibility, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        user: {$ref: '#/components/schemas/UserRef'}
+        album: {$ref: '#/components/schemas/AlbumRef'}
+        rating:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 10
+          description: Half-star steps; 1 is 0.5 stars and 10 is 5.0 stars.
+        review: {type: [string, 'null'], maxLength: 10000}
+        listened_on: {type: string, format: date}
+        is_relisten: {type: boolean}
+        visibility: {$ref: '#/components/schemas/Visibility'}
+        comment_count: {type: integer}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    LogCreate:
+      type: object
+      required: [album_id]
+      properties:
+        album_id: {type: string, format: uuid}
+        rating: {type: integer, minimum: 1, maximum: 10}
+        review: {type: string, maxLength: 10000}
+        listened_on: {type: string, format: date, description: Defaults to today (user's local date).}
+        visibility: {$ref: '#/components/schemas/Visibility'}
+    LogUpdate:
+      type: object
+      properties:
+        rating: {type: [integer, 'null'], minimum: 1, maximum: 10}
+        review: {type: [string, 'null'], maxLength: 10000}
+        listened_on: {type: string, format: date}
+        visibility: {$ref: '#/components/schemas/Visibility'}
+    LogResult:
+      type: object
+      required: [log, points_awarded]
+      properties:
+        log: {$ref: '#/components/schemas/AlbumLog'}
+        points_awarded:
+          type: array
+          items: {$ref: '#/components/schemas/PointsAward'}
+    LogPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/AlbumLog'}
+        next_cursor: {type: [string, 'null']}
+
+    Comment:
+      type: object
+      required: [id, log_id, user, deleted, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        log_id: {type: string, format: uuid}
+        user: {$ref: '#/components/schemas/UserRef'}
+        parent_id: {type: [string, 'null'], format: uuid}
+        body: {type: [string, 'null'], description: Null for deleted tombstones.}
+        deleted: {type: boolean}
+        created_at: {type: string, format: date-time}
+        edited_at: {type: [string, 'null'], format: date-time}
+    CommentCreate:
+      type: object
+      required: [body]
+      properties:
+        body: {type: string, minLength: 1, maxLength: 2000}
+        parent_id: {type: string, format: uuid}
+    CommentResult:
+      type: object
+      required: [comment, points_awarded]
+      properties:
+        comment: {$ref: '#/components/schemas/Comment'}
+        points_awarded:
+          type: array
+          items: {$ref: '#/components/schemas/PointsAward'}
+    CommentPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Comment'}
+        next_cursor: {type: [string, 'null']}
+
+    ListWrite:
+      type: object
+      properties:
+        title: {type: string, minLength: 1, maxLength: 120}
+        description: {type: [string, 'null'], maxLength: 2000}
+        visibility: {$ref: '#/components/schemas/Visibility'}
+    AlbumList:
+      type: object
+      required: [id, user, title, visibility, item_count, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        user: {$ref: '#/components/schemas/UserRef'}
+        title: {type: string}
+        description: {type: [string, 'null']}
+        visibility: {$ref: '#/components/schemas/Visibility'}
+        item_count: {type: integer}
+        created_at: {type: string, format: date-time}
+    AlbumListDetail:
+      allOf:
+        - $ref: '#/components/schemas/AlbumList'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                required: [album, position]
+                properties:
+                  album: {$ref: '#/components/schemas/AlbumRef'}
+                  position: {type: integer}
+                  note: {type: [string, 'null']}
+    ListPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/AlbumList'}
+        next_cursor: {type: [string, 'null']}
+
+    SubmissionKind:
+      type: string
+      enum: [ticket, merch, screenshot]
+    SubmissionStatus:
+      type: string
+      enum: [pending, processing, needs_review, verified, rejected]
+    SubmissionCreate:
+      type: object
+      required: [artist_id, kind, upload_ids]
+      properties:
+        artist_id: {type: string, format: uuid}
+        kind: {$ref: '#/components/schemas/SubmissionKind'}
+        upload_ids:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: {type: string, format: uuid}
+        event_id:
+          type: string
+          format: uuid
+          description: Optional hint for tickets; the server still matches the event itself.
+        client_extracted:
+          type: object
+          description: Optional on-device OCR output. Treated as untrusted.
+          additionalProperties: true
+    Submission:
+      type: object
+      required: [id, artist_id, kind, status, submitted_at]
+      properties:
+        id: {type: string, format: uuid}
+        artist_id: {type: string, format: uuid}
+        kind: {$ref: '#/components/schemas/SubmissionKind'}
+        status: {$ref: '#/components/schemas/SubmissionStatus'}
+        event: {oneOf: [{$ref: '#/components/schemas/Event'}, {type: 'null'}]}
+        rejection_reason: {type: [string, 'null']}
+        submitted_at: {type: string, format: date-time}
+        verified_at: {type: [string, 'null'], format: date-time}
+        archived: {type: boolean}
+        files:
+          type: array
+          items:
+            type: object
+            required: [id, mime_type, url, redacted]
+            properties:
+              id: {type: string, format: uuid}
+              mime_type: {type: string}
+              url: {type: string, format: uri, description: Short-lived signed URL.}
+              redacted: {type: boolean}
+        points_awarded:
+          type: array
+          items: {$ref: '#/components/schemas/PointsAward'}
+    SubmissionPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Submission'}
+        next_cursor: {type: [string, 'null']}
+    VerificationCheck:
+      type: object
+      required: [id, check_type, result, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        check_type:
+          type: string
+          enum: [file_hash, metadata, ocr_extract, event_match, order_ref, partner_confirm, manual]
+        result: {type: string, enum: [pass, fail, inconclusive]}
+        confidence: {type: [number, 'null'], minimum: 0, maximum: 1}
+        details: {type: object, additionalProperties: true}
+        reviewer_id: {type: [string, 'null'], format: uuid}
+        created_at: {type: string, format: date-time}
+    AdminSubmission:
+      allOf:
+        - $ref: '#/components/schemas/Submission'
+        - type: object
+          properties:
+            user: {$ref: '#/components/schemas/UserRef'}
+            trust_score: {type: [number, 'null'], minimum: 0, maximum: 1}
+            extracted: {type: object, additionalProperties: true}
+            checks:
+              type: array
+              items: {$ref: '#/components/schemas/VerificationCheck'}
+    AdminSubmissionPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/AdminSubmission'}
+        next_cursor: {type: [string, 'null']}
+    DecisionRequest:
+      type: object
+      required: [decision]
+      properties:
+        decision: {type: string, enum: [approve, reject]}
+        reason:
+          type: string
+          maxLength: 500
+          description: Required on reject. Shown to the user, so keep it generic.
+        event_id: {type: string, format: uuid}
+        notes:
+          type: string
+          maxLength: 2000
+          description: Internal only; stored in the manual check details.
+
+    ShareCard:
+      type: object
+      required: [id, artist_id, raw_score, percentile, image_url, share_url, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        artist_id: {type: string, format: uuid}
+        raw_score: {type: number}
+        percentile: {type: number}
+        image_url: {type: string, format: uri}
+        share_url: {type: string, format: uri}
+        shared_to:
+          type: array
+          items: {type: string}
+        created_at: {type: string, format: date-time}
+        targets:
+          type: object
+          properties:
+            x:
+              type: object
+              properties:
+                intent_url: {type: string, format: uri}
+            instagram_stories:
+              type: object
+              properties:
+                background_image_url: {type: string, format: uri}
+                sticker_image_url: {type: string, format: uri}
+                attribution_url: {type: string, format: uri}
+    OutboundClickRequest:
+      type: object
+      required: [artist_id, kind]
+      properties:
+        artist_id: {type: string, format: uuid}
+        kind: {type: string, enum: [ticket, merch, website]}
+        event_id:
+          type: string
+          format: uuid
+          description: Required when kind is ticket.
+    OutboundClick:
+      type: object
+      required: [url]
+      properties:
+        url: {type: string, format: uri}
+        partner: {type: [string, 'null']}
+    TicketingWebhook:
+      type: object
+      required: [event_type, partner_order_id, sub_id, purchased_at]
+      properties:
+        event_type: {type: string, enum: [purchase.confirmed, purchase.refunded]}
+        partner_order_id: {type: string}
+        sub_id: {type: string, description: The outbound click id passed on the ticket link.}
+        event_external_id: {type: string}
+        purchased_at: {type: string, format: date-time}
+    ReportCreate:
+      type: object
+      required: [target_type, target_id, reason]
+      properties:
+        target_type: {type: string, enum: [log, comment, list, user]}
+        target_id: {type: string}
+        reason: {type: string, enum: [spam, abuse, impersonation, inappropriate, other]}
+        details: {type: string, maxLength: 1000}
+
+    ScoringRule:
+      type: object
+      required: [rule_key, points, active]
+      properties:
+        rule_key: {type: string}
+        points: {type: number}
+        daily_cap_count: {type: [integer, 'null'], minimum: 1}
+        active: {type: boolean}
+        description: {type: [string, 'null']}
+    ScoringRuleUpdate:
+      type: object
+      properties:
+        points: {type: number}
+        daily_cap_count: {type: [integer, 'null'], minimum: 1}
+        active: {type: boolean}

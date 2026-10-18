@@ -1,0 +1,7 @@
+<Project>
+  <!-- Shared by every .NET project in the repo. -->
+  <PropertyGroup>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/database/">
+    <Project Path="database/FandomScore.Database.csproj" />
+  </Folder>
+  <Folder Name="/services/" />
+  <Folder Name="/services/api/">
+    <Project Path="services/api/FandomScore.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FandomScore.Tests/FandomScore.Tests.csproj" />
+  </Folder>
+</Solution>

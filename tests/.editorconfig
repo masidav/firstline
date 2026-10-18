@@ -1,0 +1,4 @@
+# Test naming conventions: Method_scenario_result names and xUnit *Collection fixtures.
+[*.cs]
+dotnet_diagnostic.CA1707.severity = none
+dotnet_diagnostic.CA1711.severity = none
