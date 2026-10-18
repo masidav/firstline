@@ -53,7 +53,9 @@ Details: [Artists](services/api/src/features/artists/TODO.md) · [Artist search 
 - [x] Implement initial and scheduled syncs (worker `spotify.sync`, hourly `spotify.schedule_syncs`, daily per user). Verified 2026-10-18 with a faked Spotify.
 - [x] Filter to tracked artists before persisting signals. Verified 2026-10-18 (SpotifySyncJobTests).
 - [x] Handle API limits, token expiry, retries, and sync status. Verified 2026-10-18 with a faked Spotify.
-- [ ] Check the flow end to end against real Spotify (development-mode app, allowlisted account).
+- [ ] Check the flow end to end against real Spotify (development-mode app, allowlisted account), using
+      `tools/dev/spotify_connect.py`. 2026-10-18: verified up to Spotify's token endpoint (a fake code is
+      rejected as `422`); a real consent and sync still to run.
 - [ ] Mobile connect screen (see Spotify mobile UI).
 
 Details: [Spotify API feature](services/api/src/features/spotify-sync/TODO.md) · [Spotify integration](packages/spotify/TODO.md) · [Spotify mobile UI](apps/mobile/src/features/spotify/TODO.md) · [Sync worker](workers/spotify-sync/TODO.md)

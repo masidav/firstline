@@ -50,4 +50,8 @@ The suite starts its own PostgreSQL 16 container, so it needs Docker but not the
   same values for the API and the worker. Without a client ID, Spotify is off and connecting returns `503`. In the
   Spotify dashboard, register the redirect URIs and add each tester's Spotify account under Users (development
   mode allows 5). See [ADR 0005](adr/0005-spotify-integration.md).
+- To connect a real Spotify account without the mobile app: `python3 tools/dev/spotify_connect.py --help`. It
+  creates a local dev user and session (local database only), runs Spotify's sign-in in your browser, calls
+  `PUT /v1/me/spotify`, and shows what the sync stored. Register `http://127.0.0.1:8888/callback` in the
+  Spotify dashboard and add it to `Spotify__RedirectUris`.
 - Production logs are JSON on the console. Development uses the plain formatter.
