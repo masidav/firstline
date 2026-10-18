@@ -2,4 +2,6 @@
 export const config = {
   apiUrl: process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:5271/v1',
   devSignIn: process.env.EXPO_PUBLIC_DEV_SIGN_IN === 'true',
+  /** Must be the same app as the API's Spotify__ClientId. Not a secret. */
+  spotifyClientId: process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID ?? '',
 };

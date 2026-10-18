@@ -3,6 +3,7 @@ import createClient from 'openapi-fetch';
 import type { components, paths } from './schema';
 
 // Types come from openapi.yaml (`npm run generate:api`), so the app and the API share one contract.
+export type { components };
 export type Me = components['schemas']['Me'];
 export type Session = components['schemas']['Session'];
 export type Problem = components['schemas']['Problem'];

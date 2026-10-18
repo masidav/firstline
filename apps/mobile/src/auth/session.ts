@@ -100,6 +100,13 @@ export class SessionManager {
     }
   }
 
+  /** Merges a change (e.g. new Spotify status) into the current profile. */
+  updateMe(change: Partial<Me>): void {
+    if (this.state.status === 'signedIn') {
+      this.setState({ status: 'signedIn', me: { ...this.state.me, ...change } });
+    }
+  }
+
   private async doRefresh(): Promise<boolean> {
     const refreshToken = await this.store.get();
     if (!refreshToken) {

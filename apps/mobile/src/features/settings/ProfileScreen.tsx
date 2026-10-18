@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
@@ -85,6 +86,14 @@ export function ProfileScreen({ me }: { me: Me }) {
       <ErrorText>{errors.form}</ErrorText>
       {saved && <Body muted>Saved.</Body>}
       <Button label="Save" onPress={() => void save()} busy={saving} disabled={!changed} />
+
+      <View style={{ height: 24 }} />
+      <Body>{me.spotify?.connected ? 'Spotify: connected' : 'Spotify: not connected'}</Body>
+      <Button
+        label={me.spotify?.connected ? 'Spotify settings' : 'Connect Spotify'}
+        kind="secondary"
+        onPress={() => router.push('/spotify')}
+      />
 
       <View style={{ height: 24 }} />
       <Button label="Sign out" kind="secondary" onPress={() => void session.signOut()} />
