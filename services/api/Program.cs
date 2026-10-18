@@ -22,9 +22,13 @@ builder.Services.AddApiProblems();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower);
 
+// Lets the Expo web build call the API (Cors__AllowedOrigins).
+builder.Services.AddWebClients(builder.Configuration);
+
 var app = builder.Build();
 
 app.UseExceptionHandler();
+app.UseCors();
 app.UseStatusCodePages();
 app.UseAuthentication();
 app.UseAuthorization();

@@ -27,6 +27,10 @@ dotnet run --project services/api          # http://localhost:5271/v1/health
 dotnet run --project workers               # background jobs (separate terminal)
 ```
 
+## Fan app
+The app in `apps/mobile` runs in the browser for now; see its [README](../apps/mobile/README.md), including how to
+open it on your phone. Set `Auth__DevSignIn=true` and `Cors__AllowedOrigins` in `.env` to sign in with test names.
+
 ## Tests
 ```bash
 dotnet test FandomScore.slnx

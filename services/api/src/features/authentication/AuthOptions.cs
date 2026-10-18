@@ -27,6 +27,9 @@ public sealed class AuthOptions
     /// <summary>Sign-in and refresh calls allowed per client IP per minute.</summary>
     public int PermitsPerMinute { get; set; } = 20;
 
+    /// <summary>Local developer sign-in (<see cref="DevSignInValidator"/>). Development environment only.</summary>
+    public bool DevSignIn { get; set; }
+
     public AppleOptions Apple { get; set; } = new();
 
     public ProviderOptions Google { get; set; } = new();

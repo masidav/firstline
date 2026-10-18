@@ -35,11 +35,16 @@ public static class AuthSetup
 
         AppleClient.ValidateKey(options.Apple);
 
-        services.Configure<AuthOptions>(section);
+        services.AddOptions<AuthOptions>().Bind(section).ValidateOnStart();
+        services.AddSingleton<IValidateOptions<AuthOptions>, DevSignInGuard>();
         services.AddSingleton<SessionService>();
         services.AddHttpClient<AppleClient>(http => http.BaseAddress = AppleClient.BaseAddress);
         services.AddSingleton<IIdentityTokenValidator>(sp =>
-            OidcIdentityTokenValidator.FromOptions(sp.GetRequiredService<IOptions<AuthOptions>>().Value));
+        {
+            var auth = sp.GetRequiredService<IOptions<AuthOptions>>().Value;
+            IIdentityTokenValidator validator = OidcIdentityTokenValidator.FromOptions(auth);
+            return auth.DevSignIn ? new DevSignInValidator(validator) : validator;
+        });
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(jwt =>
         {

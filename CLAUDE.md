@@ -11,6 +11,7 @@ dotnet test FandomScore.slnx                  # needs Docker (Testcontainers sta
 dotnet run --project database                 # apply migrations (needs ConnectionStrings__Database)
 dotnet run --project services/api             # http://localhost:5271/v1/health
 dotnet run --project workers                  # background jobs (Postgres queue)
+cd apps/mobile && npm run web                 # fan app in the browser (npm test, npm run typecheck)
 ```
 Local setup: `docs/DEVELOPMENT.md`. If the .NET SDK isn't installed, run these in `mcr.microsoft.com/dotnet/sdk:10.0`.
 
@@ -21,6 +22,8 @@ Local setup: `docs/DEVELOPMENT.md`. If the .NET SDK isn't installed, run these i
 - `database/migrations`: plain SQL migrations, applied in name order by DbUp (`database/`).
 - `database/tests/invariants.sql`: database invariant tests, run by the test suite.
 - `tests/FandomScore.Tests`: xUnit tests (migrations, invariants, API).
+- `apps/mobile`: fan app (Expo; web now, iOS later). Its API types are generated from `openapi.yaml`
+  (`npm run generate:api`); regenerate them whenever the contract changes.
 - `openapi.yaml`: the API contract. The API implements it; clients are generated from it.
 - Decisions: `docs/adr/`. Plans: `docs/plans/`.
 

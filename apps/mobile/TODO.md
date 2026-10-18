@@ -3,16 +3,18 @@
 Use `- [x]` only after the task is implemented and verified. Adapt this checklist to existing code; do not duplicate working functionality.
 
 ## Implementation checklist
-- [ ] Inspect current Expo/React Native setup, navigation, state management, styling, and build scripts.
+- [x] Inspect current Expo/React Native setup, navigation, state management, styling, and build scripts. (New Expo SDK 57 app with expo-router; web first.)
 - [ ] Establish shared UI patterns, theme tokens, loading states, empty states, and error states.
-- [ ] Set up typed API client and centralized session handling using the project's existing language conventions.
+- [x] Set up typed API client and centralized session handling using the project's existing language conventions. (`src/api`, `src/auth/session.ts`)
 - [ ] Add navigation and screens for the features in the product specification.
-- [ ] Implement secure handling of authentication state and avoid storing secrets in plain text.
+- [x] Implement secure handling of authentication state and avoid storing secrets in plain text. (Keychain on iOS; localStorage on web, with a known limit)
 - [ ] Support offline album-journal writes and a retryable synchronization queue.
 - [ ] Add accessibility labels, keyboard handling, and responsive layouts for mobile devices.
 - [ ] Handle API errors, network loss, expired sessions, and background/resume behavior.
 - [ ] Add component and screen tests using the existing test stack.
-- [ ] Verify iOS and Android builds and document required configuration.
+- [ ] Verify iOS and Android builds and document required configuration. *Web build verified (CI and a Playwright WebKit run at iPhone size, 2026-10-18); iOS waits on the Apple Developer Program.*
+- [ ] Google sign-in on web (needs a Google OAuth web client ID).
+- [ ] Sign in with Apple and Apple re-authentication before account deletion (iOS).
 
 ## Ticket allocations (Phase 11)
 - [ ] Show upcoming allocations for followed artists and the fan's eligibility, with what to do to qualify.

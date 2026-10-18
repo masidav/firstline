@@ -20,6 +20,8 @@
 | Apple account deletion | We store no Apple tokens. When an Apple user deletes their account, the app sends a fresh Sign in with Apple authorization code with `DELETE /me`; the API exchanges it (client secret: ES256 JWT signed with our Sign in with Apple key), checks it is the same Apple account, and revokes the resulting token. Best effort: deletion never waits on Apple succeeding. |
 | Apple notifications | `POST /webhooks/apple`, verified with Apple's signing keys. `consent-revoked` ends all the user's sessions (`revoked_reason = provider_revoked`, migration 0003); `account-delete` deletes the account, since it can never be signed in to again; email relay events change nothing. |
 | Staff access | Policy `AuthSetup.StaffPolicy` for `/admin` routes: reads `is_staff` from the database on each request, so removing staff access is immediate. |
+| Developer sign-in | `Auth__DevSignIn=true` accepts Google sign-ins whose token is `dev:<name>` without checking them (account `dev:<name>`, email `<name>@example.test`), so the app can be tried without provider accounts. The API refuses to start with it outside the Development environment. |
+| Browser clients | CORS for the origins in `Cors__AllowedOrigins` (the Expo web build). Bearer tokens only, no cookies. |
 | Abuse limits | Sign-in and refresh: 20 requests per minute per client IP (ASP.NET Core rate limiter). Cloud Armor adds edge limits in Phase 12. |
 
 ## Why

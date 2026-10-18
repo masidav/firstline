@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "Fandom Score",
+    "slug": "fandom-score",
+    "scheme": "fandomscore",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": ["expo-router", "expo-secure-store"]
+  }
+}

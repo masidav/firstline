@@ -1,0 +1,44 @@
+{
+  "name": "fandom-score-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "web": "expo start --web",
+    "build:web": "expo export --platform web",
+    "generate:api": "openapi-typescript ../../openapi.yaml -o src/api/schema.d.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "~57.0.16",
+    "expo": "57.0.26",
+    "expo-constants": "~57.0.20",
+    "expo-linking": "~57.0.11",
+    "expo-router": "57.0.24",
+    "expo-secure-store": "~57.0.4",
+    "expo-status-bar": "~57.0.1",
+    "openapi-fetch": "0.17.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.0",
+    "react-native-web": "~0.21.0"
+  },
+  "devDependencies": {
+    "@react-native/jest-preset": "0.86.3",
+    "@testing-library/react-native": "13.3.3",
+    "@types/jest": "29.5.14",
+    "@types/react": "19.2.18",
+    "jest": "29.7.0",
+    "jest-expo": "~57.0.5",
+    "openapi-typescript": "7.13.0",
+    "react-test-renderer": "19.2.3",
+    "typescript": "5.9.3"
+  },
+  "jest": {
+    "preset": "jest-expo"
+  }
+}

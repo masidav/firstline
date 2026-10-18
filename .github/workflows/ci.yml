@@ -93,6 +93,37 @@ jobs:
           pip install openapi-spec-validator==0.7.1
           openapi-spec-validator openapi.yaml
 
+  mobile:
+    name: Fan app (typecheck, tests, API types)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - run: npm ci
+
+      # The generated client must match openapi.yaml.
+      - name: API types are up to date
+        run: |
+          npm run generate:api
+          git diff --exit-code -- src/api/schema.d.ts || {
+            echo "::error::src/api/schema.d.ts is out of date. Run 'npm run generate:api' in apps/mobile."; exit 1; }
+
+      - run: npm run typecheck
+      - run: npm test -- --ci
+
+      - name: Web build
+        run: npm run build:web
+
   agent-hooks:
     name: Agent hook tests
     runs-on: ubuntu-latest
