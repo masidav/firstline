@@ -31,6 +31,7 @@ info:
 
     | Area | Limit |
     | --- | --- |
+    | Sign-in and token refresh (`/auth/sessions`, `/auth/refresh`) | 20 per minute per client IP |
     | Add artist (`POST /artists`) | 10 new artists per user per UTC day (`artist_add_limit`) |
     | Artist search | 30 per minute per user |
     | Manual Spotify sync / score refresh | 1 per 15 minutes per user (automatic sync runs on a schedule) |
@@ -87,10 +88,13 @@ paths:
       summary: Sign in with a provider identity token
       description: |
         Exchanges an Apple or Google identity token for app tokens. Creates the account on first sign-in
-        (then `handle` is required). Spotify is connected separately (`PUT /me/spotify`).
+        (then `handle` is required, and the provider must share a verified email). Spotify is connected
+        separately (`PUT /me/spotify`). Each sign-in starts a new session (one per device).
+        If `nonce` is sent, the token must carry it, raw (Google) or as its SHA-256 hex (Apple).
+        A new provider account whose email already belongs to another account gets `409 email_in_use`;
+        each email belongs to one account, and accounts are not linked across providers.
         App Store rules may require offering Sign in with Apple; verify against current guidelines.
       security: []
-      x-requires-schema: [auth_identities, refresh_tokens]
       requestBody:
         required: true
         content:
@@ -107,16 +111,24 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Session'}
-        '409': {$ref: '#/components/responses/Conflict'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409':
+          description: '`handle_taken` or `email_in_use`'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+        '429': {$ref: '#/components/responses/RateLimited'}
   /auth/refresh:
     post:
       tags: [Auth]
       operationId: refreshSession
       summary: Rotate tokens
-      description: Returns a new access and refresh token. Reusing an old refresh token revokes the session.
+      description: |
+        Returns a new access and refresh token; the old refresh token stops working. Reusing an old refresh
+        token revokes the session, so the app must store the new token before using it. Refresh tokens expire
+        after 30 days unused, and sessions after 180 days.
       security: []
-      x-requires-schema: [refresh_tokens]
       requestBody:
         required: true
         content:
@@ -133,12 +145,13 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Session'}
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/RateLimited'}
   /auth/sessions/current:
     delete:
       tags: [Auth]
       operationId: deleteSession
-      summary: Sign out (revokes the current refresh token)
-      x-requires-schema: [refresh_tokens]
+      summary: Sign out (ends the session of the calling device)
+      description: Its refresh token and access tokens stop working immediately. Other devices stay signed in.
       responses:
         '204': {description: Signed out}
         '401': {$ref: '#/components/responses/Unauthorized'}
@@ -171,7 +184,12 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Me'}
-        '409': {$ref: '#/components/responses/Conflict'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409':
+          description: '`handle_taken`'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
     delete:
       tags: [Me]
@@ -179,10 +197,12 @@ paths:
       summary: Delete account
       description: |
         Starts account deletion. Email, handle, display name, avatar, Spotify tokens, and library data are
-        removed immediately, and the handle and email become available to new accounts. Profile content
-        is removed within the retention window. Sessions are revoked. Deletion cannot be undone.
+        removed immediately, and the handle and email become available to new accounts. All sessions end
+        and the Apple/Google sign-in is released, so signing in again creates a new account. Profile content
+        is removed within the retention window. Deletion cannot be undone.
       responses:
         '202': {description: Deletion scheduled}
+        '401': {$ref: '#/components/responses/Unauthorized'}
   /me/spotify:
     get:
       tags: [Me]
@@ -355,12 +375,12 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Artist'}
         '404':
-          description: Spotify does not know this artist (`code: spotify_artist_not_found`)
+          description: 'Spotify does not know this artist (`code: spotify_artist_not_found`)'
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
         '429':
-          description: Daily add limit reached (`code: artist_add_limit`)
+          description: 'Daily add limit reached (`code: artist_add_limit`)'
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
@@ -477,7 +497,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Score'}
         '409':
-          description: Artist is not active (`code: artist_not_active`)
+          description: 'Artist is not active (`code: artist_not_active`)'
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
@@ -634,7 +654,7 @@ paths:
       tags: [Comments]
       operationId: listComments
       summary: Comments on a log
-      description: Deleted comments that still have replies come back as tombstones (`deleted: true`, no body).
+      description: 'Deleted comments that still have replies come back as tombstones (`deleted: true`, no body).'
       parameters:
         - {$ref: '#/components/parameters/Limit'}
         - {$ref: '#/components/parameters/Cursor'}
@@ -935,7 +955,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/ShareCard'}
         '409':
-          description: No score available yet (`code: score_not_ready`)
+          description: 'No score available yet (`code: score_not_ready`)'
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
@@ -1008,7 +1028,7 @@ paths:
       tags: [Social]
       operationId: getUser
       summary: Public profile
-      description: Scores are not part of the public profile (open question: whether to allow opt-in public scores).
+      description: 'Scores are not part of the public profile (open question: whether to allow opt-in public scores).'
       responses:
         '200':
           description: Profile
@@ -1360,6 +1380,8 @@ components:
             - not_found
             - validation_failed
             - conflict
+            - handle_taken
+            - email_in_use
             - idempotency_conflict
             - rate_limited
             - artist_add_limit
@@ -1436,13 +1458,18 @@ components:
         avatar_url: {type: [string, 'null'], format: uri}
         is_staff: {type: boolean}
         created_at: {type: string, format: date-time}
-        spotify: {$ref: '#/components/schemas/SpotifyStatus'}
+        spotify:
+          $ref: '#/components/schemas/SpotifyStatus'
+          description: Added with the Spotify integration (Phase 4); absent until then.
     MeUpdate:
       type: object
       properties:
         handle: {type: string, pattern: '^[A-Za-z0-9_]{3,30}$'}
         display_name: {type: [string, 'null'], maxLength: 60}
-        avatar_upload_id: {type: [string, 'null'], format: uuid}
+        avatar_upload_id:
+          type: [string, 'null']
+          format: uuid
+          description: Null removes the avatar. Setting one needs uploads (`POST /uploads`), not available yet.
     SpotifyConnect:
       type: object
       required: [code, code_verifier, redirect_uri]

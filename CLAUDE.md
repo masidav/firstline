@@ -37,7 +37,7 @@ Local setup: `docs/DEVELOPMENT.md`. If the .NET SDK isn't installed, run these i
 
 ## Workflow
 - For now, changes are committed directly to `main` (no pull requests or branch protection yet).
-  Only commit or push when asked.
+  Commit and push when a piece of work is done and verified; no need to wait to be asked.
 - Run `dotnet build` and `dotnet test` before committing, and report the actual results.
   CI (`.github/workflows/ci.yml`) runs on every push to `main`; check that it passes.
 - Hooks in `.claude/settings.json` block edits to applied migrations and `.env` files. Their reviewed source

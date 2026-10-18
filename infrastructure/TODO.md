@@ -22,6 +22,7 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Kustomize base and per-environment overlays; migrations as a pre-deploy Kubernetes Job.
 - [ ] Workload Identity per workload; quarantine bucket readable only by the redaction workload.
 - [ ] Gateway API ingress with Google-managed certificates and Cloud Armor policies.
+- [ ] Configure forwarded headers in the API to trust only the load balancer, so per-IP rate limits (sign-in) see the real client IP.
 - [ ] HorizontalPodAutoscalers, PodDisruptionBudgets, resource requests, and a pre-scale procedure for scheduled on-sales.
 - [ ] CI/CD with Workload Identity Federation (no long-lived keys); staging deploys automatically, prod needs approval.
 - [ ] Cloud Logging and Monitoring dashboards, uptime checks, alerts, and an on-call runbook.

@@ -16,7 +16,8 @@
 
 ## First run
 ```bash
-cp .env.example .env                       # then set a local password in both places
+cp .env.example .env                       # set a local password in both places, and
+                                           # Auth__SigningKey=$(openssl rand -base64 32)
 docker compose --env-file .env -f infrastructure/docker-compose.yml up -d
 set -a; . ./.env; set +a                   # export ConnectionStrings__Database
 dotnet run --project database              # apply migrations
@@ -36,5 +37,10 @@ The suite starts its own PostgreSQL 16 container, so it needs Docker but not the
 - Add invariant checks to `database/tests/invariants.sql` for new triggers and constraints.
 
 ## Configuration
-- Secrets come from environment variables only (`ConnectionStrings__Database`); `appsettings*.json` holds no secrets.
+- Secrets come from environment variables only (`ConnectionStrings__Database`, `Auth__SigningKey`);
+  `appsettings*.json` holds no secrets. The API refuses to start without a database connection string and a
+  signing key of at least 32 bytes.
+- Sign-in needs real Apple/Google client IDs (`Auth__Apple__ClientIds`, `Auth__Google__ClientIds`); without them
+  `POST /v1/auth/sessions` returns `422` for that provider. The test suite replaces the provider check with a fake.
+  See [ADR 0003](adr/0003-authentication.md).
 - Production logs are JSON on the console. Development uses the plain formatter.

@@ -32,9 +32,10 @@ Details: [Project setup](docs/TODO.md)
 Details: [API](services/api/TODO.md) · [Database](database/TODO.md) · [Tests](tests/TODO.md) · [Infrastructure](infrastructure/TODO.md)
 
 ## Phase 2 — Identity and access
-- [ ] Implement authentication and session lifecycle.
-- [ ] Implement user profile and authorization rules.
-- [ ] Implement account recovery and account deletion policy.
+- [x] Implement authentication and session lifecycle. Apple/Google sign-in, rotating refresh tokens with reuse detection, sign-out ([ADR 0003](docs/adr/0003-authentication.md)). Verified 2026-10-18: `dotnet test` 27/27.
+- [ ] Implement user profile and authorization rules. `/me` read, update, and delete done; staff-only (`/admin`) authorization comes with the first admin endpoint.
+- [ ] Implement account recovery and account deletion policy. Recovery is provider sign-in (no passwords). Deletion request done; content retention is still an open decision.
+- [ ] Apple follow-ups: server-to-server notifications and token revocation on account deletion.
 
 Details: [Authentication](services/api/src/features/authentication/TODO.md) · [Users](services/api/src/features/users/TODO.md) · [Privacy](services/api/src/features/privacy/TODO.md)
 
@@ -178,6 +179,7 @@ Details: [Agent tooling](docs/agent-tooling.md) · [Developer tooling](docs/TODO
 - [ ] Confirm archive meaning and user-facing archive requirements.
 - [ ] Confirm verification thresholds and baseline blend parameters.
 - [ ] Define data retention and account deletion behavior.
+- [x] Account linking: no. One email per account; a second provider with the same email gets `409 email_in_use`. (Decided 2026-10-18.)
 - [ ] Confirm exact Spotify signals available under current API access.
 - [ ] Decide how to handle co-credited albums and collaborations.
 - [ ] Confirm the product and company name (summary proposes TrueFan Access or VerifyTicket; repo uses Fandom Score).

@@ -1,6 +1,6 @@
 -- Database invariant tests. Run against a fresh database with all migrations applied
 -- (tests/FandomScore.Tests runs this automatically), or by hand:
---   psql -v ON_ERROR_STOP=1 -f database/migrations/0001_initial_schema.sql -f database/tests/invariants.sql
+--   psql -v ON_ERROR_STOP=1 $(printf -- '-f %s ' database/migrations/*.sql) -f database/tests/invariants.sql
 -- Any failed ASSERT aborts with a message; success prints "ALL INVARIANT TESTS PASSED".
 -- Uses synthetic data only.
 
@@ -205,5 +205,58 @@ DO $$ BEGIN
   ASSERT NOT EXISTS (SELECT 1 FROM score_events WHERE user_id = '00000000-0000-0000-0000-000000000002'),
          'user delete cascades to ledger';
 END $$;
+
+-- ------------------------------------------------------------ auth (0002)
+SELECT pg_temp.expect_error($$INSERT INTO users (handle, email) VALUES ('no spaces', 'x@example.test')$$,
+                            'users_handle_format');
+SELECT pg_temp.expect_error($$UPDATE users SET display_name = '' WHERE handle = 'alice'$$,
+                            'users_display_name_length');
+
+INSERT INTO users (id, handle, email) VALUES ('00000000-0000-0000-0000-000000000004', 'dave', 'dave@example.test');
+INSERT INTO auth_identities (provider, subject, user_id) VALUES
+  ('google', 'g-dave', '00000000-0000-0000-0000-000000000004');
+INSERT INTO auth_sessions (id, user_id, expires_at) VALUES
+  ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000004', now() + interval '1 day');
+INSERT INTO refresh_tokens (token_hash, session_id, expires_at) VALUES
+  (sha256('t1'), '00000000-0000-0000-0000-0000000000a1', now() + interval '1 day');
+
+-- One usable refresh token per session; used tokens stay used.
+SELECT pg_temp.expect_error($$INSERT INTO refresh_tokens (token_hash, session_id, expires_at)
+  VALUES (sha256('t2'), '00000000-0000-0000-0000-0000000000a1', now() + interval '1 day')$$,
+  'refresh_tokens_current_uidx');
+UPDATE refresh_tokens SET used_at = now() WHERE token_hash = sha256('t1');
+INSERT INTO refresh_tokens (token_hash, session_id, expires_at) VALUES
+  (sha256('t2'), '00000000-0000-0000-0000-0000000000a1', now() + interval '1 day');
+SELECT pg_temp.expect_error($$UPDATE refresh_tokens SET used_at = NULL WHERE token_hash = sha256('t1')$$,
+                            'already used');
+SELECT pg_temp.expect_error($$INSERT INTO refresh_tokens (token_hash, session_id, expires_at)
+  VALUES ('\x00', '00000000-0000-0000-0000-0000000000a1', now() + interval '1 day')$$, 'refresh_tokens_token_hash_check');
+
+-- Revocation needs a reason and is permanent.
+SELECT pg_temp.expect_error($$UPDATE auth_sessions SET revoked_at = now()
+  WHERE id = '00000000-0000-0000-0000-0000000000a1'$$, 'auth_sessions_check');
+UPDATE auth_sessions SET revoked_at = now(), revoked_reason = 'sign_out'
+  WHERE id = '00000000-0000-0000-0000-0000000000a1';
+SELECT pg_temp.expect_error($$UPDATE auth_sessions SET revoked_at = NULL, revoked_reason = NULL
+  WHERE id = '00000000-0000-0000-0000-0000000000a1'$$, 'revocation is permanent');
+
+-- Deletion removes sessions, tokens, and identities, and a deleted user cannot get new ones.
+INSERT INTO auth_sessions (user_id, expires_at) VALUES ('00000000-0000-0000-0000-000000000004', now() + interval '1 day');
+UPDATE users SET deleted_at = now() WHERE id = '00000000-0000-0000-0000-000000000004';
+DO $$ BEGIN
+  ASSERT NOT EXISTS (SELECT 1 FROM auth_sessions WHERE user_id = '00000000-0000-0000-0000-000000000004'),
+         'deletion ends sessions';
+  ASSERT NOT EXISTS (SELECT 1 FROM refresh_tokens), 'deletion drops refresh tokens';
+  ASSERT NOT EXISTS (SELECT 1 FROM auth_identities WHERE user_id = '00000000-0000-0000-0000-000000000004'),
+         'deletion frees identities';
+END $$;
+SELECT pg_temp.expect_error($$INSERT INTO auth_sessions (user_id, expires_at)
+  VALUES ('00000000-0000-0000-0000-000000000004', now() + interval '1 day')$$, 'is deleted');
+SELECT pg_temp.expect_error($$INSERT INTO auth_identities (provider, subject, user_id)
+  VALUES ('google', 'g-dave', '00000000-0000-0000-0000-000000000004')$$, 'is deleted');
+-- The freed identity can sign up again as a new account.
+INSERT INTO users (id, handle, email) VALUES ('00000000-0000-0000-0000-000000000005', 'dave', 'dave@example.test');
+INSERT INTO auth_identities (provider, subject, user_id) VALUES
+  ('google', 'g-dave', '00000000-0000-0000-0000-000000000005');
 
 \echo ALL INVARIANT TESTS PASSED

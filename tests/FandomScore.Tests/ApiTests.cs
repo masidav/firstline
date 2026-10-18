@@ -67,6 +67,7 @@ public sealed class ApiTests : IClassFixture<ApiTests.ApiFactory>
         {
             // Health and error handling never open a connection; no database is needed here.
             builder.UseSetting("ConnectionStrings:Database", "Host=localhost;Database=unused");
+            builder.UseSetting("Auth:SigningKey", TestAuth.SigningKey);
             builder.UseEnvironment("Production");
             builder.ConfigureServices(services => services.AddTransient<IStartupFilter, ThrowingRoutes>());
         }

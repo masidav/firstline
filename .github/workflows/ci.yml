@@ -77,6 +77,22 @@ jobs:
           fi
           echo "Only new migrations added (or none)."
 
+  contract:
+    name: OpenAPI contract is valid
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate openapi.yaml
+        run: |
+          pip install openapi-spec-validator==0.7.1
+          openapi-spec-validator openapi.yaml
+
   agent-hooks:
     name: Agent hook tests
     runs-on: ubuntu-latest

@@ -7,14 +7,25 @@ namespace FandomScore.Api.Infrastructure;
 /// An expected failure, rendered as RFC 9457 problem+json. <paramref name="code"/> must be one of
 /// the stable codes in openapi.yaml (components.schemas.Problem.code).
 /// </summary>
-public sealed class ApiProblemException(int status, string code, string title, string? detail = null)
+public sealed class ApiProblemException(
+    int status, string code, string title, string? detail = null, IReadOnlyList<FieldError>? errors = null)
     : Exception(detail ?? title)
 {
     public int Status { get; } = status;
     public string Code { get; } = code;
     public string Title { get; } = title;
     public string? Detail { get; } = detail;
+    public IReadOnlyList<FieldError>? Errors { get; } = errors;
+
+    public static ApiProblemException Unauthorized(string detail) =>
+        new(StatusCodes.Status401Unauthorized, "unauthorized", "Unauthorized", detail);
+
+    public static ApiProblemException Validation(params FieldError[] errors) =>
+        new(StatusCodes.Status422UnprocessableEntity, "validation_failed", "Request is invalid", errors: errors);
 }
+
+/// <summary>One invalid request field (Problem.errors in openapi.yaml).</summary>
+public sealed record FieldError(string Field, string Message);
 
 public static class Problems
 {
@@ -54,17 +65,23 @@ public static class Problems
             }
 
             http.Response.StatusCode = problem.Status;
+            var details = new ProblemDetails
+            {
+                Status = problem.Status,
+                Title = problem.Title,
+                Detail = problem.Detail,
+                Extensions = { ["code"] = problem.Code },
+            };
+            if (problem.Errors is { Count: > 0 } errors)
+            {
+                details.Extensions["errors"] = errors;
+            }
+
             return await problemDetails.TryWriteAsync(new ProblemDetailsContext
             {
                 HttpContext = http,
                 Exception = exception,
-                ProblemDetails = new ProblemDetails
-                {
-                    Status = problem.Status,
-                    Title = problem.Title,
-                    Detail = problem.Detail,
-                    Extensions = { ["code"] = problem.Code },
-                },
+                ProblemDetails = details,
             });
         }
     }

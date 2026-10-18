@@ -6,7 +6,7 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Inventory personal data, listening signals, tokens, submissions, logs, and external-provider identifiers.
 - [ ] Define retention periods for quarantine files, archived redacted files, logs, and account data.
 - [ ] Document account deletion behavior for each data category and legal/product constraints.
-- [ ] Implement an authenticated deletion request and safe background cleanup workflow.
+- [ ] Implement an authenticated deletion request and safe background cleanup workflow. *Request done (`DELETE /v1/me`, immediate scrub of personal data, sessions, identities); background content cleanup waits on retention.*
 - [ ] Revoke provider connections and delete encrypted tokens during disconnection/deletion as appropriate.
 - [ ] Ensure deletion handles object storage, caches, search indexes, and derived data.
 - [ ] Define treatment of append-only ledger records during account deletion without violating integrity requirements.
