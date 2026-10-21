@@ -24,8 +24,10 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] After some scrolling, a **bouncer at a door**. Tapping the door shows a real track from the **grab bag**
       of someone the fan follows, with that fan's name and a link to the song on Spotify.
 - [ ] **Grab bag** screen: pick up to 5 favorite songs (any artist), reorder or remove them. Shared with
-      followers by default.
+      followers; sharing can't be turned off.
 - [ ] Sign-up: choose a primary hub city (required), plus up to two backups.
+- [ ] Changing hub cities: allowed once a week; warn before saving (next change possible in 7 days, and hub
+      cities decide which allocations the fan qualifies for).
 - [ ] Profile: followers and following lists, remove a follower, block someone.
 - [ ] Respect reduced-motion settings: the bounce and horizontal scroll need a calmer fallback, and the feed
       must work with VoiceOver and TalkBack.

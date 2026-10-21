@@ -104,7 +104,7 @@ Lower priority under the new direction: ticket purchases now flow through alloca
       follower, block; followers see posts and top fandom stats. Feeds the home-screen reviews and the bouncer door.
 - [ ] Grab bag: up to 5 favorite songs per fan, shared with followers by default, each linking to Spotify.
       Adding a song by an untracked artist tracks that artist (through `track_artist()`).
-- [ ] Sign-up asks for a primary hub city (plus optional backups).
+- [ ] Sign-up asks for a primary hub city (plus optional backups). Changes allowed once a week, with a warning.
 
 Details: [Sharing API](services/api/src/features/sharing/TODO.md) · [Sharing UI](apps/mobile/src/features/sharing/TODO.md) · [Ticketing API](services/api/src/features/ticketing/TODO.md) · [Ticketing UI](apps/mobile/src/features/ticketing/TODO.md)
 
@@ -131,7 +131,8 @@ Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](servi
 ## Phase 11 — Promoter allocation platform (B2B)
 - [ ] Promoter and artist organizations with staff roles and permissions.
 - [ ] Events and allocation pools: share of inventory, eligibility thresholds, registration window.
-- [ ] Fan registration for an allocation and a fair, auditable selection method (ranked, lottery, or tiered).
+- [ ] Fan registration for an allocation and a fair, auditable selection: ranked by fandom score among fans
+      whose three hub cities include the show's city (decided 2026-10-20).
 - [ ] Non-transferable reservation tokens, delayed delivery, and face-value exchange for fans who can't attend.
 - [ ] Primary ticketing integration (Ticketmaster, AXS, SeatGeek): reserve seats from the pool and hand off checkout.
 - [ ] Promoter web dashboard: set up allocations, monitor registration, export reports.
@@ -211,7 +212,9 @@ Details: [Agent tooling](docs/agent-tooling.md) · [Developer tooling](docs/TODO
       app qualifies for extended API quota. Same check for Apple Music. As of 2026-10-18 extended quota is
       organizations only with 250k monthly active users; development mode allows 5 users (ADR 0005).
 - [ ] Check laws on non-transferable tickets and ticket resale in each launch market (some US states restrict non-transferable tickets).
-- [ ] Decide the selection method for oversubscribed allocations (ranked by score, lottery among eligible fans, or tiers).
+- [x] Selection method for oversubscribed allocations (decided 2026-10-20): **ranked by fandom score**, among
+      fans who have the show's city in one of their **three hub cities**.
+- [ ] If hub fans don't fill an allocation, does it open to fans outside the city? How are equal scores broken?
 - [ ] Decide on the fan-side fee and whether App Store / Google Play payment rules apply to it.
 - [ ] Choose the first pilot artist(s) and promoter.
 - [x] Concert data source (decided 2026-10-20): **concert APIs** for shows and sale dates (candidates:
@@ -221,10 +224,10 @@ Details: [Agent tooling](docs/agent-tooling.md) · [Developer tooling](docs/TODO
       scraping in their terms, and their official APIs are paid or restricted, so check each source's terms
       first. Prefer artist/label newsletters, official sites, and RSS where possible.
 - [x] A "concert hub" is a **city** (decided 2026-10-20): each fan picks a primary city plus two backups.
-- [x] Hubs affect allocations: **local fans first** (decided 2026-10-20). How "local" combines with the
-      selection method is part of the selection-method decision above.
+- [x] Hubs affect allocations: **local fans first** (decided 2026-10-20), via the selection method above.
 - [x] A hub city is **required at sign-up** (decided 2026-10-20).
-- [ ] Can fans change their hub cities, and how often (to stop people switching cities to jump the queue)?
+- [x] Hub cities can be changed **once a week**, with a **warning while changing** (decided 2026-10-20).
+- [ ] Does a hub change made after registering for an allocation affect that registration?
 - [x] Social model (decided 2026-10-20): **follow/follower**, not mutual friends.
 - [x] Follow rules (decided 2026-10-20): following needs **no approval**; a fan can **remove** a follower and/or
       **block** someone. Followers see the fan's **posts** and **top fandom stats**.
@@ -234,4 +237,6 @@ Details: [Agent tooling](docs/agent-tooling.md) · [Developer tooling](docs/TODO
       draws a song from the grab bags of people the fan follows. Grab bags are **shared with followers by
       default** (changed from opt-in the same day), and the owner's **name is shown** with the song.
       Each song **links to Spotify**. Adding a song by an untracked artist **starts tracking that artist**.
-- [ ] Can a fan turn grab-bag sharing off? Does a grab-bag add count toward the 50-artists-per-day limit?
+- [x] Grab-bag sharing **can't be turned off**, and artists tracked through a grab bag **don't count** toward the
+      50-artists-per-day limit (decided 2026-10-20). `track_artist()` counts rows by `added_by`, so grab-bag adds
+      need to be recorded separately.
