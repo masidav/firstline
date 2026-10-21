@@ -100,8 +100,9 @@ Lower priority under the new direction: ticket purchases now flow through alloca
 - [ ] Load upcoming concerts, presale dates, and general-sale openings for tracked artists (source: open
       decision below). Feeds `/artists/{id}/events` and the home-screen concert cards.
 - [ ] Fan location preference: a primary hub city plus two backups, used to pick which shows to show.
-- [ ] Follow/follower relationships between fans (decided 2026-10-20), feeding the home-screen reviews and
-      the bouncer door.
+- [ ] Follow/follower relationships between fans (decided 2026-10-20): follow without approval, remove a
+      follower, block; followers see posts and top fandom stats. Feeds the home-screen reviews and the bouncer door.
+- [ ] Grab bag: up to 5 favorite songs per fan, with an opt-in to share them behind followers' bouncer doors.
 
 Details: [Sharing API](services/api/src/features/sharing/TODO.md) · [Sharing UI](apps/mobile/src/features/sharing/TODO.md) · [Ticketing API](services/api/src/features/ticketing/TODO.md) · [Ticketing UI](apps/mobile/src/features/ticketing/TODO.md)
 
@@ -218,11 +219,17 @@ Details: [Agent tooling](docs/agent-tooling.md) · [Developer tooling](docs/TODO
       scraping in their terms, and their official APIs are paid or restricted, so check each source's terms
       first. Prefer artist/label newsletters, official sites, and RSS where possible.
 - [x] A "concert hub" is a **city** (decided 2026-10-20): each fan picks a primary city plus two backups.
-- [ ] Is a hub required at sign-up, and does it affect allocation eligibility (for example, local fans first)?
+- [x] Hubs affect allocations: **local fans first** (decided 2026-10-20). How "local" combines with the
+      selection method is part of the selection-method decision above.
+- [ ] Is a hub city required at sign-up, or only before registering for an allocation? Can fans change it, and
+      how often (to stop people switching cities to jump the queue)?
 - [x] Social model (decided 2026-10-20): **follow/follower**, not mutual friends.
-- [ ] Follow details: can a fan approve followers or make their profile private, and what can followers see
-      (reviews, listening taste)?
+- [x] Follow rules (decided 2026-10-20): following needs **no approval**; a fan can **remove** a follower and/or
+      **block** someone. Followers see the fan's **posts** and **top fandom stats**.
 - [x] Bouncer door song (decided 2026-10-20): a **recommended real track** (not generated audio), based on the
       taste of someone the fan **follows**.
-- [ ] Bouncer door privacy: does the followed fan have to opt in to their taste being used, and is their name
-      shown with the song?
+- [x] Grab bag (decided 2026-10-20): each fan can place **5 favorite songs** in a grab bag. The bouncer door
+      draws a song from the grab bags of people the fan follows. A fan's grab bag is used only after they
+      **opt in**.
+- [ ] Is the grab-bag owner's name shown with the song behind the door? Are the songs limited to tracked
+      artists (the current rule for stored listening data) or any Spotify track?

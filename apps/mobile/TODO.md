@@ -21,8 +21,11 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] A **red velvet rope** as a visual motif (for example, along the staff or guarding the door below).
 - [ ] Non-music items break from the sheet and **bounce in vertically**: reviews from people the fan follows,
       upcoming concerts (in the fan's hub cities), merch someone shared.
-- [ ] After some scrolling, a **bouncer at a door**. Tapping the door shows a recommended real track based on
-      the taste of someone the fan follows. Open privacy questions in `PROJECT_TODO.md` (Open decisions).
+- [ ] After some scrolling, a **bouncer at a door**. Tapping the door shows a real track from the **grab bag**
+      of someone the fan follows (only fans who opted in). Open questions in `PROJECT_TODO.md` (Open decisions).
+- [ ] **Grab bag** screen: pick up to 5 favorite songs, reorder or remove them, and opt in (or out) of sharing
+      them behind followers' doors.
+- [ ] Profile: followers and following lists, remove a follower, block someone.
 - [ ] Respect reduced-motion settings: the bounce and horizontal scroll need a calmer fallback, and the feed
       must work with VoiceOver and TalkBack.
 
