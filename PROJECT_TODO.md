@@ -102,7 +102,9 @@ Lower priority under the new direction: ticket purchases now flow through alloca
 - [ ] Fan location preference: a primary hub city plus two backups, used to pick which shows to show.
 - [ ] Follow/follower relationships between fans (decided 2026-10-20): follow without approval, remove a
       follower, block; followers see posts and top fandom stats. Feeds the home-screen reviews and the bouncer door.
-- [ ] Grab bag: up to 5 favorite songs per fan, with an opt-in to share them behind followers' bouncer doors.
+- [ ] Grab bag: up to 5 favorite songs per fan, shared with followers by default, each linking to Spotify.
+      Adding a song by an untracked artist tracks that artist (through `track_artist()`).
+- [ ] Sign-up asks for a primary hub city (plus optional backups).
 
 Details: [Sharing API](services/api/src/features/sharing/TODO.md) · [Sharing UI](apps/mobile/src/features/sharing/TODO.md) · [Ticketing API](services/api/src/features/ticketing/TODO.md) · [Ticketing UI](apps/mobile/src/features/ticketing/TODO.md)
 
@@ -221,15 +223,15 @@ Details: [Agent tooling](docs/agent-tooling.md) · [Developer tooling](docs/TODO
 - [x] A "concert hub" is a **city** (decided 2026-10-20): each fan picks a primary city plus two backups.
 - [x] Hubs affect allocations: **local fans first** (decided 2026-10-20). How "local" combines with the
       selection method is part of the selection-method decision above.
-- [ ] Is a hub city required at sign-up, or only before registering for an allocation? Can fans change it, and
-      how often (to stop people switching cities to jump the queue)?
+- [x] A hub city is **required at sign-up** (decided 2026-10-20).
+- [ ] Can fans change their hub cities, and how often (to stop people switching cities to jump the queue)?
 - [x] Social model (decided 2026-10-20): **follow/follower**, not mutual friends.
 - [x] Follow rules (decided 2026-10-20): following needs **no approval**; a fan can **remove** a follower and/or
       **block** someone. Followers see the fan's **posts** and **top fandom stats**.
 - [x] Bouncer door song (decided 2026-10-20): a **recommended real track** (not generated audio), based on the
       taste of someone the fan **follows**.
 - [x] Grab bag (decided 2026-10-20): each fan can place **5 favorite songs** in a grab bag. The bouncer door
-      draws a song from the grab bags of people the fan follows. A fan's grab bag is used only after they
-      **opt in**.
-- [ ] Is the grab-bag owner's name shown with the song behind the door? Are the songs limited to tracked
-      artists (the current rule for stored listening data) or any Spotify track?
+      draws a song from the grab bags of people the fan follows. Grab bags are **shared with followers by
+      default** (changed from opt-in the same day), and the owner's **name is shown** with the song.
+      Each song **links to Spotify**. Adding a song by an untracked artist **starts tracking that artist**.
+- [ ] Can a fan turn grab-bag sharing off? Does a grab-bag add count toward the 50-artists-per-day limit?
