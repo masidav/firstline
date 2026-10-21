@@ -132,7 +132,8 @@ Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](servi
 - [ ] Promoter and artist organizations with staff roles and permissions.
 - [ ] Events and allocation pools: share of inventory, eligibility thresholds, registration window.
 - [ ] Fan registration for an allocation and a fair, auditable selection: ranked by fandom score among fans
-      whose three hub cities include the show's city (decided 2026-10-20).
+      whose three hub cities include the show's city, then other fans for unfilled seats; ties broken by a
+      recorded random draw; a registration keeps the hubs it was made with (decided 2026-10-20).
 - [ ] Non-transferable reservation tokens, delayed delivery, and face-value exchange for fans who can't attend.
 - [ ] Primary ticketing integration (Ticketmaster, AXS, SeatGeek): reserve seats from the pool and hand off checkout.
 - [ ] Promoter web dashboard: set up allocations, monitor registration, export reports.
@@ -214,7 +215,8 @@ Details: [Agent tooling](docs/agent-tooling.md) · [Developer tooling](docs/TODO
 - [ ] Check laws on non-transferable tickets and ticket resale in each launch market (some US states restrict non-transferable tickets).
 - [x] Selection method for oversubscribed allocations (decided 2026-10-20): **ranked by fandom score**, among
       fans who have the show's city in one of their **three hub cities**.
-- [ ] If hub fans don't fill an allocation, does it open to fans outside the city? How are equal scores broken?
+- [x] Allocation edge cases (decided 2026-10-20): seats hub fans leave unfilled **open to fans outside the
+      city**; **equal scores are broken by a coin flip** (a random draw, recorded so the result can be audited).
 - [ ] Decide on the fan-side fee and whether App Store / Google Play payment rules apply to it.
 - [ ] Choose the first pilot artist(s) and promoter.
 - [x] Concert data source (decided 2026-10-20): **concert APIs** for shows and sale dates (candidates:
@@ -227,7 +229,7 @@ Details: [Agent tooling](docs/agent-tooling.md) · [Developer tooling](docs/TODO
 - [x] Hubs affect allocations: **local fans first** (decided 2026-10-20), via the selection method above.
 - [x] A hub city is **required at sign-up** (decided 2026-10-20).
 - [x] Hub cities can be changed **once a week**, with a **warning while changing** (decided 2026-10-20).
-- [ ] Does a hub change made after registering for an allocation affect that registration?
+- [x] A hub change after registering for an allocation **doesn't affect that registration** (decided 2026-10-20).
 - [x] Social model (decided 2026-10-20): **follow/follower**, not mutual friends.
 - [x] Follow rules (decided 2026-10-20): following needs **no approval**; a fan can **remove** a follower and/or
       **block** someone. Followers see the fan's **posts** and **top fandom stats**.
