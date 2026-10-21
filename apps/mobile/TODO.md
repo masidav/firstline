@@ -19,10 +19,10 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 ## Home screen concept (requested 2026-10-20, not designed yet)
 - [ ] Main feed scrolls **horizontally, like a music sheet** (a staff the fan moves along).
 - [ ] A **red velvet rope** as a visual motif (for example, along the staff or guarding the door below).
-- [ ] Non-music items break from the sheet and **bounce in vertically**: friends' reviews, upcoming concerts,
-      merch someone shared.
-- [ ] After some scrolling, a **bouncer at a door**. Tapping the door shows a song picked or generated from the
-      taste of a fan with similar listening. Open questions in `PROJECT_TODO.md` (Open decisions).
+- [ ] Non-music items break from the sheet and **bounce in vertically**: reviews from people the fan follows,
+      upcoming concerts (in the fan's hub cities), merch someone shared.
+- [ ] After some scrolling, a **bouncer at a door**. Tapping the door shows a recommended real track based on
+      the taste of someone the fan follows. Open privacy questions in `PROJECT_TODO.md` (Open decisions).
 - [ ] Respect reduced-motion settings: the bounce and horizontal scroll need a calmer fallback, and the feed
       must work with VoiceOver and TalkBack.
 

@@ -60,4 +60,7 @@ The suite starts its own PostgreSQL 16 container, so it needs Docker but not the
   creates a local dev user and session (local database only), runs Spotify's sign-in in your browser, calls
   `PUT /v1/me/spotify`, and shows what the sync stored. Register `http://127.0.0.1:8888/callback` in the
   Spotify dashboard and add it to `Spotify__RedirectUris`.
+- `testScripts/` holds local helpers, runnable from any directory: `startWebAppLocal.sh` (fan app in the
+  browser), `testSpotifyAPI.sh` (add a test artist and connect Spotify), and `wipeLocalDb.sh` (deletes ALL data
+  in the local compose database and re-applies migrations; asks first unless given `--yes`).
 - Production logs are JSON on the console. Development uses the plain formatter.

@@ -99,8 +99,9 @@ Lower priority under the new direction: ticket purchases now flow through alloca
 - [ ] Integrate purchase confirmation only if supported by the selected partner.
 - [ ] Load upcoming concerts, presale dates, and general-sale openings for tracked artists (source: open
       decision below). Feeds `/artists/{id}/events` and the home-screen concert cards.
-- [ ] Fan location preference: a primary "concert hub" plus two backups, used to pick which shows and ticket
-      sources to show (requested 2026-10-20; meaning of "hub" is an open decision below).
+- [ ] Fan location preference: a primary hub city plus two backups, used to pick which shows to show.
+- [ ] Follow/follower relationships between fans (decided 2026-10-20), feeding the home-screen reviews and
+      the bouncer door.
 
 Details: [Sharing API](services/api/src/features/sharing/TODO.md) · [Sharing UI](apps/mobile/src/features/sharing/TODO.md) · [Ticketing API](services/api/src/features/ticketing/TODO.md) · [Ticketing UI](apps/mobile/src/features/ticketing/TODO.md)
 
@@ -210,14 +211,18 @@ Details: [Agent tooling](docs/agent-tooling.md) · [Developer tooling](docs/TODO
 - [ ] Decide the selection method for oversubscribed allocations (ranked by score, lottery among eligible fans, or tiers).
 - [ ] Decide on the fan-side fee and whether App Store / Google Play payment rules apply to it.
 - [ ] Choose the first pilot artist(s) and promoter.
-- [ ] Concert data source: do we need a web scraper for upcoming concerts, presales, and sale openings, or can
-      APIs cover it (for example Ticketmaster Discovery, SeatGeek, Bandsintown, Songkick)? Scraping ticketing
-      sites usually breaks their terms and is brittle; prefer licensed APIs or partner feeds, and scrape only
-      sources that allow it. Presale dates are the gap most APIs fill poorly.
-- [ ] What is a "concert hub": a city/metro area, a specific venue, or a ticketing platform? Primary plus two
-      backups either way. Decide whether it is required at sign-up and whether it affects allocation
-      eligibility (for example, local fans first).
-- [ ] Bouncer door (home screen concept, `apps/mobile/TODO.md`): is the song **AI-generated** audio, or an
-      existing track **recommended** from a similar fan's listening? Generated audio raises licensing and
-      artist-rights questions; either way, matching on another fan's taste needs their consent and must not
-      reveal who they are. Also: are "friends" a new feature (follows/friend requests)? None exists yet.
+- [x] Concert data source (decided 2026-10-20): **concert APIs** for shows and sale dates (candidates:
+      Ticketmaster Discovery, SeatGeek, Bandsintown, Songkick), plus possibly a **scraper for news and presale
+      announcements**, including artists' X/Twitter and Instagram posts.
+- [ ] Choose the concert APIs, and the presale/news sources a scraper may use. X and Instagram forbid
+      scraping in their terms, and their official APIs are paid or restricted, so check each source's terms
+      first. Prefer artist/label newsletters, official sites, and RSS where possible.
+- [x] A "concert hub" is a **city** (decided 2026-10-20): each fan picks a primary city plus two backups.
+- [ ] Is a hub required at sign-up, and does it affect allocation eligibility (for example, local fans first)?
+- [x] Social model (decided 2026-10-20): **follow/follower**, not mutual friends.
+- [ ] Follow details: can a fan approve followers or make their profile private, and what can followers see
+      (reviews, listening taste)?
+- [x] Bouncer door song (decided 2026-10-20): a **recommended real track** (not generated audio), based on the
+      taste of someone the fan **follows**.
+- [ ] Bouncer door privacy: does the followed fan have to opt in to their taste being used, and is their name
+      shown with the song?
