@@ -40,8 +40,12 @@ Details: [API](services/api/TODO.md) · [Database](database/TODO.md) · [Tests](
 Details: [Authentication](services/api/src/features/authentication/TODO.md) · [Users](services/api/src/features/users/TODO.md) · [Privacy](services/api/src/features/privacy/TODO.md)
 
 ## Phase 3 — Tracked artists and catalog
-- [ ] Implement artist search with tracked/untracked status.
-- [ ] Implement shared tracked-artist addition and daily limit (50 per user per UTC day, decided 2026-10-18; enforced by `track_artist()`).
+- [x] Implement artist search with tracked/untracked status. `GET /v1/artists/search`, Spotify app token
+      (client credentials, ADR 0005, decided 2026-10-20). Verified 2026-10-20 with a faked Spotify: `dotnet test` 87/87.
+- [x] Implement shared tracked-artist addition and daily limit (50 per user per UTC day, decided 2026-10-18; enforced by `track_artist()`).
+      `POST /v1/artists`: name and image from Spotify, new artists start `onboarding`. Verified 2026-10-20 with a faked Spotify (ArtistApiTests).
+- [ ] Check artist search and add against real Spotify (app token from the client secret), using
+      `tools/dev/spotify_connect.py search` and `track-artist`.
 - [x] Background job queue: Postgres `jobs` table and `workers/` process ([ADR 0004](docs/adr/0004-postgres-job-queue.md)). Verified 2026-10-18: JobQueueTests 9/9.
 - [ ] Implement asynchronous artist onboarding and failure recovery.
 - [ ] Load album/track catalog and seed a baseline before activation.

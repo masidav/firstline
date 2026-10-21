@@ -1,0 +1,205 @@
+using System.Security.Claims;
+using System.Text.RegularExpressions;
+using System.Threading.RateLimiting;
+using Dapper;
+using FandomScore.Api.Features.Authentication;
+using FandomScore.Api.Features.SpotifySync;
+using FandomScore.Api.Infrastructure;
+using FandomScore.Spotify;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Npgsql;
+
+namespace FandomScore.Api.Features.Artists;
+
+/// <summary>
+/// openapi <c>/artists/search</c> and <c>POST /artists</c>. Spotify is called with the app's own token (client
+/// credentials), so users don't need to connect Spotify first. Untracked search results are never stored, and an
+/// added artist's name and image come from Spotify, never from the client. See docs/adr/0005-spotify-integration.md.
+/// </summary>
+public static partial class ArtistEndpoints
+{
+    public const string SearchRateLimit = "artist-search";
+
+    private const int SearchPermitsPerMinute = 30;
+
+    public static IServiceCollection AddArtists(this IServiceCollection services) =>
+        services.Configure<RateLimiterOptions>(limiter => limiter.AddPolicy(SearchRateLimit, http =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                http.User.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? "anonymous",
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = SearchPermitsPerMinute,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0,
+                })));
+
+    public static void MapArtists(this RouteGroupBuilder v1)
+    {
+        v1.MapGet("/artists/search", SearchAsync).RequireRateLimiting(SearchRateLimit);
+        v1.MapPost("/artists", TrackAsync);
+    }
+
+    public sealed record TrackArtistRequest(string? SpotifyArtistId);
+
+    public sealed record ArtistSearchResult(
+        string SpotifyArtistId, string Name, string? ImageUrl, IReadOnlyList<string> Genres, bool Tracked, Guid? ArtistId,
+        string? Status);
+
+    public sealed record ArtistSearchResults(IReadOnlyList<ArtistSearchResult> Items);
+
+    /// <summary>openapi Artist. <see cref="MyScore"/> stays null until scoring exists (Phase 5).</summary>
+    public sealed record Artist(
+        Guid Id, string Name, string SpotifyArtistId, string? ImageUrl, string? WebsiteUrl, string? MerchUrl, string Status,
+        bool AddedByMe, DateTime TrackedAt, DateTime? ActivatedAt, object? MyScore);
+
+    private static async Task<IResult> SearchAsync(
+        string? q, int? limit, NpgsqlDataSource db, SpotifyClient spotify, IOptions<SpotifyOptions> options,
+        ILoggerFactory loggers, CancellationToken cancellationToken)
+    {
+        var query = q?.Trim() ?? "";
+        var errors = new List<FieldError>();
+        if (query.Length is < 2 or > 100)
+        {
+            errors.Add(new FieldError("q", "Send 2 to 100 characters to search for."));
+        }
+
+        if (limit is < 1 or > SpotifyClient.MaxSearchLimit)
+        {
+            errors.Add(new FieldError("limit", $"Use a limit from 1 to {SpotifyClient.MaxSearchLimit}."));
+        }
+
+        if (errors.Count > 0)
+        {
+            throw ApiProblemException.Validation([.. errors]);
+        }
+
+        RequireCatalog(options.Value, "Artist search is not set up on this server.");
+        var found = await CallSpotifyAsync(
+            () => spotify.SearchArtistsAsync(query, limit ?? SpotifyClient.MaxSearchLimit, cancellationToken), loggers);
+
+        await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        var tracked = (await connection.QueryAsync<TrackedRow>(
+                "SELECT spotify_artist_id AS SpotifyArtistId, id AS Id, status::text AS Status FROM artists WHERE spotify_artist_id = ANY(@ids)",
+                new { ids = found.Select(a => a.Id).ToArray() }))
+            .ToDictionary(row => row.SpotifyArtistId);
+
+        return Results.Ok(new ArtistSearchResults([.. found.Select(artist =>
+        {
+            var row = tracked.GetValueOrDefault(artist.Id);
+            return new ArtistSearchResult(artist.Id, artist.Name, artist.ImageUrl, artist.Genres, row is not null, row?.Id, row?.Status);
+        })]));
+    }
+
+    // An artist already tracked is returned without calling Spotify. Otherwise the name and image are fetched from
+    // Spotify and track_artist() adds it (uniqueness and the daily limit). It starts as onboarding.
+    private static async Task<IResult> TrackAsync(
+        ClaimsPrincipal user, TrackArtistRequest request, NpgsqlDataSource db, SpotifyClient spotify,
+        IOptions<SpotifyOptions> options, TimeProvider time, ILoggerFactory loggers, CancellationToken cancellationToken)
+    {
+        if (request.SpotifyArtistId is not { } spotifyArtistId || !SpotifyIdPattern().IsMatch(spotifyArtistId))
+        {
+            throw ApiProblemException.Validation(new FieldError("spotify_artist_id",
+                "Send the 22-character Spotify artist id from search."));
+        }
+
+        var userId = user.UserId();
+        await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        if (await LoadAsync(connection, userId, spotifyArtistId) is { } existing)
+        {
+            return Results.Ok(existing);
+        }
+
+        RequireCatalog(options.Value, "Adding artists is not set up on this server.");
+        var artist = await CallSpotifyAsync(() => spotify.GetArtistAsync(spotifyArtistId, cancellationToken), loggers)
+                     ?? throw new ApiProblemException(StatusCodes.Status404NotFound, "spotify_artist_not_found",
+                         "Artist not found", "Spotify has no artist with this id.");
+
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        TrackResult result;
+        try
+        {
+            result = await connection.QuerySingleAsync<TrackResult>(
+                "SELECT o_artist_id AS ArtistId, o_created AS Created FROM track_artist(@userId, @spotifyArtistId, @name)",
+                new { userId, spotifyArtistId, name = artist.Name }, transaction);
+        }
+        catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.RaiseException
+                                          && e.MessageText == "daily artist add limit reached")
+        {
+            var now = time.GetUtcNow();
+            throw new ApiProblemException(StatusCodes.Status429TooManyRequests, "artist_add_limit", "Daily artist limit reached",
+                "You have added as many new artists as allowed today. Try again after midnight UTC.")
+            {
+                RetryAfter = now.UtcDateTime.Date.AddDays(1) - now.UtcDateTime,
+            };
+        }
+
+        if (result.Created)
+        {
+            await connection.ExecuteAsync("UPDATE artists SET image_url = @imageUrl WHERE id = @id",
+                new { imageUrl = artist.ImageUrl, id = result.ArtistId }, transaction);
+        }
+
+        var added = await LoadAsync(connection, userId, spotifyArtistId, transaction);
+        await transaction.CommitAsync(cancellationToken);
+        return result.Created ? Results.Created($"/v1/artists/{added!.Id}", added) : Results.Ok(added);
+    }
+
+    private static async Task<Artist?> LoadAsync(
+        NpgsqlConnection connection, Guid userId, string spotifyArtistId, NpgsqlTransaction? transaction = null)
+    {
+        var row = await connection.QuerySingleOrDefaultAsync<ArtistRow>(
+            """
+            SELECT id AS Id, name AS Name, spotify_artist_id AS SpotifyArtistId, image_url AS ImageUrl,
+                   website_url AS WebsiteUrl, merch_url AS MerchUrl, status::text AS Status,
+                   COALESCE(added_by = @userId, false) AS AddedByMe, tracked_at AS TrackedAt, activated_at AS ActivatedAt
+            FROM artists WHERE spotify_artist_id = @spotifyArtistId
+            """,
+            new { userId, spotifyArtistId }, transaction);
+        return row is null
+            ? null
+            : new Artist(row.Id, row.Name, row.SpotifyArtistId, row.ImageUrl, row.WebsiteUrl, row.MerchUrl, row.Status,
+                row.AddedByMe, row.TrackedAt, row.ActivatedAt, null);
+    }
+
+    private static void RequireCatalog(SpotifyOptions options, string detail)
+    {
+        if (!options.IsCatalogEnabled)
+        {
+            throw SpotifyConnections.Unavailable(detail);
+        }
+    }
+
+    private static async Task<T> CallSpotifyAsync<T>(Func<Task<T>> call, ILoggerFactory loggers)
+    {
+        try
+        {
+            return await call();
+        }
+        catch (SpotifyUnavailableException e)
+        {
+            throw SpotifyConnections.Unavailable("Spotify did not respond. Try again shortly.", e.RetryAfter);
+        }
+        catch (Exception e) when (e is SpotifyRequestException or SpotifyAuthorizationException)
+        {
+            // Spotify refused the app itself: a wrong client secret, or (403) the app owner's Premium has lapsed.
+            LogAppRejected(loggers.CreateLogger(typeof(ArtistEndpoints)), e.Message);
+            throw SpotifyConnections.Unavailable("Spotify is not available right now. Try again later.");
+        }
+    }
+
+    [GeneratedRegex("^[0-9A-Za-z]{22}$")]
+    private static partial Regex SpotifyIdPattern();
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Spotify refused an app-token request: {Reason}. Check Spotify:ClientId and Spotify:ClientSecret, and that the app owner has Spotify Premium.")]
+    private static partial void LogAppRejected(ILogger logger, string reason);
+
+    private sealed record TrackedRow(string SpotifyArtistId, Guid Id, string Status);
+
+    private sealed record TrackResult(Guid ArtistId, bool Created);
+
+    private sealed record ArtistRow(
+        Guid Id, string Name, string SpotifyArtistId, string? ImageUrl, string? WebsiteUrl, string? MerchUrl, string Status,
+        bool AddedByMe, DateTime TrackedAt, DateTime? ActivatedAt);
+}

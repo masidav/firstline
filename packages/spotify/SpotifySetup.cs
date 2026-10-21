@@ -16,6 +16,7 @@ public static class SpotifySetup
 
         services.Configure<SpotifyOptions>(section);
         services.AddSingleton<SpotifyTokenProtector>();
+        services.AddSingleton<SpotifyAppToken>();
         // The sync job is a singleton holding its client, so connections are recycled instead of handlers
         // (picks up DNS changes).
         services.AddHttpClient<SpotifyClient>(http => http.Timeout = SpotifyClient.RequestTimeout)

@@ -8,11 +8,13 @@ as the app will. Finally it waits for the worker's sync and prints what was stor
 
 Setup (once):
   - Spotify dashboard: add the redirect URI http://127.0.0.1:8888/callback, and your Spotify account under Users.
-  - .env: Spotify__ClientId, Spotify__TokenKey, and Spotify__RedirectUris including http://127.0.0.1:8888/callback.
+  - .env: Spotify__ClientId, Spotify__ClientSecret, Spotify__TokenKey, and Spotify__RedirectUris including
+    http://127.0.0.1:8888/callback.
   - Start the database, API, and worker (docs/DEVELOPMENT.md), each with `set -a; . ./.env; set +a`.
 
 Usage (from the repo root, with .env exported the same way):
-  python3 tools/dev/spotify_connect.py track-artist 4Z8W4fKeB5YxbusRsdQVPb "Radiohead"
+  python3 tools/dev/spotify_connect.py search radiohead
+  python3 tools/dev/spotify_connect.py track-artist 4Z8W4fKeB5YxbusRsdQVPb
   python3 tools/dev/spotify_connect.py connect
   python3 tools/dev/spotify_connect.py status
 
@@ -242,21 +244,37 @@ def status_command(args):
     print_signals(user_id)
 
 
+def search(args):
+    _, token = dev_session(args.handle)
+    query = urllib.parse.urlencode({"q": args.query})
+    status_code, body = api("GET", args.api, f"/v1/artists/search?{query}", token)
+    if status_code != 200:
+        sys.exit(f"GET /v1/artists/search returned {status_code}:\n{json.dumps(body, indent=2)}")
+    for artist in body["items"]:
+        tracked = artist["status"] if artist["tracked"] else "not tracked"
+        print(f"  {artist['spotify_artist_id']}  {artist['name']:<32} {tracked}")
+
+
 def track_artist(args):
-    """Adds an artist as tracked and active, with a placeholder baseline (onboarding is not built yet)."""
+    """Adds an artist through POST /v1/artists (name and image from Spotify), then activates it with a placeholder
+    baseline, since onboarding is not built yet."""
     if not re.fullmatch(r"[0-9A-Za-z]{22}", args.spotify_artist_id):
-        sys.exit("Use the 22-character Spotify artist id (from open.spotify.com/artist/<id>).")
+        sys.exit("Use the 22-character Spotify artist id (from open.spotify.com/artist/<id>, or `search`).")
+    if args.name:
+        print("Ignoring the name argument: the API takes the artist's name from Spotify.")
+    _, token = dev_session(args.handle)
+    status_code, artist = api("POST", args.api, "/v1/artists", token, {"spotify_artist_id": args.spotify_artist_id})
+    if status_code not in (200, 201):
+        sys.exit(f"POST /v1/artists returned {status_code}:\n{json.dumps(artist, indent=2)}")
     psql(
         """
-        INSERT INTO artists (name, spotify_artist_id) VALUES (:'name', :'spotify_id')
-        ON CONFLICT (spotify_artist_id) DO NOTHING;
         INSERT INTO artist_baselines (artist_id, dist_params, proxy_metrics, curve)
         SELECT id, '{}', '{"dev_placeholder": true}', '[]' FROM artists WHERE spotify_artist_id = :'spotify_id'
         ON CONFLICT (artist_id) DO NOTHING;
         UPDATE artists SET status = 'active' WHERE spotify_artist_id = :'spotify_id' AND status = 'onboarding';
         """,
-        name=args.name, spotify_id=args.spotify_artist_id)
-    print(f"{args.name} ({args.spotify_artist_id}) is tracked and active.")
+        spotify_id=args.spotify_artist_id)
+    print(f"{artist['name']} ({args.spotify_artist_id}) is tracked and active.")
 
 
 def main():
@@ -274,9 +292,13 @@ def main():
     s = commands.add_parser("status", help="show the connection and stored signals")
     s.set_defaults(run=status_command)
 
-    t = commands.add_parser("track-artist", help="add a tracked, active artist for testing")
+    q = commands.add_parser("search", help="search Spotify for artists through the API")
+    q.add_argument("query")
+    q.set_defaults(run=search)
+
+    t = commands.add_parser("track-artist", help="add an artist through the API and activate it for testing")
     t.add_argument("spotify_artist_id")
-    t.add_argument("name")
+    t.add_argument("name", nargs="?", help=argparse.SUPPRESS)
     t.set_defaults(run=track_artist)
 
     args = parser.parse_args()

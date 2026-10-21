@@ -1,16 +1,18 @@
 # ADR 0005: Spotify connection and sync
 
-- **Status:** Accepted (2026-10-18). Implemented in Phase 4 (backend).
+- **Status:** Accepted (2026-10-18). Implemented in Phase 4 (backend). Amended 2026-10-20: app token
+  (client credentials) for artist search and lookup.
 - **Code:** `packages/spotify` (`FandomScore.Spotify`: client, token encryption, options),
-  `services/api/src/features/spotify-sync` (endpoints), `workers/spotify-sync` (jobs),
-  `database/migrations/0005_spotify_sync.sql`.
-- **Contract:** `openapi.yaml`, `/me/spotify` and `/me/spotify/sync`.
+  `services/api/src/features/spotify-sync` (endpoints), `services/api/src/features/artists` (search and add),
+  `workers/spotify-sync` (jobs), `database/migrations/0005_spotify_sync.sql`.
+- **Contract:** `openapi.yaml`, `/me/spotify`, `/me/spotify/sync`, `/artists/search`, and `POST /artists`.
 
 ## Decision
 
 | Concern | Choice |
 | --- | --- |
 | Authorization | The app runs Spotify's **authorization code flow with PKCE** and sends `code`, `code_verifier`, and `redirect_uri` to `PUT /me/spotify`. The server exchanges the code (client ID only, no client secret) and checks every required scope was granted. `redirect_uri` must be in `Spotify__RedirectUris`. |
+| Artist search and lookup | `GET /artists/search` and `POST /artists` call Spotify with an **app token** from the **client credentials flow** (`Spotify__ClientId` + `Spotify__ClientSecret`, HTTP Basic). Users don't need to connect Spotify to find or add artists. The token is held in memory per process and fetched again a minute before it expires (or once after a 401). Without a client secret both endpoints return `503 spotify_unavailable`; user connections keep working. |
 | Scopes | `user-library-read`, `user-top-read`, `user-read-recently-played`, `playlist-read-private`, `playlist-read-collaborative`. Nothing that writes. |
 | Token storage | Only the refresh token is kept, in `spotify_connections.refresh_token_enc`: **AES-256-GCM**, key from `Spotify__TokenKey`, user id authenticated with it (a token copied to another row will not decrypt). Each value names its key, so keys rotate via `Spotify__PreviousTokenKeys`; every sync re-encrypts with the current key. Access tokens are never stored. |
 | One account each | A Spotify account can be connected to one user (`409 spotify_in_use`), so one listening history can't qualify several accounts. Switching Spotify accounts deletes data synced from the old one. |
@@ -26,6 +28,10 @@
 ## Why
 - **PKCE with the exchange on the server:** the mobile app never needs a client secret, and the refresh token
   never stays on the device.
+- **Client credentials for the catalog (decided 2026-10-20):** adding an artist shouldn't require a Spotify
+  connection, and an app token isn't tied to any user. The cost is one more server secret (`Spotify__ClientSecret`,
+  in Secret Manager in production). It stays on the server; the app never sees it. Rejected alternative: search
+  with the signed-in user's own Spotify token, which would make search unavailable until the user connects.
 - **App-side AES-GCM instead of Cloud KMS for now:** no GCP dependency in local development or tests, and the
   key is one secret in Secret Manager like `Auth__SigningKey`. The format carries a key id, so moving to KMS
   envelope encryption later only changes how the key is obtained.
@@ -41,6 +47,12 @@
   and fields such as track and artist `popularity` and `/me` email. Playlist contents come from
   `GET /playlists/{id}/items` (the track is in `item`), and only for playlists the user owns or collaborates on.
   The client uses only endpoints still listed as available.
+- Also since February 2026: search returns at most **10 results** per request (default 5), and artist objects
+  no longer include `followers` or `popularity`. `GET /artists/{id}` (single) still works.
+- **Risk:** a Spotify statement quoted by client-library maintainers (Feb 2026) says Spotify is "moving away
+  from the Client Credentials flow for metadata endpoints", and app-token calls fail when the app owner's
+  Premium lapses. If app tokens stop working for search, fall back to the user's token (rejected alternative
+  above) or another catalog source. Checked 2026-10-20 against Spotify's February 2026 migration guide.
 
 ## Consequences and known limits
 - Scores don't recompute after a sync yet; that comes with the scoring worker (Phase 5).
@@ -54,6 +66,7 @@
 | Variable | Meaning |
 | --- | --- |
 | `Spotify__ClientId` | Client ID from the Spotify developer dashboard. Not a secret. Empty disables Spotify (`503 spotify_unavailable` on connect). |
+| `Spotify__ClientSecret` | Secret. Client secret from the Spotify dashboard. Only for app tokens (artist search and add); empty turns those off. Never logged. |
 | `Spotify__RedirectUris` | Comma-separated redirect URIs the app may send. Each must also be registered in the Spotify dashboard. |
 | `Spotify__TokenKey` | Secret. Base64 of 32 random bytes (`openssl rand -base64 32`). Required once `ClientId` is set; the API and worker refuse to start without it. Both processes need the same key. |
 | `Spotify__PreviousTokenKeys` | Optional, comma-separated. Old keys still accepted for decryption during rotation. |

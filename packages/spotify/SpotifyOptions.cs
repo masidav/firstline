@@ -1,8 +1,9 @@
 namespace FandomScore.Spotify;
 
 /// <summary>
-/// Configuration section <c>Spotify</c>, read by the API and the worker. The token key is a secret and comes
-/// from the environment (<c>Spotify__TokenKey</c>). See docs/adr/0005-spotify-integration.md.
+/// Configuration section <c>Spotify</c>, read by the API and the worker. The token key and client secret are
+/// secrets and come from the environment (<c>Spotify__TokenKey</c>, <c>Spotify__ClientSecret</c>).
+/// See docs/adr/0005-spotify-integration.md.
 /// </summary>
 public sealed class SpotifyOptions
 {
@@ -23,6 +24,12 @@ public sealed class SpotifyOptions
 
     /// <summary>Client ID of the app in the Spotify developer dashboard. Not a secret. Empty disables Spotify.</summary>
     public string ClientId { get; set; } = "";
+
+    /// <summary>
+    /// Client secret from the Spotify dashboard. Secret. Used only for app tokens (client credentials) for artist
+    /// search and lookup; user connections use PKCE without it. Empty turns artist search and add off.
+    /// </summary>
+    public string ClientSecret { get; set; } = "";
 
     /// <summary>
     /// Comma-separated redirect URIs the mobile app may use. Each must also be registered in the Spotify dashboard.
@@ -54,6 +61,9 @@ public sealed class SpotifyOptions
     public int MaxPlaylistItems { get; set; } = 500;
 
     public bool IsEnabled => ClientId.Length > 0;
+
+    /// <summary>Artist search and lookup need an app token, so the client secret too.</summary>
+    public bool IsCatalogEnabled => IsEnabled && ClientSecret.Length > 0;
 
     public IReadOnlyList<string> RedirectUriList => Split(RedirectUris);
 

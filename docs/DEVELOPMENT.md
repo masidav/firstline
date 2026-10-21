@@ -53,7 +53,9 @@ The suite starts its own PostgreSQL 16 container, so it needs Docker but not the
 - Spotify needs `Spotify__ClientId`, `Spotify__RedirectUris`, and `Spotify__TokenKey` (`openssl rand -base64 32`), the
   same values for the API and the worker. Without a client ID, Spotify is off and connecting returns `503`. In the
   Spotify dashboard, register the redirect URIs and add each tester's Spotify account under Users (development
-  mode allows 5). See [ADR 0005](adr/0005-spotify-integration.md).
+  mode allows 5). Artist search and add also need `Spotify__ClientSecret` (the dashboard's client secret);
+  without it they return `503`. `Spotify__TokenKey` is a key you generate, not anything from Spotify.
+  See [ADR 0005](adr/0005-spotify-integration.md).
 - To connect a real Spotify account without the mobile app: `python3 tools/dev/spotify_connect.py --help`. It
   creates a local dev user and session (local database only), runs Spotify's sign-in in your browser, calls
   `PUT /v1/me/spotify`, and shows what the sync stored. Register `http://127.0.0.1:8888/callback` in the

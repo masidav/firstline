@@ -231,6 +231,8 @@ export interface paths {
          * Search Spotify for artists
          * @description Searches Spotify and marks each result as tracked or not yet tracked (matched on
          *     `spotify_artist_id`). Untracked results are not stored. Debounce on the client.
+         *     Spotify returns at most 10 results per search for development-mode apps. 30 searches per minute per user.
+         *     Does not need the user to have connected Spotify.
          */
         get: operations["searchArtists"];
         put?: never;
@@ -256,7 +258,7 @@ export interface paths {
          * @description Takes a Spotify artist id from search; the server fetches the name and image from Spotify
          *     (client-supplied names are never trusted) and calls `track_artist()`. A new artist starts as
          *     `onboarding`; a worker loads the catalog and baseline and then marks it `active`. The adding user
-         *     is synced immediately after activation.
+         *     is synced immediately after activation. An artist that is already tracked is returned as is.
          */
         post: operations["trackArtist"];
         delete?: never;
@@ -1722,6 +1724,16 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
+        /** @description Spotify did not respond, or Spotify is not set up on this server (`code: spotify_unavailable`) */
+        SpotifyUnavailable: {
+            headers: {
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
         /** @description Too many requests */
         RateLimited: {
             headers: {
@@ -2124,7 +2136,7 @@ export interface operations {
         parameters: {
             query: {
                 q: string;
-                limit?: components["parameters"]["Limit"];
+                limit?: number;
             };
             header?: never;
             path?: never;
@@ -2143,7 +2155,9 @@ export interface operations {
                     };
                 };
             };
+            422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
+            503: components["responses"]["SpotifyUnavailable"];
         };
     };
     listArtists: {
@@ -2202,6 +2216,8 @@ export interface operations {
             /** @description Artist added and onboarding started */
             201: {
                 headers: {
+                    /** @description `/v1/artists/{artistId}` */
+                    Location?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -2217,15 +2233,18 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Daily add limit reached (`code: artist_add_limit`) */
+            422: components["responses"]["ValidationFailed"];
+            /** @description Daily add limit reached (`code: artist_add_limit`); `Retry-After` is the next UTC midnight */
             429: {
                 headers: {
+                    "Retry-After"?: number;
                     [name: string]: unknown;
                 };
                 content: {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            503: components["responses"]["SpotifyUnavailable"];
         };
     };
     getArtist: {

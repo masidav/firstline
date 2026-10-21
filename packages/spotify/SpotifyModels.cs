@@ -19,3 +19,6 @@ public sealed record SpotifyLibrary(
     IReadOnlyList<SpotifyTrack> PlaylistTracks,
     IReadOnlyList<string> TopArtistIds,
     IReadOnlyList<SpotifyTrack> RecentlyPlayed);
+
+/// <summary>An artist from search or lookup. <see cref="ImageUrl"/> is the smallest image at least 300 px wide.</summary>
+public sealed record SpotifyArtist(string Id, string Name, string? ImageUrl, IReadOnlyList<string> Genres);

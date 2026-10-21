@@ -30,6 +30,9 @@ public sealed class FakeSpotify : HttpMessageHandler
     /// <summary>The token endpoint's JSON body (an error body when <see cref="TokenStatus"/> is not OK).</summary>
     public object TokenResponse { get; set; } = Tokens("refresh-1");
 
+    /// <summary>Status of client-credentials token requests (the app token for artist search and lookup).</summary>
+    public HttpStatusCode AppTokenStatus { get; set; } = HttpStatusCode.OK;
+
     public string UserId { get; set; } = "sp-user-1";
 
     public HttpStatusCode ApiStatus { get; set; } = HttpStatusCode.OK;
@@ -43,6 +46,25 @@ public sealed class FakeSpotify : HttpMessageHandler
     public List<object> Playlists { get; } = [];
 
     public Dictionary<string, List<object>> PlaylistItems { get; } = [];
+
+    /// <summary>Spotify's artist catalog, for search (name contains the query) and <c>artists/{id}</c>.</summary>
+    public List<Artist> Artists { get; } = [];
+
+    public sealed record Artist(string Id, string Name, params string[] Genres)
+    {
+        public object Json => new
+        {
+            id = Id,
+            name = Name,
+            genres = Genres,
+            images = new[]
+            {
+                new { url = $"https://i.scdn.co/{Id}-640", width = 640, height = 640 },
+                new { url = $"https://i.scdn.co/{Id}-320", width = 320, height = 320 },
+                new { url = $"https://i.scdn.co/{Id}-160", width = 160, height = 160 },
+            },
+        };
+    }
 
     /// <summary>Served once each, in order, before the normal response for that path.</summary>
     public ConcurrentQueue<(string Path, Func<HttpResponseMessage> Response)> Interruptions { get; } = new();
@@ -80,7 +102,7 @@ public sealed class FakeSpotify : HttpMessageHandler
 
     public SpotifyClient Client(SpotifyOptions? options = null) =>
         new(new HttpClient(this, disposeHandler: false), Microsoft.Extensions.Options.Options.Create(options ?? Options()),
-            TimeProvider.System, NullLogger<SpotifyClient>.Instance);
+            new SpotifyAppToken(), TimeProvider.System, NullLogger<SpotifyClient>.Instance);
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -99,6 +121,16 @@ public sealed class FakeSpotify : HttpMessageHandler
         if (Interruptions.TryPeek(out var next) && next.Path == path && Interruptions.TryDequeue(out next))
         {
             return next.Response();
+        }
+
+        if (path == "token" && form.GetValueOrDefault("grant_type") == "client_credentials")
+        {
+            return new HttpResponseMessage(AppTokenStatus)
+            {
+                Content = JsonContent.Create(AppTokenStatus == HttpStatusCode.OK
+                    ? new { access_token = "app-1", token_type = "Bearer", expires_in = 3600 }
+                    : (object)new { error = "invalid_client" }),
+            };
         }
 
         if (path == "token")
@@ -121,11 +153,22 @@ public sealed class FakeSpotify : HttpMessageHandler
             "me/top/artists" => Page(TopArtistIds.Select(id => (object)new { id, name = id }).ToList(), limit, offset),
             "me/player/recently-played" => new { items = RecentlyPlayed.Take(limit).ToArray(), next = (string?)null },
             "me/playlists" => Page(Playlists, limit, offset),
+            "search" => new
+            {
+                artists = Page([.. Artists.Where(a => a.Name.Contains(query["q"]!, StringComparison.OrdinalIgnoreCase)).Select(a => a.Json)],
+                    limit, offset),
+            },
+            _ when path.StartsWith("artists/", StringComparison.Ordinal) =>
+                Artists.FirstOrDefault(a => a.Id == path["artists/".Length..])?.Json
+                ?? new { error = new { status = 404, message = "Resource not found" } },
             _ when path.StartsWith("playlists/", StringComparison.Ordinal) && path.EndsWith("/items", StringComparison.Ordinal) =>
                 Page(PlaylistItems.GetValueOrDefault(path["playlists/".Length..^"/items".Length]) ?? [], limit, offset),
             _ => throw new InvalidOperationException($"FakeSpotify has no route for {path}"),
         };
-        return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(body) };
+        var status = path.StartsWith("artists/", StringComparison.Ordinal) && Artists.All(a => a.Id != path["artists/".Length..])
+            ? HttpStatusCode.NotFound
+            : HttpStatusCode.OK;
+        return new HttpResponseMessage(status) { Content = JsonContent.Create(body) };
     }
 
     private static object Page(List<object> items, int limit, int offset) => new

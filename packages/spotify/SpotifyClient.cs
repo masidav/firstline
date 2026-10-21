@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -8,17 +9,21 @@ using Microsoft.Extensions.Options;
 namespace FandomScore.Spotify;
 
 /// <summary>
-/// Spotify's token endpoint (authorization code with PKCE, refresh) and the Web API reads the sync needs.
+/// Spotify's token endpoint (authorization code with PKCE, refresh, client credentials), the Web API reads the
+/// sync needs, and artist search and lookup with an app token.
 /// Only endpoints available to development-mode apps since February 2026 are used. Reads retry server errors
 /// and short rate limits a few times; longer waits surface as <see cref="SpotifyUnavailableException"/> so the
 /// job queue retries later. Tokens and codes are never logged or put in exception messages.
 /// </summary>
 public sealed partial class SpotifyClient(
-    HttpClient http, IOptions<SpotifyOptions> options, TimeProvider time, ILogger<SpotifyClient> logger)
+    HttpClient http, IOptions<SpotifyOptions> options, SpotifyAppToken appToken, TimeProvider time, ILogger<SpotifyClient> logger)
 {
     public static readonly Uri TokenEndpoint = new("https://accounts.spotify.com/api/token");
     public static readonly Uri ApiBase = new("https://api.spotify.com/v1/");
     public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(20);
+
+    /// <summary>Spotify's cap on search results per request for development-mode apps since February 2026.</summary>
+    public const int MaxSearchLimit = 10;
 
     private const int PageSize = 50;
     private const int MaxTries = 3;
@@ -98,13 +103,76 @@ public sealed partial class SpotifyClient(
             [.. (recent.Items ?? []).Select(p => ToTrack(p.Track)).OfType<SpotifyTrack>()]);
     }
 
+    /// <summary>
+    /// Artists matching <paramref name="query"/>, best match first, at most <see cref="MaxSearchLimit"/>.
+    /// Needs <see cref="SpotifyOptions.ClientSecret"/>.
+    /// </summary>
+    public async Task<IReadOnlyList<SpotifyArtist>> SearchArtistsAsync(string query, int limit, CancellationToken cancellationToken)
+    {
+        var result = await AppGetAsync<SearchDto>(
+            $"search?type=artist&limit={Math.Clamp(limit, 1, MaxSearchLimit)}&q={Uri.EscapeDataString(query)}",
+            "artist search", cancellationToken);
+        return [.. (result.Artists?.Items ?? []).Select(ToArtist).OfType<SpotifyArtist>()];
+    }
+
+    /// <summary>One artist, or null when Spotify has none with this id. Needs <see cref="SpotifyOptions.ClientSecret"/>.</summary>
+    public async Task<SpotifyArtist?> GetArtistAsync(string spotifyArtistId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return ToArtist(await AppGetAsync<ArtistDto>(
+                $"artists/{Uri.EscapeDataString(spotifyArtistId)}", "artist", cancellationToken));
+        }
+        catch (SpotifyRequestException e) when (e.Status is 400 or 404)
+        {
+            // 400 is Spotify's answer for an id that cannot exist.
+            return null;
+        }
+    }
+
+    private async Task<T> AppGetAsync<T>(string pathAndQuery, string label, CancellationToken cancellationToken)
+    {
+        var token = await AppTokenAsync(cancellationToken);
+        try
+        {
+            return await GetAsync<T>(token, pathAndQuery, label, cancellationToken);
+        }
+        catch (SpotifyAuthorizationException)
+        {
+            // Expired early or revoked: one more try with a new token.
+            appToken.Invalidate(token);
+            return await GetAsync<T>(await AppTokenAsync(cancellationToken), pathAndQuery, label, cancellationToken);
+        }
+    }
+
+    private Task<string> AppTokenAsync(CancellationToken cancellationToken) => appToken.GetAsync(time, async ct =>
+    {
+        var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_options.ClientId}:{_options.ClientSecret}"));
+        var tokens = await RequestTokenAsync(
+            new Dictionary<string, string> { ["grant_type"] = "client_credentials" }, "app token", ct,
+            new AuthenticationHeaderValue("Basic", credentials));
+        return (tokens.AccessToken!, TimeSpan.FromSeconds(tokens.ExpiresIn ?? 3600));
+    }, cancellationToken);
+
     private async Task<SpotifyTokens> TokenAsync(
         Dictionary<string, string> form, string label, CancellationToken cancellationToken)
     {
+        var tokens = await RequestTokenAsync(form, label, cancellationToken);
+        return new SpotifyTokens(tokens.AccessToken!, tokens.RefreshToken,
+            (tokens.Scope ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    private async Task<TokenDto> RequestTokenAsync(
+        Dictionary<string, string> form, string label, CancellationToken cancellationToken,
+        AuthenticationHeaderValue? authorization = null)
+    {
         // A code works once and a refresh may rotate the token, so server errors are not retried here.
-        using var response = await SendAsync(
-            () => new HttpRequestMessage(HttpMethod.Post, TokenEndpoint) { Content = new FormUrlEncodedContent(form) },
-            label, retryServerErrors: false, cancellationToken);
+        using var response = await SendAsync(() =>
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, TokenEndpoint) { Content = new FormUrlEncodedContent(form) };
+            request.Headers.Authorization = authorization;
+            return request;
+        }, label, retryServerErrors: false, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             var error = await ReadOAuthErrorAsync(response, cancellationToken);
@@ -117,13 +185,12 @@ public sealed partial class SpotifyClient(
         }
 
         var tokens = await response.Content.ReadFromJsonAsync<TokenDto>(Json, cancellationToken);
-        if (tokens?.AccessToken is not { Length: > 0 } accessToken)
+        if (tokens?.AccessToken is not { Length: > 0 })
         {
             throw new SpotifyUnavailableException($"Spotify returned an incomplete {label} response.");
         }
 
-        return new SpotifyTokens(accessToken, tokens.RefreshToken,
-            (tokens.Scope ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        return tokens;
     }
 
     private async Task<List<T>> GetPagesAsync<T>(
@@ -250,10 +317,22 @@ public sealed partial class SpotifyClient(
             ? new SpotifyTrack(id, track.Album?.Id, [.. (track.Artists ?? []).Select(a => a.Id).OfType<string>()])
             : null;
 
+    private static SpotifyArtist? ToArtist(ArtistDto? artist) =>
+        artist is { Id: { } id, Name: { } name }
+            ? new SpotifyArtist(id, name, PickImage(artist.Images), artist.Genres ?? [])
+            : null;
+
+    // Big enough for a list row or header without downloading the 640 px original; else the largest there is.
+    private static string? PickImage(IReadOnlyList<ImageDto>? images) =>
+        images?.Where(i => i.Url is not null)
+            .OrderBy(i => i.Width >= 300 ? i.Width : int.MaxValue)
+            .ThenByDescending(i => i.Width ?? 0)
+            .FirstOrDefault()?.Url;
+
     [LoggerMessage(Level = LogLevel.Warning, Message = "Spotify {Request} request got status {Status} on attempt {Attempt}; retrying.")]
     private static partial void LogRetry(ILogger logger, string request, int status, int attempt);
 
-    private sealed record TokenDto(string? AccessToken, string? RefreshToken, string? Scope);
+    private sealed record TokenDto(string? AccessToken, string? RefreshToken, string? Scope, int? ExpiresIn);
 
     private sealed record OAuthErrorDto(string? Error);
 
@@ -261,7 +340,11 @@ public sealed partial class SpotifyClient(
 
     private sealed record UserDto(string? Id);
 
-    private sealed record ArtistDto(string? Id);
+    private sealed record ImageDto(string? Url, int? Width);
+
+    private sealed record ArtistDto(string? Id, string? Name, IReadOnlyList<ImageDto>? Images, IReadOnlyList<string>? Genres);
+
+    private sealed record SearchDto(Page<ArtistDto>? Artists);
 
     private sealed record AlbumDto(string? Id);
 

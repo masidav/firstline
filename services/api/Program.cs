@@ -1,4 +1,5 @@
 using System.Text.Json;
+using FandomScore.Api.Features.Artists;
 using FandomScore.Api.Features.Authentication;
 using FandomScore.Api.Features.SpotifySync;
 using FandomScore.Api.Features.Users;
@@ -18,6 +19,7 @@ builder.Services.AddNpgsqlDataSource(connectionString);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddAuth(builder.Configuration);
 builder.Services.AddSpotify(builder.Configuration);
+builder.Services.AddArtists();
 builder.Services.AddApiProblems();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower);
@@ -41,6 +43,7 @@ v1.MapAuth();
 v1.MapAppleNotifications();
 v1.MapMe();
 v1.MapSpotify();
+v1.MapArtists();
 
 app.Run();
 

@@ -352,9 +352,11 @@ paths:
       description: |
         Searches Spotify and marks each result as tracked or not yet tracked (matched on
         `spotify_artist_id`). Untracked results are not stored. Debounce on the client.
+        Spotify returns at most 10 results per search for development-mode apps. 30 searches per minute per user.
+        Does not need the user to have connected Spotify.
       parameters:
         - {name: q, in: query, required: true, schema: {type: string, minLength: 2, maxLength: 100}}
-        - {$ref: '#/components/parameters/Limit'}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 10, default: 10}}
       responses:
         '200':
           description: Results
@@ -367,7 +369,9 @@ paths:
                   items:
                     type: array
                     items: {$ref: '#/components/schemas/ArtistSearchResult'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
         '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/SpotifyUnavailable'}
   /artists:
     get:
       tags: [Artists]
@@ -393,7 +397,7 @@ paths:
         Takes a Spotify artist id from search; the server fetches the name and image from Spotify
         (client-supplied names are never trusted) and calls `track_artist()`. A new artist starts as
         `onboarding`; a worker loads the catalog and baseline and then marks it `active`. The adding user
-        is synced immediately after activation.
+        is synced immediately after activation. An artist that is already tracked is returned as is.
       parameters:
         - {$ref: '#/components/parameters/IdempotencyKey'}
       requestBody:
@@ -408,6 +412,10 @@ paths:
       responses:
         '201':
           description: Artist added and onboarding started
+          headers:
+            Location:
+              schema: {type: string}
+              description: '`/v1/artists/{artistId}`'
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Artist'}
@@ -421,11 +429,16 @@ paths:
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
         '429':
-          description: 'Daily add limit reached (`code: artist_add_limit`)'
+          description: 'Daily add limit reached (`code: artist_add_limit`); `Retry-After` is the next UTC midnight'
+          headers:
+            Retry-After:
+              schema: {type: integer}
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
+        '503': {$ref: '#/components/responses/SpotifyUnavailable'}
   /artists/{artistId}:
     parameters:
       - {$ref: '#/components/parameters/ArtistId'}
@@ -1416,6 +1429,14 @@ components:
           schema: {$ref: '#/components/schemas/Problem'}
     ValidationFailed:
       description: Request body or parameters are invalid
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    SpotifyUnavailable:
+      description: 'Spotify did not respond, or Spotify is not set up on this server (`code: spotify_unavailable`)'
+      headers:
+        Retry-After:
+          schema: {type: integer}
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}

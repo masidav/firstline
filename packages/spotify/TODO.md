@@ -11,7 +11,9 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [x] Implement provider clients with timeouts, safe retries, and rate-limit handling.
 - [x] Normalize provider responses into internal types without storing untracked artists' listening data.
 - [x] Add tests using mocked provider responses (`FakeSpotify`).
-- [ ] Documented integration check against real Spotify with a development-mode app and an allowlisted account.
+- [x] Documented integration check against real Spotify with a development-mode app and an allowlisted account.
+      2026-10-20: connect and first sync via `tools/dev/spotify_connect.py` (see `PROJECT_TODO.md`, Phase 4).
+- [x] App token (client credentials) for artist search and lookup (`SearchArtistsAsync`, `GetArtistAsync`). Verified 2026-10-20 with `FakeSpotify`; real-Spotify check pending.
 
 ## Verification
 - [x] Add or update automated tests for the behavior above.
