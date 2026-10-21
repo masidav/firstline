@@ -21,7 +21,7 @@
 cp .env.example .env                       # set a local password in both places, and
                                            # Auth__SigningKey=$(openssl rand -base64 32)
 docker compose --env-file .env -f infrastructure/docker-compose.yml up -d
-set -a; . ./.env; set +a                   # export ConnectionStrings__Database
+set -a; . ./.env; set +a                   # export ConnectionStrings__Database (keep it quoted: it contains ;)
 dotnet run --project database              # apply migrations
 dotnet run --project services/api          # http://localhost:5271/v1/health
 dotnet run --project workers               # background jobs (separate terminal)
