@@ -10,9 +10,11 @@ namespace FandomScore.Worker.SpotifySync;
 
 /// <summary>
 /// Syncs one user's Spotify signals for tracked, active artists (payload <c>{"user_id": ...}</c>, queued by
-/// <c>request_spotify_sync()</c>). Refreshes the token, reads the library, drops untracked artists in memory,
-/// then replaces the user's <c>user_artist_signals</c> and <c>user_track_likes</c> in one transaction, so
-/// running it again gives the same result. See docs/adr/0005-spotify-integration.md.
+/// <c>request_spotify_sync()</c>). Refreshes the token, reads the library, adds the fan's top artists that nobody
+/// tracks yet (<see cref="SpotifyOptions.AutoTrackTopArtists"/>; they onboard and then score on the fan's next
+/// sync), drops untracked artists in memory, then replaces the user's <c>user_artist_signals</c> and
+/// <c>user_track_likes</c> in one transaction, so running it again gives the same result.
+/// See docs/adr/0005-spotify-integration.md.
 /// </summary>
 public sealed partial class SpotifySyncJob(
     NpgsqlDataSource db, SpotifyClient spotify, SpotifyTokenProtector protector, IOptions<SpotifyOptions> options,
@@ -79,14 +81,15 @@ public sealed partial class SpotifySyncJob(
                 new { userId, start.SpotifyUserId, token = protector.Protect(userId, tokens.RefreshToken ?? refreshToken) });
 
             var library = await spotify.GetLibraryAsync(tokens.AccessToken, start.SpotifyUserId, cancellationToken);
+            var added = await TrackTopArtistsAsync(connection, userId, library.TopArtists, cancellationToken);
             var tracked = (await connection.QueryAsync<(string SpotifyArtistId, Guid Id)>(
                     "SELECT spotify_artist_id, id FROM artists WHERE status = 'active'"))
                 .ToDictionary(a => a.SpotifyArtistId, a => a.Id);
             var signals = SpotifySignals.Reduce(library, tracked);
 
-            if (await SaveAsync(connection, userId, start.SpotifyUserId, signals, cancellationToken))
+            if (await SaveAsync(connection, userId, start.SpotifyUserId, signals, added, cancellationToken))
             {
-                LogSynced(logger, userId, signals.Artists.Count);
+                LogSynced(logger, userId, signals.Artists.Count, added);
             }
         }
         catch (SpotifyAuthorizationException)
@@ -122,9 +125,66 @@ public sealed partial class SpotifySyncJob(
         }
     }
 
+    /// <summary>
+    /// Adds the fan's top artists that are not tracked yet, best rank first, at most
+    /// <see cref="SpotifyOptions.AutoTrackTopArtists"/> per sync: the same <c>track_artist()</c> path as
+    /// <c>POST /artists</c> (the fan is <c>added_by</c>, the daily add limit applies, onboarding is queued in the same
+    /// transaction), so the rule that only tracked artists are synced still holds. Returns how many were added.
+    /// Nothing happens without the client secret, because the artists could never load a catalog and activate.
+    /// </summary>
+    private async Task<int> TrackTopArtistsAsync(
+        NpgsqlConnection connection, Guid userId, IReadOnlyList<SpotifyArtist> topArtists, CancellationToken cancellationToken)
+    {
+        var limit = options.Value.AutoTrackTopArtists;
+        if (limit <= 0 || !options.Value.IsCatalogEnabled || topArtists.Count == 0)
+        {
+            return 0;
+        }
+
+        var known = (await connection.QueryAsync<string>(
+                "SELECT spotify_artist_id FROM artists WHERE spotify_artist_id = ANY(@ids)",
+                new { ids = topArtists.Select(a => a.Id).ToArray() }))
+            .ToHashSet(StringComparer.Ordinal);
+        var added = 0;
+        foreach (var artist in topArtists.Where(a => !known.Contains(a.Id)).DistinctBy(a => a.Id))
+        {
+            if (added >= limit)
+            {
+                break;
+            }
+
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                var (artistId, created) = await connection.QuerySingleAsync<(Guid ArtistId, bool Created)>(
+                    "SELECT o_artist_id, o_created FROM track_artist(@userId, @spotifyArtistId, @name)",
+                    new { userId, spotifyArtistId = artist.Id, name = artist.Name }, transaction);
+                if (created)
+                {
+                    // A separate statement: the row the function inserted is not visible to the same statement.
+                    await connection.ExecuteAsync("UPDATE artists SET image_url = @imageUrl WHERE id = @artistId",
+                        new { imageUrl = artist.ImageUrl, artistId }, transaction);
+                    added++;
+                }
+
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.RaiseException
+                                              && e.MessageText == "daily artist add limit reached")
+            {
+                // The rest wait for a later sync; the fan's own adds share the limit.
+                LogAddLimit(logger, userId, added);
+                break;
+            }
+        }
+
+        return added;
+    }
+
     /// <summary>Replaces the user's signals. Returns false when the connection changed or was removed meanwhile.</summary>
     private static async Task<bool> SaveAsync(
-        NpgsqlConnection connection, Guid userId, string spotifyUserId, SyncedSignals signals, CancellationToken cancellationToken)
+        NpgsqlConnection connection, Guid userId, string spotifyUserId, SyncedSignals signals, int topArtistsAdded,
+        CancellationToken cancellationToken)
     {
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         // Disconnecting deletes this row first, so holding its lock keeps a disconnect from interleaving.
@@ -156,7 +216,7 @@ public sealed partial class SpotifySyncJob(
 
             -- A sync requested while this one ran stays queued.
             UPDATE spotify_connections
-            SET last_synced_at = now(), tracked_artists_found = @found, sync_error = NULL,
+            SET last_synced_at = now(), tracked_artists_found = @found, top_artists_added = @topArtistsAdded, sync_error = NULL,
                 sync_state = CASE WHEN sync_state = 'running' THEN 'idle' ELSE sync_state END
             WHERE user_id = @userId;
             """,
@@ -173,6 +233,7 @@ public sealed partial class SpotifySyncJob(
                 sources = signals.Tracks.Select(t => t.Source).ToArray(),
                 savedAt = signals.Tracks.Select(t => t.SavedAt).ToArray(),
                 found = artists.Count,
+                topArtistsAdded,
             },
             transaction);
         await transaction.CommitAsync(cancellationToken);
@@ -184,8 +245,11 @@ public sealed partial class SpotifySyncJob(
             "UPDATE spotify_connections SET sync_state = @state, sync_error = @error WHERE user_id = @userId AND sync_state = 'running'",
             new { userId, state, error });
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Synced Spotify for user {UserId}: {Artists} tracked artists found.")]
-    private static partial void LogSynced(ILogger logger, Guid userId, int artists);
+    [LoggerMessage(Level = LogLevel.Information, Message = "Synced Spotify for user {UserId}: {Artists} tracked artists found, {Added} top artists added.")]
+    private static partial void LogSynced(ILogger logger, Guid userId, int artists, int added);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "User {UserId} reached the daily artist add limit after {Added} top artists; the rest wait for a later sync.")]
+    private static partial void LogAddLimit(ILogger logger, Guid userId, int added);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Spotify no longer accepts user {UserId}'s connection; they must reconnect.")]
     private static partial void LogReauthRequired(ILogger logger, Guid userId);

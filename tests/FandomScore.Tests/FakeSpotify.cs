@@ -190,7 +190,8 @@ public sealed class FakeSpotify : HttpMessageHandler
         {
             "me" => new { id = UserId, display_name = "Fan" },
             "me/tracks" => Page(SavedTracks, limit, offset),
-            "me/top/artists" => Page(TopArtistIds.Select(id => (object)new { id, name = id }).ToList(), limit, offset),
+            "me/top/artists" => Page(TopArtistIds.Select(id => Artists.FirstOrDefault(a => a.Id == id)?.Json ?? new { id, name = id })
+                .ToList(), limit, offset),
             "me/player/recently-played" => new { items = RecentlyPlayed.Take(limit).ToArray(), next = (string?)null },
             "me/playlists" => Page(Playlists, limit, offset),
             "search" => new

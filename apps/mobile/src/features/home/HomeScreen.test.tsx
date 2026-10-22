@@ -26,12 +26,15 @@ const geese = {
 };
 const spotifyGeese = { spotify_artist_id: geese.spotify_artist_id, name: 'Geese', genres: ['indie rock'], tracked: false };
 
-/** Answers GET /artists with `tracked`, GET /artists/search with `onSpotify`, and GET /me/scores with `scores`. */
-function serve(tracked: unknown[], onSpotify: unknown[] = [], scores: unknown[] = []) {
-  mockApi.GET.mockImplementation(async (path: string) => {
+/**
+ * Answers GET /artists with `tracked` (or `onboarding` when asked for the fan's own onboarding artists),
+ * GET /artists/search with `onSpotify`, and GET /me/scores with `scores`.
+ */
+function serve(tracked: unknown[], onSpotify: unknown[] = [], scores: unknown[] = [], onboarding: unknown[] = []) {
+  mockApi.GET.mockImplementation(async (path: string, options?: { params?: { query?: { added_by_me?: boolean } } }) => {
     switch (path) {
       case '/artists':
-        return ok({ items: tracked, next_cursor: null });
+        return ok({ items: options?.params?.query?.added_by_me ? onboarding : tracked, next_cursor: null });
       case '/me/scores':
         return ok({ items: scores, next_cursor: null });
       default:
@@ -66,6 +69,19 @@ test('with an empty search box, your artists show with their scores', async () =
   // Typing replaces them with search results.
   fireEvent.changeText(screen.getByLabelText('Search artists'), 'zz');
   await waitFor(() => expect(screen.queryByText('Radiohead')).toBeNull());
+});
+
+test('artists a sync added from your top artists show while they onboard', async () => {
+  serve([], [], [score('Radiohead', 40, false)], [geese]);
+  render(<HomeScreen />);
+
+  expect(await screen.findByText('Geese')).toBeTruthy();
+  expect(screen.getByText('Setting up · your score comes with the next sync')).toBeTruthy();
+  expect(screen.getByText('Radiohead')).toBeTruthy();
+  expect(calls('/artists').map(([, options]) => options)).toContainEqual({
+    params: { query: { added_by_me: true, status: 'onboarding', sort: 'recent', limit: 100 } },
+  });
+  expect(screen.queryByText(/None of the artists you listen to/)).toBeNull();
 });
 
 test('with no scores yet, a fan without Spotify is asked to connect it', async () => {
@@ -107,7 +123,9 @@ test('typing searches the artists already here, not Spotify', async () => {
 
   expect(await screen.findByText('Geese')).toBeTruthy();
   expect(screen.getByText('Getting ready')).toBeTruthy();
-  expect(calls('/artists')[0]?.[1]).toEqual({ params: { query: { q: 'gee', status: 'all', sort: 'name', limit: 20 } } });
+  expect(calls('/artists').map(([, options]) => options)).toContainEqual({
+    params: { query: { q: 'gee', status: 'all', sort: 'name', limit: 20 } },
+  });
   expect(calls('/artists/search')).toHaveLength(0);
 });
 

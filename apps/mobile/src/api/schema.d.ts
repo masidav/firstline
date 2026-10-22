@@ -177,7 +177,8 @@ export interface paths {
          * Connect Spotify
          * @description The app runs the Spotify authorization (PKCE) and sends the resulting code here. The server
          *     exchanges it and stores the refresh token encrypted, so Spotify tokens never live on the device.
-         *     Triggers a first sync of tracked artists.
+         *     Triggers a first sync: it adds the fan's top artists that nobody tracks yet (`top_artists_added`), so
+         *     their artists appear on the home screen right away, and scores tracked artists already active.
          *
          *     Request every scope: `user-library-read`, `user-top-read`, `user-read-recently-played`,
          *     `playlist-read-private`, `playlist-read-collaborative`. `redirect_uri` must be one the server allows
@@ -211,8 +212,9 @@ export interface paths {
         put?: never;
         /**
          * Request a Spotify sync now
-         * @description Only tracked, active artists are counted; everything else is discarded during sync.
-         *     A sync already `queued` or `running` is returned as is. Otherwise one manual sync per 15 minutes
+         * @description Only tracked, active artists are counted; everything else is discarded during sync, except that the
+         *     fan's Spotify top artists are added to the tracked list first when nobody tracks them yet
+         *     (`top_artists_added`; the daily artist add limit applies). A sync already `queued` or `running` is returned as is. Otherwise one manual sync per 15 minutes
          *     (`429 rate_limited`). `409 spotify_not_connected` without a connection; `409 spotify_reauth_required`
          *     when Spotify rejected the stored authorization (connect again with `PUT /me/spotify`).
          */
@@ -1419,6 +1421,12 @@ export interface components {
             sync_error?: "spotify_unavailable" | "spotify_forbidden" | "spotify_reauth_required" | "internal_error" | null;
             /** @description Tracked artists found in the last sync. */
             tracked_artists_found?: number;
+            /**
+             * @description Artists from the fan's Spotify top artists that the last sync added to the tracked list because nobody
+             *     tracked them yet. They start `onboarding` (list them with `GET /artists?added_by_me=true&status=onboarding`)
+             *     and count toward the fan's score on the sync that follows their activation.
+             */
+            top_artists_added?: number;
         };
         DeviceRegistration: {
             push_token: string;
@@ -2667,6 +2675,8 @@ export interface operations {
                 /** @description `all` is onboarding and active artists */
                 status?: "onboarding" | "active" | "all";
                 sort?: "recent" | "name" | "fans";
+                /** @description Only artists the signed-in fan added, by hand or through a Spotify sync of their top artists */
+                added_by_me?: boolean;
                 limit?: components["parameters"]["Limit"];
                 cursor?: components["parameters"]["Cursor"];
             };

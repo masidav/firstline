@@ -81,4 +81,13 @@ test('status lines', () => {
   expect(
     describeStatus({ connected: true, sync_state: 'idle', last_synced_at: '2026-10-18T12:00:00Z', tracked_artists_found: 3 }),
   ).toContain('Found 3 tracked artists');
+  const withAdded = describeStatus({
+    connected: true,
+    sync_state: 'idle',
+    last_synced_at: '2026-10-18T12:00:00Z',
+    tracked_artists_found: 3,
+    top_artists_added: 5,
+  });
+  expect(withAdded).toContain('Found 3 tracked artists');
+  expect(withAdded).toContain('Added 5 of your top artists');
 });

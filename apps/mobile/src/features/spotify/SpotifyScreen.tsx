@@ -106,7 +106,8 @@ export function SpotifyScreen() {
       <Title>Spotify</Title>
       <Body muted>
         We read your saved tracks, top artists, recent plays, and your own playlists to measure how much you listen
-        to the artists we track. Nothing about other artists is stored. We never post or change anything.
+        to the artists we track. Your top artists are added to the tracked list automatically; nothing about other
+        artists is stored. We never post or change anything.
       </Body>
 
       {status && <Body>{describeStatus(status)}</Body>}

@@ -695,4 +695,20 @@ BEGIN
   VALUES ('00000000-0000-0000-0000-000000000001', v_other, 'concert_photo', v_event);
 END $$;
 
+-- Migration 0011: top_artists_added counts what a sync added; never negative.
+DO $$
+DECLARE fan uuid;
+BEGIN
+  INSERT INTO users (handle, email) VALUES ('inv_top_artists', 'inv_top_artists@example.test') RETURNING id INTO fan;
+  INSERT INTO spotify_connections (user_id, spotify_user_id, refresh_token_enc, scopes)
+  VALUES (fan, 'sp-inv-top', '\x00', '{}');
+  ASSERT (SELECT top_artists_added FROM spotify_connections WHERE user_id = fan) = 0, 'defaults to 0';
+  BEGIN
+    UPDATE spotify_connections SET top_artists_added = -1 WHERE user_id = fan;
+    RAISE EXCEPTION 'negative top_artists_added should fail';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  DELETE FROM users WHERE id = fan;
+END $$;
+
 \echo ALL INVARIANT TESTS PASSED

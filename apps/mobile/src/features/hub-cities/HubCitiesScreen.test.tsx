@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 
 import { HubCitiesScreen } from './HubCitiesScreen';
 
@@ -57,6 +58,9 @@ test('a new fan searches, picks a primary city and a backup, and continues home'
 
   expect(screen.getByText('Primary')).toBeTruthy();
   expect(screen.getByText('Backup')).toBeTruthy();
+  // The primary city is set larger than its backups.
+  const fontSize = (name: string) => StyleSheet.flatten(screen.getByText(name).props.style).fontSize;
+  expect(fontSize('Chicago, IL')).toBeGreaterThan(fontSize('Toronto, ON'));
   fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
 
   await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/home'));

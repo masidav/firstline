@@ -61,8 +61,8 @@ public static partial class ArtistEndpoints
     // Tracked artists only; this never calls Spotify. Paused artists are never listed. The cursor is an opaque offset,
     // which is fine while the catalog is small.
     private static async Task<IResult> ListAsync(
-        ClaimsPrincipal user, string? q, string? status, string? sort, int? limit, string? cursor, NpgsqlDataSource db,
-        CancellationToken cancellationToken)
+        ClaimsPrincipal user, string? q, string? status, string? sort, bool? added_by_me, int? limit, string? cursor,
+        NpgsqlDataSource db, CancellationToken cancellationToken)
     {
         var query = q?.Trim() ?? "";
         var errors = new List<FieldError>();
@@ -121,14 +121,15 @@ public static partial class ArtistEndpoints
              SELECT {ArtistColumns}
              FROM artists a {MyScoreJoin}
              WHERE a.status = ANY(@statuses::artist_status[])
+               AND (NOT @addedByMe OR a.added_by = @userId)
                AND (@query = '' OR a.name ILIKE @prefix OR a.name ILIKE @wordPrefix)
              ORDER BY {orderBy}
              LIMIT @take OFFSET @offset
              """,
             new
             {
-                userId = user.UserId(), statuses, query, prefix = escaped + "%", wordPrefix = "% " + escaped + "%",
-                take = pageSize + 1, offset,
+                userId = user.UserId(), statuses, addedByMe = added_by_me ?? false, query, prefix = escaped + "%",
+                wordPrefix = "% " + escaped + "%", take = pageSize + 1, offset,
             })).ToList();
 
         var next = rows.Count > pageSize ? PageCursor.Write(offset + pageSize) : null;

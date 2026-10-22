@@ -100,9 +100,16 @@ export function describeStatus(status: SpotifyStatus): string {
         ? "Spotify refused this account. While the app is in Spotify's development mode, only allowlisted accounts can connect."
         : "The last sync didn't finish. It will try again automatically.";
     default:
-      return status.last_synced_at
-        ? `Last synced ${new Date(status.last_synced_at).toLocaleString()}. Found ${status.tracked_artists_found ?? 0} tracked artists in your library.`
-        : 'Connected. Waiting for the first sync.';
+      if (!status.last_synced_at) {
+        return 'Connected. Waiting for the first sync.';
+      }
+      return [
+        `Last synced ${new Date(status.last_synced_at).toLocaleString()}.`,
+        `Found ${status.tracked_artists_found ?? 0} tracked artists in your library.`,
+        ...(status.top_artists_added
+          ? [`Added ${status.top_artists_added} of your top artists; they count once they're set up.`]
+          : []),
+      ].join(' ');
   }
 }
 

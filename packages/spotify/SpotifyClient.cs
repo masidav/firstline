@@ -102,8 +102,8 @@ public sealed partial class SpotifyClient(
             [.. saved.Select(s => ToTrack(s.Track) is { } track ? new SpotifySavedTrack(track, s.AddedAt) : null)
                 .OfType<SpotifySavedTrack>()],
             playlistTracks,
-            // Keep positions: the index is the rank.
-            [.. (top.Items ?? []).Select(a => a.Id ?? "")],
+            // Keep positions: the index is the rank. Names and images let the sync track new ones.
+            [.. (top.Items ?? []).Select(ToArtist).OfType<SpotifyArtist>()],
             [.. (recent.Items ?? []).Select(p => ToTrack(p.Track)).OfType<SpotifyTrack>()]);
     }
 
