@@ -7,7 +7,7 @@ using Npgsql;
 namespace FandomScore.Api.Features.Allocations;
 
 /// <summary>
-/// Fan registration (migration 0011): check eligibility, register, withdraw, and list. The database functions
+/// Fan registration (migration 0013): check eligibility, register, withdraw, and list. The database functions
 /// <c>registration_blocker()</c>, <c>register_for_allocation()</c>, and <c>withdraw_registration()</c> hold the rules;
 /// a registration keeps a snapshot of the fan's hub cities and score from when they registered.
 /// </summary>

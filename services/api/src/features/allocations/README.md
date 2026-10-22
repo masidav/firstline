@@ -2,7 +2,7 @@
 
 Face-value, non-transferable tickets set aside for an artist's top fans before the public sale (Phase 11).
 
-## Model (migration 0011)
+## Model (migration 0013)
 - **Show** (`events`): an artist, a name and venue, a start time, and a hub city (`city_id`, one of the cities from
   migration 0010), so "fans whose hubs include the show's city" is an exact match.
 - **Allocation** (`allocations`): a pool of tickets for a show, one per selected fan, at face value

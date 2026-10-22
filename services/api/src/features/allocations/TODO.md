@@ -4,11 +4,11 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 
 ## Implementation checklist
 - [x] Model events, allocation pools (ticket count or share of inventory), price (face value), eligibility thresholds, and registration windows.
-      Migration 0011: shows have a hub city; allocations have a ticket count (one per fan), face value, a minimum
+      Migration 0013: shows have a hub city; allocations have a ticket count (one per fan), face value, a minimum
       percentile, and a registration window; draft → published → cancelled; rules lock once registration opens.
       Staff manage them under `/v1/admin` (`tools/dev/allocations.py` locally); fans read `/v1/artists/{id}/events`
       and `/v1/events/{id}`. Verified 2026-10-21: AllocationApiTests 16/16, invariants, full suite 173/173.
-- [ ] For registration and selection (from the 0011 review): one registration per fan per *show* (a show can have
+- [ ] For registration and selection (from the 0013 review): one registration per fan per *show* (a show can have
       several allocations); registration takes `FOR SHARE` on the allocation so a rule edit and a registration
       serialize, and the rules lock also checks for registrations; registrations, score snapshots (percentile as
       `numeric(5,2)`, like `min_percentile`), and the selection record (seed, inputs) reference allocations with

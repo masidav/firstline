@@ -640,7 +640,7 @@ BEGIN
   DELETE FROM users WHERE id = fan;
 END $$;
 
--- ------------------------------------------------------------ events and allocations (0011)
+-- ------------------------------------------------------------ events and allocations (0013)
 -- Fixture: an active artist with a show in Chicago two weeks out.
 INSERT INTO artists (id, name, spotify_artist_id) VALUES ('40000000-0000-0000-0000-000000000001', 'Alloc Artist', 'sp-alloc');
 INSERT INTO artist_baselines (artist_id, dist_params, curve) VALUES ('40000000-0000-0000-0000-000000000001', '{}', '[]');
@@ -803,7 +803,7 @@ BEGIN
   END;
 END $$;
 
--- ------------------------------------------------------------ registrations (0011)
+-- ------------------------------------------------------------ registrations (0013)
 INSERT INTO users (id, handle, email) VALUES
   ('42000000-0000-0000-0000-000000000001', 'reg_local', 'reg_local@example.test'),
   ('42000000-0000-0000-0000-000000000002', 'reg_low', 'reg_low@example.test'),

@@ -14,7 +14,7 @@ using Npgsql;
 
 namespace FandomScore.Tests;
 
-/// <summary>Fan registration for allocations: eligibility, register, withdraw, and the snapshot (migration 0011).</summary>
+/// <summary>Fan registration for allocations: eligibility, register, withdraw, and the snapshot (migration 0013).</summary>
 [Collection(PostgresCollection.Name)]
 public sealed class RegistrationApiTests(PostgresFixture postgres) : IAsyncLifetime
 {

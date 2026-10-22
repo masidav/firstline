@@ -14,7 +14,7 @@ using Npgsql;
 
 namespace FandomScore.Tests;
 
-/// <summary>Shows and fan allocations: staff management under /admin and the fan views (migration 0011).</summary>
+/// <summary>Shows and fan allocations: staff management under /admin and the fan views (migration 0013).</summary>
 [Collection(PostgresCollection.Name)]
 public sealed class AllocationApiTests(PostgresFixture postgres) : IAsyncLifetime
 {

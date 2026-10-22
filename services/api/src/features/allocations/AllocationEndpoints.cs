@@ -10,7 +10,7 @@ using Npgsql;
 namespace FandomScore.Api.Features.Allocations;
 
 /// <summary>
-/// Shows and their fan allocations (migration 0011). Fans read published allocations (<c>/artists/{id}/events</c>,
+/// Shows and their fan allocations (migration 0013). Fans read published allocations (<c>/artists/{id}/events</c>,
 /// <c>/events/{id}</c>); staff create and edit shows and allocations under <c>/admin</c> until promoter
 /// organizations exist. An allocation starts as a draft, is published to fans, and its rules lock once registration
 /// opens (database triggers enforce that, the show's time and city, and the publishing preconditions).
@@ -344,7 +344,7 @@ public static partial class AllocationEndpoints
         }
     }
 
-    // The database triggers have the last word on timing, locking, and publishing (migration 0011).
+    // The database triggers have the last word on timing, locking, and publishing (migration 0013).
     private static async Task<T> GuardAsync<T>(Func<Task<T>> action, string? field)
     {
         try
