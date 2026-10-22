@@ -6,6 +6,7 @@ import { ApiError, type Me, unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Field, Screen, Title } from '../../ui/components';
+import { cityLabel, formatDay } from '../hub-cities/HubCitiesScreen';
 
 export function ProfileScreen({ me }: { me: Me }) {
   const { session } = useSession();
@@ -62,6 +63,7 @@ export function ProfileScreen({ me }: { me: Me }) {
       <Button label="Back to home" kind="secondary" onPress={() => router.replace('/home')} />
       <Title>Your profile</Title>
       <Body muted>Signed in as {me.email}</Body>
+      <Button label="Your stats" kind="secondary" onPress={() => router.push('/stats')} />
 
       <Field
         label="Handle"
@@ -95,6 +97,17 @@ export function ProfileScreen({ me }: { me: Me }) {
         kind="secondary"
         onPress={() => router.push('/spotify')}
       />
+
+      <View style={{ height: 24 }} />
+      <Body>
+        {me.hub_cities.length > 0
+          ? `Hub cities: ${me.hub_cities.map((city, i) => `${cityLabel(city)}${i === 0 ? ' (primary)' : ''}`).join(' · ')}`
+          : 'No hub city yet'}
+      </Body>
+      {me.hub_cities_change_available_at && (
+        <Body muted>You can change them again on {formatDay(me.hub_cities_change_available_at)}.</Body>
+      )}
+      <Button label="Change hub cities" kind="secondary" onPress={() => router.push('/hub-cities')} />
 
       <View style={{ height: 24 }} />
       <Button label="Sign out" kind="secondary" onPress={() => void session.signOut()} />

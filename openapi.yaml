@@ -219,6 +219,69 @@ paths:
       responses:
         '202': {description: Deletion scheduled}
         '401': {$ref: '#/components/responses/Unauthorized'}
+  /me/hub-cities:
+    put:
+      tags: [Me]
+      operationId: setHubCities
+      summary: Choose hub cities
+      description: |
+        Replaces the fan's hub cities: a primary city first, then up to two backups, from `GET /cities`. Shows in
+        these cities put the fan first in line for allocations. The first choice can be changed any time; after
+        that, changes are allowed once a week (`hub_cities_change_available_at` on `Me`). Sending the same list is
+        not a change. A registration for an allocation keeps the hubs it was made with.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [city_ids]
+              properties:
+                city_ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 3
+                  uniqueItems: true
+                  items: {type: string}
+      responses:
+        '200':
+          description: Updated profile
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Me'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '429':
+          description: 'Changed less than a week ago (`code: hub_change_limit`); `Retry-After` is when the next change is allowed'
+          headers:
+            Retry-After:
+              schema: {type: integer}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+  /cities:
+    get:
+      tags: [Me]
+      operationId: searchCities
+      summary: Search hub cities
+      description: |
+        The curated list of US and Canadian metro areas a fan can choose as hub cities. Matches the start of the
+        name or of any word in it, or an exact state/province code (`ON`). Without `q`, lists cities by name.
+      parameters:
+        - {name: q, in: query, schema: {type: string, maxLength: 100}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 20}}
+      responses:
+        '200':
+          description: Matching cities
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/HubCity'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
   /me/spotify:
     get:
       tags: [Me]
@@ -521,6 +584,22 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
 
   # ------------------------------------------------------------------ Scores
+  /me/stats:
+    get:
+      tags: [Scores]
+      operationId: getMyStats
+      summary: My stats in one list
+      description: |
+        The signed-in fan's numbers, read from stored state and the ledger (never from Spotify at request time).
+        Deleted logs and comments and reversed awards don't count. Listening totals cover active tracked artists
+        only. `ledger_points` is the sum of unreversed awards (journal, proof of fandom). Other fans' stats will
+        follow their profile visibility once follows and blocks exist (Phase 8).
+      responses:
+        '200':
+          description: Stats
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UserStats'}
   /me/scores:
     get:
       tags: [Scores]
@@ -1497,6 +1576,7 @@ components:
             - idempotency_conflict
             - rate_limited
             - artist_add_limit
+            - hub_change_limit
             - artist_not_active
             - spotify_artist_not_found
             - spotify_not_connected
@@ -1563,7 +1643,7 @@ components:
         user: {$ref: '#/components/schemas/Me'}
     Me:
       type: object
-      required: [id, handle, email, created_at]
+      required: [id, handle, email, created_at, hub_cities]
       properties:
         id: {type: string, format: uuid}
         handle: {type: string}
@@ -1575,6 +1655,23 @@ components:
         spotify:
           $ref: '#/components/schemas/SpotifyStatus'
           description: Same as `GET /me/spotify`.
+        hub_cities:
+          type: array
+          maxItems: 3
+          description: Primary first. Empty until the fan chooses them (the app asks right after sign-up).
+          items: {$ref: '#/components/schemas/HubCity'}
+        hub_cities_change_available_at:
+          type: [string, 'null']
+          format: date-time
+          description: When hub cities may next be changed; null when they may be changed now.
+    HubCity:
+      type: object
+      required: [id, name, region, country]
+      properties:
+        id: {type: string, description: 'Stable id, e.g. `us-il-chicago`'}
+        name: {type: string}
+        region: {type: string, description: State or province code}
+        country: {type: string, description: ISO 3166-1 alpha-2}
     MeUpdate:
       type: object
       properties:
@@ -1744,6 +1841,53 @@ components:
         raw_score: {type: number}
         is_estimated: {type: boolean}
         computed_at: {type: string, format: date-time}
+    UserStats:
+      type: object
+      required: [artists, listening, journal, proof, ledger_points]
+      properties:
+        artists:
+          type: array
+          description: Best percentile first.
+          items:
+            type: object
+            required: [artist, raw_score, percentile, rank, fans, is_estimated, computed_at]
+            properties:
+              artist: {$ref: '#/components/schemas/ArtistRef'}
+              raw_score: {type: number}
+              percentile: {type: number, minimum: 0, maximum: 100}
+              rank: {type: integer, minimum: 1, description: 'Among the artist''s scored fans; ties share the better rank'}
+              fans: {type: integer, minimum: 1, description: Scored fans of the artist}
+              is_estimated: {type: boolean}
+              computed_at: {type: string, format: date-time}
+        listening:
+          type: object
+          required: [artists, liked_tracks, playlist_tracks, distinct_albums, recent_plays]
+          properties:
+            artists: {type: integer, description: Active tracked artists the fan has Spotify signals for}
+            liked_tracks: {type: integer}
+            playlist_tracks: {type: integer}
+            distinct_albums: {type: integer}
+            recent_plays: {type: integer}
+        journal:
+          type: object
+          required: [logs, albums_logged, relistens, reviews, ratings, lists, comments]
+          properties:
+            logs: {type: integer}
+            albums_logged: {type: integer, description: Distinct albums}
+            relistens: {type: integer}
+            reviews: {type: integer}
+            ratings: {type: integer}
+            lists: {type: integer}
+            comments: {type: integer}
+        proof:
+          type: object
+          required: [tickets, merch, screenshots]
+          description: Verified submissions only.
+          properties:
+            tickets: {type: integer}
+            merch: {type: integer}
+            screenshots: {type: integer}
+        ledger_points: {type: number}
     ScoreSummaryPage:
       type: object
       required: [items, next_cursor]

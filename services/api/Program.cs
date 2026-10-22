@@ -4,6 +4,7 @@ using FandomScore.Api.Features.Artists;
 using FandomScore.Api.Features.Authentication;
 using FandomScore.Api.Features.Scoring;
 using FandomScore.Api.Features.SpotifySync;
+using FandomScore.Api.Features.Stats;
 using FandomScore.Api.Features.Users;
 using FandomScore.Api.Infrastructure;
 using FandomScore.Spotify;
@@ -54,6 +55,7 @@ v1.MapArtists();
 v1.MapAlbums();
 v1.MapJournal();
 v1.MapScoring();
+v1.MapStats();
 
 app.Run();
 

@@ -109,12 +109,16 @@ Lower priority under the new direction: ticket purchases now flow through alloca
 - [ ] Integrate purchase confirmation only if supported by the selected partner.
 - [ ] Load upcoming concerts, presale dates, and general-sale openings for tracked artists (source: open
       decision below). Feeds `/artists/{id}/events` and the home-screen concert cards.
-- [ ] Fan location preference: a primary hub city plus two backups, used to pick which shows to show.
+- [x] Fan location preference: a primary hub city plus two backups, used to pick which shows to show. From a
+      curated list of US and Canadian metros (migration 0010; `GET /v1/cities`, `PUT /v1/me/hub-cities`). Verified
+      2026-10-21: `dotnet test` 157/157 (HubCityApiTests 13, invariants), app `npm test` 62/62, clicked through in Chrome.
 - [ ] Follow/follower relationships between fans (decided 2026-10-20): follow without approval, remove a
       follower, block; followers see posts and top fandom stats. Feeds the home-screen reviews and the bouncer door.
 - [ ] Grab bag: up to 5 favorite songs per fan, shared with followers by default, each linking to Spotify.
       Adding a song by an untracked artist tracks that artist (through `track_artist()`).
-- [ ] Sign-up asks for a primary hub city (plus optional backups). Changes allowed once a week, with a warning.
+- [x] Sign-up asks for a primary hub city (plus optional backups). Changes allowed once a week, with a warning.
+      The app sends signed-in fans without a hub city to `/hub-cities` before anything else; the first choice can
+      be changed once right away, then once a week.
 
 Details: [Sharing API](services/api/src/features/sharing/TODO.md) · [Sharing UI](apps/mobile/src/features/sharing/TODO.md) · [Ticketing API](services/api/src/features/ticketing/TODO.md) · [Ticketing UI](apps/mobile/src/features/ticketing/TODO.md)
 
@@ -204,11 +208,13 @@ at request time.
       (verified tickets, merch, screenshots; Phase 7), listening totals for tracked artists only (liked tracks,
       playlist tracks, distinct albums, recent plays; Phase 4), points total from the ledger, followers and
       following (Phase 8).
-- [ ] `GET /me/stats` and `GET /users/{userId}/stats` in `openapi.yaml`; counts exclude soft-deleted content and
+- [ ] `GET /me/stats` and `GET /users/{userId}/stats` in `openapi.yaml`; *`GET /me/stats` done 2026-10-21 (StatsApiTests 3/3);
+      other fans' stats wait on follows, blocks, and profile visibility (Phase 8).* counts exclude soft-deleted content and
       reversed awards.
 - [ ] Visibility: own stats in full; other fans' stats follow their profile visibility, followers-only stats for
       followers, nothing for blocked fans.
 - [ ] Stats screen in the fan app (own profile and other fans' profiles), with estimated scores labelled.
+      *Own stats screen done 2026-10-21 (`/stats`).*
 - [ ] Tests for counts after reversals and deletions, visibility, and blocked fans.
 
 Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps/mobile/src/features/stats/TODO.md)
@@ -264,6 +270,8 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
 - [x] A "concert hub" is a **city** (decided 2026-10-20): each fan picks a primary city plus two backups.
 - [x] Hubs affect allocations: **local fans first** (decided 2026-10-20), via the selection method above.
 - [x] A hub city is **required at sign-up** (decided 2026-10-20).
+- [x] Hub cities come from a **curated list of US and Canadian metro areas** (decided 2026-10-21), not a
+      geocoding service. Staff add rows to `cities` to cover more; other countries are more rows.
 - [x] Hub cities can be changed **once a week**, with a **warning while changing** (decided 2026-10-20).
 - [x] A hub change after registering for an allocation **doesn't affect that registration** (decided 2026-10-20).
 - [x] Social model (decided 2026-10-20): **follow/follower**, not mutual friends.
