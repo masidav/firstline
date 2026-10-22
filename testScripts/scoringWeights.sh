@@ -22,7 +22,7 @@ UPDATE scoring_rules SET points = :'weight'::numeric,
 SQL
 )
   [[ -n "$updated" ]] || { echo "No rule named $1."; exit 1; }
-  echo "Updated $1; every active artist is queued for rescoring."
+  echo "Updated $1. If its weight or saturation changed, every active artist is queued for rescoring."
 fi
 
 "${psql[@]}" -c "
