@@ -624,4 +624,46 @@ BEGIN
   ASSERT NOT EXISTS (SELECT 1 FROM user_hub_cities WHERE user_id = fan), 'deleted accounts lose their hub cities';
 END $$;
 
+-- ------------------------------------------------------------ proof photos and sharing (0012)
+SELECT pg_temp.expect_error(
+  $$INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes) VALUES ('00000000-0000-0000-0000-000000000001', 'submission', 'image/gif', 10)$$,
+  'uploads_mime_type_check');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes, storage_key) VALUES ('00000000-0000-0000-0000-000000000001', 'submission', 'image/jpeg', 10, 'k')$$,
+  'uploads_check');
+
+DO $$
+DECLARE v_artist uuid := (SELECT id FROM artists WHERE spotify_artist_id = 'sp-active');
+        alice uuid := '00000000-0000-0000-0000-000000000001';
+        v_ticket uuid; v_merch uuid; v_photo uuid;
+BEGIN
+  INSERT INTO submissions (user_id, artist_id, kind) VALUES (alice, v_artist, 'ticket') RETURNING id INTO v_ticket;
+  INSERT INTO submissions (user_id, artist_id, kind) VALUES (alice, v_artist, 'merch') RETURNING id INTO v_merch;
+  INSERT INTO submissions (user_id, artist_id, kind) VALUES (alice, v_artist, 'concert_photo') RETURNING id INTO v_photo;
+
+  -- A verified concert photo earns its own rule.
+  UPDATE submissions SET status = 'verified' WHERE id = v_photo;
+  ASSERT EXISTS (SELECT 1 FROM score_events WHERE source_id = v_photo AND rule_key = 'concert_photo_verified'
+                   AND reversed_at IS NULL), 'verified concert photo earns points';
+  UPDATE submissions SET shared_at = now() WHERE id = v_photo;
+
+  -- Rejecting it later reverses the points and takes it off the feed.
+  UPDATE submissions SET status = 'rejected' WHERE id = v_photo;
+  ASSERT (SELECT shared_at IS NULL FROM submissions WHERE id = v_photo), 'rejection unshares';
+  ASSERT NOT EXISTS (SELECT 1 FROM score_events WHERE source_id = v_photo AND reversed_at IS NULL), 'and reverses';
+
+  UPDATE submissions SET status = 'verified' WHERE id = v_ticket;
+  UPDATE submissions SET status = 'verified' WHERE id = v_merch;
+  UPDATE submissions SET shared_at = now() WHERE id = v_merch;
+  ASSERT (SELECT shared_at IS NOT NULL FROM submissions WHERE id = v_merch), 'verified merch can be shared';
+END $$;
+
+SELECT pg_temp.expect_error(
+  $$UPDATE submissions SET shared_at = now() WHERE kind = 'ticket' AND status = 'verified'$$,
+  'only merch and concert photos can be shared');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO submissions (user_id, artist_id, kind, shared_at)
+    SELECT '00000000-0000-0000-0000-000000000001', id, 'merch', now() FROM artists WHERE spotify_artist_id = 'sp-active'$$,
+  'only verified submissions can be shared');
+
 \echo ALL INVARIANT TESTS PASSED

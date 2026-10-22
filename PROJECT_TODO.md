@@ -93,13 +93,21 @@ Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring wo
 Details: [Album journal API](services/api/src/features/album-journal/TODO.md) · [Journal UI](apps/mobile/src/features/album-journal/TODO.md) · [Lists API](services/api/src/features/lists/TODO.md) · [Lists UI](apps/mobile/src/features/lists/TODO.md) · [Comments API](services/api/src/features/comments/TODO.md) · [Comments UI](apps/mobile/src/features/comments/TODO.md)
 
 ## Phase 7 — Proof of fandom
-- [ ] Implement secure upload and quarantine.
-- [ ] Implement verification checks, staff review, audit trail, and status transitions.
-- [ ] Award points only after verification; reverse them if a verified item is later rejected.
+- [x] Implement secure upload and quarantine. Signed upload links, JPEG/PNG only, size and hash checks, EXIF/XMP/text
+      metadata stripped on the server; files in local quarantine storage (migration 0012, branch `proof-feed`).
+      Verified 2026-10-21: `dotnet test` 163/163 (ProofApiTests 6), clicked through in Chrome. *Production storage
+      (Cloud Storage quarantine bucket) is not wired up yet, nor is cleanup of expired uploads and deleted accounts' files.*
+- [ ] Implement verification checks, staff review, audit trail, and status transitions. *Staff review done (queue,
+      approve/reject with a manual check row, app screen for staff); automated checks (hash, OCR, event match) not yet,
+      so every submission goes to `needs_review`.*
+- [x] Award points only after verification; reverse them if a verified item is later rejected. (Existing trigger; covered by ProofApiTests.)
 - [ ] Redact sensitive barcodes/QR codes before archival.
 - [ ] Enforce archive safety and retention policies.
 
 Details: [Submissions API](services/api/src/features/submissions/TODO.md) · [Submission UI](apps/mobile/src/features/submissions/TODO.md) · [Verification](services/api/src/features/verification/TODO.md) · [Verification worker](workers/submission-verification/TODO.md) · [Redaction worker](workers/image-redaction/TODO.md)
+
+Fans can share verified merch and concert photos to the home feed (`PUT /submissions/{id}/share`); tickets and
+screenshots are never shared. The home feed (`GET /feed`) shows shared photos and public album logs from every fan.
 
 ## Phase 8 — Sharing and commerce
 Lower priority under the new direction: ticket purchases now flow through allocations (Phase 11), not outbound links.
@@ -259,6 +267,10 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
       fans who have the show's city in one of their **three hub cities**.
 - [x] Allocation edge cases (decided 2026-10-20): seats hub fans leave unfilled **open to fans outside the
       city**; **equal scores are broken by a coin flip** (a random draw, recorded so the result can be audited).
+- [ ] Confirm concert-photo points: `concert_photo_verified` is 5 (same as a screenshot), provisional since 2026-10-21.
+- [ ] Confirm sharing rules: only verified merch and concert photos can be shared; tickets and screenshots never (they
+      can show barcodes or personal details, and nothing redacts them yet). The feed shows everyone's shared photos and
+      public logs; reporting and takedowns (Phase 9) aren't built, so staff rejecting a post is the only way to remove it.
 - [ ] Decide on the fan-side fee and whether App Store / Google Play payment rules apply to it.
 - [ ] Choose the first pilot artist(s) and promoter.
 - [x] Concert data source (decided 2026-10-20): **concert APIs** for shows and sale dates (candidates:
