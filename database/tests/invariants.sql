@@ -422,4 +422,132 @@ BEGIN
          'and no job';
 END $$;
 
+-- ------------------------------------------------------------ scoring (0008)
+DO $$
+DECLARE v_artist uuid := (SELECT id FROM artists WHERE spotify_artist_id = 'sp-active');
+        alice uuid := '00000000-0000-0000-0000-000000000001';
+        v record;
+BEGIN
+  -- 100 liked tracks (saturation) and rank 1 in top artists; nothing else. Even split: 2 of 5 signals full.
+  INSERT INTO user_artist_signals (user_id, artist_id, liked_tracks, playlist_tracks, distinct_albums, top_artist_rank, recent_plays)
+  VALUES (alice, v_artist, 100, 0, 0, 1, 0)
+  ON CONFLICT (user_id, artist_id) DO UPDATE SET liked_tracks = 100, playlist_tracks = 0, distinct_albums = 0,
+                                                 top_artist_rank = 1, recent_plays = 0;
+  SELECT * INTO v FROM v_raw_scores WHERE user_id = alice AND artist_id = v_artist;
+  ASSERT v.liked_share = 1 AND v.top_share = 1 AND v.playlist_share = 0, 'saturated signals earn full shares';
+  ASSERT v.spotify_score = 40, format('even split of 5 signals: expected 40, got %s', v.spotify_score);
+  ASSERT v.raw_score = v.spotify_score + v.ledger_points, 'raw score adds ledger points';
+
+  -- Diminishing returns: 10 liked tracks of 100 earn ln(11)/ln(101), about half.
+  UPDATE user_artist_signals SET liked_tracks = 10 WHERE user_id = alice AND artist_id = v_artist;
+  ASSERT (SELECT liked_share FROM v_raw_scores WHERE user_id = alice AND artist_id = v_artist) = round(ln(11::numeric) / ln(101::numeric), 4),
+         'log curve below saturation';
+  UPDATE user_artist_signals SET liked_tracks = 100 WHERE user_id = alice AND artist_id = v_artist;
+
+  -- Changing a weight queues one rescore per active artist and reweights at once.
+  DELETE FROM jobs WHERE kind = 'scoring.score_artist';
+  UPDATE scoring_rules SET points = 3 WHERE rule_key = 'spotify_liked_track';
+  ASSERT (SELECT count(*) FROM jobs WHERE kind = 'scoring.score_artist' AND status = 'queued'
+            AND payload->>'artist_id' = v_artist::text) = 1, 'weight change queues a rescore';
+  UPDATE scoring_rules SET points = 3 WHERE rule_key = 'spotify_liked_track';
+  ASSERT (SELECT count(*) FROM jobs WHERE kind = 'scoring.score_artist' AND status = 'queued'
+            AND payload->>'artist_id' = v_artist::text) = 1, 'at most one queued rescore per artist';
+  ASSERT (SELECT spotify_score FROM v_raw_scores WHERE user_id = alice AND artist_id = v_artist) = round(100 * 4 / 7.0, 2),
+         'weights are relative shares';
+
+  -- A disabled rule drops out of the weights and reports no share.
+  UPDATE scoring_rules SET points = 1 WHERE rule_key = 'spotify_liked_track';
+  UPDATE scoring_rules SET active = false WHERE rule_key = 'spotify_playlist_track';
+  SELECT * INTO v FROM v_raw_scores WHERE user_id = alice AND artist_id = v_artist;
+  ASSERT v.playlist_share IS NULL AND v.spotify_score = 50, format('disabled rule: expected 50, got %s', v.spotify_score);
+  UPDATE scoring_rules SET active = true WHERE rule_key = 'spotify_playlist_track';
+END $$;
+
+-- Spotify rules must be known signals with a saturation and a non-negative weight; ledger rules have none.
+SELECT pg_temp.expect_error($$UPDATE scoring_rules SET saturation = 0 WHERE rule_key = 'spotify_liked_track'$$, 'scoring_rules_saturation_check');
+SELECT pg_temp.expect_error($$UPDATE scoring_rules SET points = -1 WHERE rule_key = 'spotify_liked_track'$$, 'scoring_rules_spotify_weight');
+SELECT pg_temp.expect_error($$UPDATE scoring_rules SET saturation = NULL WHERE rule_key = 'spotify_liked_track'$$, 'scoring_rules_spotify_weight');
+SELECT pg_temp.expect_error($$UPDATE scoring_rules SET saturation = 5 WHERE rule_key = 'comment_posted'$$, 'scoring_rules_ledger_saturation');
+SELECT pg_temp.expect_error($$INSERT INTO scoring_rules (rule_key, points, saturation) VALUES ('spotify_follow', 5, 10)$$, 'scoring_rules_spotify_known');
+
+DO $$
+DECLARE v_artist uuid := (SELECT id FROM artists WHERE spotify_artist_id = 'sp-active');
+        alice uuid := '00000000-0000-0000-0000-000000000001';
+        v_depth uuid;
+        v record;
+BEGIN
+  -- Rescore requests: one queued per artist; full rescore counts active artists only.
+  DELETE FROM jobs WHERE kind = 'scoring.score_artist';
+  ASSERT request_artist_rescore(v_artist) IS NOT NULL, 'first request queues a job';
+  ASSERT request_artist_rescore(v_artist) IS NULL, 'second request is folded into the queued one';
+  ASSERT request_full_rescore() = (SELECT count(*) FROM artists WHERE status = 'active'), 'full rescore counts active artists';
+  ASSERT NOT EXISTS (SELECT 1 FROM jobs j JOIN artists a ON a.id = (j.payload->>'artist_id')::uuid
+                      WHERE j.kind = 'scoring.score_artist' AND a.status <> 'active'), 'only active artists are queued';
+
+  -- Changes that don't move scores queue nothing.
+  DELETE FROM jobs WHERE kind = 'scoring.score_artist';
+  UPDATE scoring_rules SET description = 'x' WHERE rule_key = 'spotify_liked_track';
+  UPDATE scoring_rules SET points = 2 WHERE rule_key = 'comment_posted';
+  UPDATE scoring_rules SET points = points WHERE rule_key = 'spotify_liked_track';
+  UPDATE scoring_rules SET points = 9 WHERE rule_key = 'no_such_rule';
+  ASSERT NOT EXISTS (SELECT 1 FROM jobs WHERE kind = 'scoring.score_artist'), 'no rescore for changes that keep scores';
+  UPDATE scoring_rules SET points = 1 WHERE rule_key = 'comment_posted';
+
+  -- Deleting and re-adding a Spotify rule both queue rescores; a deleted rule drops out like a disabled one.
+  DELETE FROM scoring_rules WHERE rule_key = 'spotify_recent_play';
+  ASSERT EXISTS (SELECT 1 FROM jobs WHERE kind = 'scoring.score_artist'), 'deleting a Spotify rule queues a rescore';
+  SELECT * INTO v FROM v_raw_scores WHERE user_id = alice AND artist_id = v_artist;
+  ASSERT v.recent_share IS NULL AND v.spotify_score = 50, format('4 rules left: expected 50, got %s', v.spotify_score);
+  DELETE FROM jobs WHERE kind = 'scoring.score_artist';
+  INSERT INTO scoring_rules (rule_key, points, saturation) VALUES ('spotify_recent_play', 1, 50);
+  ASSERT EXISTS (SELECT 1 FROM jobs WHERE kind = 'scoring.score_artist'), 'adding a Spotify rule queues a rescore';
+
+  -- All Spotify rules disabled: a Spotify score of 0, not a division by zero.
+  UPDATE scoring_rules SET active = false WHERE rule_key LIKE 'spotify\_%';
+  ASSERT (SELECT spotify_score FROM v_raw_scores WHERE user_id = alice AND artist_id = v_artist) = 0, 'no weights, no score';
+  UPDATE scoring_rules SET active = true WHERE rule_key LIKE 'spotify\_%';
+
+  -- Bad counts don't break the view: negatives count as 0 and a rank below 1 is ignored.
+  UPDATE user_artist_signals SET liked_tracks = -5, recent_plays = -1, top_artist_rank = 0
+   WHERE user_id = alice AND artist_id = v_artist;
+  SELECT * INTO v FROM v_raw_scores WHERE user_id = alice AND artist_id = v_artist;
+  ASSERT v.liked_share = 0 AND v.recent_share = 0 AND v.top_share = 0, 'bad counts earn nothing';
+  -- Top rank: rank 1 full, rank = saturation 1/saturation, past it 0.
+  UPDATE user_artist_signals SET liked_tracks = 0, recent_plays = 0, top_artist_rank = 50 WHERE user_id = alice AND artist_id = v_artist;
+  ASSERT (SELECT top_share FROM v_raw_scores WHERE user_id = alice AND artist_id = v_artist) = 0.02, 'rank 50 of 50';
+  UPDATE user_artist_signals SET top_artist_rank = 80 WHERE user_id = alice AND artist_id = v_artist;
+  ASSERT (SELECT top_share FROM v_raw_scores WHERE user_id = alice AND artist_id = v_artist) = 0, 'rank past saturation';
+
+  -- Catalog depth (own artist, so the catalog is known): an empty catalog falls back to the saturation (10); a
+  -- smaller catalog is the denominator; delisted releases don't count.
+  INSERT INTO artists (name, spotify_artist_id) VALUES ('Depth Artist', 'sp-depth') RETURNING id INTO v_depth;
+  INSERT INTO artist_baselines (artist_id, dist_params, curve) VALUES (v_depth, '{}', '[]');
+  UPDATE artists SET status = 'active', catalog_loaded_at = now() WHERE id = v_depth;
+  INSERT INTO user_artist_signals (user_id, artist_id, distinct_albums) VALUES (alice, v_depth, 2);
+  ASSERT (SELECT depth_share FROM v_raw_scores WHERE user_id = alice AND artist_id = v_depth) = 0.2,
+         'empty catalog: 2 of saturation 10';
+  INSERT INTO albums (artist_id, title, spotify_album_id) VALUES
+    (v_depth, 'One', 'sp-depth-1'), (v_depth, 'Two', 'sp-depth-2'), (v_depth, 'Three', 'sp-depth-3'),
+    (v_depth, 'Gone', 'sp-depth-4');
+  UPDATE albums SET delisted_at = now() WHERE spotify_album_id = 'sp-depth-4';
+  ASSERT (SELECT depth_share FROM v_raw_scores WHERE user_id = alice AND artist_id = v_depth) = round(2 / 3.0, 4),
+         '2 of a 3-release catalog (the delisted one does not count)';
+
+  -- Deleted accounts drop out of the view even while their ledger rows wait for the purge.
+  ASSERT NOT EXISTS (SELECT 1 FROM v_raw_scores rs JOIN users u ON u.id = rs.user_id WHERE u.deleted_at IS NOT NULL),
+         'deleted accounts are not scored';
+END $$;
+
+-- An artist leaving active queues the run that removes its scores.
+DO $$
+DECLARE v_artist uuid := (SELECT id FROM artists WHERE spotify_artist_id = 'sp-active');
+BEGIN
+  DELETE FROM jobs WHERE kind = 'scoring.score_artist';
+  UPDATE artists SET status = 'paused' WHERE id = v_artist;
+  ASSERT EXISTS (SELECT 1 FROM jobs WHERE kind = 'scoring.score_artist' AND payload->>'artist_id' = v_artist::text),
+         'pausing queues a rescore';
+  ASSERT NOT EXISTS (SELECT 1 FROM v_raw_scores WHERE artist_id = v_artist), 'paused artists are not scored';
+  UPDATE artists SET status = 'active' WHERE id = v_artist;
+END $$;
+
 \echo ALL INVARIANT TESTS PASSED

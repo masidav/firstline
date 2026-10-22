@@ -34,7 +34,8 @@ info:
     | Sign-in and token refresh (`/auth/sessions`, `/auth/refresh`) | 20 per minute per client IP |
     | Add artist (`POST /artists`) | 50 new artists per user per UTC day (`artist_add_limit`) |
     | Artist search | 30 per minute per user |
-    | Manual Spotify sync / score refresh | 1 per 15 minutes per user (automatic sync runs on a schedule) |
+    | Manual Spotify sync | 1 per 15 minutes per user (automatic sync runs on a schedule) |
+    | Score refresh | Not limited: at most one rescore is queued per artist, so repeats cost nothing |
     | Submissions | 20 per day per user |
     | Comments | 60 per hour per user |
     | Everything else | 300 per minute per user |
@@ -389,7 +390,7 @@ paths:
         - name: status
           in: query
           schema: {type: string, enum: [onboarding, active, all], default: active}
-          description: '`all` is onboarding and active artists
+          description: '`all` is onboarding and active artists'
         - {name: sort, in: query, schema: {type: string, enum: [recent, name, fans], default: fans}}
         - {$ref: '#/components/parameters/Limit'}
         - {$ref: '#/components/parameters/Cursor'}
@@ -531,6 +532,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ScoreSummaryPage'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
   /artists/{artistId}/score:
     parameters:
       - {$ref: '#/components/parameters/ArtistId'}
@@ -539,8 +541,9 @@ paths:
       operationId: getMyScore
       summary: My score for an artist
       description: |
-        Always `200` for a tracked artist. `status` says whether numbers are available:
-        `ready`, `computing` (active artist, score not computed yet), or `artist_onboarding`.
+        Always `200` for an onboarding or active artist; `404` for an unknown or paused one. `status` says
+        whether numbers are available: `ready`, `computing` (active artist, score not computed yet), or
+        `artist_onboarding`.
         `is_estimated` is true while the synthetic baseline dominates the percentile.
       responses:
         '200':
@@ -554,6 +557,7 @@ paths:
       tags: [Scores]
       operationId: refreshMyScore
       summary: Request a recompute
+      description: Queues a rescore of the artist's fans. At most one is queued per artist, so repeats are free.
       parameters:
         - {$ref: '#/components/parameters/ArtistId'}
       responses:
@@ -562,12 +566,12 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Score'}
+        '404': {$ref: '#/components/responses/NotFound'}
         '409':
-          description: 'Artist is not active (`code: artist_not_active`)'
+          description: 'Artist is still onboarding (`code: artist_not_active`)'
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
-        '429': {$ref: '#/components/responses/RateLimited'}
 
   # ------------------------------------------------------------------ Albums
   /albums/search:
@@ -1359,8 +1363,12 @@ paths:
     put:
       tags: [Admin]
       operationId: updateScoringRule
-      summary: Change a weight or cap
-      description: Affects future awards only. Existing ledger rows keep the points they were awarded with.
+      summary: Change a weight, saturation, or cap
+      description: |
+        Partial update: only the fields sent change. For `spotify_*` rules, `points` is the signal's relative weight
+        (weights need not add up to anything) and `saturation` the count that earns full marks; a change queues a
+        rescore of every active artist. For ledger rules, `points` affects future awards only: existing ledger rows
+        keep the points they were awarded with.
       parameters:
         - {name: ruleKey, in: path, required: true, schema: {type: string}}
       requestBody:
@@ -1376,6 +1384,7 @@ paths:
               schema: {$ref: '#/components/schemas/ScoringRule'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
 
 components:
   securitySchemes:
@@ -1722,7 +1731,7 @@ components:
 
     ScoreSummary:
       type: object
-      required: [artist_id, percentile, raw_score, is_estimated, computed_at]
+      required: [artist_id, artist, percentile, raw_score, is_estimated, computed_at]
       properties:
         artist_id: {type: string, format: uuid}
         artist: {$ref: '#/components/schemas/ArtistRef'}
@@ -1751,7 +1760,10 @@ components:
         computed_at: {type: [string, 'null'], format: date-time}
         breakdown:
           type: [object, 'null']
-          description: Stored as JSON by the scoring worker; shape below is the current contract.
+          description: |
+            Stored as JSON by the scoring worker; shape below is the current contract. Each Spotify signal earns a
+            share from 0 to 1 (null when its rule is disabled); `spotify.points` (0 to 100) is the shares weighted by
+            the Spotify rules in `scoring_rules`. `total` adds ledger points (journal, proof of fandom).
           properties:
             spotify:
               type: object
@@ -1759,15 +1771,19 @@ components:
                 liked_tracks: {type: integer}
                 playlist_tracks: {type: integer}
                 distinct_albums: {type: integer}
+                top_artist_rank: {type: [integer, 'null']}
+                recent_plays: {type: integer}
+                catalog_releases: {type: integer}
+                shares:
+                  type: object
+                  properties:
+                    liked: {type: [number, 'null']}
+                    playlist: {type: [number, 'null']}
+                    album_depth: {type: [number, 'null']}
+                    top_artist: {type: [number, 'null']}
+                    recent: {type: [number, 'null']}
                 points: {type: number}
-            ledger:
-              type: array
-              items:
-                type: object
-                properties:
-                  rule_key: {type: string}
-                  count: {type: integer}
-                  points: {type: number}
+            ledger_points: {type: number}
             total: {type: number}
 
     Track:
@@ -2125,9 +2141,13 @@ components:
         daily_cap_count: {type: [integer, 'null'], minimum: 1}
         active: {type: boolean}
         description: {type: [string, 'null']}
+        saturation:
+          type: [number, 'null']
+          description: '`spotify_*` rules only: the count at which the signal earns full marks'
     ScoringRuleUpdate:
       type: object
       properties:
-        points: {type: number}
+        points: {type: number, minimum: 0, exclusiveMaximum: 1000000}
         daily_cap_count: {type: [integer, 'null'], minimum: 1}
         active: {type: boolean}
+        saturation: {type: number, exclusiveMinimum: 0, exclusiveMaximum: 1000000}

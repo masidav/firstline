@@ -15,7 +15,7 @@ using Npgsql;
 
 namespace FandomScore.Tests;
 
-/// <summary>The staff policy for /admin routes. No admin endpoint exists yet, so the test maps one.</summary>
+/// <summary>The staff policy for /admin routes, checked on a route the test maps for itself.</summary>
 [Collection(PostgresCollection.Name)]
 public sealed class StaffAuthorizationTests(PostgresFixture postgres) : IAsyncLifetime
 {

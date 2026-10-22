@@ -9,8 +9,10 @@ const mockApi = { GET: jest.fn(), POST: jest.fn() };
 // Stable across renders, like the real context value.
 const mockSession = { api: mockApi };
 
+const mockState = { status: 'signedIn', me: { spotify: { connected: true } } };
+
 jest.mock('../../auth/SessionProvider', () => ({
-  useSession: () => ({ session: mockSession }),
+  useSession: () => ({ session: mockSession, state: mockState }),
 }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn(), replace: jest.fn() } }));
 
@@ -24,16 +26,78 @@ const geese = {
 };
 const spotifyGeese = { spotify_artist_id: geese.spotify_artist_id, name: 'Geese', genres: ['indie rock'], tracked: false };
 
-/** Answers GET /artists with `tracked` and GET /artists/search with `onSpotify`. */
-function serve(tracked: unknown[], onSpotify: unknown[] = []) {
-  mockApi.GET.mockImplementation(async (path: string) =>
-    path === '/artists' ? ok({ items: tracked, next_cursor: null }) : ok({ items: onSpotify }),
-  );
+/** Answers GET /artists with `tracked`, GET /artists/search with `onSpotify`, and GET /me/scores with `scores`. */
+function serve(tracked: unknown[], onSpotify: unknown[] = [], scores: unknown[] = []) {
+  mockApi.GET.mockImplementation(async (path: string) => {
+    switch (path) {
+      case '/artists':
+        return ok({ items: tracked, next_cursor: null });
+      case '/me/scores':
+        return ok({ items: scores, next_cursor: null });
+      default:
+        return ok({ items: onSpotify });
+    }
+  });
 }
 
 const calls = (path: string) => mockApi.GET.mock.calls.filter(([p]) => p === path);
 
 beforeEach(() => jest.clearAllMocks());
+
+const score = (name: string, percentile: number, isEstimated: boolean) => ({
+  artist_id: `id-${name}`,
+  artist: { id: `id-${name}`, name, image_url: null },
+  percentile,
+  raw_score: 61.4,
+  is_estimated: isEstimated,
+  computed_at: '2026-10-21T12:00:00Z',
+});
+
+test('with an empty search box, your artists show with their scores', async () => {
+  serve([], [], [score('Geese', 84.2, true), score('Radiohead', 40, false)]);
+  render(<HomeScreen />);
+
+  expect(await screen.findByText('Geese')).toBeTruthy();
+  expect(screen.getByText('Top 16% of fans · score 61 · estimate')).toBeTruthy();
+  expect(screen.getByText('Top 60% of fans · score 61')).toBeTruthy();
+  expect(screen.getByText(/An estimate means few fans/)).toBeTruthy();
+  expect(calls('/me/scores')[0]?.[1]).toEqual({ params: { query: { sort: 'percentile', limit: 100 } } });
+
+  // Typing replaces them with search results.
+  fireEvent.changeText(screen.getByLabelText('Search artists'), 'zz');
+  await waitFor(() => expect(screen.queryByText('Radiohead')).toBeNull());
+});
+
+test('with no scores yet, a fan without Spotify is asked to connect it', async () => {
+  mockState.me.spotify.connected = false;
+  serve([]);
+  render(<HomeScreen />);
+
+  fireEvent.press(await screen.findByRole('button', { name: 'Connect Spotify' }));
+
+  const { router } = jest.requireMock('expo-router');
+  expect(router.push).toHaveBeenCalledWith('/spotify');
+  mockState.me.spotify.connected = true;
+});
+
+test('with no scores yet, a connected fan is told how scores appear', async () => {
+  serve([]);
+  render(<HomeScreen />);
+
+  expect(await screen.findByText(/None of the artists you listen to are here yet/)).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Connect Spotify' })).toBeNull();
+});
+
+test('a failed load of your artists can be retried', async () => {
+  mockApi.GET.mockResolvedValueOnce(problem(503, 'internal_error'));
+  render(<HomeScreen />);
+
+  const retry = await screen.findByRole('button', { name: 'Try again' });
+  serve([], [], [score('Geese', 50, false)]);
+  fireEvent.press(retry);
+
+  expect(await screen.findByText('Geese')).toBeTruthy();
+});
 
 test('typing searches the artists already here, not Spotify', async () => {
   serve([geese]);
@@ -116,7 +180,7 @@ test('the daily add limit is explained', async () => {
 
 test('Spotify being down is shown, and nothing is added', async () => {
   mockApi.GET.mockImplementation(async (path: string) =>
-    path === '/artists' ? ok({ items: [], next_cursor: null }) : problem(503, 'spotify_unavailable'),
+    path === '/artists/search' ? problem(503, 'spotify_unavailable') : ok({ items: [], next_cursor: null }),
   );
   render(<HomeScreen />);
 

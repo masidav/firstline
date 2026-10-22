@@ -2,6 +2,7 @@ using FandomScore.Worker.AccountRetention;
 using FandomScore.Worker.ArtistOnboarding;
 using FandomScore.Spotify;
 using FandomScore.Worker.Jobs;
+using FandomScore.Worker.Scoring;
 using FandomScore.Worker.SpotifySync;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -30,5 +31,7 @@ builder.Services.AddSingleton<IJobHandler, ScheduleSpotifySyncsJob>();
 builder.Services.AddSingleton<IJobHandler, ArtistOnboardingJob>();
 builder.Services.AddSingleton<IJobHandler, CatalogRefreshJob>();
 builder.Services.AddSingleton<IJobHandler, ScheduleCatalogRefreshesJob>();
+builder.Services.AddSingleton<IJobHandler, ScoreArtistJob>();
+builder.Services.AddSingleton<IJobHandler, RescoreAllJob>();
 
 builder.Build().Run();

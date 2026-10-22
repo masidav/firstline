@@ -139,10 +139,13 @@ public sealed partial class SpotifySyncJob(
         var artists = signals.Artists;
         await connection.ExecuteAsync(
             """
+            -- Rescore the artists the fan had signals for and the ones they have now (percentiles depend on all fans).
+            SELECT request_artist_rescore(artist_id) FROM user_artist_signals WHERE user_id = @userId;
             DELETE FROM user_artist_signals WHERE user_id = @userId;
             INSERT INTO user_artist_signals (user_id, artist_id, liked_tracks, playlist_tracks, distinct_albums,
                                              top_artist_rank, recent_plays)
             SELECT @userId, * FROM unnest(@artistIds, @liked, @playlist, @albums, @ranks, @recent);
+            SELECT request_artist_rescore(a) FROM unnest(@artistIds) a;
 
             DELETE FROM user_track_likes WHERE user_id = @userId;
             INSERT INTO user_track_likes (user_id, track_id, source, saved_at)

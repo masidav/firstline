@@ -63,5 +63,7 @@ The suite starts its own PostgreSQL 16 container, so it needs Docker but not the
   Spotify dashboard and add it to `Spotify__RedirectUris`.
 - `testScripts/` holds local helpers, runnable from any directory: `startWebAppLocal.sh` (fan app in the
   browser), `testSpotifyAPI.sh` (add a test artist and connect Spotify), and `wipeLocalDb.sh` (deletes ALL data
-  in the local compose database and re-applies migrations; asks first unless given `--yes`).
+  in the local compose database and re-applies migrations; asks first unless given `--yes`), and
+  `scoringWeights.sh` (lists the Spotify scoring weights, or sets one: `scoringWeights.sh spotify_liked_track 2`;
+  the worker rescores every artist afterwards).
 - Production logs are JSON on the console. Development uses the plain formatter.

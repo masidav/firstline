@@ -29,7 +29,7 @@ Schema: `database/migrations/0007_artist_catalog.sql`.
 | `Spotify__CatalogMarket` | `US` | Country whose releases make up the catalog (ADR 0006). |
 | `Spotify__CatalogRefreshEvery` | `7.00:00:00` | Reload interval per active artist. |
 | `Spotify__MaxCatalogAlbums` | `500` | Releases loaded per artist, in Spotify's order. |
-| `Baseline__MedianScore` | `5` | Raw score of the median fan under the provisional prior. |
+| `Baseline__MedianScore` | `15` | Raw score of the median fan under the provisional prior, on the 0–100 score scale (migration 0008). Provisional baselines follow the current value at scoring time. |
 | `Baseline__Sigma` | `1` | Spread of log(score). |
 | `Baseline__BlendK` | `200` | Real fans needed before real data carries half the weight. |
 

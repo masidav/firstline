@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FandomScore.Api.Features.Artists;
 using FandomScore.Api.Features.Authentication;
+using FandomScore.Api.Features.Scoring;
 using FandomScore.Api.Features.SpotifySync;
 using FandomScore.Api.Features.Users;
 using FandomScore.Api.Infrastructure;
@@ -44,6 +45,7 @@ v1.MapAppleNotifications();
 v1.MapMe();
 v1.MapSpotify();
 v1.MapArtists();
+v1.MapScoring();
 
 app.Run();
 

@@ -1,10 +1,9 @@
-using System.Globalization;
 using System.Security.Claims;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
 using Dapper;
 using FandomScore.Api.Features.Authentication;
+using FandomScore.Api.Features.Scoring;
 using FandomScore.Api.Features.SpotifySync;
 using FandomScore.Api.Infrastructure;
 using FandomScore.Spotify;
@@ -54,10 +53,10 @@ public static partial class ArtistEndpoints
 
     public sealed record ArtistPage(IReadOnlyList<Artist> Items, string? NextCursor);
 
-    /// <summary>openapi Artist. <see cref="MyScore"/> stays null until scoring exists (Phase 5).</summary>
+    /// <summary>openapi Artist. <see cref="MyScore"/> is null until the fan has a computed score for the artist.</summary>
     public sealed record Artist(
         Guid Id, string Name, string SpotifyArtistId, string? ImageUrl, string? WebsiteUrl, string? MerchUrl, string Status,
-        bool AddedByMe, DateTime TrackedAt, DateTime? ActivatedAt, object? MyScore);
+        bool AddedByMe, DateTime TrackedAt, DateTime? ActivatedAt, ScoringEndpoints.ScoreSummary? MyScore);
 
     // Tracked artists only; this never calls Spotify. Paused artists are never listed. The cursor is an opaque offset,
     // which is fine while the catalog is small.
@@ -102,7 +101,7 @@ public static partial class ArtistEndpoints
         }
 
         var offset = 0;
-        if (cursor is not null && !TryReadCursor(cursor, out offset))
+        if (cursor is not null && !PageCursor.TryRead(cursor, out offset))
         {
             errors.Add(new FieldError("cursor", "Send the next_cursor from a previous page."));
         }
@@ -120,7 +119,7 @@ public static partial class ArtistEndpoints
         var rows = (await connection.QueryAsync<ArtistRow>(
             $"""
              SELECT {ArtistColumns}
-             FROM artists a
+             FROM artists a {MyScoreJoin}
              WHERE a.status = ANY(@statuses::artist_status[])
                AND (@query = '' OR a.name ILIKE @prefix OR a.name ILIKE @wordPrefix)
              ORDER BY {orderBy}
@@ -132,7 +131,7 @@ public static partial class ArtistEndpoints
                 take = pageSize + 1, offset,
             })).ToList();
 
-        var next = rows.Count > pageSize ? WriteCursor(offset + pageSize) : null;
+        var next = rows.Count > pageSize ? PageCursor.Write(offset + pageSize) : null;
         return Results.Ok(new ArtistPage([.. rows.Take(pageSize).Select(ToArtist)], next));
     }
 
@@ -275,39 +274,29 @@ public static partial class ArtistEndpoints
         NpgsqlConnection connection, Guid userId, string spotifyArtistId, NpgsqlTransaction? transaction = null)
     {
         var row = await connection.QuerySingleOrDefaultAsync<ArtistRow>(
-            $"SELECT {ArtistColumns} FROM artists a WHERE a.spotify_artist_id = @spotifyArtistId",
+            $"SELECT {ArtistColumns} FROM artists a {MyScoreJoin} WHERE a.spotify_artist_id = @spotifyArtistId",
             new { userId, spotifyArtistId }, transaction);
         return row is null ? null : ToArtist(row);
     }
 
-    // Needs @userId for added_by_me.
+    // Needs @userId (added_by_me and my_score) and MyScoreJoin.
     private const string ArtistColumns =
         """
         a.id AS Id, a.name AS Name, a.spotify_artist_id AS SpotifyArtistId, a.image_url AS ImageUrl,
         a.website_url AS WebsiteUrl, a.merch_url AS MerchUrl, a.status::text AS Status,
-        COALESCE(a.added_by = @userId, false) AS AddedByMe, a.tracked_at AS TrackedAt, a.activated_at AS ActivatedAt
+        COALESCE(a.added_by = @userId, false) AS AddedByMe, a.tracked_at AS TrackedAt, a.activated_at AS ActivatedAt,
+        my.percentile AS Percentile, my.raw_score AS RawScore, my.is_estimated AS IsEstimated, my.computed_at AS ComputedAt
         """;
+
+    private const string MyScoreJoin = "LEFT JOIN user_artist_scores my ON my.artist_id = a.id AND my.user_id = @userId";
 
     private static Artist ToArtist(ArtistRow row) =>
         new(row.Id, row.Name, row.SpotifyArtistId, row.ImageUrl, row.WebsiteUrl, row.MerchUrl, row.Status, row.AddedByMe,
-            row.TrackedAt, row.ActivatedAt, null);
-
-    private static string WriteCursor(int offset) =>
-        Convert.ToBase64String(Encoding.UTF8.GetBytes(offset.ToString(CultureInfo.InvariantCulture)));
-
-    private static bool TryReadCursor(string cursor, out int offset)
-    {
-        offset = 0;
-        try
-        {
-            return int.TryParse(Encoding.UTF8.GetString(Convert.FromBase64String(cursor)), NumberStyles.None,
-                CultureInfo.InvariantCulture, out offset);
-        }
-        catch (FormatException)
-        {
-            return false;
-        }
-    }
+            row.TrackedAt, row.ActivatedAt,
+            row.ComputedAt is { } computedAt
+                ? new ScoringEndpoints.ScoreSummary(row.Id, new ScoringEndpoints.ArtistRef(row.Id, row.Name, row.ImageUrl),
+                    row.Percentile!.Value, row.RawScore!.Value, row.IsEstimated!.Value, computedAt)
+                : null);
 
     private static void RequireCatalog(SpotifyOptions options, string detail)
     {
@@ -350,5 +339,6 @@ public static partial class ArtistEndpoints
 
     private sealed record ArtistRow(
         Guid Id, string Name, string SpotifyArtistId, string? ImageUrl, string? WebsiteUrl, string? MerchUrl, string Status,
-        bool AddedByMe, DateTime TrackedAt, DateTime? ActivatedAt);
+        bool AddedByMe, DateTime TrackedAt, DateTime? ActivatedAt, decimal? Percentile, decimal? RawScore, bool? IsEstimated,
+        DateTime? ComputedAt);
 }

@@ -10,8 +10,12 @@ public sealed class BaselineOptions
 {
     public const string Section = "Baseline";
 
-    /// <summary>Raw score of the median fan under the prior (about ten liked tracks at 0.5 points each).</summary>
-    public double MedianScore { get; set; } = 5;
+    /// <summary>
+    /// Raw score of the median fan under the prior, on the 0–100 Spotify score scale (migration 0008): roughly a fan
+    /// with a few liked tracks and plays and no top-artist rank. Provisional baselines follow this value at scoring
+    /// time (ScoreArtistJob), so changing it rescales every provisional percentile without a data migration.
+    /// </summary>
+    public double MedianScore { get; set; } = 15;
 
     /// <summary>Spread of log(score): 1.0 puts about two thirds of fans within a factor e of the median.</summary>
     public double Sigma { get; set; } = 1;

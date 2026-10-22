@@ -6,7 +6,9 @@ Use `- [x]` only after the task is implemented and verified.
 - [x] First version (2026-10-21): signed-in fans land on `/home`, a search bar over their tracked artists that can add
       new ones from Spotify, plus a link to the profile. Verified with `npm test` (HomeScreen 6 tests).
 - [ ] Define the home-screen information hierarchy based on approved product requirements.
-- [ ] Show relevant tracked artists and score summaries only when data is available.
+- [x] Show relevant tracked artists and score summaries only when data is available. (2026-10-21: with an empty
+      search box, `YourArtists` lists `GET /me/scores`, best percentile first, "Top 16% of fans · score 61 · estimate";
+      no scores yet → connect Spotify, or how scores appear. Jest: HomeScreen 10 tests.)
 - [ ] Provide loading, empty, offline, and error states.
 - [ ] Link to artist search, journal, submissions, and profile areas as they become available.
 - [ ] Respect visibility and avoid showing private activity from other users.

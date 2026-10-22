@@ -6,7 +6,10 @@ namespace FandomScore.Tests;
 /// <summary>One disposable PostgreSQL server per test run; each test creates its own database.</summary>
 public sealed class PostgresFixture : IAsyncLifetime
 {
-    public PostgreSqlContainer Container { get; } = new PostgreSqlBuilder("postgres:16").Build();
+    // Every test gets its own database, and each database's connection pool keeps idle connections open until the
+    // run ends, so the default limit of 100 runs out as tests are added.
+    public PostgreSqlContainer Container { get; } =
+        new PostgreSqlBuilder("postgres:16").WithCommand("-c", "max_connections=500").Build();
 
     public Task InitializeAsync() => Container.StartAsync();
 

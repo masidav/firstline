@@ -1,17 +1,20 @@
 import { router } from 'expo-router';
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { type Artist, type ArtistSearchResult, unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Field, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
+import { ArtistRow } from './ArtistRow';
+import { YourArtists } from './YourArtists';
 
 const DEBOUNCE_MS = 300;
 
 /**
- * Home after sign-in: search the artists already on Fandom Score as you type (GET /artists, no Spotify calls).
+ * Home after sign-in: the fan's artists with their scores while the search box is empty (YourArtists), and a
+ * search of the artists already on Fandom Score as you type (GET /artists, no Spotify calls).
  * Pressing Enter with no exact match asks Spotify (GET /artists/search) and offers to add an artist (POST /artists).
  */
 export function HomeScreen() {
@@ -136,6 +139,7 @@ export function HomeScreen() {
       />
       <ErrorText>{searchError}</ErrorText>
 
+      {!text && <YourArtists />}
       {text !== '' && tracked?.length === 0 && !spotify && !askingSpotify && (
         <Body muted>No artist here matches "{text}" yet. Press Enter to look on Spotify.</Body>
       )}
@@ -191,43 +195,9 @@ function describeResult(result: ArtistSearchResult): string | undefined {
   return result.genres?.slice(0, 2).join(', ') || undefined;
 }
 
-function ArtistRow({
-  name,
-  imageUrl,
-  note,
-  children,
-}: {
-  name: string;
-  imageUrl?: string | null;
-  note?: string;
-  children?: ReactNode;
-}) {
-  return (
-    <View style={styles.row}>
-      {imageUrl ? (
-        <Image source={{ uri: imageUrl }} style={styles.image} accessibilityIgnoresInvertColors />
-      ) : (
-        <View style={styles.image} />
-      )}
-      <View style={styles.rowText}>
-        <Text style={styles.name} numberOfLines={1}>
-          {name}
-        </Text>
-        {note ? <Text style={styles.note}>{note}</Text> : null}
-      </View>
-      {children ? <View style={styles.rowAction}>{children}</View> : null}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md },
   headerButton: { minWidth: 96 },
   section: { color: colors.text, fontSize: 18, fontWeight: '700', marginTop: space.md },
-  row: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  image: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.surface },
-  rowText: { flex: 1, gap: 2 },
-  rowAction: { minWidth: 88 },
-  name: { color: colors.text, fontSize: 16, fontWeight: '600' },
   note: { color: colors.muted, fontSize: 14 },
 });

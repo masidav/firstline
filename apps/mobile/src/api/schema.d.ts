@@ -379,8 +379,9 @@ export interface paths {
         };
         /**
          * My score for an artist
-         * @description Always `200` for a tracked artist. `status` says whether numbers are available:
-         *     `ready`, `computing` (active artist, score not computed yet), or `artist_onboarding`.
+         * @description Always `200` for an onboarding or active artist; `404` for an unknown or paused one. `status` says
+         *     whether numbers are available: `ready`, `computing` (active artist, score not computed yet), or
+         *     `artist_onboarding`.
          *     `is_estimated` is true while the synthetic baseline dominates the percentile.
          */
         get: operations["getMyScore"];
@@ -401,7 +402,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Request a recompute */
+        /**
+         * Request a recompute
+         * @description Queues a rescore of the artist's fans. At most one is queued per artist, so repeats are free.
+         */
         post: operations["refreshMyScore"];
         delete?: never;
         options?: never;
@@ -1119,8 +1123,11 @@ export interface paths {
         };
         get?: never;
         /**
-         * Change a weight or cap
-         * @description Affects future awards only. Existing ledger rows keep the points they were awarded with.
+         * Change a weight, saturation, or cap
+         * @description Partial update: only the fields sent change. For `spotify_*` rules, `points` is the signal's relative weight
+         *     (weights need not add up to anything) and `saturation` the count that earns full marks; a change queues a
+         *     rescore of every active artist. For ledger rules, `points` affects future awards only: existing ledger rows
+         *     keep the points they were awarded with.
          */
         put: operations["updateScoringRule"];
         post?: never;
@@ -1346,7 +1353,7 @@ export interface components {
         ScoreSummary: {
             /** Format: uuid */
             artist_id: string;
-            artist?: components["schemas"]["ArtistRef"];
+            artist: components["schemas"]["ArtistRef"];
             percentile: number;
             raw_score: number;
             is_estimated: boolean;
@@ -1368,19 +1375,29 @@ export interface components {
             baseline_weight?: number | null;
             /** Format: date-time */
             computed_at?: string | null;
-            /** @description Stored as JSON by the scoring worker; shape below is the current contract. */
+            /**
+             * @description Stored as JSON by the scoring worker; shape below is the current contract. Each Spotify signal earns a
+             *     share from 0 to 1 (null when its rule is disabled); `spotify.points` (0 to 100) is the shares weighted by
+             *     the Spotify rules in `scoring_rules`. `total` adds ledger points (journal, proof of fandom).
+             */
             breakdown?: {
                 spotify?: {
                     liked_tracks?: number;
                     playlist_tracks?: number;
                     distinct_albums?: number;
+                    top_artist_rank?: number | null;
+                    recent_plays?: number;
+                    catalog_releases?: number;
+                    shares?: {
+                        liked?: number | null;
+                        playlist?: number | null;
+                        album_depth?: number | null;
+                        top_artist?: number | null;
+                        recent?: number | null;
+                    };
                     points?: number;
                 };
-                ledger?: {
-                    rule_key?: string;
-                    count?: number;
-                    points?: number;
-                }[];
+                ledger_points?: number;
                 total?: number;
             } | null;
         };
@@ -1681,11 +1698,14 @@ export interface components {
             daily_cap_count?: number | null;
             active: boolean;
             description?: string | null;
+            /** @description `spotify_*` rules only: the count at which the signal earns full marks */
+            saturation?: number | null;
         };
         ScoringRuleUpdate: {
             points?: number;
             daily_cap_count?: number | null;
             active?: boolean;
+            saturation?: number;
         };
     };
     responses: {
@@ -2175,8 +2195,10 @@ export interface operations {
             query?: {
                 /** @description Case-insensitive match on the start of the name or of any word in it */
                 q?: string;
-                /** @description `all` is onboarding and active artists - {name: sort, in: query, schema: {type: string, enum: [recent, name, fans], default: fans}} - {$ref: */
+                /** @description `all` is onboarding and active artists */
                 status?: "onboarding" | "active" | "all";
+                sort?: "recent" | "name" | "fans";
+                limit?: components["parameters"]["Limit"];
                 cursor?: components["parameters"]["Cursor"];
             };
             header?: never;
@@ -2378,6 +2400,7 @@ export interface operations {
                     "application/json": components["schemas"]["ScoreSummaryPage"];
                 };
             };
+            422: components["responses"]["ValidationFailed"];
         };
     };
     getMyScore: {
@@ -2423,7 +2446,8 @@ export interface operations {
                     "application/json": components["schemas"]["Score"];
                 };
             };
-            /** @description Artist is not active (`code: artist_not_active`) */
+            404: components["responses"]["NotFound"];
+            /** @description Artist is still onboarding (`code: artist_not_active`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2432,7 +2456,6 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            429: components["responses"]["RateLimited"];
         };
     };
     searchAlbums: {
@@ -3583,6 +3606,7 @@ export interface operations {
             };
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
         };
     };
 }

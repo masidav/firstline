@@ -9,6 +9,7 @@ export type Session = components['schemas']['Session'];
 export type Problem = components['schemas']['Problem'];
 export type Artist = components['schemas']['Artist'];
 export type ArtistSearchResult = components['schemas']['ArtistSearchResult'];
+export type ScoreSummary = components['schemas']['ScoreSummary'];
 
 export type FetchLike = (request: Request) => Promise<Response>;
 

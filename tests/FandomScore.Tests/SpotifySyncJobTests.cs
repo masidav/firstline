@@ -103,6 +103,13 @@ public sealed class SpotifySyncJobTests(PostgresFixture postgres) : IAsyncLifeti
         var state = await StateAsync();
         Assert.Equal(("idle", (string?)null, 1, true), (state.SyncState, state.SyncError, state.TrackedArtistsFound, state.Synced));
 
+        // The fan's artists are queued for scoring (percentiles depend on every fan).
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            Assert.Equal([_artistA.ToString()], await connection.QueryAsync<string>(
+                "SELECT payload->>'artist_id' FROM jobs WHERE kind = 'scoring.score_artist' AND status = 'queued'"));
+        }
+
         Assert.DoesNotContain(_spotify.Calls, c => c.Path.Contains("pl-followed", StringComparison.Ordinal));
         var refresh = Assert.Single(_spotify.Calls, c => c.Path == "token").Form;
         Assert.Equal(("refresh_token", "refresh-0", FakeSpotify.ClientId),
