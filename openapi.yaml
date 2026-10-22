@@ -353,6 +353,7 @@ paths:
         Searches Spotify and marks each result as tracked or not yet tracked (matched on
         `spotify_artist_id`). Untracked results are not stored. Debounce on the client.
         Spotify returns at most 10 results per search for development-mode apps. 30 searches per minute per user.
+        Results that share a name are listed together, most releases first (see `release_count`).
         Does not need the user to have connected Spotify.
       parameters:
         - {name: q, in: query, required: true, schema: {type: string, minLength: 2, maxLength: 100}}
@@ -1642,6 +1643,11 @@ components:
         tracked: {type: boolean}
         artist_id: {type: [string, 'null'], format: uuid}
         status: {oneOf: [{$ref: '#/components/schemas/ArtistStatus'}, {type: 'null'}]}
+        release_count:
+          type: [integer, 'null']
+          description: |
+            The artist's albums, singles, and compilations on Spotify. Set only when another result has the same
+            name (Spotify gives apps no follower counts or popularity); null otherwise or if Spotify did not answer.
     Artist:
       type: object
       required: [id, name, spotify_artist_id, status, tracked_at]

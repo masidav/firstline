@@ -37,12 +37,15 @@ export function ErrorText({ children }: { children?: ReactNode }) {
 
 export function Button({
   label,
+  accessibilityLabel = label,
   onPress,
   busy,
   disabled,
   kind = 'primary',
 }: {
   label: string;
+  /** What screen readers say, when the visible label alone is unclear (a row of "Add" buttons). */
+  accessibilityLabel?: string;
   onPress: () => void;
   busy?: boolean;
   disabled?: boolean;
@@ -52,7 +55,7 @@ export function Button({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled: inactive, busy }}
       disabled={inactive}
       onPress={onPress}

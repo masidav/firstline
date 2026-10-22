@@ -162,13 +162,14 @@ export function HomeScreen() {
               key={result.spotify_artist_id}
               name={result.name}
               imageUrl={result.image_url}
-              note={result.genres?.slice(0, 2).join(', ')}
+              note={describeResult(result)}
             >
               {result.tracked ? (
                 <Text style={styles.note}>Already here</Text>
               ) : (
                 <Button
-                  label={`Add ${result.name}`}
+                  label="Add"
+                  accessibilityLabel={`Add ${result.name}`}
                   onPress={() => void add(result)}
                   busy={adding === result.spotify_artist_id}
                   disabled={adding !== null}
@@ -182,6 +183,14 @@ export function HomeScreen() {
       <ErrorText>{spotifyError}</ErrorText>
     </Screen>
   );
+}
+
+/** Release count for same-named artists (so the real one stands out), otherwise genres if Spotify sent any. */
+function describeResult(result: ArtistSearchResult): string | undefined {
+  if (result.release_count != null) {
+    return result.release_count === 1 ? '1 release' : `${result.release_count} releases`;
+  }
+  return result.genres?.slice(0, 2).join(', ') || undefined;
 }
 
 function ArtistRow({
@@ -220,7 +229,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   image: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.surface },
   rowText: { flex: 1, gap: 2 },
-  rowAction: { maxWidth: 160 },
+  rowAction: { minWidth: 88 },
   name: { color: colors.text, fontSize: 16, fontWeight: '600' },
   note: { color: colors.muted, fontSize: 14 },
 });

@@ -48,7 +48,7 @@ public static partial class ArtistEndpoints
 
     public sealed record ArtistSearchResult(
         string SpotifyArtistId, string Name, string? ImageUrl, IReadOnlyList<string> Genres, bool Tracked, Guid? ArtistId,
-        string? Status);
+        string? Status, int? ReleaseCount);
 
     public sealed record ArtistSearchResults(IReadOnlyList<ArtistSearchResult> Items);
 
@@ -167,11 +167,54 @@ public static partial class ArtistEndpoints
                 new { ids = found.Select(a => a.Id).ToArray() }))
             .ToDictionary(row => row.SpotifyArtistId);
 
-        return Results.Ok(new ArtistSearchResults([.. found.Select(artist =>
+        var releaseCounts = await CountSameNameReleasesAsync(found, spotify, loggers, cancellationToken);
+        return Results.Ok(new ArtistSearchResults([.. GroupSameNames(found, releaseCounts).Select(artist =>
         {
             var row = tracked.GetValueOrDefault(artist.Id);
-            return new ArtistSearchResult(artist.Id, artist.Name, artist.ImageUrl, artist.Genres, row is not null, row?.Id, row?.Status);
+            return new ArtistSearchResult(artist.Id, artist.Name, artist.ImageUrl, artist.Genres, row is not null, row?.Id,
+                row?.Status, releaseCounts.GetValueOrDefault(artist.Id));
         })]));
+    }
+
+    // Spotify gives apps no follower counts or popularity, so artists that share a name ("Radiohead" and an
+    // impostor) are told apart by release count. Only same-named results cost a call; a failed count is left out.
+    private static async Task<Dictionary<string, int?>> CountSameNameReleasesAsync(
+        IReadOnlyList<SpotifyArtist> found, SpotifyClient spotify, ILoggerFactory loggers, CancellationToken cancellationToken)
+    {
+        var sameName = found.GroupBy(a => a.Name, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1).SelectMany(g => g);
+        var counts = await Task.WhenAll(sameName.Select(async artist =>
+        {
+            try
+            {
+                return (artist.Id, Count: await spotify.CountArtistReleasesAsync(artist.Id, cancellationToken));
+            }
+            catch (Exception e) when (e is SpotifyUnavailableException or SpotifyRequestException or SpotifyAuthorizationException)
+            {
+                LogReleaseCountFailed(loggers.CreateLogger(typeof(ArtistEndpoints)), artist.Id, e.Message);
+                return (artist.Id, Count: (int?)null);
+            }
+        }));
+        return counts.ToDictionary(c => c.Id, c => c.Count);
+    }
+
+    // Keeps Spotify's order, but puts artists that share a name together, most releases first, where the first of
+    // them was.
+    private static IEnumerable<SpotifyArtist> GroupSameNames(IReadOnlyList<SpotifyArtist> found, Dictionary<string, int?> releaseCounts)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var artist in found)
+        {
+            if (!seen.Add(artist.Name))
+            {
+                continue;
+            }
+
+            foreach (var sameName in found.Where(a => string.Equals(a.Name, artist.Name, StringComparison.OrdinalIgnoreCase))
+                         .OrderByDescending(a => releaseCounts.GetValueOrDefault(a.Id) ?? -1))
+            {
+                yield return sameName;
+            }
+        }
     }
 
     // An artist already tracked is returned without calling Spotify. Otherwise the name and image are fetched from
@@ -297,6 +340,9 @@ public static partial class ArtistEndpoints
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Spotify refused an app-token request: {Reason}. Check Spotify:ClientId and Spotify:ClientSecret, and that the app owner has Spotify Premium.")]
     private static partial void LogAppRejected(ILogger logger, string reason);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not count Spotify releases for artist {SpotifyArtistId}: {Reason}")]
+    private static partial void LogReleaseCountFailed(ILogger logger, string spotifyArtistId, string reason);
 
     private sealed record TrackedRow(string SpotifyArtistId, Guid Id, string Status);
 

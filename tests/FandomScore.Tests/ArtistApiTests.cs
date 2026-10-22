@@ -104,6 +104,48 @@ public sealed class ArtistApiTests(PostgresFixture postgres) : IAsyncLifetime, I
         Assert.Contains("type=artist", search.Query, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Search_tells_same_named_artists_apart_by_release_count()
+    {
+        const string impostorId = "0bbbbbbbbbbbbbbbbbbbbb";
+        _spotify.Artists.Insert(0, new FakeSpotify.Artist(impostorId, "GEESE"));
+        _spotify.ArtistAlbums[impostorId] = [new("i-1", "Covers")];
+        _spotify.ArtistAlbums[GeeseId] = [new("g-1", "3D Country"), new("g-2", "Getting Killed"), new("g-3", "Tomorrow's Fire", "single")];
+        var token = await SignInAsync("fan_one");
+
+        var results = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/artists/search?q=geese", token), HttpStatusCode.OK);
+
+        var items = results.GetProperty("items").EnumerateArray()
+            .Select(i => (Id: i.GetProperty("spotify_artist_id").GetString(), Count: i.GetProperty("release_count")))
+            .ToList();
+        Assert.Equal([GeeseId, impostorId, GeeseSoundalikeId], items.Select(i => i.Id));
+        Assert.Equal(3, items[0].Count.GetInt32());
+        Assert.Equal(1, items[1].Count.GetInt32());
+        Assert.Equal(JsonValueKind.Null, items[2].Count.ValueKind);
+        // Only the two same-named artists were counted, each with one small request.
+        var counts = _spotify.Calls.Where(c => c.Path.EndsWith("/albums", StringComparison.Ordinal)).ToList();
+        Assert.Equal(2, counts.Count);
+        Assert.All(counts, c => Assert.Contains("limit=1", c.Query, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task An_unknown_release_count_still_returns_the_search()
+    {
+        const string impostorId = "0bbbbbbbbbbbbbbbbbbbbb";
+        _spotify.Artists.Add(new FakeSpotify.Artist(impostorId, "Geese"));
+        _spotify.ArtistAlbums[GeeseId] = [new("g-1", "3D Country")];
+        var token = await SignInAsync("fan_one");
+
+        var results = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/artists/search?q=geese", token), HttpStatusCode.OK);
+
+        var items = results.GetProperty("items").EnumerateArray().ToList();
+        Assert.Equal(3, items.Count);
+        Assert.Equal(GeeseId, items[0].GetProperty("spotify_artist_id").GetString());
+        Assert.Equal(1, items[0].GetProperty("release_count").GetInt32());
+        // Spotify answers 404 for the impostor's albums here.
+        Assert.Equal(JsonValueKind.Null, items[1].GetProperty("release_count").ValueKind);
+    }
+
     [Theory]
     [InlineData("q=g", "q")]
     [InlineData("q=geese&limit=11", "limit")]

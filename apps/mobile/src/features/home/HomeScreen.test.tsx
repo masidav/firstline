@@ -79,6 +79,27 @@ test('Enter with no match asks Spotify, and Add tracks the artist', async () => 
   await waitFor(() => expect(screen.getByText('Getting ready')).toBeTruthy());
 });
 
+test('same-named artists show their release counts', async () => {
+  serve(
+    [],
+    [
+      { ...spotifyGeese, genres: [], release_count: 59 },
+      { ...spotifyGeese, spotify_artist_id: '0bbbbbbbbbbbbbbbbbbbbb', genres: [], release_count: 1 },
+    ],
+  );
+  render(<HomeScreen />);
+
+  const input = screen.getByLabelText('Search artists');
+  fireEvent.changeText(input, 'geese');
+  fireEvent(input, 'submitEditing');
+
+  expect(await screen.findByText('59 releases')).toBeTruthy();
+  expect(screen.getByText('1 release')).toBeTruthy();
+  // Each button shows "Add"; screen readers hear the artist's name too.
+  expect(screen.getAllByText('Add')).toHaveLength(2);
+  expect(screen.getAllByRole('button', { name: 'Add Geese' })).toHaveLength(2);
+});
+
 test('the daily add limit is explained', async () => {
   serve([], [spotifyGeese]);
   mockApi.POST.mockResolvedValue(problem(429, 'artist_add_limit'));
