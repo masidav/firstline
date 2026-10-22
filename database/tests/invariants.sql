@@ -640,4 +640,167 @@ BEGIN
   DELETE FROM users WHERE id = fan;
 END $$;
 
+-- ------------------------------------------------------------ events and allocations (0011)
+-- Fixture: an active artist with a show in Chicago two weeks out.
+INSERT INTO artists (id, name, spotify_artist_id) VALUES ('40000000-0000-0000-0000-000000000001', 'Alloc Artist', 'sp-alloc');
+INSERT INTO artist_baselines (artist_id, dist_params, curve) VALUES ('40000000-0000-0000-0000-000000000001', '{}', '[]');
+UPDATE artists SET status = 'active', catalog_loaded_at = now() WHERE id = '40000000-0000-0000-0000-000000000001';
+INSERT INTO artists (id, name, spotify_artist_id) VALUES ('40000000-0000-0000-0000-000000000002', 'Onboarding Artist', 'sp-alloc-2');
+INSERT INTO events (id, artist_id, name, city_id, city, country, starts_at) VALUES
+  ('41000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 'Chicago show', 'us-il-chicago',
+   'Chicago', 'US', now() + interval '14 days'),
+  ('41000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000001', 'No city yet', NULL, NULL, NULL,
+   now() + interval '14 days'),
+  ('41000000-0000-0000-0000-000000000003', '40000000-0000-0000-0000-000000000002', 'Onboarding show', 'us-il-chicago',
+   'Chicago', 'US', now() + interval '14 days');
+
+SELECT pg_temp.expect_error($$INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at)
+  VALUES ('41000000-0000-0000-0000-000000000001', 0, 5000, now(), now() + interval '1 day')$$, 'allocations_tickets_check');
+SELECT pg_temp.expect_error($$INSERT INTO allocations (event_id, tickets, face_value_cents, min_percentile, registration_opens_at, registration_closes_at)
+  VALUES ('41000000-0000-0000-0000-000000000001', 10, 5000, 101, now(), now() + interval '1 day')$$, 'allocations_min_percentile_check');
+SELECT pg_temp.expect_error($$INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at)
+  VALUES ('41000000-0000-0000-0000-000000000001', 10, 5000, now() + interval '2 days', now() + interval '1 day')$$,
+  'allocations_window_check');
+SELECT pg_temp.expect_error($$INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at)
+  VALUES ('41000000-0000-0000-0000-000000000001', 10, 5000, now(), now() + interval '20 days')$$, 'before the show starts');
+SELECT pg_temp.expect_error($$INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at, published_at)
+  VALUES ('41000000-0000-0000-0000-000000000002', 10, 5000, now(), now() + interval '1 day', now())$$, 'needs a city');
+SELECT pg_temp.expect_error($$INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at, published_at)
+  VALUES ('41000000-0000-0000-0000-000000000003', 10, 5000, now(), now() + interval '1 day', now())$$, 'artist must be active');
+SELECT pg_temp.expect_error($$INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at, cancelled_at)
+  VALUES ('41000000-0000-0000-0000-000000000001', 10, 5000, now(), now() + interval '1 day', now())$$, 'allocations_cancel_published');
+
+DO $$
+DECLARE upcoming uuid; opened uuid;
+BEGIN
+  -- Published but not open yet: rules can still change; the show can't move to before registration closes.
+  INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at, published_at)
+  VALUES ('41000000-0000-0000-0000-000000000001', 50, 4500, now() + interval '1 day', now() + interval '5 days', now())
+  RETURNING id INTO upcoming;
+  UPDATE allocations SET tickets = 60, min_percentile = 70 WHERE id = upcoming;
+  ASSERT (SELECT tickets FROM allocations WHERE id = upcoming) = 60, 'rules editable before registration opens';
+  BEGIN
+    UPDATE events SET starts_at = now() + interval '3 days' WHERE id = '41000000-0000-0000-0000-000000000001';
+    RAISE EXCEPTION 'moving the show before registration closes should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%before the show starts%', SQLERRM;
+  END;
+
+  -- Open: rules and the show's time and city are locked; cancelling still works, once.
+  INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at, published_at)
+  VALUES ('41000000-0000-0000-0000-000000000001', 20, 4500, now() - interval '1 hour', now() + interval '5 days', now())
+  RETURNING id INTO opened;
+  BEGIN
+    UPDATE allocations SET tickets = 30 WHERE id = opened;
+    RAISE EXCEPTION 'changing an open allocation should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%rules are locked%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE events SET city_id = 'ca-on-toronto' WHERE id = '41000000-0000-0000-0000-000000000001';
+    RAISE EXCEPTION 'moving an open show should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%locked once an allocation opens%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE allocations SET published_at = NULL WHERE id = opened;
+    RAISE EXCEPTION 'unpublishing should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%cannot be undone%', SQLERRM;
+  END;
+  UPDATE allocations SET cancelled_at = now() WHERE id = opened;
+  BEGIN
+    UPDATE allocations SET cancelled_at = NULL WHERE id = opened;
+    RAISE EXCEPTION 'uncancelling should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%cancelled allocation can''t change%', SQLERRM;
+  END;
+  -- With the open allocation cancelled, the show's city can change again.
+  UPDATE events SET city_id = 'ca-on-toronto' WHERE id = '41000000-0000-0000-0000-000000000001';
+END $$;
+
+DO $$
+DECLARE show uuid := '41000000-0000-0000-0000-000000000001'; draft uuid; live uuid; other_show uuid;
+BEGIN
+  -- Registration must close strictly before the show.
+  BEGIN
+    INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at)
+    SELECT show, 5, 100, starts_at - interval '1 day', starts_at FROM events WHERE id = show;
+    RAISE EXCEPTION 'closing as the show starts should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%before the show starts%', SQLERRM;
+  END;
+
+  -- Publishing through an update checks the same preconditions as on insert, plus a window that isn't over.
+  INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at)
+  VALUES ('41000000-0000-0000-0000-000000000002', 5, 100, now() + interval '1 day', now() + interval '2 days') RETURNING id INTO draft;
+  BEGIN
+    UPDATE allocations SET published_at = now() WHERE id = draft;
+    RAISE EXCEPTION 'publishing without a city should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%needs a city%', SQLERRM;
+  END;
+  INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at)
+  VALUES ('41000000-0000-0000-0000-000000000003', 5, 100, now() + interval '1 day', now() + interval '2 days') RETURNING id INTO draft;
+  BEGIN
+    UPDATE allocations SET published_at = now() WHERE id = draft;
+    RAISE EXCEPTION 'publishing for an onboarding artist should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%artist must be active%', SQLERRM;
+  END;
+  INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at)
+  VALUES (show, 5, 100, now() - interval '2 days', now() - interval '1 day') RETURNING id INTO draft;
+  BEGIN
+    UPDATE allocations SET published_at = now() WHERE id = draft;
+    RAISE EXCEPTION 'publishing a window that is over should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%already be over%', SQLERRM;
+  END;
+  -- Drafts can be deleted; published ones can't, and neither can a show that has allocations.
+  DELETE FROM allocations WHERE id = draft;
+
+  -- Publishing and cancelling are stamped by the database, whatever time is sent.
+  INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at, published_at)
+  VALUES (show, 5, 100, now() + interval '1 day', now() + interval '2 days', now() + interval '100 days') RETURNING id INTO live;
+  ASSERT (SELECT published_at <= clock_timestamp() FROM allocations WHERE id = live), 'published_at is stamped now';
+  BEGIN
+    DELETE FROM allocations WHERE id = live;
+    RAISE EXCEPTION 'deleting a published allocation should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%cancelled, not deleted%', SQLERRM;
+  END;
+  BEGIN
+    DELETE FROM events WHERE id = show;
+    RAISE EXCEPTION 'deleting a show with allocations should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%allocations_event_id_fkey%' OR SQLERRM LIKE '%cancelled, not deleted%', SQLERRM;
+  END;
+
+  -- An allocation stays with its show; the show keeps its artist and a city while one is published.
+  SELECT id INTO other_show FROM events WHERE id = '41000000-0000-0000-0000-000000000003';
+  BEGIN
+    UPDATE allocations SET event_id = other_show WHERE id = live;
+    RAISE EXCEPTION 'moving an allocation to another show should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%belongs to its show%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE events SET artist_id = '40000000-0000-0000-0000-000000000002' WHERE id = show;
+    RAISE EXCEPTION 'changing the artist under a published allocation should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%artist and city are locked%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE events SET city_id = NULL WHERE id = show;
+    RAISE EXCEPTION 'removing the city under a published allocation should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%artist and city are locked%', SQLERRM;
+  END;
+
+  UPDATE allocations SET cancelled_at = now() + interval '100 days' WHERE id = live;
+  ASSERT (SELECT cancelled_at <= clock_timestamp() FROM allocations WHERE id = live), 'cancelled_at is stamped now';
+  BEGIN
+    UPDATE allocations SET tickets = 6 WHERE id = live;
+    RAISE EXCEPTION 'editing a cancelled allocation should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%can''t change%', SQLERRM;
+  END;
+
+  -- The rules lock uses the clock, not the transaction start: this block's now() is fixed, but after waiting past
+  -- the opening time the rules are locked.
+  INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at, published_at)
+  VALUES (show, 5, 100, clock_timestamp() + interval '200 milliseconds', now() + interval '2 days', now()) RETURNING id INTO live;
+  PERFORM pg_sleep(0.3);
+  BEGIN
+    UPDATE allocations SET min_percentile = 99 WHERE id = live;
+    RAISE EXCEPTION 'changing rules after opening (same transaction) should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%rules are locked%', SQLERRM;
+  END;
+END $$;
+
 \echo ALL INVARIANT TESTS PASSED

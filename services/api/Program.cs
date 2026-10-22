@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FandomScore.Api.Features.AlbumJournal;
+using FandomScore.Api.Features.Allocations;
 using FandomScore.Api.Features.Artists;
 using FandomScore.Api.Features.Authentication;
 using FandomScore.Api.Features.Scoring;
@@ -52,6 +53,7 @@ v1.MapAppleNotifications();
 v1.MapMe();
 v1.MapSpotify();
 v1.MapArtists();
+v1.MapAllocations();
 v1.MapAlbums();
 v1.MapJournal();
 v1.MapScoring();

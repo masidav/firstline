@@ -149,7 +149,8 @@ Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](servi
 
 ## Phase 11 — Promoter allocation platform (B2B)
 - [ ] Promoter and artist organizations with staff roles and permissions.
-- [ ] Events and allocation pools: share of inventory, eligibility thresholds, registration window.
+- [x] Events and allocation pools: share of inventory, eligibility thresholds, registration window. Staff-managed
+      for now (`/v1/admin/events`, `tools/dev/allocations.py`); verified 2026-10-21, AllocationApiTests 16/16.
 - [ ] Fan registration for an allocation and a fair, auditable selection: ranked by fandom score among fans
       whose three hub cities include the show's city, then other fans for unfilled seats; ties broken by a
       recorded random draw; a registration keeps the hubs it was made with (decided 2026-10-20).
@@ -266,6 +267,11 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
       fans who have the show's city in one of their **three hub cities**.
 - [x] Allocation edge cases (decided 2026-10-20): seats hub fans leave unfilled **open to fans outside the
       city**; **equal scores are broken by a coin flip** (a random draw, recorded so the result can be audited).
+- [ ] Allocation rules set provisionally in code (2026-10-21), confirm or change: **one ticket per selected fan**
+      (no +1); the eligibility threshold is a **minimum percentile** for the artist (not a raw score); an
+      allocation's **rules lock once registration opens** (it can still be cancelled); staff, not promoters, manage
+      shows until organizations exist. Also open: what pausing an artist (takedown) does to an open allocation
+      (for now it's allowed, and registration and selection will refuse).
 - [ ] Decide on the fan-side fee and whether App Store / Google Play payment rules apply to it.
 - [ ] Choose the first pilot artist(s) and promoter.
 - [x] Concert data source (decided 2026-10-20): **concert APIs** for shows and sale dates (candidates:

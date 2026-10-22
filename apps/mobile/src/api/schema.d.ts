@@ -369,7 +369,11 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Upcoming events */
+        /**
+         * Upcoming events
+         * @description The artist's shows, soonest first. `tickets_available` is true while a published fan allocation is upcoming or
+         *     open for registration. Past shows only with `include_past`.
+         */
         get: operations["listArtistEvents"];
         put?: never;
         post?: never;
@@ -1054,6 +1058,162 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/events/{eventId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * A show and its fan allocations
+         * @description Published allocations only (including cancelled ones). Drafts are visible to staff only.
+         */
+        get: operations["getEvent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a show
+         * @description Staff only until promoter organizations exist. The city is one of the hub cities (`GET /cities`).
+         */
+        post: operations["createEvent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/events/{eventId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        /** A show with all its allocations, drafts included */
+        get: operations["getEventForStaff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change a show
+         * @description Partial update. Once an allocation for the show has opened, its time and city are locked
+         *     (`allocation_locked`), and the show can never move to before an allocation's registration closes.
+         */
+        patch: operations["updateEvent"];
+        trace?: never;
+    };
+    "/admin/events/{eventId}/allocations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set aside a fan allocation (as a draft) */
+        post: operations["createAllocation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/allocations/{allocationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a draft
+         * @description Only drafts; a published allocation is cancelled instead (`409 conflict`).
+         */
+        delete: operations["deleteAllocationDraft"];
+        options?: never;
+        head?: never;
+        /**
+         * Change an allocation's rules
+         * @description Partial update. Allowed until registration opens; after that, `allocation_locked`.
+         */
+        patch: operations["updateAllocation"];
+        trace?: never;
+    };
+    "/admin/allocations/{allocationId}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Show an allocation to fans
+         * @description Needs an active artist and a show with a city (`409 conflict` otherwise). Can't be undone. Publishing again
+         *     returns the allocation unchanged.
+         */
+        post: operations["publishAllocation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/allocations/{allocationId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a published allocation
+         * @description Can't be undone; cancelling again returns it unchanged. Drafts are deleted instead (`409 conflict`).
+         */
+        post: operations["cancelAllocation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/reviews": {
         parameters: {
             query?: never;
@@ -1225,7 +1385,7 @@ export interface components {
              * @description Stable machine-readable code.
              * @enum {string}
              */
-            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
+            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
             errors?: {
                 field?: string;
                 message?: string;
@@ -1436,11 +1596,90 @@ export interface components {
             artist_id: string;
             name: string;
             venue?: string | null;
+            /** @description The hub city (`HubCity.id`); null for shows not entered by staff */
+            city_id?: string | null;
             city?: string | null;
+            region?: string | null;
             country?: string | null;
             /** Format: date-time */
             starts_at: string;
-            tickets_available?: boolean;
+            tickets_available: boolean;
+        };
+        EventDetail: {
+            event: components["schemas"]["Event"];
+            allocations: components["schemas"]["Allocation"][];
+        };
+        EventCreate: {
+            /** Format: uuid */
+            artist_id: string;
+            name: string;
+            venue?: string | null;
+            city_id: string;
+            /** Format: date-time */
+            starts_at: string;
+        };
+        EventUpdate: {
+            name?: string;
+            venue?: string | null;
+            city_id?: string;
+            /** Format: date-time */
+            starts_at?: string;
+        };
+        /**
+         * @description Face-value tickets set aside for top fans of the show's artist, one per selected fan. Fans at or above
+         *     `min_percentile` for the artist can register while registration is open.
+         */
+        Allocation: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            event_id: string;
+            name: string;
+            tickets: number;
+            face_value_cents: number;
+            currency: string;
+            min_percentile: number;
+            /** Format: date-time */
+            registration_opens_at: string;
+            /** Format: date-time */
+            registration_closes_at: string;
+            /**
+             * @description `draft` is staff-only; `upcoming` is published but not open yet; `closed` means registration is over
+             * @enum {string}
+             */
+            status: "draft" | "upcoming" | "open" | "closed" | "cancelled";
+            /** Format: date-time */
+            published_at?: string | null;
+            /** Format: date-time */
+            cancelled_at?: string | null;
+        };
+        AllocationCreate: {
+            /** @default Fan allocation */
+            name: string;
+            tickets: number;
+            face_value_cents: number;
+            /** @default USD */
+            currency: string;
+            /** @default 0 */
+            min_percentile: number;
+            /** Format: date-time */
+            registration_opens_at: string;
+            /**
+             * Format: date-time
+             * @description Before the show starts
+             */
+            registration_closes_at: string;
+        };
+        AllocationUpdate: {
+            name?: string;
+            tickets?: number;
+            face_value_cents?: number;
+            currency?: string;
+            min_percentile?: number;
+            /** Format: date-time */
+            registration_opens_at?: string;
+            /** Format: date-time */
+            registration_closes_at?: string;
         };
         EventPage: {
             items: components["schemas"]["Event"][];
@@ -1902,6 +2141,15 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
+        /** @description Registration has opened, so the allocation's rules and the show's time and city are fixed (`code: allocation_locked`) */
+        AllocationLocked: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
         /** @description Request body or parameters are invalid */
         ValidationFailed: {
             headers: {
@@ -1937,6 +2185,8 @@ export interface components {
         Cursor: string;
         IdempotencyKey: string;
         ArtistId: string;
+        EventId: string;
+        AllocationId: string;
         AlbumId: string;
         LogId: string;
         CommentId: string;
@@ -2575,6 +2825,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
         };
     };
     getArtistStats: {
@@ -3634,6 +3885,245 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    getEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Show */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventDetail"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventCreate"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    /** @description `/v1/events/{eventId}` */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventDetail"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getEventForStaff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Show */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventDetail"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventDetail"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["AllocationLocked"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    createAllocation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AllocationCreate"];
+            };
+        };
+        responses: {
+            /** @description Draft created */
+            201: {
+                headers: {
+                    /** @description `/v1/admin/allocations/{allocationId}` */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Allocation"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    deleteAllocationDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    updateAllocation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AllocationUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Allocation"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["AllocationLocked"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    publishAllocation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Published */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Allocation"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    cancelAllocation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancelled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Allocation"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     listReviewQueue: {

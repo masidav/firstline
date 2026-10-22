@@ -52,9 +52,10 @@ def env(name):
 
 
 def psql(sql, **variables):
-    """Runs SQL in the local compose database. Values are passed as psql variables (use :'name'), never pasted in."""
+    """Runs SQL in the local compose database (DEV_DATABASE, default fandom_score). Values are passed as psql
+    variables (use :'name'), never pasted in."""
     command = ["docker", "compose", "-f", COMPOSE_FILE, "exec", "-T", "postgres",
-               "psql", "-U", "fandom", "-d", "fandom_score", "-v", "ON_ERROR_STOP=1", "-q", "-At", "-F", "\t"]
+               "psql", "-U", "fandom", "-d", os.environ.get("DEV_DATABASE", "fandom_score"), "-v", "ON_ERROR_STOP=1", "-q", "-At", "-F", "\t"]
     for name, value in variables.items():
         command += ["-v", f"{name}={value}"]
     result = subprocess.run(command, input=sql, capture_output=True, text=True)
