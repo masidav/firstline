@@ -7,7 +7,7 @@ import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
-import { kindLabel, statusLabel, type Submission } from './photoUpload';
+import { kindLabel, statusLabel, type Submission, submissionConcertLine } from './photoUpload';
 
 /** The fan's posts with their review status (route /posts). Verified concert and merch photos can be shared. */
 export function MyPostsScreen() {
@@ -76,6 +76,7 @@ export function MyPostsScreen() {
           <Text style={styles.title}>
             {kindLabel(post.kind)} · {post.artist.name}
           </Text>
+          {submissionConcertLine(post) ? <Text style={styles.status}>{submissionConcertLine(post)}</Text> : null}
           {post.caption ? <Text style={styles.caption}>{post.caption}</Text> : null}
           <Text style={styles.status}>{statusLabel(post)}</Text>
           {(post.points_awarded ?? []).length > 0 && (

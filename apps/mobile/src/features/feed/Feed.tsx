@@ -7,6 +7,7 @@ import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
+import { concertLine } from '../submissions/photoUpload';
 
 export type FeedItem = components['schemas']['FeedItem'];
 
@@ -76,6 +77,7 @@ function FeedCard({ item }: { item: FeedItem }) {
             accessibilityLabel={`${who}'s ${what} for ${item.artist.name}`}
           />
         )}
+        {item.photo.concert ? <Text style={styles.muted}>{concertLine(item.photo.concert)}</Text> : null}
         {item.photo.caption ? <Text style={styles.text}>{item.photo.caption}</Text> : null}
       </View>
     );

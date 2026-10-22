@@ -19,7 +19,8 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Update `PROJECT_TODO.md` when this feature reaches a verified milestone.
 
 ## Status (2026-10-21, branch `proof-feed`)
-Built: Post a photo (`/post`: concert photo, merch, or ticket; artist; caption; re-encoded to JPEG ≤ 2048 px before
+Built: Post a photo (`/post`: concert photo, merch, or ticket; artist; for concert photos the show, picked from the
+band's past shows or typed in as date, venue, and city; caption; re-encoded to JPEG ≤ 2048 px before
 upload), My posts (`/posts`: status, points, share/unshare, withdraw), staff Review queue (`/review`), and the home
 feed (`features/feed/Feed.tsx`). Jest: photoUpload, Feed, MyPostsScreen, ReviewScreen. Clicked through in Chrome.
 Not yet: camera capture, several photos per post, native device run.

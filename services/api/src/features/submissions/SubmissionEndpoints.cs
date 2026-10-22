@@ -41,9 +41,15 @@ public static class SubmissionEndpoints
 
     public sealed record PointsAward(string RuleKey, decimal Points);
 
+    /// <summary>The listed show a submission is pinned to (openapi EventRef).</summary>
+    public sealed record EventRef(Guid Id, string Name, string? Venue, string? City, DateTime StartsAt);
+
+    /// <summary>A show the fan typed in because it wasn't listed.</summary>
+    public sealed record Concert(DateOnly Date, string Venue, string City);
+
     public sealed record Submission(
-        Guid Id, Guid ArtistId, ScoringEndpoints.ArtistRef Artist, string Kind, string Status, object? Event,
-        string? RejectionReason, DateTime SubmittedAt, DateTime? VerifiedAt, bool Archived, string? Caption,
+        Guid Id, Guid ArtistId, ScoringEndpoints.ArtistRef Artist, string Kind, string Status, EventRef? Event,
+        Concert? Concert, string? RejectionReason, DateTime SubmittedAt, DateTime? VerifiedAt, bool Archived, string? Caption,
         DateTime? SharedAt, bool CanShare, IReadOnlyList<SubmissionFile> Files, IReadOnlyList<PointsAward> PointsAwarded);
 
     public sealed record SubmissionPage(IReadOnlyList<Submission> Items, string? NextCursor);
@@ -54,19 +60,19 @@ public static class SubmissionEndpoints
         Guid Id, string CheckType, string Result, decimal? Confidence, JsonElement Details, Guid? ReviewerId, DateTime CreatedAt);
 
     public sealed record AdminSubmission(
-        Guid Id, Guid ArtistId, ScoringEndpoints.ArtistRef Artist, string Kind, string Status, object? Event,
-        string? RejectionReason, DateTime SubmittedAt, DateTime? VerifiedAt, bool Archived, string? Caption,
+        Guid Id, Guid ArtistId, ScoringEndpoints.ArtistRef Artist, string Kind, string Status, EventRef? Event,
+        Concert? Concert, string? RejectionReason, DateTime SubmittedAt, DateTime? VerifiedAt, bool Archived, string? Caption,
         DateTime? SharedAt, bool CanShare, IReadOnlyList<SubmissionFile> Files, IReadOnlyList<PointsAward> PointsAwarded,
         UserRef User, decimal? TrustScore, JsonElement Extracted, IReadOnlyList<VerificationCheck> Checks);
 
     public sealed record AdminSubmissionPage(IReadOnlyList<AdminSubmission> Items, string? NextCursor);
 
     private static async Task<IResult> CreateAsync(
-        ClaimsPrincipal user, HttpRequest request, JsonElement body, NpgsqlDataSource db, SignedUrls urls,
+        ClaimsPrincipal user, HttpRequest request, JsonElement body, NpgsqlDataSource db, SignedUrls urls, TimeProvider time,
         IOptions<JsonOptions> json, CancellationToken cancellationToken)
     {
         var key = Idempotency.ReadKey(request);
-        var (artistId, kind, uploadIds, caption) = ParseCreate(body);
+        var (artistId, kind, uploadIds, caption, eventId, concert) = ParseCreate(body, time);
         var userId = user.UserId();
 
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
@@ -86,6 +92,14 @@ public static class SubmissionEndpoints
                 new { artistId }, transaction))
         {
             throw new ApiProblemException(StatusCodes.Status404NotFound, "not_found", "Artist not found", "No tracked artist has this id.");
+        }
+
+        // A pinned show must be this artist's, and already have happened (a day of slack for time zones).
+        if (eventId is not null && !await connection.ExecuteScalarAsync<bool>(
+                "SELECT EXISTS (SELECT 1 FROM events WHERE id = @eventId AND artist_id = @artistId AND starts_at <= now() + interval '1 day')",
+                new { eventId, artistId }, transaction))
+        {
+            throw ApiProblemException.Validation(new FieldError("event_id", "Choose one of this artist's past shows."));
         }
 
         if (await connection.ExecuteScalarAsync<int>(
@@ -123,10 +137,11 @@ public static class SubmissionEndpoints
 
         var submissionId = await connection.ExecuteScalarAsync<Guid>(
             """
-            INSERT INTO submissions (user_id, artist_id, kind, status, caption)
-            VALUES (@userId, @artistId, @kind::submission_kind, 'needs_review', @caption) RETURNING id
+            INSERT INTO submissions (user_id, artist_id, kind, status, caption, event_id, concert_date, concert_venue, concert_city)
+            VALUES (@userId, @artistId, @kind::submission_kind, 'needs_review', @caption, @eventId, @date, @venue, @city) RETURNING id
             """,
-            new { userId, artistId, kind, caption }, transaction);
+            new { userId, artistId, kind, caption, eventId, date = concert?.Date, venue = concert?.Venue, city = concert?.City },
+            transaction);
         await connection.ExecuteAsync(
             """
             INSERT INTO submission_files (submission_id, storage_key, sha256, mime_type, bytes)
@@ -146,7 +161,8 @@ public static class SubmissionEndpoints
         return Results.Created($"/v1/submissions/{submissionId}", submission);
     }
 
-    private static (Guid ArtistId, string Kind, Guid[] UploadIds, string? Caption) ParseCreate(JsonElement body)
+    private static (Guid ArtistId, string Kind, Guid[] UploadIds, string? Caption, Guid? EventId, Concert? Concert) ParseCreate(
+        JsonElement body, TimeProvider time)
     {
         if (body.ValueKind != JsonValueKind.Object)
         {
@@ -193,12 +209,70 @@ public static class SubmissionEndpoints
             caption = string.IsNullOrEmpty(caption) ? null : caption;
         }
 
+        Guid? eventId = null;
+        if (body.TryGetProperty("event_id", out var e) && e.ValueKind != JsonValueKind.Null)
+        {
+            if (e.ValueKind == JsonValueKind.String && e.TryGetGuid(out var id)) eventId = id;
+            else errors.Add(new FieldError("event_id", "Send the id of one of this artist's shows."));
+        }
+
+        var concert = ParseConcert(body, time, errors);
+        if (concert is not null && kind != "concert_photo")
+        {
+            errors.Add(new FieldError("concert", "Only concert photos take a concert."));
+        }
+
+        if (eventId is not null && concert is not null)
+        {
+            errors.Add(new FieldError("concert", "Send event_id or concert, not both."));
+        }
+
+        if (kind == "concert_photo" && eventId is null && concert is null && !errors.Any(x => x.Field.StartsWith("concert", StringComparison.Ordinal)))
+        {
+            errors.Add(new FieldError("event_id", "Pin the photo to its concert: choose the show, or enter its date, venue, and city."));
+        }
+
         if (errors.Count > 0)
         {
             throw ApiProblemException.Validation([.. errors]);
         }
 
-        return (artistId, kind, [.. uploadIds], caption);
+        return (artistId, kind, [.. uploadIds], caption, eventId, concert);
+    }
+
+    private static readonly DateOnly EarliestConcert = new(1950, 1, 1);
+
+    private static Concert? ParseConcert(JsonElement body, TimeProvider time, List<FieldError> errors)
+    {
+        if (!body.TryGetProperty("concert", out var c) || c.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        string? Text(string name) =>
+            c.ValueKind == JsonValueKind.Object && c.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
+                ? v.GetString()!.Trim() : null;
+
+        var dateText = Text("date");
+        var venue = Text("venue");
+        var city = Text("city");
+        var latest = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime).AddDays(1);
+        if (!DateOnly.TryParseExact(dateText, "yyyy-MM-dd", out var date) || date < EarliestConcert || date > latest)
+        {
+            errors.Add(new FieldError("concert.date", "Enter the concert date (YYYY-MM-DD); it can't be in the future."));
+        }
+
+        if (string.IsNullOrEmpty(venue) || venue.Length > 200)
+        {
+            errors.Add(new FieldError("concert.venue", "Enter the venue (up to 200 characters)."));
+        }
+
+        if (string.IsNullOrEmpty(city) || city.Length > 100)
+        {
+            errors.Add(new FieldError("concert.city", "Enter the city (up to 100 characters)."));
+        }
+
+        return errors.Any(x => x.Field.StartsWith("concert.", StringComparison.Ordinal)) ? null : new Concert(date, venue!, city!);
     }
 
     private static async Task<IResult> ListMineAsync(
@@ -452,7 +526,8 @@ public static class SubmissionEndpoints
             SELECT s.id AS Id, s.artist_id AS ArtistId, a.name AS ArtistName, a.image_url AS ArtistImageUrl, s.kind::text AS Kind,
                    s.status::text AS Status, s.rejection_reason AS RejectionReason, s.submitted_at AS SubmittedAt,
                    s.verified_at AS VerifiedAt, s.archived_at IS NOT NULL AS Archived, s.caption AS Caption, s.shared_at AS SharedAt,
-                   s.user_id AS UserId, s.trust_score AS TrustScore, s.extracted::text AS Extracted
+                   s.user_id AS UserId, s.trust_score AS TrustScore, s.extracted::text AS Extracted,
+                   s.event_id AS EventId, s.concert_date AS ConcertDate, s.concert_venue AS ConcertVenue, s.concert_city AS ConcertCity
             FROM submissions s JOIN artists a ON a.id = s.artist_id WHERE s.id = @submissionId
             """,
             new { submissionId }, transaction);
@@ -469,8 +544,16 @@ public static class SubmissionEndpoints
             "SELECT rule_key AS RuleKey, points AS Points FROM score_events WHERE source_type = 'submission' AND source_id = @submissionId AND reversed_at IS NULL",
             new { submissionId }, transaction)).ToList();
         var canShare = row.Status == "verified" && ShareableKinds.Contains(row.Kind);
+        var pinned = row.EventId is { } eventId
+            ? await connection.QuerySingleOrDefaultAsync<EventRef>(
+                """
+                SELECT id AS Id, name AS Name, venue AS Venue, city AS City, starts_at AS StartsAt FROM events WHERE id = @eventId
+                """,
+                new { eventId }, transaction)
+            : null;
+        var concert = row.ConcertDate is { } date ? new Concert(date, row.ConcertVenue!, row.ConcertCity!) : null;
         return new Submission(row.Id, row.ArtistId, new ScoringEndpoints.ArtistRef(row.ArtistId, row.ArtistName, row.ArtistImageUrl),
-            row.Kind, row.Status, null, row.RejectionReason, row.SubmittedAt, row.VerifiedAt, row.Archived, row.Caption,
+            row.Kind, row.Status, pinned, concert, row.RejectionReason, row.SubmittedAt, row.VerifiedAt, row.Archived, row.Caption,
             row.SharedAt, canShare, files, awards);
     }
 
@@ -498,7 +581,7 @@ public static class SubmissionEndpoints
                 new { submissionId }, transaction))
             .Select(c => new VerificationCheck(c.Id, c.CheckType, c.Result, c.Confidence, Parse(c.Details), c.ReviewerId, c.CreatedAt))
             .ToList();
-        return new AdminSubmission(s.Id, s.ArtistId, s.Artist, s.Kind, s.Status, s.Event, s.RejectionReason, s.SubmittedAt,
+        return new AdminSubmission(s.Id, s.ArtistId, s.Artist, s.Kind, s.Status, s.Event, s.Concert, s.RejectionReason, s.SubmittedAt,
             s.VerifiedAt, s.Archived, s.Caption, s.SharedAt, s.CanShare, s.Files, s.PointsAwarded,
             new UserRef(extra.Handle, extra.Deleted, extra.DisplayName, null), extra.TrustScore, Parse(extra.Extracted), checks);
     }
@@ -512,7 +595,7 @@ public static class SubmissionEndpoints
     private sealed record SubmissionRow(
         Guid Id, Guid ArtistId, string ArtistName, string? ArtistImageUrl, string Kind, string Status, string? RejectionReason,
         DateTime SubmittedAt, DateTime? VerifiedAt, bool Archived, string? Caption, DateTime? SharedAt, Guid UserId,
-        decimal? TrustScore, string Extracted);
+        decimal? TrustScore, string Extracted, Guid? EventId, DateOnly? ConcertDate, string? ConcertVenue, string? ConcertCity);
 
     private sealed record CheckRow(
         Guid Id, string CheckType, string Result, decimal? Confidence, string Details, Guid? ReviewerId, DateTime CreatedAt);

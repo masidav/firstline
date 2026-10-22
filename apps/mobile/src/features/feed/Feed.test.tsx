@@ -16,7 +16,7 @@ const photo = {
   at: '2026-10-21T12:00:00Z',
   user: { handle: 'fan_two', deleted: false, display_name: null },
   artist,
-  photo: { kind: 'concert_photo', caption: 'Front row!', files: [{ id: 'f1', mime_type: 'image/jpeg', url: 'https://x/f1', redacted: false }] },
+  photo: { kind: 'concert_photo', caption: 'Front row!', concert: { name: null, venue: 'Metro', city: 'Chicago', date: '2026-10-03' }, files: [{ id: 'f1', mime_type: 'image/jpeg', url: 'https://x/f1', redacted: false }] },
   log: null,
 };
 const log = {
@@ -37,6 +37,7 @@ test('shows shared photos and album logs, and pages', async () => {
 
   expect(await screen.findByText('Front row!')).toBeTruthy();
   expect(screen.getByLabelText("@fan_two's a concert photo for Geese")).toBeTruthy();
+  expect(screen.getByText('Metro, Chicago · Oct 3, 2026')).toBeTruthy();
   fireEvent.press(screen.getByRole('button', { name: 'Show more' }));
 
   const logged = await screen.findByRole('button', { name: 'Ana logged 3D Country by Geese' });

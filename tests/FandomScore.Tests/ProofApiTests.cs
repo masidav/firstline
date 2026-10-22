@@ -66,7 +66,11 @@ public sealed class ProofApiTests(PostgresFixture postgres) : IAsyncLifetime
 
         var uploadId = await UploadAsync(fan, photo);
         var submitted = await JsonAsync(await SendAsync(HttpMethod.Post, "/v1/submissions", fan,
-            new { artist_id = _artistId, kind = "concert_photo", upload_ids = new[] { uploadId }, caption = "Front row!" }), HttpStatusCode.Created);
+            new
+            {
+                artist_id = _artistId, kind = "concert_photo", upload_ids = new[] { uploadId }, caption = "Front row!",
+                concert = new { date = "2026-10-03", venue = "Metro", city = "Chicago" },
+            }), HttpStatusCode.Created);
         var id = submitted.GetProperty("id").GetString();
         Assert.Equal("needs_review", submitted.GetProperty("status").GetString());
         Assert.False(submitted.GetProperty("can_share").GetBoolean());
@@ -93,6 +97,9 @@ public sealed class ProofApiTests(PostgresFixture postgres) : IAsyncLifetime
 
         var feed = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/feed", fan), HttpStatusCode.OK);
         var item = Assert.Single(feed.GetProperty("items").EnumerateArray());
+        var concert = item.GetProperty("photo").GetProperty("concert");
+        Assert.Equal(("Metro", "Chicago", "2026-10-03"), (concert.GetProperty("venue").GetString(), concert.GetProperty("city").GetString(),
+            concert.GetProperty("date").GetString()));
         Assert.Equal(("photo", "Front row!", "fan_one", "Geese"), (item.GetProperty("type").GetString(),
             item.GetProperty("photo").GetProperty("caption").GetString(), item.GetProperty("user").GetProperty("handle").GetString(),
             item.GetProperty("artist").GetProperty("name").GetString()));
@@ -144,6 +151,55 @@ public sealed class ProofApiTests(PostgresFixture postgres) : IAsyncLifetime
 
         var after = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/feed", fan), HttpStatusCode.OK);
         Assert.Equal(["album_log"], after.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("type").GetString()));
+    }
+
+    [Fact]
+    public async Task Concert_photos_are_pinned_to_one_of_the_bands_shows_or_a_concert_the_fan_enters()
+    {
+        var fan = await SignInAsync("fan_one");
+        Guid ownShow, otherShow;
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            var other = await ScoringSetup.ActiveArtistAsync(_db, "sp-other", "Other Band", releases: 1);
+            ownShow = await connection.ExecuteScalarAsync<Guid>(
+                "INSERT INTO events (artist_id, name, venue, city, starts_at) VALUES (@_artistId, 'Geese at Metro', 'Metro', 'Chicago', now() - interval '2 days') RETURNING id",
+                new { _artistId });
+            otherShow = await connection.ExecuteScalarAsync<Guid>(
+                "INSERT INTO events (artist_id, name, venue, city, starts_at) VALUES (@other, 'Other Band live', 'Metro', 'Chicago', now() - interval '2 days') RETURNING id",
+                new { other });
+        }
+
+        async Task<JsonElement> PostAsync(object fields, HttpStatusCode expected)
+        {
+            var body = new Dictionary<string, object?> { ["artist_id"] = _artistId, ["kind"] = "concert_photo", ["upload_ids"] = new[] { await UploadAsync(fan, Jpeg(Guid.NewGuid().ToString())) } };
+            foreach (var (key, value) in JsonSerializer.SerializeToElement(fields).EnumerateObject().Select(p => (p.Name, (object?)p.Value)))
+            {
+                body[key] = value;
+            }
+
+            return await JsonAsync(await SendAsync(HttpMethod.Post, "/v1/submissions", fan, body), expected);
+        }
+
+        string Field(JsonElement problem) => problem.GetProperty("errors")[0].GetProperty("field").GetString()!;
+
+        Assert.Equal("event_id", Field(await PostAsync(new { }, HttpStatusCode.UnprocessableEntity)));
+        Assert.Equal("event_id", Field(await PostAsync(new { event_id = otherShow }, HttpStatusCode.UnprocessableEntity)));
+        Assert.Equal("concert.date", Field(await PostAsync(
+            new { concert = new { date = "2999-01-01", venue = "Metro", city = "Chicago" } }, HttpStatusCode.UnprocessableEntity)));
+        Assert.Equal("concert.city", Field(await PostAsync(
+            new { concert = new { date = "2026-10-03", venue = "Metro" } }, HttpStatusCode.UnprocessableEntity)));
+
+        var pinned = await PostAsync(new { event_id = ownShow }, HttpStatusCode.Created);
+        Assert.Equal("Geese at Metro", pinned.GetProperty("event").GetProperty("name").GetString());
+        Assert.Equal(JsonValueKind.Null, pinned.GetProperty("concert").ValueKind);
+
+        // Merch doesn't take a concert.
+        var merch = await JsonAsync(await SendAsync(HttpMethod.Post, "/v1/submissions", fan, new
+        {
+            artist_id = _artistId, kind = "merch", upload_ids = new[] { await UploadAsync(fan, Jpeg("shirt")) },
+            concert = new { date = "2026-10-03", venue = "Metro", city = "Chicago" },
+        }), HttpStatusCode.UnprocessableEntity);
+        Assert.Equal("concert", Field(merch));
     }
 
     [Fact]

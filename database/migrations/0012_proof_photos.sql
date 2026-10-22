@@ -33,8 +33,28 @@ CREATE INDEX uploads_user_idx ON uploads (user_id, created_at DESC);
 CREATE INDEX uploads_unattached_idx ON uploads (expires_at) WHERE submission_id IS NULL;
 
 ALTER TABLE submissions
-  ADD COLUMN caption   text CHECK (char_length(caption) <= 500),
-  ADD COLUMN shared_at timestamptz;              -- on the home feed since; null when not shared
+  ADD COLUMN caption       text CHECK (char_length(caption) <= 500),
+  ADD COLUMN shared_at     timestamptz,          -- on the home feed since; null when not shared
+  -- The concert a photo is from, typed in by the fan when the show isn't in events (no concert data source yet).
+  ADD COLUMN concert_date  date,
+  ADD COLUMN concert_venue text CHECK (char_length(concert_venue) BETWEEN 1 AND 200),
+  ADD COLUMN concert_city  text CHECK (char_length(concert_city) BETWEEN 1 AND 100),
+  ADD CONSTRAINT submissions_concert_fields
+    CHECK ((concert_date IS NULL) = (concert_venue IS NULL) AND (concert_venue IS NULL) = (concert_city IS NULL)),
+  -- A concert photo is pinned to its band (artist_id) and its concert: a listed event, or the fan's date, venue, city.
+  ADD CONSTRAINT submissions_concert_pinned
+    CHECK (kind::text <> 'concert_photo' OR event_id IS NOT NULL OR concert_date IS NOT NULL);
+
+-- The pinned event must be the same band's show.
+CREATE FUNCTION trg_submission_event_artist() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM events WHERE id = NEW.event_id AND artist_id = NEW.artist_id) THEN
+    RAISE EXCEPTION 'the event is not a show by this artist';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER submissions_event_artist BEFORE INSERT OR UPDATE OF event_id, artist_id ON submissions
+  FOR EACH ROW WHEN (NEW.event_id IS NOT NULL) EXECUTE FUNCTION trg_submission_event_artist();
 
 -- Leaving verified (a later rejection) takes the photo off the feed. BEFORE triggers run in name order, so this
 -- one ("clear") runs before the share guard below.

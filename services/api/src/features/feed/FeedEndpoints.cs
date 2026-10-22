@@ -17,7 +17,11 @@ public static class FeedEndpoints
 
     public static void MapFeed(this RouteGroupBuilder v1) => v1.MapGet("/feed", GetAsync);
 
-    public sealed record FeedPhoto(string Kind, string? Caption, IReadOnlyList<SubmissionEndpoints.SubmissionFile> Files);
+    /// <summary>Where a concert photo was taken: the listed show (with its name) or the show the fan entered.</summary>
+    public sealed record FeedConcert(string? Name, string? Venue, string? City, DateOnly Date);
+
+    public sealed record FeedPhoto(
+        string Kind, string? Caption, FeedConcert? Concert, IReadOnlyList<SubmissionEndpoints.SubmissionFile> Files);
 
     public sealed record FeedAlbumRef(Guid Id, string Title, string? CoverUrl);
 
@@ -56,12 +60,16 @@ public static class FeedEndpoints
             SELECT item.*, names.* FROM (
               SELECT 'photo' AS Type, s.id AS Id, s.shared_at AS At, s.user_id AS UserId, s.artist_id AS ArtistId,
                      s.kind::text AS Kind, s.caption AS Caption,
+                     e.name AS ConcertName, COALESCE(e.venue, s.concert_venue) AS ConcertVenue,
+                     COALESCE(e.city, s.concert_city) AS ConcertCity,
+                     COALESCE(e.starts_at::date, s.concert_date) AS ConcertDate,
                      NULL::uuid AS AlbumId, NULL::text AS AlbumTitle, NULL::text AS CoverUrl, NULL::smallint AS Rating,
                      NULL::text AS Review, false AS IsRelisten, NULL::date AS ListenedOn
-              FROM submissions s
+              FROM submissions s LEFT JOIN events e ON e.id = s.event_id
               WHERE s.shared_at IS NOT NULL AND s.status = 'verified'
               UNION ALL
               SELECT 'album_log', l.id, l.created_at, l.user_id, al.artist_id, NULL, NULL,
+                     NULL, NULL, NULL, NULL,
                      al.id, al.title, al.cover_url, l.rating, l.review, l.is_relisten, l.listened_on
               FROM album_logs l JOIN albums al ON al.id = l.album_id
               WHERE l.deleted_at IS NULL AND l.visibility = 'public'
@@ -86,7 +94,9 @@ public static class FeedEndpoints
             r.Type, r.Id, r.At, new SubmissionEndpoints.UserRef(r.Handle, false, r.DisplayName, null),
             new ScoringEndpoints.ArtistRef(r.ArtistId, r.ArtistName, r.ArtistImageUrl),
             r.Type == "photo"
-                ? new FeedPhoto(r.Kind!, r.Caption, [.. files[r.Id].Select(f =>
+                ? new FeedPhoto(r.Kind!, r.Caption,
+                    r.ConcertDate is { } date ? new FeedConcert(r.ConcertName, r.ConcertVenue, r.ConcertCity, date) : null,
+                    [.. files[r.Id].Select(f =>
                     new SubmissionEndpoints.SubmissionFile(f.Id, f.MimeType, UploadEndpoints.FileUrl(request, urls, f.Id), f.Redacted))])
                 : null,
             r.Type == "album_log"
@@ -102,7 +112,8 @@ public static class FeedEndpoints
         : review[..(ReviewExcerptLength - 1)].TrimEnd() + "…";
 
     private sealed record FeedRow(
-        string Type, Guid Id, DateTime At, Guid UserId, Guid ArtistId, string? Kind, string? Caption, Guid? AlbumId,
+        string Type, Guid Id, DateTime At, Guid UserId, Guid ArtistId, string? Kind, string? Caption, string? ConcertName,
+        string? ConcertVenue, string? ConcertCity, DateOnly? ConcertDate, Guid? AlbumId,
         string? AlbumTitle, string? CoverUrl, short? Rating, string? Review, bool IsRelisten, DateOnly? ListenedOn,
         string Handle, string? DisplayName, string ArtistName, string? ArtistImageUrl);
 }

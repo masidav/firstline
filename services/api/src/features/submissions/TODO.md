@@ -24,7 +24,8 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 
 ## Status (2026-10-21, branch `proof-feed`)
 Built: `POST /uploads` with signed `PUT` links, metadata stripping (JPEG/PNG), `POST /submissions` (straight to
-`needs_review`), `GET /me/submissions`, `GET`/`DELETE /submissions/{id}`, `PUT /submissions/{id}/share`, the staff
+`needs_review`; concert photos pinned to a show: `event_id` of the band's past show, or a typed-in `concert`),
+`GET /me/submissions`, `GET`/`DELETE /submissions/{id}`, `PUT /submissions/{id}/share`, the staff
 queue and decisions, and `GET /feed`. Tests: ProofApiTests (6), invariants for 0012.
 Not yet: automated checks, Cloud Storage in production, cleanup of expired uploads and of deleted accounts' files,
-`event_id` and `client_extracted`, avatars, HEIC/WebP on the server.
+`client_extracted`, avatars, HEIC/WebP on the server.

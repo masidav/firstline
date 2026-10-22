@@ -1788,9 +1788,20 @@ export interface components {
             upload_ids: string[];
             /**
              * Format: uuid
-             * @description Optional hint for tickets; the server still matches the event itself. Not used yet.
+             * @description The show, from `GET /artists/{artistId}/events?include_past=true`: one of this artist's shows that has
+             *     already happened. A concert photo needs `event_id` or `concert`; a ticket may name its show.
              */
             event_id?: string;
+            /** @description For a concert photo whose show isn't listed. Not with `event_id`; not for other kinds. */
+            concert?: {
+                /**
+                 * Format: date
+                 * @description Not in the future.
+                 */
+                date: string;
+                venue: string;
+                city: string;
+            };
             /** @description Optional on-device OCR output. Treated as untrusted. Not used yet. */
             client_extracted?: {
                 [key: string]: unknown;
@@ -1804,6 +1815,13 @@ export interface components {
             /** Format: uuid */
             artist_id: string;
             artist: components["schemas"]["ArtistRef"];
+            /** @description The show the fan entered because it wasn't listed (otherwise see `event`). */
+            concert?: {
+                /** Format: date */
+                date: string;
+                venue: string;
+                city: string;
+            } | null;
             caption?: string | null;
             /**
              * Format: date-time
@@ -1814,7 +1832,7 @@ export interface components {
             can_share: boolean;
             kind: components["schemas"]["SubmissionKind"];
             status: components["schemas"]["SubmissionStatus"];
-            event?: components["schemas"]["Event"] | null;
+            event?: components["schemas"]["EventRef"] | null;
             rejection_reason?: string | null;
             /** Format: date-time */
             submitted_at: string;
@@ -1833,6 +1851,15 @@ export interface components {
                 redacted: boolean;
             }[];
             points_awarded?: components["schemas"]["PointsAward"][];
+        };
+        EventRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            venue?: string | null;
+            city?: string | null;
+            /** Format: date-time */
+            starts_at: string;
         };
         FeedPage: {
             items: components["schemas"]["FeedItem"][];
@@ -1857,6 +1884,14 @@ export interface components {
                 /** @enum {string} */
                 kind: "merch" | "concert_photo";
                 caption?: string | null;
+                /** @description Where a concert photo was taken; `name` is set when it was a listed show. */
+                concert?: {
+                    name?: string | null;
+                    venue?: string | null;
+                    city?: string | null;
+                    /** Format: date */
+                    date: string;
+                } | null;
                 files: {
                     /** Format: uuid */
                     id: string;

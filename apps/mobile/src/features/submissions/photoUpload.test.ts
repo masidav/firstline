@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { postPhoto, statusLabel, type Submission } from './photoUpload';
+import { concertComplete, concertLine, postPhoto, statusLabel, type Submission } from './photoUpload';
 
 jest.mock('expo-image-manipulator', () => ({ manipulateAsync: jest.fn(), SaveFormat: { JPEG: 'jpeg' } }));
 
@@ -58,4 +58,42 @@ test('status labels', () => {
   expect(statusLabel(base)).toBe('Waiting for review');
   expect(statusLabel({ ...base, status: 'verified', shared_at: '2026-10-21T00:00:00Z' })).toBe('Verified · on the feed');
   expect(statusLabel({ ...base, status: 'rejected', rejection_reason: 'Blurry' })).toBe('Not accepted: Blurry');
+});
+
+test('a concert pin is sent as event_id or as a trimmed concert', async () => {
+  const make = () => ({
+    POST: jest
+      .fn()
+      .mockResolvedValueOnce(ok({ upload_id: 'u1', method: 'PUT', url: 'https://x', expires_at: 'x' }, 201))
+      .mockResolvedValueOnce(ok({ id: 's1' }, 201)),
+  });
+  const fetchImpl = () =>
+    jest.fn().mockResolvedValueOnce({ blob: async () => new Blob(['x']) }).mockResolvedValueOnce({ ok: true, status: 204 });
+
+  const listed = make();
+  await postPhoto(listed as never, { artistId: 'a1', kind: 'concert_photo', caption: '', photoUri: 'f', pin: { eventId: 'e1' } }, fetchImpl() as never);
+  expect(listed.POST.mock.calls[1][1].body).toMatchObject({ event_id: 'e1' });
+  expect(listed.POST.mock.calls[1][1].body).not.toHaveProperty('concert');
+
+  const typed = make();
+  await postPhoto(
+    typed as never,
+    { artistId: 'a1', kind: 'concert_photo', caption: '', photoUri: 'f', pin: { concert: { date: '2026-10-03', venue: ' Metro ', city: 'Chicago ' } } },
+    fetchImpl() as never,
+  );
+  expect(typed.POST.mock.calls[1][1].body.concert).toEqual({ date: '2026-10-03', venue: 'Metro', city: 'Chicago' });
+});
+
+test('a typed concert needs a real past date, a venue, and a city', () => {
+  const today = new Date('2026-10-21T12:00:00Z');
+  expect(concertComplete({ date: '2026-10-03', venue: 'Metro', city: 'Chicago' }, today)).toBe(true);
+  expect(concertComplete({ date: '2026-02-30', venue: 'Metro', city: 'Chicago' }, today)).toBe(false);
+  expect(concertComplete({ date: '2027-01-01', venue: 'Metro', city: 'Chicago' }, today)).toBe(false);
+  expect(concertComplete({ date: '10/03/2026', venue: 'Metro', city: 'Chicago' }, today)).toBe(false);
+  expect(concertComplete({ date: '2026-10-03', venue: ' ', city: 'Chicago' }, today)).toBe(false);
+});
+
+test('concert lines read naturally', () => {
+  expect(concertLine({ venue: 'Metro', city: 'Chicago', date: '2026-10-03' })).toBe('Metro, Chicago · Oct 3, 2026');
+  expect(concertLine({ name: 'Geese at Metro', venue: null, city: null, date: '2026-10-03T02:00:00Z' })).toBe('Geese at Metro · Oct 3, 2026');
 });

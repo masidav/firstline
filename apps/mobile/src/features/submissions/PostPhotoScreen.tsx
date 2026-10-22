@@ -8,9 +8,21 @@ import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Field, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
-import { POST_KINDS, postPhoto, preparePhoto, type SubmissionKind } from './photoUpload';
+import {
+  concertComplete,
+  type ConcertInput,
+  type ConcertPin,
+  concertLine,
+  POST_KINDS,
+  postPhoto,
+  preparePhoto,
+  type SubmissionKind,
+} from './photoUpload';
 
 type ArtistChoice = { id: string; name: string };
+type Show = { id: string; name: string; venue?: string | null; city?: string | null; starts_at: string };
+
+const UNLISTED = 'unlisted';
 
 /**
  * Post a concert photo, merch, or ticket (route /post). It goes to staff as proof of fandom; once verified it earns
@@ -28,6 +40,36 @@ export function PostPhotoScreen() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
   const [sent, setSent] = useState(false);
+  // Concert photos are pinned to a show: one of the band's listed past shows, or one the fan types in.
+  const [shows, setShows] = useState<Show[]>([]);
+  const [showId, setShowId] = useState<string | null>(null);
+  const [typed, setTyped] = useState<ConcertInput>({ date: '', venue: '', city: '' });
+  const isConcert = kind === 'concert_photo';
+
+  useEffect(() => {
+    setShowId(null);
+    setShows([]);
+    if (!artist || !isConcert) return;
+    // Until shows are loaded from a concert data source this list is usually empty; then the fan types the show in.
+    void session.api
+      .GET('/artists/{artistId}/events', { params: { path: { artistId: artist.id }, query: { include_past: true, limit: 20 } } })
+      .then((result) => {
+        const soon = Date.now() + 24 * 3600 * 1000;
+        const past = (result.data?.items ?? []).filter((show) => new Date(show.starts_at).getTime() <= soon);
+        setShows(past);
+        if (past.length === 0) setShowId(UNLISTED);
+      })
+      .catch(() => setShowId(UNLISTED));
+  }, [artist, isConcert, session]);
+
+  const pin: ConcertPin | undefined = !isConcert
+    ? undefined
+    : showId && showId !== UNLISTED
+      ? { eventId: showId }
+      : showId === UNLISTED && concertComplete(typed)
+        ? { concert: typed }
+        : undefined;
+  const pinned = !isConcert || pin !== undefined;
 
   // Your artists first: the ones you have scores for.
   useEffect(() => {
@@ -63,7 +105,7 @@ export function PostPhotoScreen() {
     setError(undefined);
     try {
       const prepared = await preparePhoto(photo.uri, photo.width);
-      await postPhoto(session.api, { artistId: artist.id, kind, caption, photoUri: prepared });
+      await postPhoto(session.api, { artistId: artist.id, kind, caption, photoUri: prepared, pin });
       setSent(true);
     } catch (e) {
       // Upload problems we explain ourselves are plain Errors; API errors and network failures use the usual wording.
@@ -119,6 +161,53 @@ export function PostPhotoScreen() {
         </>
       )}
 
+      {isConcert && artist && (
+        <>
+          <Text style={styles.label}>Which concert?</Text>
+          {shows.length > 0 && (
+            <View style={styles.choices} accessibilityRole="radiogroup">
+              {shows.map((show) => (
+                <Choice
+                  key={show.id}
+                  label={concertLine({ name: show.name, venue: show.venue, city: show.city, date: show.starts_at })}
+                  selected={showId === show.id}
+                  onPress={() => setShowId(show.id)}
+                />
+              ))}
+              <Choice label="My show isn't listed" selected={showId === UNLISTED} onPress={() => setShowId(UNLISTED)} />
+            </View>
+          )}
+          {showId === UNLISTED && (
+            <>
+              <Field
+                label="Concert date"
+                placeholder="YYYY-MM-DD"
+                value={typed.date}
+                onChangeText={(date) => setTyped((current) => ({ ...current, date }))}
+                maxLength={10}
+                keyboardType="numbers-and-punctuation"
+              />
+              <Field
+                label="Venue"
+                placeholder="Metro"
+                value={typed.venue}
+                onChangeText={(venue) => setTyped((current) => ({ ...current, venue }))}
+                maxLength={200}
+                autoCapitalize="words"
+              />
+              <Field
+                label="City"
+                placeholder="Chicago"
+                value={typed.city}
+                onChangeText={(city) => setTyped((current) => ({ ...current, city }))}
+                maxLength={100}
+                autoCapitalize="words"
+              />
+            </>
+          )}
+        </>
+      )}
+
       <Text style={styles.label}>Photo</Text>
       {photo && <Image source={{ uri: photo.uri }} style={styles.preview} resizeMode="cover" accessibilityLabel="Chosen photo" />}
       <Button label={photo ? 'Choose another photo' : 'Choose a photo'} kind="secondary" onPress={() => void pick()} />
@@ -135,7 +224,8 @@ export function PostPhotoScreen() {
       )}
 
       <ErrorText>{error}</ErrorText>
-      <Button label="Send for review" onPress={() => void send()} busy={sending} disabled={!artist || !photo} />
+      {isConcert && artist && !pinned && <Body muted>Pin the photo to its concert to send it.</Body>}
+      <Button label="Send for review" onPress={() => void send()} busy={sending} disabled={!artist || !photo || !pinned} />
       <Button label="Cancel" kind="secondary" onPress={() => router.back()} disabled={sending} />
     </Screen>
   );

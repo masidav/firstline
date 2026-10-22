@@ -639,7 +639,8 @@ DECLARE v_artist uuid := (SELECT id FROM artists WHERE spotify_artist_id = 'sp-a
 BEGIN
   INSERT INTO submissions (user_id, artist_id, kind) VALUES (alice, v_artist, 'ticket') RETURNING id INTO v_ticket;
   INSERT INTO submissions (user_id, artist_id, kind) VALUES (alice, v_artist, 'merch') RETURNING id INTO v_merch;
-  INSERT INTO submissions (user_id, artist_id, kind) VALUES (alice, v_artist, 'concert_photo') RETURNING id INTO v_photo;
+  INSERT INTO submissions (user_id, artist_id, kind, concert_date, concert_venue, concert_city)
+  VALUES (alice, v_artist, 'concert_photo', '2026-10-03', 'Metro', 'Chicago') RETURNING id INTO v_photo;
 
   -- A verified concert photo earns its own rule.
   UPDATE submissions SET status = 'verified' WHERE id = v_photo;
@@ -665,5 +666,33 @@ SELECT pg_temp.expect_error(
   $$INSERT INTO submissions (user_id, artist_id, kind, shared_at)
     SELECT '00000000-0000-0000-0000-000000000001', id, 'merch', now() FROM artists WHERE spotify_artist_id = 'sp-active'$$,
   'only verified submissions can be shared');
+
+-- Concert photos are pinned to a concert; a pinned event must be the same artist's show.
+SELECT pg_temp.expect_error(
+  $$INSERT INTO submissions (user_id, artist_id, kind)
+    SELECT '00000000-0000-0000-0000-000000000001', id, 'concert_photo' FROM artists WHERE spotify_artist_id = 'sp-active'$$,
+  'submissions_concert_pinned');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO submissions (user_id, artist_id, kind, concert_date)
+    SELECT '00000000-0000-0000-0000-000000000001', id, 'concert_photo', '2026-10-03' FROM artists WHERE spotify_artist_id = 'sp-active'$$,
+  'submissions_concert_fields');
+DO $$
+DECLARE v_artist uuid := (SELECT id FROM artists WHERE spotify_artist_id = 'sp-active');
+        v_other uuid;
+        v_event uuid;
+BEGIN
+  INSERT INTO artists (name, spotify_artist_id) VALUES ('Other Band', 'sp-other-band') RETURNING id INTO v_other;
+  INSERT INTO events (artist_id, name, venue, city, starts_at) VALUES (v_other, 'Other Band live', 'Metro', 'Chicago', now() - interval '3 days')
+    RETURNING id INTO v_event;
+  BEGIN
+    INSERT INTO submissions (user_id, artist_id, kind, event_id)
+    VALUES ('00000000-0000-0000-0000-000000000001', v_artist, 'concert_photo', v_event);
+    RAISE EXCEPTION 'pinned another artist''s show';
+  EXCEPTION WHEN OTHERS THEN
+    ASSERT SQLERRM LIKE '%not a show by this artist%', SQLERRM;
+  END;
+  INSERT INTO submissions (user_id, artist_id, kind, event_id)
+  VALUES ('00000000-0000-0000-0000-000000000001', v_other, 'concert_photo', v_event);
+END $$;
 
 \echo ALL INVARIANT TESTS PASSED

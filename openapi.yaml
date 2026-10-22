@@ -2257,7 +2257,17 @@ components:
         event_id:
           type: string
           format: uuid
-          description: Optional hint for tickets; the server still matches the event itself. Not used yet.
+          description: |
+            The show, from `GET /artists/{artistId}/events?include_past=true`: one of this artist's shows that has
+            already happened. A concert photo needs `event_id` or `concert`; a ticket may name its show.
+        concert:
+          type: object
+          description: For a concert photo whose show isn't listed. Not with `event_id`; not for other kinds.
+          required: [date, venue, city]
+          properties:
+            date: {type: string, format: date, description: Not in the future.}
+            venue: {type: string, minLength: 1, maxLength: 200}
+            city: {type: string, minLength: 1, maxLength: 100}
         client_extracted:
           type: object
           description: Optional on-device OCR output. Treated as untrusted. Not used yet.
@@ -2270,12 +2280,20 @@ components:
         id: {type: string, format: uuid}
         artist_id: {type: string, format: uuid}
         artist: {$ref: '#/components/schemas/ArtistRef'}
+        concert:
+          type: [object, 'null']
+          description: The show the fan entered because it wasn't listed (otherwise see `event`).
+          required: [date, venue, city]
+          properties:
+            date: {type: string, format: date}
+            venue: {type: string}
+            city: {type: string}
         caption: {type: [string, 'null']}
         shared_at: {type: [string, 'null'], format: date-time, description: On the home feed since; null when not shared.}
         can_share: {type: boolean, description: Verified merch or concert photo.}
         kind: {$ref: '#/components/schemas/SubmissionKind'}
         status: {$ref: '#/components/schemas/SubmissionStatus'}
-        event: {oneOf: [{$ref: '#/components/schemas/Event'}, {type: 'null'}]}
+        event: {oneOf: [{$ref: '#/components/schemas/EventRef'}, {type: 'null'}]}
         rejection_reason: {type: [string, 'null']}
         submitted_at: {type: string, format: date-time}
         verified_at: {type: [string, 'null'], format: date-time}
@@ -2293,6 +2311,15 @@ components:
         points_awarded:
           type: array
           items: {$ref: '#/components/schemas/PointsAward'}
+    EventRef:
+      type: object
+      required: [id, name, starts_at]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        venue: {type: [string, 'null']}
+        city: {type: [string, 'null']}
+        starts_at: {type: string, format: date-time}
     FeedPage:
       type: object
       required: [items, next_cursor]
@@ -2316,6 +2343,15 @@ components:
           properties:
             kind: {type: string, enum: [merch, concert_photo]}
             caption: {type: [string, 'null']}
+            concert:
+              type: [object, 'null']
+              description: Where a concert photo was taken; `name` is set when it was a listed show.
+              required: [date]
+              properties:
+                name: {type: [string, 'null']}
+                venue: {type: [string, 'null']}
+                city: {type: [string, 'null']}
+                date: {type: string, format: date}
             files:
               type: array
               items:

@@ -7,7 +7,7 @@ import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Field, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
-import { kindLabel } from './photoUpload';
+import { kindLabel, type Submission, submissionConcertLine } from './photoUpload';
 
 type AdminSubmission = components['schemas']['AdminSubmission'];
 
@@ -65,6 +65,9 @@ export function ReviewScreen() {
           <Text style={styles.title}>
             {kindLabel(item.kind)} · {item.artist.name} · @{item.user?.handle ?? 'deleted'}
           </Text>
+          {submissionConcertLine(item as Submission) ? (
+            <Text style={styles.caption}>Concert: {submissionConcertLine(item as Submission)}</Text>
+          ) : null}
           {item.caption ? <Text style={styles.caption}>{item.caption}</Text> : null}
           <Button label="Approve" busy={busy === item.id} onPress={() => void decide(item, 'approve')} />
           <Field
