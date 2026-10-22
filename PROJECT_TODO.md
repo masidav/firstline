@@ -83,8 +83,10 @@ Details: [Spotify API feature](services/api/src/features/spotify-sync/TODO.md) �
 Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring worker](workers/scoring/TODO.md) · [Fandom score UI](apps/mobile/src/features/fandom-score/TODO.md)
 
 ## Phase 6 — Journal and community
-- [ ] Implement album metadata cache and album logs. Provider, caching, artwork, and attribution rules: [ADR 0006](docs/adr/0006-album-catalog.md).
-- [ ] Implement ratings, reviews, relistens, visibility, and offline sync.
+- [x] Implement album metadata cache and album logs. Provider, caching, artwork, and attribution rules: [ADR 0006](docs/adr/0006-album-catalog.md).
+      Albums and Journal endpoints with `Idempotency-Key` replay (migration 0009). Verified 2026-10-21: `dotnet test` (JournalApiTests 11, invariants).
+- [ ] Implement ratings, reviews, relistens, visibility, and offline sync. (API side done 2026-10-21 with the logs above; followers-only
+      waits for Phase 8 follows; offline sync is the app's queue, still to build.)
 - [ ] Implement ordered album lists.
 - [ ] Implement comments, replies, anti-abuse rules, and reward reversals.
 

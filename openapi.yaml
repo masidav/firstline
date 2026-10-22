@@ -24,7 +24,8 @@ info:
       action), so the UI can react immediately. Scores recompute asynchronously, so `GET .../score` may
       lag by a few seconds.
     - **Visibility:** logs, lists, and their comments honor `public`, `followers`, `private`. Private
-      content returns `404` to everyone but the owner.
+      content returns `404` to everyone but the owner. Until follows ship (Phase 8), `followers` content is
+      visible to its owner only.
     - **`x-requires-schema`:** marks operations that need tables not yet in `database/migrations`.
 
     ## Rate limits (proposed starting values)
@@ -472,6 +473,9 @@ paths:
       tags: [Artists]
       operationId: listArtistAlbums
       summary: Albums by a tracked artist
+      description: |
+        The artist's own albums, singles, and compilations from the catalog (ADR 0006), newest first. Releases
+        Spotify no longer lists are left out; they stay readable by id for the logs that mention them.
       parameters:
         - {$ref: '#/components/parameters/Limit'}
         - {$ref: '#/components/parameters/Cursor'}
@@ -580,8 +584,9 @@ paths:
       operationId: searchAlbums
       summary: Search albums
       description: |
-        Searches the local catalog (tracked artists only). `untracked_artists` lists Spotify artists that
-        match the query but are not tracked, so the app can prompt "Add this artist first".
+        Searches the local catalog (tracked artists only) by album title or artist name. Only when nothing
+        matches, `untracked_artists` lists Spotify artists with that name that are not tracked yet, so the app
+        can prompt "Add this artist first" (empty if Spotify did not answer).
       parameters:
         - {name: q, in: query, required: true, schema: {type: string, minLength: 2, maxLength: 100}}
         - {name: artist_id, in: query, schema: {type: string, format: uuid}}
@@ -610,7 +615,7 @@ paths:
         - {$ref: '#/components/parameters/AlbumId'}
       responses:
         '200':
-          description: Album with tracks, community rating, and my most recent log
+          description: Album with tracks, community rating, and my most recent log. Delisted albums are still returned (without cover art or Spotify link).
           content:
             application/json:
               schema: {$ref: '#/components/schemas/AlbumDetail'}
@@ -1788,20 +1793,34 @@ components:
 
     Track:
       type: object
-      required: [id, title]
+      required: [id, title, disc_number]
       properties:
         id: {type: string, format: uuid}
         title: {type: string}
         track_number: {type: [integer, 'null']}
+        disc_number: {type: integer}
+        spotify_track_id: {type: [string, 'null'], description: For the link to Spotify (ADR 0006).}
+    AlbumType:
+      type: string
+      enum: [album, single, compilation]
     Album:
       type: object
-      required: [id, artist, title]
+      required: [id, artist, title, album_type, release_date_precision, delisted]
       properties:
         id: {type: string, format: uuid}
         artist: {$ref: '#/components/schemas/ArtistRef'}
         title: {type: string}
-        release_date: {type: [string, 'null'], format: date}
-        cover_url: {type: [string, 'null'], format: uri}
+        album_type: {$ref: '#/components/schemas/AlbumType'}
+        release_date: {type: [string, 'null'], format: date, description: The first day of the period when precision is year or month.}
+        release_date_precision: {type: string, enum: [year, month, day]}
+        cover_url:
+          type: [string, 'null']
+          format: uri
+          description: |
+            Spotify's cover image, to show unaltered next to the Spotify logo and a link to the album
+            (`https://open.spotify.com/album/{spotify_album_id}`). Null when there is none or the album is delisted.
+        spotify_album_id: {type: [string, 'null'], description: Null once the album is delisted.}
+        delisted: {type: boolean, description: Spotify no longer lists this release; it stays for existing logs.}
         community:
           type: object
           properties:
@@ -1811,11 +1830,13 @@ components:
               description: 0.5 to 5.0
     AlbumRef:
       type: object
-      required: [id, title]
+      required: [id, title, album_type]
       properties:
         id: {type: string, format: uuid}
         title: {type: string}
+        album_type: {$ref: '#/components/schemas/AlbumType'}
         cover_url: {type: [string, 'null'], format: uri}
+        spotify_album_id: {type: [string, 'null']}
         artist: {$ref: '#/components/schemas/ArtistRef'}
     AlbumDetail:
       allOf:

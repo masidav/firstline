@@ -8,7 +8,7 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [x] Implement artist/album/track metadata lookup and normalized internal response types. (`SpotifyClient.GetArtistAlbumsAsync`, `GetAlbumTracksAsync`; `SpotifyAlbum`, `SpotifyAlbumTrack`. Verified 2026-10-21: ArtistOnboardingJobTests.)
 - [x] Cache metadata with a documented TTL and refresh policy consistent with provider terms. (`catalog.refresh` every 7 days, delist removed releases; ADR 0006. Verified 2026-10-21.)
 - [x] Handle missing artwork, unavailable releases, and provider rate limits. (Nullable `cover_url`; `delisted_at`; 429/5xx retried in the client then by the queue. App-side placeholder is the journal UI's job.)
-- [ ] Ensure albums are exposed in the app only for tracked artists.
+- [x] Ensure albums are exposed in the app only for tracked artists. (Album endpoints read the local catalog, which only holds tracked artists; Verified 2026-10-21: `dotnet test` (JournalApiTests 11, invariants).)
 - [x] Document limitations around co-credited albums and collaborations. (Primary artist only; `workers/artist-onboarding/README.md`, ADR 0006.)
 - [x] Add mocked provider tests and catalog-cache tests. (ArtistOnboardingJobTests with `FakeSpotify`.)
 

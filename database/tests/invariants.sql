@@ -90,6 +90,22 @@ SELECT pg_temp.expect_error(
 SELECT pg_temp.expect_error(
   $$INSERT INTO tracks (album_id, title, disc_number) VALUES ('10000000-0000-0000-0000-000000000001', 'x', 0)$$,
   'tracks_disc_number_check');
+
+-- Idempotency keys (0009): one per user and key, a real hash, and a response only once finished.
+INSERT INTO idempotency_keys (user_id, key, request_sha256)
+  VALUES ('00000000-0000-0000-0000-000000000001', 'k1', sha256('body'));
+SELECT pg_temp.expect_error(
+  $$INSERT INTO idempotency_keys (user_id, key, request_sha256)
+      VALUES ('00000000-0000-0000-0000-000000000001', 'k1', sha256('other'))$$, 'idempotency_keys_pkey');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO idempotency_keys (user_id, key, request_sha256)
+      VALUES ('00000000-0000-0000-0000-000000000001', '', sha256('x'))$$, 'idempotency_keys_key_check');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO idempotency_keys (user_id, key, request_sha256)
+      VALUES ('00000000-0000-0000-0000-000000000001', 'k2', '\x00')$$, 'idempotency_keys_request_sha256_check');
+SELECT pg_temp.expect_error(
+  $$UPDATE idempotency_keys SET status_code = 201 WHERE key = 'k1'$$, 'idempotency_keys_check');
+UPDATE idempotency_keys SET status_code = 201, response = '{}' WHERE key = 'k1';
 INSERT INTO albums (id, artist_id, title)
   SELECT '10000000-0000-0000-0000-000000000002', id, 'Onboarding LP' FROM artists WHERE spotify_artist_id = 'sp-onboarding';
 
