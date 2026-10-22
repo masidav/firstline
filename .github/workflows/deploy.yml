@@ -1,7 +1,8 @@
 # Builds the images once, deploys staging automatically, and promotes the same images to prod after approval.
 # Authentication is Workload Identity Federation (no keys): each GitHub environment holds the variables
 # GCP_PROJECT_ID, GCP_REGION, GCP_WIF_PROVIDER, and GCP_DEPLOY_SA (terraform outputs), and the prod environment
-# has required reviewers. See infrastructure/README.md.
+# has required reviewers. Nothing runs until the repository variable DEPLOY_ENABLED is "true" (set it once the
+# environments exist). See infrastructure/README.md.
 name: Deploy
 
 on:
@@ -25,20 +26,20 @@ concurrency:
 
 jobs:
   dev:
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'
+    if: vars.DEPLOY_ENABLED == 'true' && github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'
     uses: ./.github/workflows/deploy-environment.yml
     with:
       environment: dev
 
   staging:
-    if: github.event_name == 'push' || github.event.inputs.environment != 'dev'
+    if: vars.DEPLOY_ENABLED == 'true' && (github.event_name == 'push' || github.event.inputs.environment != 'dev')
     uses: ./.github/workflows/deploy-environment.yml
     with:
       environment: staging
 
   prod:
     needs: staging
-    if: github.event_name == 'push' || github.event.inputs.environment == 'prod'
+    if: vars.DEPLOY_ENABLED == 'true' && (github.event_name == 'push' || github.event.inputs.environment == 'prod')
     uses: ./.github/workflows/deploy-environment.yml
     with:
       environment: prod

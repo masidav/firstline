@@ -69,7 +69,8 @@ Administrator (or Costs Manager) on the billing account for the budget alert.
    variables `GCP_PROJECT_ID`, `GCP_REGION`, `GCP_WIF_PROVIDER` (output `workload_identity_provider`), and
    `GCP_DEPLOY_SA` (output `deploy_service_account`). Add required reviewers on `prod`. The Workload Identity
    provider only accepts tokens from this repository running in the GitHub environment with the same name, so
-   a prod deploy cannot skip the approval.
+   a prod deploy cannot skip the approval. Finally set the repository variable `DEPLOY_ENABLED` to `true`: the
+   Deploy workflow is skipped without it, so pushes stay green before the environments exist.
 7. **First deploy.** Push to `main` (staging, then prod after approval) or run the Deploy workflow by hand for
    dev. Or from a machine with the tools:
    ```bash
