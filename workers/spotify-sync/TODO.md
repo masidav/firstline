@@ -11,6 +11,9 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [x] Retry transient errors with bounded backoff; avoid retrying permanent authorization failures indefinitely.
 - [x] Prevent overlapping sync jobs from corrupting data or duplicating records (per-user advisory lock, connection row lock).
 - [ ] Record safe metrics (synced count, failures by `sync_error`) for monitoring (Phase 12). Failure reasons are recorded as codes.
+- [ ] Sync every artist in the fan's top listens (top artists and top tracks) and in the "On Repeat" playlist, not only
+      already-tracked artists. Needs the product decision in `PROJECT_TODO.md` (Phase 4) on how untracked artists
+      found this way are handled before any untracked listening data is stored.
 - [x] Test filtering, pagination, retries, partial failures, and duplicate job delivery.
 
 ## Verification

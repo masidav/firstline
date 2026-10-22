@@ -67,6 +67,10 @@ Details: [Artists](services/api/src/features/artists/TODO.md) · [Artist search 
       /v1/me/spotify`, worker sync to `idle` with no error, 1 tracked artist found (liked 11, playlist 8,
       albums 11, top rank 17, recent 0).
 - [ ] Mobile connect screen (see Spotify mobile UI).
+- [ ] A Spotify sync should cover every artist in the fan's top listens and in their "On Repeat" playlist, not only
+      the artists they already track. *Open decision (added 2026-10-22):* this meets the "only tracked artists"
+      rule, so decide whether those artists are tracked automatically (onboarded like `POST /v1/artists`) or whether
+      the sync keeps discovered-but-untracked artists in a separate, lighter record.
 
 Details: [Spotify API feature](services/api/src/features/spotify-sync/TODO.md) · [Spotify integration](packages/spotify/TODO.md) · [Spotify mobile UI](apps/mobile/src/features/spotify/TODO.md) · [Sync worker](workers/spotify-sync/TODO.md)
 

@@ -194,7 +194,7 @@ function ChosenList({
       {cities.map((city, i) => (
         <View key={city.id} style={styles.row}>
           <View style={styles.text}>
-            <Text style={styles.name}>{cityLabel(city)}</Text>
+            <Text style={i === 0 ? styles.primaryName : styles.backupName}>{cityLabel(city)}</Text>
             <Text style={styles.note}>{i === 0 ? 'Primary' : 'Backup'}</Text>
           </View>
           {onMakePrimary && i > 0 && (
@@ -227,6 +227,9 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   text: { flex: 1, gap: 2 },
   name: { flex: 1, color: colors.text, fontSize: 16, fontWeight: '600' },
+  // The primary city stands out; backups read as secondary.
+  primaryName: { color: colors.text, fontSize: 20, fontWeight: '700' },
+  backupName: { color: colors.text, fontSize: 15, fontWeight: '500' },
   note: { color: colors.muted, fontSize: 14 },
   action: { minWidth: 88 },
 });
