@@ -136,8 +136,6 @@ export function HomeScreen() {
       />
       <ErrorText>{searchError}</ErrorText>
 
-      {!text && <Body muted>Search for an artist. Press Enter to look on Spotify if they aren't here yet.</Body>}
-
       {text !== '' && tracked?.length === 0 && !spotify && !askingSpotify && (
         <Body muted>No artist here matches "{text}" yet. Press Enter to look on Spotify.</Body>
       )}
