@@ -17,20 +17,26 @@ import {
   VISIBILITIES,
   type Visibility,
 } from './journal';
+import { isNetworkFailure, outbox, type PendingLog } from './outbox';
 
 /**
  * Log an album (POST /logs) or edit an existing log (PATCH /logs/{id}). A new log sends one Idempotency-Key for
  * all its retries, so a flaky connection can't log the album twice. Whether it is a relisten is the server's call.
+ * When a new log can't reach the server at all, it goes to the outbox and `onQueued` is called instead.
  */
 export function LogForm({
   albumId,
+  albumTitle,
   existing,
   onSaved,
+  onQueued,
   onCancel,
 }: {
   albumId: string;
+  albumTitle: string;
   existing?: AlbumLog;
   onSaved: (result: LogResult) => void;
+  onQueued?: (entry: PendingLog) => void;
   onCancel?: () => void;
 }) {
   const { session } = useSession();
@@ -50,8 +56,15 @@ export function LogForm({
     }
     setSaving(true);
     setErrors({});
+    const text = review.trim();
+    const createBody = {
+      album_id: albumId,
+      ...(rating != null ? { rating } : {}),
+      ...(text ? { review: text } : {}),
+      listened_on: listenedOn,
+      visibility,
+    };
     try {
-      const text = review.trim();
       const result = existing
         ? unwrap(
             await session.api.PATCH('/logs/{logId}', {
@@ -59,20 +72,15 @@ export function LogForm({
               body: { rating, review: text || null, listened_on: listenedOn, visibility },
             }),
           )
-        : unwrap(
-            await session.api.POST('/logs', {
-              headers: { 'Idempotency-Key': key },
-              body: {
-                album_id: albumId,
-                ...(rating != null ? { rating } : {}),
-                ...(text ? { review: text } : {}),
-                listened_on: listenedOn,
-                visibility,
-              },
-            }),
-          );
+        : unwrap(await session.api.POST('/logs', { headers: { 'Idempotency-Key': key }, body: createBody }));
       onSaved(result);
     } catch (e) {
+      if (!existing && onQueued && isNetworkFailure(e)) {
+        const entry: PendingLog = { key, albumId, albumTitle, body: createBody, createdAt: new Date().toISOString() };
+        outbox().add(entry);
+        onQueued(entry);
+        return;
+      }
       setErrors(
         e instanceof ApiError
           ? { date: e.fieldError('listened_on'), review: e.fieldError('review'), form: e.problem.errors ? undefined : errorMessage(e) }

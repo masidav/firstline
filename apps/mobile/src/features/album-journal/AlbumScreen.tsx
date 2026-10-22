@@ -1,12 +1,13 @@
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
+import { AddToList } from '../lists/AddToList';
 import { type AlbumDetail, type AlbumLog, describeAlbum, describePoints, formatRating, type LogResult, spotifyAlbumUrl } from './journal';
 import { LogForm } from './LogForm';
 import { SpotifyAttribution } from './SpotifyAttribution';
@@ -46,6 +47,11 @@ export function AlbumScreen({ albumId }: { albumId: string }) {
     const points = describePoints(result.points_awarded);
     setSaved(points ?? (result.log.is_relisten ? 'Relisten saved.' : 'Saved.'));
     void load();
+  }
+
+  function onQueued() {
+    setForm('closed');
+    setSaved("Saved on this device. It will be sent when you're back online; see your journal.");
   }
 
   if (error && !album) {
@@ -93,16 +99,22 @@ export function AlbumScreen({ albumId }: { albumId: string }) {
               .join(' · ')}
           </Body>
           {mine.review ? <Body>{mine.review}</Body> : null}
+          <CommentsLink log={mine} />
         </View>
       )}
       {form === 'closed' && !album.delisted && (
         <View style={styles.actions}>
           {mine && <Button label="Edit" kind="secondary" onPress={() => setForm('edit')} />}
           <Button label={mine ? 'Log again' : 'Log this album'} onPress={() => setForm('new')} />
+          <AddToList albumId={album.id} albumTitle={album.title} />
         </View>
       )}
-      {form === 'new' && <LogForm albumId={album.id} onSaved={onSaved} onCancel={() => setForm('closed')} />}
-      {form === 'edit' && mine && <LogForm albumId={album.id} existing={mine} onSaved={onSaved} onCancel={() => setForm('closed')} />}
+      {form === 'new' && (
+        <LogForm albumId={album.id} albumTitle={album.title} onSaved={onSaved} onQueued={onQueued} onCancel={() => setForm('closed')} />
+      )}
+      {form === 'edit' && mine && (
+        <LogForm albumId={album.id} albumTitle={album.title} existing={mine} onSaved={onSaved} onCancel={() => setForm('closed')} />
+      )}
 
       {album.tracks && album.tracks.length > 0 && (
         <>
@@ -129,11 +141,23 @@ export function AlbumScreen({ albumId }: { albumId: string }) {
                 {[log.user.deleted ? 'Deleted user' : `@${log.user.handle}`, formatRating(log.rating), log.listened_on].filter(Boolean).join(' · ')}
               </Body>
               {log.review ? <Body muted>{log.review}</Body> : null}
+              <CommentsLink log={log} />
             </View>
           ))}
         </>
       )}
     </Screen>
+  );
+}
+
+/** "3 comments" (or "Comment") opening the log's thread. */
+function CommentsLink({ log }: { log: AlbumLog }) {
+  const count = log.comment_count ?? 0;
+  const label = count === 0 ? 'Comment' : count === 1 ? '1 comment' : `${count} comments`;
+  return (
+    <Pressable accessibilityRole="link" accessibilityLabel={`${label} on this log`} onPress={() => router.push(`/log/${log.id}`)}>
+      <Text style={styles.link}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -157,4 +181,5 @@ const styles = StyleSheet.create({
   section: { color: colors.text, fontSize: 18, fontWeight: '700', marginTop: space.md },
   log: { gap: 2, padding: space.md, borderRadius: 12, backgroundColor: colors.surface },
   actions: { gap: space.sm },
+  link: { color: colors.text, fontSize: 14, fontWeight: '600', paddingTop: space.xs },
 });

@@ -85,10 +85,14 @@ Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring wo
 ## Phase 6 — Journal and community
 - [x] Implement album metadata cache and album logs. Provider, caching, artwork, and attribution rules: [ADR 0006](docs/adr/0006-album-catalog.md).
       Albums and Journal endpoints with `Idempotency-Key` replay (migration 0009). Verified 2026-10-21: `dotnet test` (JournalApiTests 11, invariants).
-- [ ] Implement ratings, reviews, relistens, visibility, and offline sync. (API side done 2026-10-21 with the logs above; followers-only
-      waits for Phase 8 follows; offline sync is the app's queue, still to build.)
-- [ ] Implement ordered album lists.
-- [ ] Implement comments, replies, anti-abuse rules, and reward reversals.
+- [x] Implement ratings, reviews, relistens, visibility, and offline sync. (Logs API and screens; the app keeps logs made offline
+      in an outbox with their `Idempotency-Key` and sends them from the journal. Followers-only waits for Phase 8 follows.
+      Verified 2026-10-21 on branch `phase-6-journal`: `npm test` 75/75.)
+- [x] Implement ordered album lists. (Lists API with contiguous positions and one album per list; list screens with reorder,
+      "Add to list" on albums. Verified 2026-10-21: ListsApiTests 7/7, app tests 75/75.)
+- [x] Implement comments, replies, anti-abuse rules, and reward reversals. (Comments API with replies, 60 posts per hour, points
+      from the ledger triggers with the daily cap, soft delete reverses and leaves tombstones; comment thread on the log screen.
+      Reports and moderation stay in Phase 9. Verified 2026-10-21: CommentsApiTests 7/7.)
 
 Details: [Album journal API](services/api/src/features/album-journal/TODO.md) · [Journal UI](apps/mobile/src/features/album-journal/TODO.md) · [Lists API](services/api/src/features/lists/TODO.md) · [Lists UI](apps/mobile/src/features/lists/TODO.md) · [Comments API](services/api/src/features/comments/TODO.md) · [Comments UI](apps/mobile/src/features/comments/TODO.md)
 

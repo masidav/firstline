@@ -1,23 +1,14 @@
-# Comments mobile feature
+# Comments (app)
 
-## Purpose
-This folder owns the comments mobile feature responsibilities for Fandom Score.
+`CommentsSection.tsx` renders the thread under a log and its composer. It is used by the log screen
+(`src/features/album-journal/LogScreen.tsx`, route `/log/[logId]`), which the album screen and the journal link
+to with "N comments".
 
-## Responsibilities
-- Implement the feature's domain behavior and interfaces.
-- Validate inputs and enforce authorization at the correct boundary.
-- Handle expected failures and avoid duplicate effects on retries.
-- Keep implementation and automated tests close to the feature where practical.
+- Loads `GET /logs/{id}/comments` (first 100, oldest first) and shows replies indented under their parent
+  (`threaded()`); deleted comments that still have replies show as `[deleted]`.
+- Posts with `POST /logs/{id}/comments` and one `Idempotency-Key` per attempt; "Reply" sets `parent_id`.
+- Points are mentioned only when the API returns `points_awarded` ("You earned 1 point: comment."); short or
+  self comments just say "Posted."
+- Edit and delete appear on your own comments only (`state.me.handle`). Reporting is Phase 9.
 
-## Dependencies
-Review the corresponding `TODO.md` and the repository's architecture documentation for upstream dependencies, provider choices, database contracts, and unresolved decisions.
-
-## Development
-1. Inspect existing code and tests before changing files.
-2. Implement tasks in `TODO.md` in dependency order.
-3. Add tests for success, failure, authorization, and edge cases.
-4. Run tests and document actual results.
-5. Update documentation and the root `PROJECT_TODO.md`.
-
-## Scope note
-This README is a starter document. Replace generic details with the real module interfaces and setup instructions once the implementation is inspected.
+Tests: `CommentsSection.test.tsx` (thread and tombstones, posting with points, replies, delete, threading order).

@@ -59,11 +59,13 @@ export function describePoints(awards: PointsAward[]): string | undefined {
   if (awards.length === 0) return undefined;
   const total = awards.reduce((sum, award) => sum + award.points, 0);
   const reasons = awards.map((award) => AWARD_NAMES[award.rule_key] ?? award.rule_key);
-  return `You earned ${Number.isInteger(total) ? total : total.toFixed(2)} points: ${reasons.join(', ')}.`;
+  const unit = total === 1 ? 'point' : 'points';
+  return `You earned ${Number.isInteger(total) ? total : total.toFixed(2)} ${unit}: ${reasons.join(', ')}.`;
 }
 
 const AWARD_NAMES: Record<string, string> = {
   album_logged: 'first log',
   album_relisten: 'relisten',
   review_written: 'review',
+  comment_posted: 'comment',
 };

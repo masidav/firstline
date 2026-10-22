@@ -1,23 +1,15 @@
-# Album lists mobile feature
+# Album lists (app)
 
-## Purpose
-This folder owns the album lists mobile feature responsibilities for Fandom Score.
+| File | Route | What |
+| --- | --- | --- |
+| `ListsScreen.tsx` | `/lists` | Your lists (`GET /me/lists`) and a form to create one (`POST /lists`). Reached from the journal's "Your lists". |
+| `ListScreen.tsx` | `/list/[listId]` | One list in order. Owners move items up and down (`PATCH .../items/{albumId}` with the new position), remove them, and delete the list; everyone else reads. |
+| `AddToList.tsx` | | "Add to list" on the album screen: picks one of your lists and appends the album; a 409 means it was already there. |
+| `lists.ts` | | Types from the contract and the "3 albums · private" line. |
 
-## Responsibilities
-- Implement the feature's domain behavior and interfaces.
-- Validate inputs and enforce authorization at the correct boundary.
-- Handle expected failures and avoid duplicate effects on retries.
-- Keep implementation and automated tests close to the feature where practical.
+Covers follow the Spotify rules (unaltered art, "from Spotify" line) through the shared `AlbumRow` and
+`SpotifyAttribution` from the journal feature.
 
-## Dependencies
-Review the corresponding `TODO.md` and the repository's architecture documentation for upstream dependencies, provider choices, database contracts, and unresolved decisions.
+Not yet: editing a list's title or visibility after creation, notes on items, drag-to-reorder.
 
-## Development
-1. Inspect existing code and tests before changing files.
-2. Implement tasks in `TODO.md` in dependency order.
-3. Add tests for success, failure, authorization, and edge cases.
-4. Run tests and document actual results.
-5. Update documentation and the root `PROJECT_TODO.md`.
-
-## Scope note
-This README is a starter document. Replace generic details with the real module interfaces and setup instructions once the implementation is inspected.
+Tests: `ListsScreen.test.tsx`, `ListScreen.test.tsx`.
