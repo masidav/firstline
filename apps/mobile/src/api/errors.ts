@@ -12,6 +12,10 @@ export function errorMessage(error: unknown): string {
       return 'Another account already uses this email. Sign in the way you did before.';
     case 'rate_limited':
       return 'Too many attempts. Wait a minute and try again.';
+    case 'artist_add_limit':
+      return "You've added as many new artists as allowed today. Try again tomorrow.";
+    case 'spotify_unavailable':
+      return "Spotify isn't responding right now. Try again in a moment.";
     case 'unauthorized':
       return 'Your session has ended. Sign in again.';
     default:

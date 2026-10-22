@@ -377,9 +377,18 @@ paths:
       tags: [Artists]
       operationId: listArtists
       summary: Browse tracked artists
+      description: |
+        Tracked artists only; never calls Spotify (use `/artists/search` for that). Paused artists are never listed.
+        `fans` sorts by how many fans have a score for the artist.
       parameters:
-        - {name: q, in: query, schema: {type: string, maxLength: 100}, description: Name prefix filter}
-        - {name: status, in: query, schema: {type: string, enum: [onboarding, active], default: active}}
+        - name: q
+          in: query
+          schema: {type: string, maxLength: 100}
+          description: Case-insensitive match on the start of the name or of any word in it
+        - name: status
+          in: query
+          schema: {type: string, enum: [onboarding, active, all], default: active}
+          description: '`all` is onboarding and active artists
         - {name: sort, in: query, schema: {type: string, enum: [recent, name, fans], default: fans}}
         - {$ref: '#/components/parameters/Limit'}
         - {$ref: '#/components/parameters/Cursor'}
@@ -389,6 +398,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ArtistPage'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
     post:
       tags: [Artists]
       operationId: trackArtist

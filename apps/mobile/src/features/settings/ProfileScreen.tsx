@@ -59,6 +59,7 @@ export function ProfileScreen({ me }: { me: Me }) {
 
   return (
     <Screen>
+      <Button label="Back to home" kind="secondary" onPress={() => router.replace('/home')} />
       <Title>Your profile</Title>
       <Body muted>Signed in as {me.email}</Body>
 

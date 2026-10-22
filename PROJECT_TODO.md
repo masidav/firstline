@@ -44,6 +44,8 @@ Details: [Authentication](services/api/src/features/authentication/TODO.md) · [
       (client credentials, ADR 0005, decided 2026-10-20). Verified 2026-10-20 with a faked Spotify: `dotnet test` 87/87.
 - [x] Implement shared tracked-artist addition and daily limit (50 per user per UTC day, decided 2026-10-18; enforced by `track_artist()`).
       `POST /v1/artists`: name and image from Spotify, new artists start `onboarding`. Verified 2026-10-20 with a faked Spotify (ArtistApiTests).
+- [x] Home screen search (mobile): type to filter tracked artists (`GET /v1/artists`), Enter asks Spotify and offers Add.
+      Verified 2026-10-21: `dotnet test` 94/94, mobile `npm test` 33/33.
 - [ ] Check artist search and add against real Spotify (app token from the client secret), using
       `tools/dev/spotify_connect.py search` and `track-artist`.
 - [x] Background job queue: Postgres `jobs` table and `workers/` process ([ADR 0004](docs/adr/0004-postgres-job-queue.md)). Verified 2026-10-18: JobQueueTests 9/9.

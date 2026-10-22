@@ -21,6 +21,6 @@ export default function Index() {
     case 'signedOut':
       return <Redirect href="/sign-in" />;
     case 'signedIn':
-      return <Redirect href="/profile" />;
+      return <Redirect href="/home" />;
   }
 }

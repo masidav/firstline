@@ -250,7 +250,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Browse tracked artists */
+        /**
+         * Browse tracked artists
+         * @description Tracked artists only; never calls Spotify (use `/artists/search` for that). Paused artists are never listed.
+         *     `fans` sorts by how many fans have a score for the artist.
+         */
         get: operations["listArtists"];
         put?: never;
         /**
@@ -2163,11 +2167,10 @@ export interface operations {
     listArtists: {
         parameters: {
             query?: {
-                /** @description Name prefix filter */
+                /** @description Case-insensitive match on the start of the name or of any word in it */
                 q?: string;
-                status?: "onboarding" | "active";
-                sort?: "recent" | "name" | "fans";
-                limit?: components["parameters"]["Limit"];
+                /** @description `all` is onboarding and active artists - {name: sort, in: query, schema: {type: string, enum: [recent, name, fans], default: fans}} - {$ref: */
+                status?: "onboarding" | "active" | "all";
                 cursor?: components["parameters"]["Cursor"];
             };
             header?: never;
@@ -2185,6 +2188,7 @@ export interface operations {
                     "application/json": components["schemas"]["ArtistPage"];
                 };
             };
+            422: components["responses"]["ValidationFailed"];
         };
     };
     trackArtist: {

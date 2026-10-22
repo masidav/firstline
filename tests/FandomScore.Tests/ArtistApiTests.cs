@@ -18,7 +18,7 @@ using Npgsql;
 
 namespace FandomScore.Tests;
 
-/// <summary>/artists/search and POST /artists against a real database, with Spotify faked.</summary>
+/// <summary>GET /artists, /artists/search, and POST /artists against a real database, with Spotify faked.</summary>
 [Collection(PostgresCollection.Name)]
 public sealed class ArtistApiTests(PostgresFixture postgres) : IAsyncLifetime, IDisposable
 {
@@ -249,6 +249,81 @@ public sealed class ArtistApiTests(PostgresFixture postgres) : IAsyncLifetime, I
 
         var other = await SignInAsync("fan_two");
         await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/artists/search?q=geese", other), HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Listing_matches_word_prefixes_and_filters_by_status_without_calling_Spotify()
+    {
+        var token = await SignInAsync("fan_one");
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            await connection.ExecuteAsync(
+                """
+                INSERT INTO artists (name, spotify_artist_id) VALUES
+                  ('The Beatles', 'sp-beatles'), ('Beach House', 'sp-beach'), ('Beabadoobee', 'sp-bea'),
+                  ('Lobeat', 'sp-lobeat'), ('100%_Real', 'sp-percent');
+                -- Activation needs a baseline.
+                INSERT INTO artist_baselines (artist_id, dist_params, curve)
+                  SELECT id, '{}', '[]' FROM artists WHERE spotify_artist_id IN ('sp-beatles', 'sp-lobeat', 'sp-percent');
+                UPDATE artists SET status = 'active', activated_at = now()
+                  WHERE spotify_artist_id IN ('sp-beatles', 'sp-lobeat', 'sp-percent');
+                UPDATE artists SET status = 'paused' WHERE spotify_artist_id = 'sp-bea';
+                """);
+        }
+
+        async Task<List<string?>> NamesAsync(string query) =>
+            (await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/artists?{query}", token), HttpStatusCode.OK))
+            .GetProperty("items").EnumerateArray().Select(i => i.GetProperty("name").GetString()).ToList();
+
+        Assert.Equal(["The Beatles"], await NamesAsync("q=bea"));
+        Assert.Equal(["Beach House", "The Beatles"], await NamesAsync("q=BEA&status=all&sort=name"));
+        Assert.Equal(["Beach House"], await NamesAsync("q=bea&status=onboarding"));
+        Assert.Equal(["100%_Real"], await NamesAsync("q=100%25_&status=all"));
+        Assert.Empty(await NamesAsync("q=1%25"));
+        Assert.Empty(_spotify.Calls);
+    }
+
+    [Fact]
+    public async Task Listing_pages_with_a_cursor()
+    {
+        var token = await SignInAsync("fan_one");
+        await JsonAsync(await AddAsync(token, GeeseId), HttpStatusCode.Created);
+        await JsonAsync(await AddAsync(token, GeeseSoundalikeId), HttpStatusCode.Created);
+
+        var first = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/artists?status=all&sort=name&limit=1", token),
+            HttpStatusCode.OK);
+        var cursor = first.GetProperty("next_cursor").GetString();
+        var second = await JsonAsync(
+            await SendAsync(HttpMethod.Get, $"/v1/artists?status=all&sort=name&limit=1&cursor={Uri.EscapeDataString(cursor!)}", token),
+            HttpStatusCode.OK);
+
+        var geese = Assert.Single(first.GetProperty("items").EnumerateArray());
+        Assert.Equal("Geese", geese.GetProperty("name").GetString());
+        Assert.True(geese.GetProperty("added_by_me").GetBoolean());
+        Assert.Equal("Geese Tribute Band", Assert.Single(second.GetProperty("items").EnumerateArray()).GetProperty("name").GetString());
+        Assert.Equal(JsonValueKind.Null, second.GetProperty("next_cursor").ValueKind);
+    }
+
+    [Theory]
+    [InlineData("status=paused", "status")]
+    [InlineData("sort=popular", "sort")]
+    [InlineData("limit=101", "limit")]
+    [InlineData("cursor=not-a-cursor", "cursor")]
+    public async Task Listing_rejects_bad_parameters(string query, string field)
+    {
+        var token = await SignInAsync("fan_one");
+
+        var problem = await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/artists?{query}", token),
+            HttpStatusCode.UnprocessableEntity);
+
+        Assert.Equal(field, problem.GetProperty("errors")[0].GetProperty("field").GetString());
+    }
+
+    [Fact]
+    public async Task Listing_needs_sign_in()
+    {
+        var response = await _client.GetAsync("/v1/artists");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     private async Task<string> SignInAsync(string handle, HttpClient? client = null)

@@ -7,6 +7,8 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [x] Show tracked status without persisting arbitrary untracked search results.
 - [x] Implement the shared tracked-artist add operation using server-fetched provider data, never client-supplied artist identity fields. (`POST /v1/artists`)
 - [x] Use track_artist() or an equivalent transactional operation to enforce uniqueness and the UTC daily add limit. (`429 artist_add_limit`, `Retry-After` to UTC midnight)
+- [x] Browse tracked artists: `GET /v1/artists` (word-prefix `q`, `status` onboarding/active/all, sort fans/name/recent,
+      offset cursor). Never calls Spotify. Verified 2026-10-21: ArtistApiTests 22/22.
 - [ ] Handle concurrent attempts to add the same artist without creating duplicates.
 - [x] Insert new artists with onboarding status and expose status to the client. (Search results and `POST /artists`; `GET /artists/{id}` not built yet.)
 - [ ] Queue catalog loading, baseline generation, and activation as background work.

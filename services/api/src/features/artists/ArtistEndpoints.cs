@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Security.Claims;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
 using Dapper;
@@ -14,7 +16,7 @@ using Npgsql;
 namespace FandomScore.Api.Features.Artists;
 
 /// <summary>
-/// openapi <c>/artists/search</c> and <c>POST /artists</c>. Spotify is called with the app's own token (client
+/// openapi <c>GET /artists</c>, <c>/artists/search</c>, and <c>POST /artists</c>. Spotify is called with the app's own token (client
 /// credentials), so users don't need to connect Spotify first. Untracked search results are never stored, and an
 /// added artist's name and image come from Spotify, never from the client. See docs/adr/0005-spotify-integration.md.
 /// </summary>
@@ -37,6 +39,7 @@ public static partial class ArtistEndpoints
 
     public static void MapArtists(this RouteGroupBuilder v1)
     {
+        v1.MapGet("/artists", ListAsync);
         v1.MapGet("/artists/search", SearchAsync).RequireRateLimiting(SearchRateLimit);
         v1.MapPost("/artists", TrackAsync);
     }
@@ -49,10 +52,89 @@ public static partial class ArtistEndpoints
 
     public sealed record ArtistSearchResults(IReadOnlyList<ArtistSearchResult> Items);
 
+    public sealed record ArtistPage(IReadOnlyList<Artist> Items, string? NextCursor);
+
     /// <summary>openapi Artist. <see cref="MyScore"/> stays null until scoring exists (Phase 5).</summary>
     public sealed record Artist(
         Guid Id, string Name, string SpotifyArtistId, string? ImageUrl, string? WebsiteUrl, string? MerchUrl, string Status,
         bool AddedByMe, DateTime TrackedAt, DateTime? ActivatedAt, object? MyScore);
+
+    // Tracked artists only; this never calls Spotify. Paused artists are never listed. The cursor is an opaque offset,
+    // which is fine while the catalog is small.
+    private static async Task<IResult> ListAsync(
+        ClaimsPrincipal user, string? q, string? status, string? sort, int? limit, string? cursor, NpgsqlDataSource db,
+        CancellationToken cancellationToken)
+    {
+        var query = q?.Trim() ?? "";
+        var errors = new List<FieldError>();
+        if (query.Length > 100)
+        {
+            errors.Add(new FieldError("q", "Send at most 100 characters."));
+        }
+
+        string[]? statuses = (status ?? "active") switch
+        {
+            "active" => ["active"],
+            "onboarding" => ["onboarding"],
+            "all" => ["active", "onboarding"],
+            _ => null,
+        };
+        if (statuses is null)
+        {
+            errors.Add(new FieldError("status", "Use active, onboarding, or all."));
+        }
+
+        var orderBy = (sort ?? "fans") switch
+        {
+            "fans" => "(SELECT count(*) FROM user_artist_scores s WHERE s.artist_id = a.id) DESC, lower(a.name), a.id",
+            "name" => "lower(a.name), a.id",
+            "recent" => "a.tracked_at DESC, a.id",
+            _ => null,
+        };
+        if (orderBy is null)
+        {
+            errors.Add(new FieldError("sort", "Use fans, name, or recent."));
+        }
+
+        if (limit is < 1 or > 100)
+        {
+            errors.Add(new FieldError("limit", "Use a limit from 1 to 100."));
+        }
+
+        var offset = 0;
+        if (cursor is not null && !TryReadCursor(cursor, out offset))
+        {
+            errors.Add(new FieldError("cursor", "Send the next_cursor from a previous page."));
+        }
+
+        if (errors.Count > 0)
+        {
+            throw ApiProblemException.Validation([.. errors]);
+        }
+
+        // Matches the start of the name or of any word in it ("beat" finds "The Beatles").
+        var escaped = query.Replace(@"\", @"\\", StringComparison.Ordinal).Replace("%", @"\%", StringComparison.Ordinal)
+            .Replace("_", @"\_", StringComparison.Ordinal);
+        var pageSize = limit ?? 25;
+        await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        var rows = (await connection.QueryAsync<ArtistRow>(
+            $"""
+             SELECT {ArtistColumns}
+             FROM artists a
+             WHERE a.status = ANY(@statuses::artist_status[])
+               AND (@query = '' OR a.name ILIKE @prefix OR a.name ILIKE @wordPrefix)
+             ORDER BY {orderBy}
+             LIMIT @take OFFSET @offset
+             """,
+            new
+            {
+                userId = user.UserId(), statuses, query, prefix = escaped + "%", wordPrefix = "% " + escaped + "%",
+                take = pageSize + 1, offset,
+            })).ToList();
+
+        var next = rows.Count > pageSize ? WriteCursor(offset + pageSize) : null;
+        return Results.Ok(new ArtistPage([.. rows.Take(pageSize).Select(ToArtist)], next));
+    }
 
     private static async Task<IResult> SearchAsync(
         string? q, int? limit, NpgsqlDataSource db, SpotifyClient spotify, IOptions<SpotifyOptions> options,
@@ -150,17 +232,38 @@ public static partial class ArtistEndpoints
         NpgsqlConnection connection, Guid userId, string spotifyArtistId, NpgsqlTransaction? transaction = null)
     {
         var row = await connection.QuerySingleOrDefaultAsync<ArtistRow>(
-            """
-            SELECT id AS Id, name AS Name, spotify_artist_id AS SpotifyArtistId, image_url AS ImageUrl,
-                   website_url AS WebsiteUrl, merch_url AS MerchUrl, status::text AS Status,
-                   COALESCE(added_by = @userId, false) AS AddedByMe, tracked_at AS TrackedAt, activated_at AS ActivatedAt
-            FROM artists WHERE spotify_artist_id = @spotifyArtistId
-            """,
+            $"SELECT {ArtistColumns} FROM artists a WHERE a.spotify_artist_id = @spotifyArtistId",
             new { userId, spotifyArtistId }, transaction);
-        return row is null
-            ? null
-            : new Artist(row.Id, row.Name, row.SpotifyArtistId, row.ImageUrl, row.WebsiteUrl, row.MerchUrl, row.Status,
-                row.AddedByMe, row.TrackedAt, row.ActivatedAt, null);
+        return row is null ? null : ToArtist(row);
+    }
+
+    // Needs @userId for added_by_me.
+    private const string ArtistColumns =
+        """
+        a.id AS Id, a.name AS Name, a.spotify_artist_id AS SpotifyArtistId, a.image_url AS ImageUrl,
+        a.website_url AS WebsiteUrl, a.merch_url AS MerchUrl, a.status::text AS Status,
+        COALESCE(a.added_by = @userId, false) AS AddedByMe, a.tracked_at AS TrackedAt, a.activated_at AS ActivatedAt
+        """;
+
+    private static Artist ToArtist(ArtistRow row) =>
+        new(row.Id, row.Name, row.SpotifyArtistId, row.ImageUrl, row.WebsiteUrl, row.MerchUrl, row.Status, row.AddedByMe,
+            row.TrackedAt, row.ActivatedAt, null);
+
+    private static string WriteCursor(int offset) =>
+        Convert.ToBase64String(Encoding.UTF8.GetBytes(offset.ToString(CultureInfo.InvariantCulture)));
+
+    private static bool TryReadCursor(string cursor, out int offset)
+    {
+        offset = 0;
+        try
+        {
+            return int.TryParse(Encoding.UTF8.GetString(Convert.FromBase64String(cursor)), NumberStyles.None,
+                CultureInfo.InvariantCulture, out offset);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
     }
 
     private static void RequireCatalog(SpotifyOptions options, string detail)

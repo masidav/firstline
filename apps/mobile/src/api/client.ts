@@ -7,6 +7,8 @@ export type { components };
 export type Me = components['schemas']['Me'];
 export type Session = components['schemas']['Session'];
 export type Problem = components['schemas']['Problem'];
+export type Artist = components['schemas']['Artist'];
+export type ArtistSearchResult = components['schemas']['ArtistSearchResult'];
 
 export type FetchLike = (request: Request) => Promise<Response>;
 

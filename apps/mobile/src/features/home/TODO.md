@@ -3,6 +3,8 @@
 Use `- [x]` only after the task is implemented and verified.
 
 ## Implementation checklist
+- [x] First version (2026-10-21): signed-in fans land on `/home`, a search bar over their tracked artists that can add
+      new ones from Spotify, plus a link to the profile. Verified with `npm test` (HomeScreen 6 tests).
 - [ ] Define the home-screen information hierarchy based on approved product requirements.
 - [ ] Show relevant tracked artists and score summaries only when data is available.
 - [ ] Provide loading, empty, offline, and error states.
