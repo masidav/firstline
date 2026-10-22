@@ -1080,6 +1080,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/allocations/{allocationId}/eligibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Can I register for this allocation?
+         * @description `reason` says why not: `not_open`, `artist_not_active`, `hub_city_required`, `no_score`,
+         *     `below_threshold`, or `already_registered` (for another allocation of the same show). `percentile` and
+         *     `hub_match` are the fan's current standing; a registration keeps the values from when it was made.
+         */
+        get: operations["getEligibility"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/allocations/{allocationId}/registration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Register for an allocation
+         * @description Registers the fan while registration is open, keeping a snapshot of their hub cities and score. One
+         *     registration per fan per show. Registering again returns the existing registration (`200`).
+         */
+        put: operations["register"];
+        post?: never;
+        /**
+         * Withdraw a registration
+         * @description Allowed while registration is open. The registration is kept as withdrawn. Cancelling an allocation withdraws
+         *     its registrations automatically, and deleting an account withdraws the fan's.
+         */
+        delete: operations["withdraw"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/registrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My registrations
+         * @description Newest first, withdrawn ones included, at most 100.
+         */
+        get: operations["listMyRegistrations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/events": {
         parameters: {
             query?: never;
@@ -1385,7 +1457,7 @@ export interface components {
              * @description Stable machine-readable code.
              * @enum {string}
              */
-            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
+            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
             errors?: {
                 field?: string;
                 message?: string;
@@ -1652,6 +1724,48 @@ export interface components {
             published_at?: string | null;
             /** Format: date-time */
             cancelled_at?: string | null;
+        };
+        /** @description A fan's registration, with the snapshot taken when they registered. */
+        Registration: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            allocation_id: string;
+            /** Format: uuid */
+            event_id: string;
+            /** @description The fan's hub cities when they registered, primary first */
+            hub_city_ids: string[];
+            /** @description Position of the show's city in `hub_city_ids` (1 is the primary city); null if none */
+            hub_match?: number | null;
+            /** @description The show's city is one of the fan's hub cities */
+            local: boolean;
+            percentile: number;
+            raw_score: number;
+            is_estimated: boolean;
+            /** Format: date-time */
+            registered_at: string;
+            /** Format: date-time */
+            withdrawn_at?: string | null;
+            /** @enum {string} */
+            status: "registered" | "withdrawn";
+        };
+        Eligibility: {
+            /** Format: uuid */
+            allocation_id: string;
+            /** @description True if the fan can register now, or already has */
+            eligible: boolean;
+            /** @enum {string|null} */
+            reason?: "not_open" | "artist_not_active" | "hub_city_required" | "no_score" | "below_threshold" | "already_registered" | null;
+            min_percentile: number;
+            percentile?: number | null;
+            is_estimated?: boolean | null;
+            hub_match?: number | null;
+            registration?: components["schemas"]["Registration"] | null;
+        };
+        MyRegistration: {
+            registration: components["schemas"]["Registration"];
+            allocation: components["schemas"]["Allocation"];
+            event: components["schemas"]["Event"];
         };
         AllocationCreate: {
             /** @default Fan allocation */
@@ -3908,6 +4022,136 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    getEligibility: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Eligibility */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Eligibility"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    register: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Already registered */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Registration"];
+                };
+            };
+            /** @description Registered */
+            201: {
+                headers: {
+                    /** @description `/v1/allocations/{allocationId}/registration` */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Registration"];
+                };
+            };
+            /** @description No score for the artist, or below the threshold (`code: not_eligible`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /**
+             * @description `registration_closed` (not open), `artist_not_active`, `hub_city_required`, or `already_registered`
+             *     (registered for another allocation of the same show)
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    withdraw: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Withdrawn */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Registration has closed (`code: registration_closed`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listMyRegistrations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Registrations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["MyRegistration"][];
+                    };
+                };
+            };
         };
     };
     createEvent: {

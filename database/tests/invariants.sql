@@ -803,4 +803,170 @@ BEGIN
   END;
 END $$;
 
+-- ------------------------------------------------------------ registrations (0011)
+INSERT INTO users (id, handle, email) VALUES
+  ('42000000-0000-0000-0000-000000000001', 'reg_local', 'reg_local@example.test'),
+  ('42000000-0000-0000-0000-000000000002', 'reg_low', 'reg_low@example.test'),
+  ('42000000-0000-0000-0000-000000000003', 'reg_nohub', 'reg_nohub@example.test'),
+  ('42000000-0000-0000-0000-000000000004', 'reg_noscore', 'reg_noscore@example.test'),
+  ('42000000-0000-0000-0000-000000000005', 'reg_far', 'reg_far@example.test');
+SELECT set_hub_cities('42000000-0000-0000-0000-000000000001', '{us-ny-new-york,us-il-chicago}');
+SELECT set_hub_cities('42000000-0000-0000-0000-000000000002', '{us-il-chicago}');
+SELECT set_hub_cities('42000000-0000-0000-0000-000000000004', '{us-il-chicago}');
+SELECT set_hub_cities('42000000-0000-0000-0000-000000000005', '{ca-on-toronto}');
+INSERT INTO user_artist_scores (user_id, artist_id, raw_score, percentile, is_estimated, baseline_weight) VALUES
+  ('42000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 72.5, 91.2, true, 0.9),
+  ('42000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000001', 10, 40, true, 0.9),
+  ('42000000-0000-0000-0000-000000000003', '40000000-0000-0000-0000-000000000001', 90, 99, true, 0.9),
+  ('42000000-0000-0000-0000-000000000005', '40000000-0000-0000-0000-000000000001', 60, 75, true, 0.9);
+INSERT INTO events (id, artist_id, name, city_id, starts_at) VALUES
+  ('43000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 'Chicago again', 'us-il-chicago',
+   now() + interval '20 days');
+INSERT INTO allocations (id, event_id, tickets, face_value_cents, min_percentile, registration_opens_at, registration_closes_at, published_at) VALUES
+  ('44000000-0000-0000-0000-000000000001', '43000000-0000-0000-0000-000000000001', 10, 4500, 50, now() - interval '1 hour', now() + interval '5 days', now()),
+  ('44000000-0000-0000-0000-000000000002', '43000000-0000-0000-0000-000000000001', 5, 9000, 0, now() - interval '1 hour', now() + interval '5 days', now()),
+  ('44000000-0000-0000-0000-000000000003', '43000000-0000-0000-0000-000000000001', 5, 9000, 0, now() + interval '1 day', now() + interval '5 days', now()),
+  ('44000000-0000-0000-0000-000000000004', '43000000-0000-0000-0000-000000000001', 5, 9000, 0, now() - interval '1 hour', now() + interval '5 days', now());
+
+DO $$
+DECLARE fan uuid := '42000000-0000-0000-0000-000000000001'; ga uuid := '44000000-0000-0000-0000-000000000001';
+        vip uuid := '44000000-0000-0000-0000-000000000002'; later uuid := '44000000-0000-0000-0000-000000000003';
+        r record; v_id uuid; v_far uuid;
+BEGIN
+  -- Eligibility reasons.
+  ASSERT registration_blocker(fan, later) = 'not_open', 'not open yet';
+  ASSERT registration_blocker('42000000-0000-0000-0000-000000000002', ga) = 'below_threshold', 'percentile 40 < 50';
+  ASSERT registration_blocker('42000000-0000-0000-0000-000000000003', ga) = 'hub_city_required', 'no hub city';
+  ASSERT registration_blocker('42000000-0000-0000-0000-000000000004', ga) = 'no_score', 'no score for the artist';
+  ASSERT registration_blocker(fan, ga) IS NULL, 'eligible';
+
+  -- Registering keeps a snapshot: hubs (primary first), where the show's city sits in them, and the score.
+  v_id := register_for_allocation(fan, ga);
+  ASSERT register_for_allocation(fan, ga) = v_id, 'registering again returns the same registration';
+  SELECT * INTO r FROM allocation_registrations WHERE id = v_id;
+  ASSERT r.hub_city_ids = '{us-ny-new-york,us-il-chicago}' AND r.hub_match = 2, 'hub snapshot, Chicago is the backup';
+  ASSERT r.percentile = 91.2 AND r.raw_score = 72.5 AND r.is_estimated AND r.baseline_weight = 0.9
+         AND r.score_computed_at IS NOT NULL AND r.event_id = '43000000-0000-0000-0000-000000000001', 'score snapshot';
+  -- A fan from elsewhere can register; they're just not local.
+
+  v_far := register_for_allocation('42000000-0000-0000-0000-000000000005', ga);
+  ASSERT (SELECT hub_match IS NULL FROM allocation_registrations WHERE id = v_far), 'not local';
+
+  -- A later hub change or score change doesn't touch it.
+  UPDATE user_artist_scores SET percentile = 10 WHERE user_id = fan;
+  PERFORM set_hub_cities(fan, '{ca-on-toronto}');
+  ASSERT (SELECT hub_city_ids = '{us-ny-new-york,us-il-chicago}' AND percentile = 91.2 FROM allocation_registrations WHERE id = v_id),
+         'snapshot is frozen';
+  UPDATE user_artist_scores SET percentile = 91.2 WHERE user_id = fan;
+
+  -- One live registration per show, across its allocations.
+  ASSERT registration_blocker(fan, vip) = 'already_registered', 'one per show';
+  BEGIN
+    PERFORM register_for_allocation(fan, vip);
+    RAISE EXCEPTION 'second registration for the same show should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'registration blocked: already_registered%', SQLERRM;
+  END;
+
+  -- The snapshot can't be edited; registrations aren't deleted or truncated.
+  BEGIN
+    UPDATE allocation_registrations SET percentile = 99 WHERE id = v_id;
+    RAISE EXCEPTION 'editing the snapshot should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%only withdrawing%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE allocation_registrations SET hub_city_ids = '{us-il-chicago}' WHERE id = v_id;
+    RAISE EXCEPTION 'editing the hubs should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%only withdrawing%', SQLERRM;
+  END;
+  BEGIN
+    DELETE FROM allocation_registrations WHERE id = v_id;
+    RAISE EXCEPTION 'deleting a registration should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%withdrawn, not deleted%', SQLERRM;
+  END;
+  BEGIN
+    TRUNCATE allocation_registrations;
+    RAISE EXCEPTION 'truncating registrations should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%withdrawn, not deleted%', SQLERRM;
+  END;
+
+  -- Direct inserts can't point at another show, and the database stamps the time.
+  BEGIN
+    INSERT INTO allocation_registrations (allocation_id, event_id, user_id, hub_city_ids, percentile, raw_score,
+                                          is_estimated, baseline_weight, score_computed_at)
+    VALUES (vip, '41000000-0000-0000-0000-000000000001', '42000000-0000-0000-0000-000000000002', '{us-il-chicago}',
+            99, 99, false, 0, now());
+    RAISE EXCEPTION 'a registration for the wrong show should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%allocation_registrations_allocation_id_event_id_fkey%', SQLERRM;
+  END;
+
+  -- Withdrawing records who and when (the time is stamped by the database) and frees the show.
+  ASSERT withdraw_registration(fan, ga), 'withdrawn';
+  ASSERT NOT withdraw_registration(fan, ga), 'nothing left to withdraw';
+  ASSERT (SELECT withdrawn_reason = 'fan' AND withdrawn_at <= clock_timestamp() FROM allocation_registrations WHERE id = v_id),
+         'fan withdrawal';
+  v_id := register_for_allocation(fan, vip);
+  ASSERT (SELECT count(*) FROM allocation_registrations WHERE user_id = fan) = 2, 'withdrawn row kept';
+  BEGIN
+    UPDATE allocation_registrations SET withdrawn_at = NULL, withdrawn_reason = NULL WHERE user_id = fan AND allocation_id = ga;
+    RAISE EXCEPTION 'un-withdrawing should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%only withdrawing%', SQLERRM;
+  END;
+  -- Also where no other live registration would trip the unique index first.
+  PERFORM withdraw_registration('42000000-0000-0000-0000-000000000005', ga);
+  BEGIN
+    UPDATE allocation_registrations SET withdrawn_at = NULL, withdrawn_reason = NULL
+     WHERE user_id = '42000000-0000-0000-0000-000000000005' AND allocation_id = ga;
+    RAISE EXCEPTION 'un-withdrawing should fail on the guard';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%only withdrawing%', SQLERRM;
+  END;
+
+  -- Cancelling an allocation withdraws its registrations, so those fans can take another allocation of the show.
+  UPDATE allocations SET cancelled_at = now() WHERE id = vip;
+  ASSERT (SELECT withdrawn_reason = 'allocation_cancelled' FROM allocation_registrations WHERE id = v_id), 'cancel withdraws';
+  ASSERT registration_blocker(fan, '44000000-0000-0000-0000-000000000004') IS NULL, 'free to take another allocation';
+  PERFORM register_for_allocation(fan, '44000000-0000-0000-0000-000000000004');
+
+  -- A published allocation with registrations can't be deleted.
+  BEGIN
+    DELETE FROM allocations WHERE id = vip;
+    RAISE EXCEPTION 'deleting an allocation with registrations should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%cancelled, not deleted%', SQLERRM;
+  END;
+
+  -- Deleting the account withdraws live registrations and empties the hub cities in all of them.
+  UPDATE users SET deleted_at = now() WHERE id = fan;
+  ASSERT NOT EXISTS (SELECT 1 FROM allocation_registrations WHERE user_id = fan
+                       AND (withdrawn_at IS NULL OR hub_city_ids <> '{}' OR hub_match IS NOT NULL
+                            OR withdrawn_reason <> 'account_deleted')),
+         'account deletion withdraws and scrubs';
+  BEGIN
+    PERFORM register_for_allocation(fan, '44000000-0000-0000-0000-000000000004');
+    RAISE EXCEPTION 'a deleted account registering should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'registration blocked: account_deleted%', SQLERRM;
+  END;
+
+  -- A paused artist's allocations take no registrations.
+  UPDATE artists SET status = 'paused' WHERE id = '40000000-0000-0000-0000-000000000001';
+  ASSERT registration_blocker('42000000-0000-0000-0000-000000000003', '44000000-0000-0000-0000-000000000004') = 'artist_not_active',
+         'paused artist';
+  UPDATE artists SET status = 'active' WHERE id = '40000000-0000-0000-0000-000000000001';
+END $$;
+
+-- Closed registration: no registering or fan withdrawing. (Window moved into the past directly.)
+DO $$
+DECLARE fan uuid := '42000000-0000-0000-0000-000000000002'; free uuid := '44000000-0000-0000-0000-000000000004';
+BEGIN
+  PERFORM register_for_allocation(fan, free);
+  ALTER TABLE allocations DISABLE TRIGGER trg_allocation_check;
+  UPDATE allocations SET registration_opens_at = now() - interval '2 hours', registration_closes_at = now() - interval '1 hour'
+   WHERE id = free;
+  ALTER TABLE allocations ENABLE TRIGGER trg_allocation_check;
+  ASSERT registration_blocker('42000000-0000-0000-0000-000000000005', free) = 'not_open', 'closed';
+  BEGIN
+    PERFORM withdraw_registration(fan, free);
+    RAISE EXCEPTION 'withdrawing after close should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'registration blocked: not_open%', SQLERRM;
+  END;
+END $$;
+
 \echo ALL INVARIANT TESTS PASSED

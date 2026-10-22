@@ -15,6 +15,8 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       `RESTRICT`, never `CASCADE`; add selection state to allocations so cancelling after winners exist can be
       handled; add an IANA time zone to `cities` before the app shows local show and registration times.
 - [ ] Let fans register for an allocation; check eligibility against the frozen snapshot from the fraud feature.
+      *Registration done 2026-10-21 (eligibility from the stored score, hub and score snapshot, one per fan per
+      show, withdraw while open); the fraud snapshot waits on Phase 10.*
 - [ ] Implement the chosen selection method (ranked, lottery, or tiered) with a recorded seed and inputs so every draw can be audited and reproduced.
 - [ ] Issue non-transferable reservation tokens bound to the fan's verified identity, with expiry.
 - [ ] Support delayed ticket delivery and a face-value exchange or return path.

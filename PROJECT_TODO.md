@@ -154,6 +154,8 @@ Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](servi
 - [ ] Fan registration for an allocation and a fair, auditable selection: ranked by fandom score among fans
       whose three hub cities include the show's city, then other fans for unfilled seats; ties broken by a
       recorded random draw; a registration keeps the hubs it was made with (decided 2026-10-20).
+      *Registration done 2026-10-21 (allocations branch): eligibility, one per fan per show, hub and score snapshot,
+      withdraw while open; RegistrationApiTests 8/8. Selection is next.*
 - [ ] Non-transferable reservation tokens, delayed delivery, and face-value exchange for fans who can't attend.
 - [ ] Primary ticketing integration (Ticketmaster, AXS, SeatGeek): reserve seats from the pool and hand off checkout.
 - [ ] Promoter web dashboard: set up allocations, monitor registration, export reports.
@@ -272,6 +274,8 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
       allocation's **rules lock once registration opens** (it can still be cancelled); staff, not promoters, manage
       shows until organizations exist. Also open: what pausing an artist (takedown) does to an open allocation
       (for now it's allowed, and registration and selection will refuse).
+- [ ] Rank selection by the score a fan had **when they registered** (frozen; can't be pumped afterwards) or by
+      their score **when registration closes** (fresher)? Registrations store the registration-time snapshot either way.
 - [ ] Decide on the fan-side fee and whether App Store / Google Play payment rules apply to it.
 - [ ] Choose the first pilot artist(s) and promoter.
 - [x] Concert data source (decided 2026-10-20): **concert APIs** for shows and sale dates (candidates:

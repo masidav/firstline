@@ -1334,6 +1334,93 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/EventDetail'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /allocations/{allocationId}/eligibility:
+    parameters:
+      - {$ref: '#/components/parameters/AllocationId'}
+    get:
+      tags: [Allocations]
+      operationId: getEligibility
+      summary: Can I register for this allocation?
+      description: |
+        `reason` says why not: `not_open`, `artist_not_active`, `hub_city_required`, `no_score`,
+        `below_threshold`, or `already_registered` (for another allocation of the same show). `percentile` and
+        `hub_match` are the fan's current standing; a registration keeps the values from when it was made.
+      responses:
+        '200':
+          description: Eligibility
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Eligibility'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /allocations/{allocationId}/registration:
+    parameters:
+      - {$ref: '#/components/parameters/AllocationId'}
+    put:
+      tags: [Allocations]
+      operationId: register
+      summary: Register for an allocation
+      description: |
+        Registers the fan while registration is open, keeping a snapshot of their hub cities and score. One
+        registration per fan per show. Registering again returns the existing registration (`200`).
+      responses:
+        '200':
+          description: Already registered
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Registration'}
+        '201':
+          description: Registered
+          headers:
+            Location: {schema: {type: string}, description: '`/v1/allocations/{allocationId}/registration`'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Registration'}
+        '403':
+          description: 'No score for the artist, or below the threshold (`code: not_eligible`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: |
+            `registration_closed` (not open), `artist_not_active`, `hub_city_required`, or `already_registered`
+            (registered for another allocation of the same show)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+    delete:
+      tags: [Allocations]
+      operationId: withdraw
+      summary: Withdraw a registration
+      description: |
+        Allowed while registration is open. The registration is kept as withdrawn. Cancelling an allocation withdraws
+        its registrations automatically, and deleting an account withdraws the fan's.
+      responses:
+        '204': {description: Withdrawn}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: 'Registration has closed (`code: registration_closed`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+  /me/registrations:
+    get:
+      tags: [Allocations]
+      operationId: listMyRegistrations
+      summary: My registrations
+      description: Newest first, withdrawn ones included, at most 100.
+      responses:
+        '200':
+          description: Registrations
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/MyRegistration'}
   /admin/events:
     post:
       tags: [Admin, Allocations]
@@ -1765,6 +1852,10 @@ components:
             - rate_limited
             - artist_add_limit
             - allocation_locked
+            - registration_closed
+            - hub_city_required
+            - not_eligible
+            - already_registered
             - hub_change_limit
             - artist_not_active
             - spotify_artist_not_found
@@ -2066,6 +2157,52 @@ components:
           description: '`draft` is staff-only; `upcoming` is published but not open yet; `closed` means registration is over'
         published_at: {type: [string, 'null'], format: date-time}
         cancelled_at: {type: [string, 'null'], format: date-time}
+    Registration:
+      type: object
+      description: A fan's registration, with the snapshot taken when they registered.
+      required: [id, allocation_id, event_id, hub_city_ids, local, percentile, raw_score, is_estimated, registered_at, status]
+      properties:
+        id: {type: string, format: uuid}
+        allocation_id: {type: string, format: uuid}
+        event_id: {type: string, format: uuid}
+        hub_city_ids:
+          type: array
+          items: {type: string}
+          description: The fan's hub cities when they registered, primary first
+        hub_match:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 3
+          description: Position of the show's city in `hub_city_ids` (1 is the primary city); null if none
+        local: {type: boolean, description: The show's city is one of the fan's hub cities}
+        percentile: {type: number}
+        raw_score: {type: number}
+        is_estimated: {type: boolean}
+        registered_at: {type: string, format: date-time}
+        withdrawn_at: {type: [string, 'null'], format: date-time}
+        status: {type: string, enum: [registered, withdrawn]}
+    Eligibility:
+      type: object
+      required: [allocation_id, eligible, min_percentile]
+      properties:
+        allocation_id: {type: string, format: uuid}
+        eligible: {type: boolean, description: 'True if the fan can register now, or already has'}
+        reason:
+          type: [string, 'null']
+          enum: [not_open, artist_not_active, hub_city_required, no_score, below_threshold, already_registered, null]
+        min_percentile: {type: number}
+        percentile: {type: [number, 'null']}
+        is_estimated: {type: [boolean, 'null']}
+        hub_match: {type: [integer, 'null'], minimum: 1, maximum: 3}
+        registration:
+          oneOf: [{$ref: '#/components/schemas/Registration'}, {type: 'null'}]
+    MyRegistration:
+      type: object
+      required: [registration, allocation, event]
+      properties:
+        registration: {$ref: '#/components/schemas/Registration'}
+        allocation: {$ref: '#/components/schemas/Allocation'}
+        event: {$ref: '#/components/schemas/Event'}
     AllocationCreate:
       type: object
       required: [tickets, face_value_cents, registration_opens_at, registration_closes_at]

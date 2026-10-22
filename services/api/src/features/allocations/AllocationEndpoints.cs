@@ -25,6 +25,7 @@ public static partial class AllocationEndpoints
     {
         v1.MapGet("/artists/{artistId:guid}/events", ListArtistEventsAsync);
         v1.MapGet("/events/{eventId:guid}", GetEventAsync);
+        MapRegistrations(v1);
 
         var admin = v1.MapGroup("/admin").RequireAuthorization(AuthSetup.StaffPolicy);
         admin.MapPost("/events", CreateEventAsync);
