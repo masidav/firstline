@@ -11,6 +11,12 @@ public sealed record MeResponse(
     Guid Id, string Handle, string Email, string? DisplayName, string? AvatarUrl, bool IsStaff, DateTime CreatedAt)
 {
     public SpotifyStatus Spotify { get; init; } = SpotifyStatus.NotConnected;
+
+    /// <summary>Primary first. Empty until the fan picks them (the app asks right after sign-up).</summary>
+    public IReadOnlyList<HubCity> HubCities { get; init; } = [];
+
+    /// <summary>When the hub cities may next be changed; null when they may be changed now.</summary>
+    public DateTime? HubCitiesChangeAvailableAt { get; init; }
 }
 
 public static partial class UserProfiles
@@ -36,6 +42,17 @@ public static partial class UserProfiles
             FROM users WHERE id = @userId AND deleted_at IS NULL
             """,
             new { userId }, transaction);
-        return me is null ? null : me with { Spotify = await SpotifyConnections.LoadStatusAsync(connection, userId, transaction) };
+        if (me is null)
+        {
+            return null;
+        }
+
+        var (hubs, changeAvailableAt) = await HubCities.LoadAsync(connection, userId, transaction);
+        return me with
+        {
+            Spotify = await SpotifyConnections.LoadStatusAsync(connection, userId, transaction),
+            HubCities = hubs,
+            HubCitiesChangeAvailableAt = changeAvailableAt,
+        };
     }
 }

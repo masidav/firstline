@@ -566,4 +566,62 @@ BEGIN
   UPDATE artists SET status = 'active' WHERE id = v_artist;
 END $$;
 
+-- ------------------------------------------------------------ hub cities (0010)
+INSERT INTO users (id, handle, email) VALUES ('00000000-0000-0000-0000-0000000000a1', 'hubfan', 'hubfan@example.test');
+
+SELECT pg_temp.expect_error($$SELECT set_hub_cities('00000000-0000-0000-0000-0000000000a1', '{}')$$, 'choose 1 to 3');
+SELECT pg_temp.expect_error(
+  $$SELECT set_hub_cities('00000000-0000-0000-0000-0000000000a1', '{us-il-chicago,ca-on-toronto,us-ny-new-york,us-tx-austin}')$$,
+  'choose 1 to 3');
+SELECT pg_temp.expect_error(
+  $$SELECT set_hub_cities('00000000-0000-0000-0000-0000000000a1', '{us-il-chicago,us-il-chicago}')$$, 'listed twice');
+SELECT pg_temp.expect_error($$SELECT set_hub_cities('00000000-0000-0000-0000-0000000000a1', '{us-xx-atlantis}')$$, 'unknown city');
+SELECT pg_temp.expect_error($$INSERT INTO user_hub_cities VALUES ('00000000-0000-0000-0000-0000000000a1', 4, 'us-il-chicago')$$,
+  'user_hub_cities_position_check');
+SELECT pg_temp.expect_error($$INSERT INTO cities (id, name, region, country) VALUES ('Chicago', 'Chicago', 'IL', 'US')$$,
+  'cities_id_check');
+
+DO $$
+DECLARE fan uuid := '00000000-0000-0000-0000-0000000000a1'; v_next timestamptz;
+BEGIN
+  ASSERT (SELECT count(*) FROM cities WHERE country = 'US') >= 80 AND (SELECT count(*) FROM cities WHERE country = 'CA') >= 15,
+         'starter list covers US and Canadian metros';
+
+  -- The first choice is free and doesn't start the weekly clock.
+  ASSERT set_hub_cities(fan, '{us-il-chicago,ca-on-toronto}') IS NULL, 'first choice: change any time';
+  ASSERT (SELECT array_agg(city_id ORDER BY position) FROM user_hub_cities WHERE user_id = fan) = '{us-il-chicago,ca-on-toronto}',
+         'stored in order, primary first';
+  ASSERT (SELECT hubs_changed_at FROM users WHERE id = fan) IS NULL, 'first choice is not a change';
+
+  -- A real change starts the clock; the same list again is not a change; a second change within a week is refused.
+  v_next := set_hub_cities(fan, '{ca-on-toronto,us-il-chicago,us-ny-new-york}');
+  ASSERT v_next BETWEEN now() + interval '7 days' - interval '1 minute' AND now() + interval '7 days', 'next change in a week';
+  ASSERT set_hub_cities(fan, '{ca-on-toronto,us-il-chicago,us-ny-new-york}') = v_next, 'same list is not a change';
+  ASSERT (SELECT array_agg(position ORDER BY position) FROM user_hub_cities WHERE user_id = fan) = '{1,2,3}', 'no gaps';
+  BEGIN
+    PERFORM set_hub_cities(fan, '{us-il-chicago}');
+    RAISE EXCEPTION 'second change within a week should fail';
+  EXCEPTION WHEN OTHERS THEN
+    ASSERT SQLERRM LIKE 'hub change limit%', SQLERRM;
+  END;
+  -- A week later it's allowed again.
+  UPDATE users SET hubs_changed_at = now() - interval '8 days' WHERE id = fan;
+  ASSERT set_hub_cities(fan, '{us-il-chicago}') IS NOT NULL, 'allowed after a week';
+
+  -- Retired cities can't be newly chosen.
+  UPDATE cities SET active = false WHERE id = 'us-tx-austin';
+  UPDATE users SET hubs_changed_at = NULL WHERE id = fan;
+  BEGIN
+    PERFORM set_hub_cities(fan, '{us-tx-austin}');
+    RAISE EXCEPTION 'retired city should be refused';
+  EXCEPTION WHEN OTHERS THEN
+    ASSERT SQLERRM LIKE 'hub cities: unknown city%', SQLERRM;
+  END;
+  UPDATE cities SET active = true WHERE id = 'us-tx-austin';
+
+  -- Account deletion removes them (location data).
+  UPDATE users SET deleted_at = now() WHERE id = fan;
+  ASSERT NOT EXISTS (SELECT 1 FROM user_hub_cities WHERE user_id = fan), 'deleted accounts lose their hub cities';
+END $$;
+
 \echo ALL INVARIANT TESTS PASSED

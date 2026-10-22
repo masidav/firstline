@@ -17,6 +17,7 @@ public static class MeEndpoints
         v1.MapGet("/me", GetAsync);
         v1.MapPatch("/me", UpdateAsync);
         v1.MapDelete("/me", DeleteAsync);
+        v1.MapHubCities();
     }
 
     private static async Task<IResult> GetAsync(ClaimsPrincipal user, NpgsqlDataSource db, CancellationToken cancellationToken)

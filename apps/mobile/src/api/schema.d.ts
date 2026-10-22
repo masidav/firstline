@@ -120,6 +120,50 @@ export interface paths {
         patch: operations["updateMe"];
         trace?: never;
     };
+    "/me/hub-cities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Choose hub cities
+         * @description Replaces the fan's hub cities: a primary city first, then up to two backups, from `GET /cities`. Shows in
+         *     these cities put the fan first in line for allocations. The first choice can be changed any time; after
+         *     that, changes are allowed once a week (`hub_cities_change_available_at` on `Me`). Sending the same list is
+         *     not a change. A registration for an allocation keeps the hubs it was made with.
+         */
+        put: operations["setHubCities"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search hub cities
+         * @description The curated list of US and Canadian metro areas a fan can choose as hub cities. Matches the start of the
+         *     name or of any word in it, or an exact state/province code (`ON`). Without `q`, lists cities by name.
+         */
+        get: operations["searchCities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me/spotify": {
         parameters: {
             query?: never;
@@ -1179,7 +1223,7 @@ export interface components {
              * @description Stable machine-readable code.
              * @enum {string}
              */
-            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
+            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
             errors?: {
                 field?: string;
                 message?: string;
@@ -1237,6 +1281,22 @@ export interface components {
             created_at: string;
             /** @description Same as `GET /me/spotify`. */
             spotify?: components["schemas"]["SpotifyStatus"];
+            /** @description Primary first. Empty until the fan chooses them (the app asks right after sign-up). */
+            hub_cities: components["schemas"]["HubCity"][];
+            /**
+             * Format: date-time
+             * @description When hub cities may next be changed; null when they may be changed now.
+             */
+            hub_cities_change_available_at?: string | null;
+        };
+        HubCity: {
+            /** @description Stable id, e.g. `us-il-chicago` */
+            id: string;
+            name: string;
+            /** @description State or province code */
+            region: string;
+            /** @description ISO 3166-1 alpha-2 */
+            country: string;
         };
         MeUpdate: {
             handle?: string;
@@ -2073,6 +2133,69 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    setHubCities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    city_ids: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Updated profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+            /** @description Changed less than a week ago (`code: hub_change_limit`); `Retry-After` is when the next change is allowed */
+            429: {
+                headers: {
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    searchCities: {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Matching cities */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["HubCity"][];
+                    };
                 };
             };
             422: components["responses"]["ValidationFailed"];

@@ -21,6 +21,7 @@ export default function Index() {
     case 'signedOut':
       return <Redirect href="/sign-in" />;
     case 'signedIn':
-      return <Redirect href="/home" />;
+      // A hub city is required before anything else (decided 2026-10-20).
+      return <Redirect href={state.me.hub_cities.length === 0 ? '/hub-cities' : '/home'} />;
   }
 }
