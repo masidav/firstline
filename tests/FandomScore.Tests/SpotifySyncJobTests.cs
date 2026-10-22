@@ -260,9 +260,61 @@ public sealed class SpotifySyncJobTests(PostgresFixture postgres) : IAsyncLifeti
             "SELECT sync_state FROM spotify_connections WHERE user_id = @stale", new { stale }));
     }
 
-    private async Task RunAsync(int attempt = 1)
+    [Fact]
+    public async Task Top_artists_nobody_tracks_are_added_for_the_fan_and_start_onboarding()
     {
-        var job = new SpotifySyncJob(_db, _spotify.Client(), _protector, Options.Create(FakeSpotify.Options()),
+        // X is unknown here; A is tracked already. Needs the client secret, like adding by hand.
+        _spotify.Artists.Add(new FakeSpotify.Artist(ArtistX, "Artist X", "indie"));
+        _spotify.TopArtistIds.AddRange([ArtistX, ArtistA]);
+        var options = FakeSpotify.Options();
+        options.ClientSecret = "test-secret";
+
+        await RunAsync(options: options);
+
+        await using var connection = await _db.OpenConnectionAsync();
+        var added = await connection.QuerySingleAsync<(string Name, string Status, Guid? AddedBy, string? ImageUrl)>(
+            "SELECT name, status::text, added_by, image_url FROM artists WHERE spotify_artist_id = @ArtistX", new { ArtistX });
+        Assert.Equal(("Artist X", "onboarding", _userId, $"https://i.scdn.co/{ArtistX}-320"), added);
+        Assert.Equal(1, await connection.ExecuteScalarAsync<int>(
+            "SELECT count(*) FROM jobs WHERE kind = 'artist.onboard' AND payload->>'artist_id' = (SELECT id::text FROM artists WHERE spotify_artist_id = @ArtistX)",
+            new { ArtistX }));
+        Assert.Equal(1, (await StateAsync()).TopArtistsAdded);
+        // Still onboarding, so no signals for X yet; A's rank is stored as before.
+        Assert.Equal((short)2, Assert.Single(await SignalsAsync()).TopArtistRank);
+
+        // A second sync finds X tracked and adds nothing.
+        await RunAsync(options: options);
+        Assert.Equal(0, (await StateAsync()).TopArtistsAdded);
+        Assert.Equal(3, await connection.ExecuteScalarAsync<int>("SELECT count(*) FROM artists"));
+    }
+
+    [Fact]
+    public async Task Auto_tracking_is_capped_and_off_without_the_client_secret()
+    {
+        _spotify.TopArtistIds.AddRange(["sp-top-1", "sp-top-2", "sp-top-3"]);
+
+        // Without a client secret the artists could never load a catalog, so none is added.
+        await RunAsync();
+        Assert.Equal(0, (await StateAsync()).TopArtistsAdded);
+
+        var options = FakeSpotify.Options();
+        options.ClientSecret = "test-secret";
+        options.AutoTrackTopArtists = 2;
+        await RunAsync(options: options);
+        Assert.Equal(2, (await StateAsync()).TopArtistsAdded);
+        await using var connection = await _db.OpenConnectionAsync();
+        Assert.Equal(["sp-top-1", "sp-top-2"], await connection.QueryAsync<string>(
+            "SELECT spotify_artist_id FROM artists WHERE added_by = @_userId ORDER BY tracked_at, spotify_artist_id", new { _userId }));
+
+        // The next sync continues with the rest, best rank first.
+        await RunAsync(options: options);
+        Assert.Equal(1, (await StateAsync()).TopArtistsAdded);
+        Assert.Equal(3, await connection.ExecuteScalarAsync<int>("SELECT count(*) FROM artists WHERE added_by = @_userId", new { _userId }));
+    }
+
+    private async Task RunAsync(int attempt = 1, SpotifyOptions? options = null)
+    {
+        var job = new SpotifySyncJob(_db, _spotify.Client(options), _protector, Options.Create(options ?? FakeSpotify.Options()),
             NullLogger<SpotifySyncJob>.Instance);
         await job.RunAsync(new ClaimedJob(1, SpotifySyncJob.JobKind, JsonSerializer.Serialize(new { user_id = _userId }), attempt, 10),
             CancellationToken.None);
@@ -294,7 +346,7 @@ public sealed class SpotifySyncJobTests(PostgresFixture postgres) : IAsyncLifeti
             new { _userId })];
     }
 
-    private sealed record StateRow(string SyncState, string? SyncError, int TrackedArtistsFound, bool Synced);
+    private sealed record StateRow(string SyncState, string? SyncError, int TrackedArtistsFound, bool Synced, int TopArtistsAdded);
 
     private async Task<StateRow> StateAsync()
     {
@@ -302,7 +354,7 @@ public sealed class SpotifySyncJobTests(PostgresFixture postgres) : IAsyncLifeti
         return await connection.QuerySingleAsync<StateRow>(
             """
             SELECT sync_state AS SyncState, sync_error AS SyncError, tracked_artists_found AS TrackedArtistsFound,
-                   last_synced_at IS NOT NULL AS Synced
+                   last_synced_at IS NOT NULL AS Synced, top_artists_added AS TopArtistsAdded
             FROM spotify_connections WHERE user_id = @_userId
             """,
             new { _userId });

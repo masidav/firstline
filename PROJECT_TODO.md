@@ -67,10 +67,11 @@ Details: [Artists](services/api/src/features/artists/TODO.md) · [Artist search 
       /v1/me/spotify`, worker sync to `idle` with no error, 1 tracked artist found (liked 11, playlist 8,
       albums 11, top rank 17, recent 0).
 - [ ] Mobile connect screen (see Spotify mobile UI).
-- [ ] A Spotify sync should cover every artist in the fan's top listens and in their "On Repeat" playlist, not only
-      the artists they already track. *Open decision (added 2026-10-22):* this meets the "only tracked artists"
-      rule, so decide whether those artists are tracked automatically (onboarded like `POST /v1/artists`) or whether
-      the sync keeps discovered-but-untracked artists in a separate, lighter record.
+- [x] A Spotify sync adds the fan's top artists that nobody tracks yet, so their page is lively right after
+      connecting: tracked for the fan like `POST /v1/artists`, then onboarded and scored on the next sync
+      (`SpotifyStatus.top_artists_added`, `GET /artists?added_by_me=true`; decided 2026-10-22, ADR 0005). Verified
+      2026-10-22 with a faked Spotify (`SpotifySyncJobTests`) and in the fan app tests. "On Repeat" cannot be read
+      by development-mode apps since Spotify's November 2024 API changes, so top artists are the source.
 
 Details: [Spotify API feature](services/api/src/features/spotify-sync/TODO.md) · [Spotify integration](packages/spotify/TODO.md) · [Spotify mobile UI](apps/mobile/src/features/spotify/TODO.md) · [Sync worker](workers/spotify-sync/TODO.md)
 
@@ -248,6 +249,8 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
 - [x] Account linking: no. One email per account; a second provider with the same email gets `409 email_in_use`. (Decided 2026-10-18.)
 - [ ] Confirm exact Spotify signals available under current API access. Checked 2026-10-18 for development mode
       (ADR 0005): saved tracks, top artists, last 50 plays, own/collaborative playlists. Track popularity is gone.
+- [x] Untracked artists found in a fan's Spotify top artists are tracked automatically for that fan (same path and
+      daily limit as adding by hand), never stored as untracked listening data (decided 2026-10-22, ADR 0005).
 - [ ] Decide how Spotify signals credit co-credited tracks. The sync counts the primary artist only for now
       (`SpotifySignals.Reduce`).
 - [ ] Decide how to handle co-credited albums and collaborations.

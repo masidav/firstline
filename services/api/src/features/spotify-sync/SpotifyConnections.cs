@@ -7,9 +7,9 @@ namespace FandomScore.Api.Features.SpotifySync;
 /// <summary>openapi SpotifyStatus. <see cref="SyncError"/> is a stable code (see migration 0005).</summary>
 public sealed record SpotifyStatus(
     bool Connected, string[] Scopes, DateTime? ConnectedAt, DateTime? LastSyncedAt, string SyncState, string? SyncError,
-    int TrackedArtistsFound)
+    int TrackedArtistsFound, int TopArtistsAdded)
 {
-    public static readonly SpotifyStatus NotConnected = new(false, [], null, null, "idle", null, 0);
+    public static readonly SpotifyStatus NotConnected = new(false, [], null, null, "idle", null, 0, 0);
 }
 
 public static class SpotifyConnections
@@ -20,13 +20,15 @@ public static class SpotifyConnections
         var row = await connection.QuerySingleOrDefaultAsync<StatusRow>(
             """
             SELECT scopes AS Scopes, connected_at AS ConnectedAt, last_synced_at AS LastSyncedAt,
-                   sync_state AS SyncState, sync_error AS SyncError, tracked_artists_found AS TrackedArtistsFound
+                   sync_state AS SyncState, sync_error AS SyncError, tracked_artists_found AS TrackedArtistsFound,
+                   top_artists_added AS TopArtistsAdded
             FROM spotify_connections WHERE user_id = @userId
             """,
             new { userId }, transaction);
         return row is null
             ? SpotifyStatus.NotConnected
-            : new SpotifyStatus(true, row.Scopes, row.ConnectedAt, row.LastSyncedAt, row.SyncState, row.SyncError, row.TrackedArtistsFound);
+            : new SpotifyStatus(true, row.Scopes, row.ConnectedAt, row.LastSyncedAt, row.SyncState, row.SyncError, row.TrackedArtistsFound,
+                row.TopArtistsAdded);
     }
 
     // Dapper cannot pass a text[] column to a record constructor, so it fills properties here.
@@ -43,6 +45,8 @@ public static class SpotifyConnections
         public string? SyncError { get; init; }
 
         public int TrackedArtistsFound { get; init; }
+
+        public int TopArtistsAdded { get; init; }
     }
 
     public static ApiProblemException NotConnected() =>

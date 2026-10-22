@@ -326,6 +326,25 @@ public sealed class ArtistApiTests(PostgresFixture postgres) : IAsyncLifetime, I
     }
 
     [Fact]
+    public async Task Listing_can_be_limited_to_artists_the_fan_added()
+    {
+        var token = await SignInAsync("fan_one");
+        await JsonAsync(await AddAsync(token, GeeseId), HttpStatusCode.Created);
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            await connection.ExecuteAsync("INSERT INTO artists (name, spotify_artist_id) VALUES ('Someone Else''s Pick', 'sp-other')");
+        }
+
+        async Task<List<string?>> NamesAsync(string query) =>
+            (await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/artists?{query}", token), HttpStatusCode.OK))
+            .GetProperty("items").EnumerateArray().Select(i => i.GetProperty("name").GetString()).ToList();
+
+        Assert.Equal(["Geese"], await NamesAsync("status=onboarding&added_by_me=true"));
+        Assert.Equal(["Geese", "Someone Else's Pick"], await NamesAsync("status=onboarding&sort=name"));
+        Assert.Equal(["Geese", "Someone Else's Pick"], await NamesAsync("status=onboarding&sort=name&added_by_me=false"));
+    }
+
+    [Fact]
     public async Task Listing_pages_with_a_cursor()
     {
         var token = await SignInAsync("fan_one");

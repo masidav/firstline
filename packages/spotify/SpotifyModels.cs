@@ -17,8 +17,12 @@ public sealed record SpotifySavedTrack(SpotifyTrack Track, DateTimeOffset? Saved
 public sealed record SpotifyLibrary(
     IReadOnlyList<SpotifySavedTrack> SavedTracks,
     IReadOnlyList<SpotifyTrack> PlaylistTracks,
-    IReadOnlyList<string> TopArtistIds,
-    IReadOnlyList<SpotifyTrack> RecentlyPlayed);
+    IReadOnlyList<SpotifyArtist> TopArtists,
+    IReadOnlyList<SpotifyTrack> RecentlyPlayed)
+{
+    /// <summary>Top artists' Spotify ids in rank order (index + 1 is the rank).</summary>
+    public IReadOnlyList<string> TopArtistIds => [.. TopArtists.Select(a => a.Id)];
+}
 
 /// <summary>An artist from search or lookup. <see cref="ImageUrl"/> is the smallest image at least 300 px wide.</summary>
 public sealed record SpotifyArtist(string Id, string Name, string? ImageUrl, IReadOnlyList<string> Genres);

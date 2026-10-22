@@ -51,6 +51,13 @@ public sealed class SpotifyOptions
     /// <summary>openapi.yaml promises one manual sync per 15 minutes per user.</summary>
     public TimeSpan ManualSyncInterval { get; set; } = TimeSpan.FromMinutes(15);
 
+    /// <summary>
+    /// How many of the fan's Spotify top artists a sync adds to the tracked list when they are not tracked yet
+    /// (they onboard like a manual add, then score on the fan's next sync). 0 turns this off. Needs
+    /// <see cref="ClientSecret"/>, like adding by hand.
+    /// </summary>
+    public int AutoTrackTopArtists { get; set; } = 20;
+
     /// <summary>Saved tracks read per sync (50 per request).</summary>
     public int MaxSavedTracks { get; set; } = 5000;
 
