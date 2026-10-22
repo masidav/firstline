@@ -2,6 +2,8 @@ using System.Text.Json;
 using FandomScore.Api.Features.AlbumJournal;
 using FandomScore.Api.Features.Artists;
 using FandomScore.Api.Features.Authentication;
+using FandomScore.Api.Features.Comments;
+using FandomScore.Api.Features.Lists;
 using FandomScore.Api.Features.Scoring;
 using FandomScore.Api.Features.SpotifySync;
 using FandomScore.Api.Features.Stats;
@@ -25,6 +27,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddAuth(builder.Configuration);
 builder.Services.AddSpotify(builder.Configuration);
 builder.Services.AddArtists();
+builder.Services.AddComments();
 builder.Services.AddApiProblems();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower);
@@ -54,6 +57,8 @@ v1.MapSpotify();
 v1.MapArtists();
 v1.MapAlbums();
 v1.MapJournal();
+v1.MapComments();
+v1.MapLists();
 v1.MapScoring();
 v1.MapStats();
 

@@ -6,14 +6,19 @@ import { unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Loading, Screen, Title } from '../../ui/components';
-import { space } from '../../ui/theme';
+import { colors, space } from '../../ui/theme';
 import { AlbumRow } from './AlbumRow';
 import { type AlbumLog, formatRating } from './journal';
+import { outbox, type PendingLog } from './outbox';
 
-/** The fan's diary (GET /me/logs), newest listen first, with delete. Tap an entry to open the album and edit. */
+/**
+ * The fan's diary (GET /me/logs), newest listen first, with delete. Tap an entry to open the album and edit.
+ * Logs saved offline are sent first (outbox) and shown at the top until they get through.
+ */
 export function JournalScreen() {
   const { session } = useSession();
   const [logs, setLogs] = useState<AlbumLog[] | null>(null);
+  const [pending, setPending] = useState<PendingLog[]>(() => outbox().list());
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [error, setError] = useState<string>();
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -22,6 +27,10 @@ export function JournalScreen() {
     async (cursor?: string) => {
       setError(undefined);
       try {
+        if (!cursor && outbox().list().some((entry) => !entry.failure)) {
+          await outbox().flush(session.api);
+          setPending(outbox().list());
+        }
         const page = unwrap(await session.api.GET('/me/logs', { params: { query: { limit: 50, ...(cursor ? { cursor } : {}) } } }));
         setLogs((current) => (cursor && current ? [...current, ...page.items] : page.items));
         setNextCursor(page.next_cursor);
@@ -51,9 +60,30 @@ export function JournalScreen() {
 
   return (
     <Screen>
-      <Button label="Back to home" kind="secondary" onPress={() => router.replace('/home')} />
+      <View style={styles.actions}>
+        <Button label="Back to home" kind="secondary" onPress={() => router.replace('/home')} />
+        <Button label="Your lists" kind="secondary" onPress={() => router.push('/lists')} />
+      </View>
       <Title>Your journal</Title>
       <ErrorText>{error}</ErrorText>
+      {pending.map((entry) => (
+        <View key={entry.key} style={styles.pending}>
+          <Body>{entry.albumTitle}</Body>
+          <Body muted>{entry.failure ? `Not saved: ${entry.failure}` : 'Waiting to send'}</Body>
+          <View style={styles.actions}>
+            {!entry.failure && <Button label="Send now" kind="secondary" onPress={() => void load()} />}
+            <Button
+              label="Discard"
+              accessibilityLabel={`Discard offline log of ${entry.albumTitle}`}
+              kind="danger"
+              onPress={() => {
+                outbox().remove(entry.key);
+                setPending(outbox().list());
+              }}
+            />
+          </View>
+        </View>
+      ))}
       {!logs && !error && <Loading />}
       {logs?.length === 0 && <Body muted>Nothing logged yet. Open an album from one of your artists and log it.</Body>}
       {logs?.map((log) => (
@@ -87,5 +117,6 @@ export function JournalScreen() {
 
 const styles = StyleSheet.create({
   entry: { gap: space.sm },
-  actions: { alignItems: 'flex-end' },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, justifyContent: 'flex-end' },
+  pending: { gap: space.xs, padding: space.md, borderRadius: 12, backgroundColor: colors.surface },
 });
