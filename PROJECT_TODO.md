@@ -71,10 +71,13 @@ Details: [Artists](services/api/src/features/artists/TODO.md) · [Artist search 
 Details: [Spotify API feature](services/api/src/features/spotify-sync/TODO.md) · [Spotify integration](packages/spotify/TODO.md) · [Spotify mobile UI](apps/mobile/src/features/spotify/TODO.md) · [Sync worker](workers/spotify-sync/TODO.md)
 
 ## Phase 5 — Scores and ranking
-- [ ] Implement append-only points ledger and configurable scoring rules.
-- [ ] Implement raw score calculation and diminishing returns.
-- [ ] Implement synthetic baseline generation and real/synthetic percentile blending.
-- [ ] Store and refresh computed scores for active artists only.
+- [x] Implement append-only points ledger and configurable scoring rules. Weights are relative shares in
+      `scoring_rules`, an even split across the five Spotify signals (decided 2026-10-21); change them with
+      `testScripts/scoringWeights.sh` or `PUT /v1/admin/scoring-rules/{key}`, and every artist is rescored.
+- [x] Implement raw score calculation and diminishing returns. Formula: `workers/scoring/README.md`.
+- [x] Implement synthetic baseline generation and real/synthetic percentile blending.
+- [x] Store and refresh computed scores for active artists only. Worker `scoring.score_artist` after syncs,
+      weight changes, on request, and daily. Verified 2026-10-21: `dotnet test` 128/128.
 - [ ] Label estimates in the UI and test score edge cases.
 
 Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring worker](workers/scoring/TODO.md) · [Fandom score UI](apps/mobile/src/features/fandom-score/TODO.md)
@@ -188,6 +191,24 @@ Can run in parallel with any phase; the first two items unblock the rest.
 
 Details: [Agent tooling](docs/agent-tooling.md) · [Developer tooling](docs/TODO.md)
 
+## Phase 15 — User stats
+A fan's numbers in one list: on their own profile in full, and on other fans' profiles subject to visibility
+(followers see top fandom stats, decided 2026-10-20). Read from stored state and the ledger, never from Spotify
+at request time.
+- [ ] Define the stat list and its sources: per tracked artist (fandom score, percentile, rank among fans, estimated
+      flag; Phase 5), journal totals (albums logged, relistens, reviews, lists, comments; Phase 6), proof totals
+      (verified tickets, merch, screenshots; Phase 7), listening totals for tracked artists only (liked tracks,
+      playlist tracks, distinct albums, recent plays; Phase 4), points total from the ledger, followers and
+      following (Phase 8).
+- [ ] `GET /me/stats` and `GET /users/{userId}/stats` in `openapi.yaml`; counts exclude soft-deleted content and
+      reversed awards.
+- [ ] Visibility: own stats in full; other fans' stats follow their profile visibility, followers-only stats for
+      followers, nothing for blocked fans.
+- [ ] Stats screen in the fan app (own profile and other fans' profiles), with estimated scores labelled.
+- [ ] Tests for counts after reversals and deletions, visibility, and blocked fans.
+
+Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps/mobile/src/features/stats/TODO.md)
+
 ## Cross-cutting requirements
 - [ ] Keep all score awards idempotent and ledger-based.
 - [ ] Do not store untracked-artist listening data.
@@ -204,8 +225,10 @@ Details: [Agent tooling](docs/agent-tooling.md) · [Developer tooling](docs/TODO
       ([ADR 0006](docs/adr/0006-album-catalog.md), decided 2026-10-21). MusicBrainz, Apple Music, and Discogs rejected there.
 - [ ] Confirm ticketing partner and purchase-confirmation capability.
 - [ ] Confirm archive meaning and user-facing archive requirements.
+- [ ] Decide how much ledger points (journal, proof of fandom) weigh against the 0–100 Spotify score. For now
+      they are added on top.
 - [ ] Confirm verification thresholds and baseline blend parameters. *Provisional defaults in code since 2026-10-21*
-      (`Baseline__MedianScore` 5, `Baseline__Sigma` 1, `Baseline__BlendK` 200; stored baselines carry `provisional: true`).
+      (`Baseline__MedianScore` 15 on the 0–100 score scale since migration 0008, `Baseline__Sigma` 1, `Baseline__BlendK` 200; stored baselines carry `provisional: true`).
 - [x] Define data retention and account deletion behavior. Deleted accounts: personal data scrubbed at once, content hard-deleted after 30 days, comments others replied to kept as "[deleted]", ledger kept anonymously (decided 2026-10-18). File retention (quarantine/archive) still to define with submissions.
 - [x] Artist add limit: 50 new artists per user per UTC day (decided 2026-10-18).
 - [x] Account linking: no. One email per account; a second provider with the same email gets `409 email_in_use`. (Decided 2026-10-18.)
@@ -215,6 +238,7 @@ Details: [Agent tooling](docs/agent-tooling.md) · [Developer tooling](docs/TODO
       (`SpotifySignals.Reduce`).
 - [ ] Decide how to handle co-credited albums and collaborations.
 - [ ] Confirm the product and company name (summary proposes TrueFan Access or VerifyTicket; repo uses Fandom Score).
+- [ ] Decide which user stats are public by default and which are followers-only (Phase 15).
 - [ ] Choose the primary ticketing model: white-labeled checkout through ticketer APIs, or direct allocation links.
 - [ ] Confirm which primary ticketers will grant API access for reserved inventory, and on what terms.
 - [ ] Confirm Spotify's developer terms allow using listening data to decide ticket eligibility, and that the
