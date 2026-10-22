@@ -1,23 +1,23 @@
-# Spotify mobile feature
+# Spotify (fan app)
 
-## Purpose
-This folder owns the spotify mobile feature responsibilities for Fandom Score.
+Connect, sync, and disconnect the fan's Spotify account (`SpotifyScreen`, route `/spotify`). The app never holds a
+Spotify token or client secret: it runs Spotify's PKCE authorization and sends the code to `PUT /v1/me/spotify`,
+and the API exchanges it ([ADR 0005](../../../../../docs/adr/0005-spotify-integration.md)).
 
-## Responsibilities
-- Implement the feature's domain behavior and interfaces.
-- Validate inputs and enforce authorization at the correct boundary.
-- Handle expected failures and avoid duplicate effects on retries.
-- Keep implementation and automated tests close to the feature where practical.
+## Connect flow
+- **Web** (`spotifyRedirect.ts`): a full-page redirect to Spotify and back to `/spotify-callback`, which checks the
+  state and sends the code. Needs a secure context (HTTPS, or `http://127.0.0.1` / `localhost`) for `crypto.subtle`.
+  Redirect: `<origin>/spotify-callback`.
+- **iOS/Android** (`spotifyRedirect.native.ts`): Spotify opens in an in-app auth session (expo-web-browser) and
+  returns on `fandomscore://spotify-callback`; the flow finishes in place. PKCE uses expo-crypto. Closing the
+  browser cancels quietly.
 
-## Dependencies
-Review the corresponding `TODO.md` and the repository's architecture documentation for upstream dependencies, provider choices, database contracts, and unresolved decisions.
+Every redirect URI must be registered in the Spotify dashboard and listed in the API's `Spotify__RedirectUris`.
+Development-mode Spotify apps only allow accounts added under Users in the dashboard (5 at most).
 
-## Development
-1. Inspect existing code and tests before changing files.
-2. Implement tasks in `TODO.md` in dependency order.
-3. Add tests for success, failure, authorization, and edge cases.
-4. Run tests and document actual results.
-5. Update documentation and the root `PROJECT_TODO.md`.
+## Configuration
+`EXPO_PUBLIC_SPOTIFY_CLIENT_ID` (the dashboard's client ID; not a secret). Without it the screen says Spotify isn't
+set up for this build.
 
-## Scope note
-This README is a starter document. Replace generic details with the real module interfaces and setup instructions once the implementation is inspected.
+## Known limitations
+- The native flow has not run on a device yet (needs a development build).

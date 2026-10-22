@@ -3,14 +3,17 @@
 Use `- [x]` only after the task is implemented and verified. Adapt this checklist to existing code; do not duplicate working functionality.
 
 ## Implementation checklist
-- [x] Build connect/disconnect Spotify UI using the API's OAuth flow. (Web: PKCE with a full-page redirect. iOS: `spotifyRedirect.native.ts` still to build.)
+- [x] Build connect/disconnect Spotify UI using the API's OAuth flow. (Web: PKCE with a full-page redirect. Native: an in-app auth session, `spotifyRedirect.native.ts`.)
 - [x] Explain the requested permissions and handle cancellation or denial.
 - [x] Show connection state and last successful sync time.
 - [x] Provide a manual sync action if supported and prevent duplicate requests.
 - [x] Show sync progress and recoverable error states. (polls every 3 s while queued/running)
 - [x] Handle reauthorization when refresh fails or scopes are missing.
 - [x] Add tests for connect, cancel, disconnect, sync, and error states.
-- [ ] Native (iOS) connect with expo-web-browser and a `fandomscore://spotify-callback` redirect.
+- [ ] Native (iOS) connect with expo-web-browser and a `fandomscore://spotify-callback` redirect. *Built 2026-10-21*
+      (expo-web-browser auth session, expo-crypto PKCE; Jest 5 tests with the RFC 7636 vector; `expo export --platform ios`
+      bundles). Not yet run on a device: needs a dev build (Apple Developer Program), and the redirect registered in the
+      Spotify dashboard and added to `Spotify__RedirectUris`.
 - [ ] Try with a real Spotify account (allowlisted in the Spotify dashboard).
 
 ## Verification

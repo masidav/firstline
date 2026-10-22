@@ -50,8 +50,14 @@ export function SpotifyScreen() {
     setBusy('connect');
     setError(undefined);
     try {
-      await startSpotifyConnect(config.spotifyClientId);
-      // The page is now leaving for Spotify.
+      const outcome = await startSpotifyConnect(config.spotifyClientId, async (body) =>
+        unwrap(await session.api.PUT('/me/spotify', { body })),
+      );
+      if (outcome === 'redirecting') return; // the page is leaving for Spotify
+      setBusy(null);
+      if (outcome === 'cancelled') return;
+      if (outcome.ok) show(outcome.status);
+      else setError(outcome.message);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setBusy(null);

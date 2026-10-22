@@ -36,6 +36,12 @@ export function authorizeUrl(options: { clientId: string; redirectUri: string; s
 export type ConnectResult = { ok: true; status: SpotifyStatus } | { ok: false; message: string };
 
 /**
+ * What starting a connect leads to: on the web the page leaves for Spotify (`redirecting`) and the callback route
+ * finishes; in the native app the flow finishes in place, unless the fan closes the browser (`cancelled`).
+ */
+export type ConnectOutcome = ConnectResult | 'redirecting' | 'cancelled';
+
+/**
  * Handles Spotify's redirect back: checks the state matches the attempt this browser started (so another site
  * can't make us connect *its* Spotify account), then sends the code to the API.
  */
