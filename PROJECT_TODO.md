@@ -46,8 +46,9 @@ Details: [Authentication](services/api/src/features/authentication/TODO.md) · [
       `POST /v1/artists`: name and image from Spotify, new artists start `onboarding`. Verified 2026-10-20 with a faked Spotify (ArtistApiTests).
 - [x] Home screen search (mobile): type to filter tracked artists (`GET /v1/artists`), Enter asks Spotify and offers Add.
       Verified 2026-10-21: `dotnet test` 94/94, mobile `npm test` 33/33.
-- [ ] Check artist search and add against real Spotify (app token from the client secret), using
-      `tools/dev/spotify_connect.py search` and `track-artist`.
+- [x] Check artist search and add against real Spotify (app token from the client secret). Verified 2026-10-21 on
+      the local stack: `spotify_connect.py search radiohead` returned 10 real results; in the web app (Chrome,
+      phone size) Enter on "radiohead" listed Spotify matches, Add tracked Radiohead as onboarding with its image.
 - [x] Background job queue: Postgres `jobs` table and `workers/` process ([ADR 0004](docs/adr/0004-postgres-job-queue.md)). Verified 2026-10-18: JobQueueTests 9/9.
 - [ ] Implement asynchronous artist onboarding and failure recovery.
 - [ ] Load album/track catalog and seed a baseline before activation. Catalog source and rules: [ADR 0006](docs/adr/0006-album-catalog.md).

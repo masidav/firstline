@@ -18,6 +18,7 @@ The search lives on the home screen (`src/features/home/HomeScreen.tsx`): typing
 ## Verification
 - [x] Add or update automated tests for the behavior above.
 - [x] Run the relevant tests and record actual results. 2026-10-21: `npm test` 33/33 (HomeScreen 6), `npm run typecheck` clean.
-      Not yet clicked through against real Spotify (no client secret in the local `.env`).
+      2026-10-21: clicked through in Chrome against the local stack and real Spotify (search, Enter, Add, then
+      the added artist shows as "Getting ready").
 - [ ] Update the feature README with setup, interfaces, dependencies, and known limitations.
 - [ ] Update `PROJECT_TODO.md` when this feature reaches a verified milestone.
