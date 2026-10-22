@@ -4,9 +4,9 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 
 ## Implementation checklist
 - [ ] Accept only a valid artist record in onboarding status.
-- [ ] Fetch artist albums and tracks from the chosen catalog provider.
-- [ ] Optionally resolve MusicBrainz identifiers and artist links if that decision is approved.
-- [ ] Derive baseline inputs from permitted public proxy metrics and record their provenance.
+- [ ] Fetch artist albums and tracks from the chosen catalog provider. (Spotify, one market, primary artist only: [ADR 0006](../../docs/adr/0006-album-catalog.md).)
+- [ ] Optionally resolve MusicBrainz identifiers and artist links if that decision is approved. *Not now (ADR 0006, 2026-10-21); the columns stay empty.*
+- [ ] Derive baseline inputs from permitted public proxy metrics and record their provenance. (Spotify no longer returns followers or popularity; catalog size and our own data only, ADR 0006.)
 - [ ] Generate and persist a synthetic baseline curve and blend parameter.
 - [ ] Verify that a baseline exists before activating the artist.
 - [ ] Mark the artist active and stamp activated_at only after required work succeeds.

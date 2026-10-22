@@ -6,6 +6,7 @@
   `services/api/src/features/spotify-sync` (endpoints), `services/api/src/features/artists` (search and add),
   `workers/spotify-sync` (jobs), `database/migrations/0005_spotify_sync.sql`.
 - **Contract:** `openapi.yaml`, `/me/spotify`, `/me/spotify/sync`, `/artists/search`, and `POST /artists`.
+- **Related:** [ADR 0006](0006-album-catalog.md) uses the same app token for the album catalog.
 
 ## Decision
 

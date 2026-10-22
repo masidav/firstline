@@ -4,7 +4,7 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 
 ## Implementation checklist
 - [ ] Implement album search and metadata lookup for tracked artists only.
-- [ ] Use the selected catalog provider and comply with its artwork, attribution, and caching terms.
+- [ ] Use the selected catalog provider and comply with its artwork, attribution, and caching terms. (Spotify; contract additions and rules in [ADR 0006](../../../../../docs/adr/0006-album-catalog.md).)
 - [ ] Implement create, read, update, and delete/soft-delete behavior for album logs as defined by the product.
 - [ ] Validate ratings as integer values from 1 to 10, representing half-star increments.
 - [ ] Support optional review text up to the specified limit and validate listen dates.

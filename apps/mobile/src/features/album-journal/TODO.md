@@ -9,7 +9,7 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Provide edit and delete/soft-delete interactions according to API behavior.
 - [ ] Persist offline journal changes locally and show pending-sync status.
 - [ ] Reconcile server errors and conflicts without silently losing user entries.
-- [ ] Display cached album metadata and graceful missing-artwork states.
+- [ ] Display cached album metadata and graceful missing-artwork states. (Cover art unaltered, Spotify logo and album link on every catalog screen, no cover art in share images: [ADR 0006](../../../../../docs/adr/0006-album-catalog.md).)
 - [ ] Add component and offline-sync tests.
 
 ## Verification

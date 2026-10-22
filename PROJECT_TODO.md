@@ -50,7 +50,7 @@ Details: [Authentication](services/api/src/features/authentication/TODO.md) · [
       `tools/dev/spotify_connect.py search` and `track-artist`.
 - [x] Background job queue: Postgres `jobs` table and `workers/` process ([ADR 0004](docs/adr/0004-postgres-job-queue.md)). Verified 2026-10-18: JobQueueTests 9/9.
 - [ ] Implement asynchronous artist onboarding and failure recovery.
-- [ ] Load album/track catalog and seed a baseline before activation.
+- [ ] Load album/track catalog and seed a baseline before activation. Catalog source and rules: [ADR 0006](docs/adr/0006-album-catalog.md).
 
 Details: [Artists](services/api/src/features/artists/TODO.md) · [Artist search UI](apps/mobile/src/features/artist-search/TODO.md) · [Artist onboarding worker](workers/artist-onboarding/TODO.md)
 
@@ -77,7 +77,7 @@ Details: [Spotify API feature](services/api/src/features/spotify-sync/TODO.md) �
 Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring worker](workers/scoring/TODO.md) · [Fandom score UI](apps/mobile/src/features/fandom-score/TODO.md)
 
 ## Phase 6 — Journal and community
-- [ ] Implement album metadata cache and album logs.
+- [ ] Implement album metadata cache and album logs. Provider, caching, artwork, and attribution rules: [ADR 0006](docs/adr/0006-album-catalog.md).
 - [ ] Implement ratings, reviews, relistens, visibility, and offline sync.
 - [ ] Implement ordered album lists.
 - [ ] Implement comments, replies, anti-abuse rules, and reward reversals.
@@ -196,7 +196,9 @@ Details: [Agent tooling](docs/agent-tooling.md) · [Developer tooling](docs/TODO
 
 ## Open decisions
 - [x] Confirm backend framework and job-queue choice. ASP.NET Core ([ADR 0001](docs/adr/0001-backend-csharp-dotnet.md)); small Postgres queue ([ADR 0004](docs/adr/0004-postgres-job-queue.md)).
-- [ ] Confirm album catalog provider and its caching/artwork terms.
+- [x] Confirm album catalog provider and its caching/artwork terms. Spotify (app token), minimal metadata cache refreshed weekly,
+      removed releases delisted not deleted, cover art hotlinked and unaltered, Spotify logo and link on catalog screens
+      ([ADR 0006](docs/adr/0006-album-catalog.md), decided 2026-10-21). MusicBrainz, Apple Music, and Discogs rejected there.
 - [ ] Confirm ticketing partner and purchase-confirmation capability.
 - [ ] Confirm archive meaning and user-facing archive requirements.
 - [ ] Confirm verification thresholds and baseline blend parameters.

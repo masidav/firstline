@@ -7,7 +7,7 @@
 - **Background workers:** Spotify sync, artist onboarding, score computation, verification, redaction/archive, notifications.
 - **Redis:** cache/fast score lookup and/or job infrastructure only if selected by the project.
 - **Object storage:** quarantined originals and redacted archive files.
-- **External integrations:** Spotify, album catalog, ticketing partner, OCR/vision, native sharing.
+- **External integrations:** Spotify (listening signals and album catalog), ticketing partner, OCR/vision, native sharing.
 
 ## Architectural rules
 - Input services persist normalized signals; scoring consumes stored signals and ledger events.
@@ -21,7 +21,7 @@
 
 ## Decisions to confirm
 - Backend language/framework and job queue.
-- Album metadata provider and permitted artwork/cache behavior.
+- Album metadata provider and permitted artwork/cache behavior. **Decided:** Spotify, see [ADR 0006](docs/adr/0006-album-catalog.md).
 - Ticketing partner and purchase-confirmation capabilities.
 - Archive's exact product meaning.
 - Verification thresholds and baseline blend parameters.
