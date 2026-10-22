@@ -38,4 +38,4 @@ Allocation registration opens at announced times, so traffic arrives in sharp sp
 - Running Cloud SQL with high availability roughly doubles the database cost. Use it in prod only.
 - Kubernetes adds operational overhead compared with Cloud Run. GKE was chosen for control over workloads,
   networking, and scaling during on-sales. Cloud Run stays a fallback for small, stateless pieces.
-- Dockerfiles, manifests, and Terraform don't exist yet. They are Phase 12 work in `infrastructure/TODO.md`.
+- The Dockerfile, manifests, and Terraform live in `Dockerfile` and `infrastructure/` (see its README); applying them to real projects is tracked in `infrastructure/TODO.md`.

@@ -1,0 +1,94 @@
+# External HTTPS entry point: global Application Load Balancer managed by the GKE Gateway controller,
+# certificate from Certificate Manager, Cloud Armor on the API backend. Terraform owns the address,
+# certificate map, and security policy; overlays fill in their names.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: api
+  annotations:
+    networking.gke.io/certmap: set-by-overlay
+spec:
+  gatewayClassName: gke-l7-global-external-managed
+  addresses:
+    - type: networking.gke.io/named-address
+      value: set-by-overlay
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+    - name: https
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+---
+# Plain HTTP only redirects to HTTPS.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: api-redirect
+spec:
+  parentRefs:
+    - name: api
+      sectionName: http
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: api
+spec:
+  parentRefs:
+    - name: api
+      sectionName: https
+  hostnames:
+    - set-by-overlay
+  rules:
+    - backendRefs:
+        - name: api
+          port: 80
+---
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: api
+spec:
+  default:
+    checkIntervalSec: 10
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+    logConfig:
+      enabled: false
+    config:
+      type: HTTP
+      httpHealthCheck:
+        portSpecification: USE_SERVING_PORT
+        requestPath: /v1/health
+  targetRef:
+    group: ""
+    kind: Service
+    name: api
+---
+apiVersion: networking.gke.io/v1
+kind: GCPBackendPolicy
+metadata:
+  name: api
+spec:
+  default:
+    securityPolicy: set-by-overlay
+    timeoutSec: 30
+    connectionDraining:
+      drainingTimeoutSec: 30
+    logging:
+      enabled: true
+      sampleRate: 1000000
+  targetRef:
+    group: ""
+    kind: Service
+    name: api

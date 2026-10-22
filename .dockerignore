@@ -1,0 +1,16 @@
+# Build context for the root Dockerfile: only what the .NET projects need.
+.git
+.github
+.claude
+**/bin
+**/obj
+**/TestResults
+apps
+docs
+tests
+tools
+testScripts
+infrastructure
+*.md
+*.txt
+.env*

@@ -21,6 +21,8 @@ Local setup: `docs/DEVELOPMENT.md`. If the .NET SDK isn't installed, run these i
 - `workers`: the worker process. Job handlers (`IJobHandler`) in `workers/<feature>`; queue in `workers/jobs` (ADR 0004).
 - `database/migrations`: plain SQL migrations, applied in name order by DbUp (`database/`).
 - `database/tests/invariants.sql`: database invariant tests, run by the test suite.
+- `infrastructure/`: Terraform, Kubernetes manifests (Kustomize), and the deploy runbook. `Dockerfile` at the root
+  builds the api, worker, and migrate images. Nothing is applied to GCP yet (`infrastructure/README.md`).
 - `tests/FandomScore.Tests`: xUnit tests (migrations, invariants, API).
 - `apps/mobile`: fan app (Expo; web now, iOS later). Its API types are generated from `openapi.yaml`
   (`npm run generate:api`); regenerate them whenever the contract changes.

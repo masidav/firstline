@@ -1,0 +1,46 @@
+# Builds the images once, deploys staging automatically, and promotes the same images to prod after approval.
+# Authentication is Workload Identity Federation (no keys): each GitHub environment holds the variables
+# GCP_PROJECT_ID, GCP_REGION, GCP_WIF_PROVIDER, and GCP_DEPLOY_SA (terraform outputs), and the prod environment
+# has required reviewers. See infrastructure/README.md.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy (staging also promotes to prod after approval)
+        type: choice
+        options: [dev, staging, prod]
+        default: dev
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-${{ github.event.inputs.environment || 'staging' }}
+  cancel-in-progress: false
+
+jobs:
+  dev:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      environment: dev
+
+  staging:
+    if: github.event_name == 'push' || github.event.inputs.environment != 'dev'
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      environment: staging
+
+  prod:
+    needs: staging
+    if: github.event_name == 'push' || github.event.inputs.environment == 'prod'
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      environment: prod
+      # Same image digests as staging, copied into the prod registry.
+      promote_from: ${{ needs.staging.outputs.image_repository }}

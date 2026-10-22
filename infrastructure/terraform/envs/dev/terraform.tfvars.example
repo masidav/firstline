@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars (ignored by git) and fill in.
+project_id         = "fandomscore-dev"
+region             = "us-central1"
+api_domain         = "api.dev.example.com"
+billing_account_id = "XXXXXX-XXXXXX-XXXXXX"
+alert_email        = "ops@example.com"

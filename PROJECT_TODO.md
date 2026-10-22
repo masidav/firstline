@@ -154,15 +154,17 @@ Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](servi
 Details: [Organizations](services/api/src/features/organizations/TODO.md) · [Allocations](services/api/src/features/allocations/TODO.md) · [Primary ticketing](services/api/src/integrations/primary-ticketing/TODO.md) · [Promoter dashboard](apps/promoter-web/TODO.md)
 
 ## Phase 12 — Hosting on GCP (GKE)
-- [ ] Set up GCP projects per environment (dev, staging, prod), billing alerts, and IAM baseline.
-- [ ] Provision infrastructure with Terraform: GKE Autopilot, Cloud SQL for PostgreSQL 16, Cloud Storage, Artifact Registry, Secret Manager.
-- [ ] Containerize the API, migrator, and workers; publish images to Artifact Registry.
-- [ ] Deploy with Kubernetes manifests (Kustomize overlays per environment); run migrations as a pre-deploy Job.
-- [ ] Use Workload Identity for all pod access to GCP; no service-account key files.
-- [ ] Restrict the quarantine bucket to the redaction workload only.
-- [ ] Put the API behind Gateway API with managed TLS and Cloud Armor (WAF, bot and rate limiting).
-- [ ] Plan for on-sale traffic spikes: autoscaling, pre-scaling before scheduled on-sales, and load tests.
-- [ ] Set up CI/CD, logging, monitoring, alerting, backups with point-in-time recovery, and a tested restore.
+Code for all of this exists in `infrastructure/` and `Dockerfile` (2026-10-21; Terraform validated, manifests
+built, images built locally). Nothing is applied to a GCP project yet; `infrastructure/README.md` has the steps.
+- [ ] Set up GCP projects per environment (dev, staging, prod), billing alerts, and IAM baseline. (Budgets and IAM in Terraform; projects not created.)
+- [ ] Provision infrastructure with Terraform: GKE Autopilot, Cloud SQL for PostgreSQL 16, Cloud Storage, Artifact Registry, Secret Manager. (Written and validated; not applied.)
+- [x] Containerize the API, migrator, and workers; publish images to Artifact Registry. (`Dockerfile`; publishing is the deploy workflow's first step, not run yet.)
+- [x] Deploy with Kubernetes manifests (Kustomize overlays per environment); run migrations as a pre-deploy Job. (`infrastructure/k8s`; not run against a cluster yet.)
+- [ ] Use Workload Identity for all pod access to GCP; no service-account key files. (Configured; verify on first deploy.)
+- [ ] Restrict the quarantine bucket to the redaction workload only. (Configured; verify on first deploy.)
+- [ ] Put the API behind Gateway API with managed TLS and Cloud Armor (WAF, bot and rate limiting). (Configured; verify on first deploy. Forwarded headers done and tested.)
+- [ ] Plan for on-sale traffic spikes: autoscaling, pre-scaling before scheduled on-sales, and load tests. (HPA and procedure written; no load test yet.)
+- [ ] Set up CI/CD, logging, monitoring, alerting, backups with point-in-time recovery, and a tested restore. (Workflow, uptime alert, and PITR configured; restore not rehearsed.)
 
 Details: [ADR 0002](docs/adr/0002-hosting-gcp-gke.md) · [Infrastructure](infrastructure/TODO.md)
 

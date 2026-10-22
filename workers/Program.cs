@@ -1,4 +1,5 @@
 using FandomScore.Worker.AccountRetention;
+using FandomScore.Worker.Hosting;
 using FandomScore.Worker.ArtistOnboarding;
 using FandomScore.Spotify;
 using FandomScore.Worker.Jobs;
@@ -7,7 +8,9 @@ using FandomScore.Worker.SpotifySync;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-// Secrets come from the environment (ConnectionStrings__Database), never from appsettings.
+// Secrets come from the environment (ConnectionStrings__Database), never from appsettings. In Kubernetes they are
+// files named after the configuration key in Secrets__Directory (Secret Manager mount, infrastructure/k8s).
+builder.Configuration.AddSecretsDirectory();
 var connectionString = builder.Configuration.GetConnectionString("Database");
 if (string.IsNullOrWhiteSpace(connectionString))
 {

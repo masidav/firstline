@@ -1,0 +1,90 @@
+# Reusable deploy of one environment (called by deploy.yml). Builds and pushes the images at the commit SHA,
+# or copies them from another environment's registry, then runs infrastructure/k8s/deploy.sh.
+name: Deploy environment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: dev, staging, or prod (the GitHub environment and the Kustomize overlay)
+        type: string
+        required: true
+      promote_from:
+        description: Image repository to copy the images from instead of building them
+        type: string
+        default: ''
+    outputs:
+      image_repository:
+        value: ${{ jobs.deploy.outputs.image_repository }}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: ${{ inputs.environment }}
+    env:
+      IMAGE_REPOSITORY: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/fandomscore
+      TAG: ${{ github.sha }}
+    outputs:
+      image_repository: ${{ steps.repository.outputs.image_repository }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: repository
+        run: echo "image_repository=${IMAGE_REPOSITORY}" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+
+      - name: Sign in to Artifact Registry
+        run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
+
+      - name: Build and push images
+        if: inputs.promote_from == ''
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push api, worker, migrate
+        if: inputs.promote_from == ''
+        run: |
+          for target in api worker migrate; do
+            docker buildx build --target "$target" --push \
+              --cache-from type=gha --cache-to type=gha,mode=max \
+              -t "${IMAGE_REPOSITORY}/${target}:${TAG}" .
+          done
+
+      - name: Copy images from ${{ inputs.promote_from }}
+        if: inputs.promote_from != ''
+        uses: imjasonh/setup-crane@v0.4
+
+      - name: Copy images by digest
+        if: inputs.promote_from != ''
+        run: |
+          for target in api worker migrate; do
+            crane copy "${{ inputs.promote_from }}/${target}:${TAG}" "${IMAGE_REPOSITORY}/${target}:${TAG}"
+          done
+
+      - uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: fandomscore-${{ inputs.environment }}
+          location: ${{ vars.GCP_REGION }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Install kustomize
+        run: |
+          curl -fsSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.6.0/kustomize_v5.6.0_linux_amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin kustomize
+
+      - name: Migrate and roll out
+        run: infrastructure/k8s/deploy.sh "${{ inputs.environment }}" "$TAG"

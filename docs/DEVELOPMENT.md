@@ -15,6 +15,7 @@
 | `database/tests/invariants.sql` | Database invariant tests (run by the test suite). |
 | `tests/FandomScore.Tests` | xUnit tests: migrations, invariants, API. |
 | `infrastructure/docker-compose.yml` | Local PostgreSQL 16. |
+| `infrastructure/` | Cloud deployment: Terraform, Kubernetes manifests, deploy script ([README](../infrastructure/README.md)). `Dockerfile` at the root builds the images. |
 
 ## First run
 ```bash
@@ -67,3 +68,6 @@ The suite starts its own PostgreSQL 16 container, so it needs Docker but not the
   `scoringWeights.sh` (lists the Spotify scoring weights, or sets one: `scoringWeights.sh spotify_liked_track 2`;
   the worker rescores every artist afterwards).
 - Production logs are JSON on the console. Development uses the plain formatter.
+- In Kubernetes, secrets arrive as files in `Secrets__Directory` (one per configuration key) instead of environment
+  variables, and `ForwardedHeaders__KnownProxies`/`KnownNetworks` tell the API which load balancer to trust for
+  client addresses. Neither is needed locally.

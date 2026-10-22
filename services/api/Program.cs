@@ -10,7 +10,9 @@ using FandomScore.Spotify;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Secrets come from the environment (ConnectionStrings__Database), never from appsettings.
+// Secrets come from the environment (ConnectionStrings__Database), never from appsettings. In Kubernetes they are
+// files named after the configuration key in Secrets__Directory (Secret Manager mount, infrastructure/k8s).
+builder.Configuration.AddSecretsDirectory();
 var connectionString = builder.Configuration.GetConnectionString("Database");
 if (string.IsNullOrWhiteSpace(connectionString))
 {
@@ -28,9 +30,12 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 
 // Lets the Expo web build call the API (Cors__AllowedOrigins).
 builder.Services.AddWebClients(builder.Configuration);
+// Real client addresses behind the load balancer (ForwardedHeaders__KnownProxies / KnownNetworks).
+builder.Services.AddLoadBalancerForwarding(builder.Configuration);
 
 var app = builder.Build();
 
+app.UseForwardedHeaders();
 app.UseExceptionHandler();
 app.UseCors();
 app.UseStatusCodePages();

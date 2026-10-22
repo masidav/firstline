@@ -1,0 +1,27 @@
+# Names from terraform output: api_ip_address_name, certificate_map, security_policy.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: api
+  annotations:
+    networking.gke.io/certmap: fandomscore-dev-api
+spec:
+  addresses:
+    - type: networking.gke.io/named-address
+      value: fandomscore-dev-api
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: api
+spec:
+  hostnames:
+    - api.dev.example.com
+---
+apiVersion: networking.gke.io/v1
+kind: GCPBackendPolicy
+metadata:
+  name: api
+spec:
+  default:
+    securityPolicy: fandomscore-dev-api

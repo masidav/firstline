@@ -9,6 +9,8 @@
 
   <ItemGroup>
     <PackageReference Include="dbup-postgresql" Version="7.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.KeyPerFile" Version="10.0.12" />
   </ItemGroup>
 
   <ItemGroup>
