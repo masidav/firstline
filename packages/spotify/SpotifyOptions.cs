@@ -60,6 +60,18 @@ public sealed class SpotifyOptions
     /// <summary>Tracks read per playlist.</summary>
     public int MaxPlaylistItems { get; set; } = 500;
 
+    /// <summary>
+    /// ISO 3166-1 country whose releases make up an artist's catalog (ADR 0006). One market keeps each release to
+    /// one row instead of one per region.
+    /// </summary>
+    public string CatalogMarket { get; set; } = "US";
+
+    /// <summary>How often an active artist's catalog is reloaded from Spotify.</summary>
+    public TimeSpan CatalogRefreshEvery { get; set; } = TimeSpan.FromDays(7);
+
+    /// <summary>Releases loaded per artist, in the order Spotify lists them (10 per request).</summary>
+    public int MaxCatalogAlbums { get; set; } = 500;
+
     public bool IsEnabled => ClientId.Length > 0;
 
     /// <summary>Artist search and lookup need an app token, so the client secret too.</summary>

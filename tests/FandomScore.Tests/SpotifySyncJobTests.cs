@@ -40,7 +40,7 @@ public sealed class SpotifySyncJobTests(PostgresFixture postgres) : IAsyncLifeti
             """
             INSERT INTO artists (name, spotify_artist_id) VALUES ('A', @ArtistA);
             INSERT INTO artist_baselines (artist_id, dist_params, curve) SELECT id, '{}', '[]' FROM artists WHERE spotify_artist_id = @ArtistA;
-            UPDATE artists SET status = 'active' WHERE spotify_artist_id = @ArtistA;
+            UPDATE artists SET status = 'active', catalog_loaded_at = now() WHERE spotify_artist_id = @ArtistA;
             INSERT INTO artists (name, spotify_artist_id) VALUES ('B', @ArtistB);
             INSERT INTO albums (artist_id, title, spotify_album_id) SELECT id, 'A1', 'al-a1' FROM artists WHERE spotify_artist_id = @ArtistA;
             INSERT INTO tracks (album_id, title, spotify_track_id) SELECT id, 'Track a1', 'tr-a1' FROM albums WHERE spotify_album_id = 'al-a1';

@@ -66,6 +66,46 @@ public sealed class FakeSpotify : HttpMessageHandler
         };
     }
 
+    /// <summary>Each artist's releases, as <c>artists/{id}/albums</c> lists them (filtered by include_groups).</summary>
+    public Dictionary<string, List<Album>> ArtistAlbums { get; } = [];
+
+    /// <summary>Tracks per album id, for <c>albums/{id}/tracks</c>. An album missing here answers 404.</summary>
+    public Dictionary<string, List<object>> AlbumTracks { get; } = [];
+
+    public sealed record Album(string Id, string Name, string Group = "album", string ReleaseDate = "2024-05-17",
+        string Precision = "day", params string[] ArtistIds)
+    {
+        public object Json => new
+        {
+            id = Id,
+            name = Name,
+            album_type = Group == "appears_on" ? "album" : Group,
+            album_group = Group,
+            release_date = ReleaseDate,
+            release_date_precision = Precision,
+            total_tracks = 1,
+            images = new[]
+            {
+                new { url = $"https://i.scdn.co/{Id}-300", width = 300, height = 300 },
+                new { url = $"https://i.scdn.co/{Id}-640", width = 640, height = 640 },
+                new { url = $"https://i.scdn.co/{Id}-64", width = 64, height = 64 },
+            },
+            artists = (ArtistIds.Length == 0 ? ["sp-unknown"] : ArtistIds).Select(a => new { id = a, name = a }).ToArray(),
+        };
+    }
+
+    public static object AlbumTrack(string id, string name, int trackNumber, int discNumber = 1) => new
+    {
+        id,
+        name,
+        type = "track",
+        is_local = false,
+        disc_number = discNumber,
+        track_number = trackNumber,
+        duration_ms = 180000,
+        artists = new[] { new { id = "sp-whoever", name = "Whoever" } },
+    };
+
     /// <summary>Served once each, in order, before the normal response for that path.</summary>
     public ConcurrentQueue<(string Path, Func<HttpResponseMessage> Response)> Interruptions { get; } = new();
 
@@ -158,16 +198,32 @@ public sealed class FakeSpotify : HttpMessageHandler
                 artists = Page([.. Artists.Where(a => a.Name.Contains(query["q"]!, StringComparison.OrdinalIgnoreCase)).Select(a => a.Json)],
                     limit, offset),
             },
+            _ when path.StartsWith("artists/", StringComparison.Ordinal) && path.EndsWith("/albums", StringComparison.Ordinal) =>
+                ArtistAlbums.TryGetValue(path["artists/".Length..^"/albums".Length], out var releases)
+                    ? Page([.. releases.Where(r => (query["include_groups"] ?? "album,single,appears_on,compilation")
+                        .Split(',').Contains(r.Group)).Select(r => r.Json)], limit, offset)
+                    : new { error = new { status = 404, message = "Resource not found" } },
             _ when path.StartsWith("artists/", StringComparison.Ordinal) =>
                 Artists.FirstOrDefault(a => a.Id == path["artists/".Length..])?.Json
                 ?? new { error = new { status = 404, message = "Resource not found" } },
+            _ when path.StartsWith("albums/", StringComparison.Ordinal) && path.EndsWith("/tracks", StringComparison.Ordinal) =>
+                AlbumTracks.TryGetValue(path["albums/".Length..^"/tracks".Length], out var albumTracks)
+                    ? Page(albumTracks, limit, offset)
+                    : new { error = new { status = 404, message = "Resource not found" } },
             _ when path.StartsWith("playlists/", StringComparison.Ordinal) && path.EndsWith("/items", StringComparison.Ordinal) =>
                 Page(PlaylistItems.GetValueOrDefault(path["playlists/".Length..^"/items".Length]) ?? [], limit, offset),
             _ => throw new InvalidOperationException($"FakeSpotify has no route for {path}"),
         };
-        var status = path.StartsWith("artists/", StringComparison.Ordinal) && Artists.All(a => a.Id != path["artists/".Length..])
-            ? HttpStatusCode.NotFound
-            : HttpStatusCode.OK;
+        var status = path switch
+        {
+            _ when path.StartsWith("artists/", StringComparison.Ordinal) && path.EndsWith("/albums", StringComparison.Ordinal) =>
+                ArtistAlbums.ContainsKey(path["artists/".Length..^"/albums".Length]) ? HttpStatusCode.OK : HttpStatusCode.NotFound,
+            _ when path.StartsWith("artists/", StringComparison.Ordinal) =>
+                Artists.Any(a => a.Id == path["artists/".Length..]) ? HttpStatusCode.OK : HttpStatusCode.NotFound,
+            _ when path.StartsWith("albums/", StringComparison.Ordinal) =>
+                AlbumTracks.ContainsKey(path["albums/".Length..^"/tracks".Length]) ? HttpStatusCode.OK : HttpStatusCode.NotFound,
+            _ => HttpStatusCode.OK,
+        };
         return new HttpResponseMessage(status) { Content = JsonContent.Create(body) };
     }
 

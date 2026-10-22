@@ -1,10 +1,11 @@
 # ADR 0006: Album catalog from Spotify
 
 - **Status:** Accepted (2026-10-21). Resolves the open decision "album catalog provider and its caching/artwork
-  terms" (`PROJECT_TODO.md`, `ARCHITECTURE.md`). Not implemented yet: the catalog load is part of artist
-  onboarding (Phase 3) and the album endpoints are Phase 6. Terms checked 2026-10-21 (sources at the end).
-- **Code (planned):** `packages/spotify` (album and track lookups), `workers/artist-onboarding` (catalog load and
-  refresh jobs), `services/api/src/features/album-journal` and `services/api/src/integrations/album-catalog`.
+  terms" (`PROJECT_TODO.md`, `ARCHITECTURE.md`). Catalog load and refresh implemented with artist onboarding
+  (Phase 3, 2026-10-21); the album endpoints are Phase 6. Terms checked 2026-10-21 (sources at the end).
+- **Code:** `packages/spotify` (`GetArtistAlbumsAsync`, `GetAlbumTracksAsync`), `workers/artist-onboarding`
+  (`CatalogLoader`, `artist.onboard`, `catalog.refresh`), `database/migrations/0007_artist_catalog.sql`.
+  Planned: `services/api/src/features/album-journal` and `services/api/src/integrations/album-catalog`.
 - **Contract:** `openapi.yaml`, tag Albums (`/albums/search`, `/albums/{id}`) and `/artists/{id}/albums`.
 
 ## Decision
@@ -77,21 +78,22 @@
   never shows an invented day.
 
 ## Consequences for the implementation
-- **Migration** (new file, with invariant tests): `albums.album_type`, `albums.release_date_precision`,
+- **Migration** (`0007_artist_catalog.sql`, with invariant tests): `albums.album_type`, `albums.release_date_precision`,
   `albums.delisted_at`, `albums.refreshed_at`; `tracks.disc_number`, `tracks.delisted_at`; a partial index on
-  live albums per artist. `artists.catalog_loaded_at` (set by the load) so activation can check it.
+  live albums per artist. `artists.catalog_loaded_at` (set by the load); activation checks it.
 - **Contract:** `Album` and `AlbumRef` gain `spotify_album_id` and `album_type`, `Album` gains
   `release_date_precision`, `Track` gains `spotify_track_id` and `disc_number`. Delisted albums are excluded from
   search, browse, and `/artists/{id}/albums`; `GET /albums/{id}` still returns them (for existing logs) with
   `cover_url: null`.
 - **Jobs:** `artist.onboard` (load catalog, then baseline, then activate; queued by `track_artist()` in the same
-  transaction) and `catalog.refresh` with its hourly scheduler. Both idempotent.
+  transaction) and `catalog.refresh` with its hourly scheduler. Both idempotent. Done; see
+  `workers/artist-onboarding/README.md`.
 - **Client:** `SpotifyClient.GetArtistAlbumsAsync` and `GetAlbumTracksAsync` (paged, app token), with the
-  dropped fields never mapped.
+  dropped fields never mapped. Done.
 - **App:** album and artist screens show the Spotify logo and link; cover art is loaded from `cover_url` with a
   placeholder; share and score-card designs use no cover art.
 
-## Configuration (to add with the implementation)
+## Configuration (`Spotify` section; see also `Baseline` in `workers/artist-onboarding/README.md`)
 | Variable | Meaning |
 | --- | --- |
 | `Spotify__CatalogMarket` | ISO 3166-1 country code used for catalog calls. Default `US`. |

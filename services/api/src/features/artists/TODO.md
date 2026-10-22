@@ -11,9 +11,9 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       offset cursor). Never calls Spotify. Verified 2026-10-21: ArtistApiTests 22/22.
 - [ ] Handle concurrent attempts to add the same artist without creating duplicates.
 - [x] Insert new artists with onboarding status and expose status to the client. (Search results and `POST /artists`; `GET /artists/{id}` not built yet.)
-- [ ] Queue catalog loading, baseline generation, and activation as background work. (`artist.onboard`, ADR 0006.)
-- [ ] Activate only after the catalog and required baseline exist; record activation timestamp.
-- [ ] Sync the adding user after activation and make other users eligible on their next scheduled sync.
+- [x] Queue catalog loading, baseline generation, and activation as background work. (`track_artist()` queues `artist.onboard` in the same transaction, migration 0007; worker in `workers/artist-onboarding`.)
+- [x] Activate only after the catalog and required baseline exist; record activation timestamp. (`trg_artist_activate` checks both; verified 2026-10-21 in invariants.sql and ArtistOnboardingJobTests.)
+- [x] Sync the adding user after activation and make other users eligible on their next scheduled sync. (Verified 2026-10-21: ArtistOnboardingJobTests.)
 - [ ] Implement paused status behavior for takedowns or removals.
 - [ ] Add tests for duplicates, daily limits, onboarding failure, activation guard, and paused artists.
 

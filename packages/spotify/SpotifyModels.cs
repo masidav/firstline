@@ -22,3 +22,15 @@ public sealed record SpotifyLibrary(
 
 /// <summary>An artist from search or lookup. <see cref="ImageUrl"/> is the smallest image at least 300 px wide.</summary>
 public sealed record SpotifyArtist(string Id, string Name, string? ImageUrl, IReadOnlyList<string> Genres);
+
+/// <summary>
+/// A release from an artist's catalog (ADR 0006). <see cref="ArtistIds"/> are in credit order; the first is the
+/// primary artist. <see cref="ReleaseDate"/> is Spotify's string: a year, a month, or a day, per
+/// <see cref="ReleaseDatePrecision"/>. <see cref="CoverUrl"/> is the largest cover image.
+/// </summary>
+public sealed record SpotifyAlbum(
+    string Id, string Name, string AlbumType, string? ReleaseDate, string? ReleaseDatePrecision, string? CoverUrl,
+    IReadOnlyList<string> ArtistIds);
+
+/// <summary>A track as listed on its album.</summary>
+public sealed record SpotifyAlbumTrack(string Id, string Name, int DiscNumber, int TrackNumber);

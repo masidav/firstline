@@ -265,7 +265,7 @@ public sealed class ArtistApiTests(PostgresFixture postgres) : IAsyncLifetime, I
                 -- Activation needs a baseline.
                 INSERT INTO artist_baselines (artist_id, dist_params, curve)
                   SELECT id, '{}', '[]' FROM artists WHERE spotify_artist_id IN ('sp-beatles', 'sp-lobeat', 'sp-percent');
-                UPDATE artists SET status = 'active', activated_at = now()
+                UPDATE artists SET status = 'active', activated_at = now(), catalog_loaded_at = now()
                   WHERE spotify_artist_id IN ('sp-beatles', 'sp-lobeat', 'sp-percent');
                 UPDATE artists SET status = 'paused' WHERE spotify_artist_id = 'sp-bea';
                 """);

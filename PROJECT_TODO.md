@@ -50,8 +50,10 @@ Details: [Authentication](services/api/src/features/authentication/TODO.md) · [
       the local stack: `spotify_connect.py search radiohead` returned 10 real results; in the web app (Chrome,
       phone size) Enter on "radiohead" listed Spotify matches, Add tracked Radiohead as onboarding with its image.
 - [x] Background job queue: Postgres `jobs` table and `workers/` process ([ADR 0004](docs/adr/0004-postgres-job-queue.md)). Verified 2026-10-18: JobQueueTests 9/9.
-- [ ] Implement asynchronous artist onboarding and failure recovery.
-- [ ] Load album/track catalog and seed a baseline before activation. Catalog source and rules: [ADR 0006](docs/adr/0006-album-catalog.md).
+- [x] Implement asynchronous artist onboarding and failure recovery. Worker `artist.onboard` queued by `track_artist()`
+      (migration 0007); retries with backoff, missing artists paused, `request_artist_onboarding()` re-queues. Verified 2026-10-21: `dotnet test` 109/109 (ArtistOnboardingJobTests 15, invariants).
+- [x] Load album/track catalog and seed a baseline before activation. Spotify catalog per [ADR 0006](docs/adr/0006-album-catalog.md)
+      with weekly `catalog.refresh`; provisional lognormal baseline (parameters still open, below). Verified 2026-10-21.
 
 Details: [Artists](services/api/src/features/artists/TODO.md) · [Artist search UI](apps/mobile/src/features/artist-search/TODO.md) · [Artist onboarding worker](workers/artist-onboarding/TODO.md)
 
@@ -202,7 +204,8 @@ Details: [Agent tooling](docs/agent-tooling.md) · [Developer tooling](docs/TODO
       ([ADR 0006](docs/adr/0006-album-catalog.md), decided 2026-10-21). MusicBrainz, Apple Music, and Discogs rejected there.
 - [ ] Confirm ticketing partner and purchase-confirmation capability.
 - [ ] Confirm archive meaning and user-facing archive requirements.
-- [ ] Confirm verification thresholds and baseline blend parameters.
+- [ ] Confirm verification thresholds and baseline blend parameters. *Provisional defaults in code since 2026-10-21*
+      (`Baseline__MedianScore` 5, `Baseline__Sigma` 1, `Baseline__BlendK` 200; stored baselines carry `provisional: true`).
 - [x] Define data retention and account deletion behavior. Deleted accounts: personal data scrubbed at once, content hard-deleted after 30 days, comments others replied to kept as "[deleted]", ledger kept anonymously (decided 2026-10-18). File retention (quarantine/archive) still to define with submissions.
 - [x] Artist add limit: 50 new artists per user per UTC day (decided 2026-10-18).
 - [x] Account linking: no. One email per account; a second provider with the same email gets `409 email_in_use`. (Decided 2026-10-18.)

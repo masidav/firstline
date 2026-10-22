@@ -39,12 +39,36 @@ BEGIN
   ASSERT (SELECT name FROM artists WHERE id = v_id) = 'Active Artist', 'name must not change';
 END $$;
 
+-- Adding a new artist queues its onboarding in the same transaction (0007); an existing one does not.
+DO $$ BEGIN
+  ASSERT (SELECT count(*) FROM jobs WHERE kind = 'artist.onboard' AND status = 'queued') = 1,
+         'track_artist queues one onboarding job';
+  ASSERT (SELECT payload->>'artist_id' FROM jobs WHERE kind = 'artist.onboard')
+         = (SELECT id::text FROM artists WHERE spotify_artist_id = 'sp-active'), 'onboarding job names the artist';
+  ASSERT NOT request_artist_onboarding('00000000-0000-0000-0000-000000000000'), 'unknown artist is not queued';
+  ASSERT request_artist_onboarding((SELECT id FROM artists WHERE spotify_artist_id = 'sp-active')),
+         'an onboarding artist can be queued again';
+  ASSERT (SELECT count(*) FROM jobs WHERE kind = 'artist.onboard' AND status = 'queued') = 1,
+         'at most one queued onboarding job per artist';
+END $$;
+
 SELECT pg_temp.expect_error(
   $$UPDATE artists SET status = 'active' WHERE spotify_artist_id = 'sp-active'$$,
   'needs a baseline before activation');
 INSERT INTO artist_baselines (artist_id, dist_params, curve)
   SELECT id, '{}', '[]' FROM artists WHERE spotify_artist_id = 'sp-active';
-UPDATE artists SET status = 'active' WHERE spotify_artist_id = 'sp-active';
+SELECT pg_temp.expect_error(
+  $$UPDATE artists SET status = 'active' WHERE spotify_artist_id = 'sp-active'$$,
+  'needs its catalog before activation');
+UPDATE artists SET status = 'active', catalog_loaded_at = now() WHERE spotify_artist_id = 'sp-active';
+DO $$ BEGIN
+  ASSERT NOT request_artist_onboarding((SELECT id FROM artists WHERE spotify_artist_id = 'sp-active')),
+         'an active artist is not queued for onboarding';
+  UPDATE artists SET status = 'paused' WHERE spotify_artist_id = 'sp-active';
+  ASSERT NOT request_artist_onboarding((SELECT id FROM artists WHERE spotify_artist_id = 'sp-active')),
+         'a paused artist is not queued for onboarding';
+  UPDATE artists SET status = 'active' WHERE spotify_artist_id = 'sp-active';
+END $$;
 DO $$ BEGIN
   ASSERT (SELECT activated_at IS NOT NULL FROM artists WHERE spotify_artist_id = 'sp-active'),
          'activation must stamp activated_at';
@@ -57,6 +81,15 @@ SELECT pg_temp.expect_error(
 
 INSERT INTO albums (id, artist_id, title)
   SELECT '10000000-0000-0000-0000-000000000001', id, 'Active LP' FROM artists WHERE spotify_artist_id = 'sp-active';
+-- Catalog columns (0007): types and precisions are constrained; tracks start on disc 1.
+SELECT pg_temp.expect_error(
+  $$UPDATE albums SET album_type = 'ep' WHERE id = '10000000-0000-0000-0000-000000000001'$$, 'albums_album_type');
+SELECT pg_temp.expect_error(
+  $$UPDATE albums SET release_date_precision = 'decade' WHERE id = '10000000-0000-0000-0000-000000000001'$$,
+  'albums_release_date_precision');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO tracks (album_id, title, disc_number) VALUES ('10000000-0000-0000-0000-000000000001', 'x', 0)$$,
+  'tracks_disc_number_check');
 INSERT INTO albums (id, artist_id, title)
   SELECT '10000000-0000-0000-0000-000000000002', id, 'Onboarding LP' FROM artists WHERE spotify_artist_id = 'sp-onboarding';
 

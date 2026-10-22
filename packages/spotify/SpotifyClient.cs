@@ -25,7 +25,11 @@ public sealed partial class SpotifyClient(
     /// <summary>Spotify's cap on search results per request for development-mode apps since February 2026.</summary>
     public const int MaxSearchLimit = 10;
 
+    /// <summary>Spotify's cap per request on an artist's albums (same February 2026 change).</summary>
+    public const int AlbumPageSize = 10;
+
     private const int PageSize = 50;
+    private const int MaxAlbumTracks = 500;   // 10 discs of 50; no real album is longer
     private const int MaxTries = 3;
     private static readonly TimeSpan MaxInlineWait = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan DefaultRetryAfter = TimeSpan.FromSeconds(30);
@@ -130,6 +134,67 @@ public sealed partial class SpotifyClient(
         }
     }
 
+    /// <summary>
+    /// The artist's own releases (albums, singles, compilations; not <c>appears_on</c>) available in
+    /// <paramref name="market"/>, in Spotify's order, at most <paramref name="max"/>. Null when Spotify has no
+    /// artist with this id. Needs <see cref="SpotifyOptions.ClientSecret"/>. See ADR 0006.
+    /// </summary>
+    public async Task<IReadOnlyList<SpotifyAlbum>?> GetArtistAlbumsAsync(
+        string spotifyArtistId, string market, int max, CancellationToken cancellationToken)
+    {
+        var path = $"artists/{Uri.EscapeDataString(spotifyArtistId)}/albums"
+                   + $"?include_groups=album,single,compilation&market={Uri.EscapeDataString(market)}";
+        try
+        {
+            var albums = await GetPagesAsync<AlbumDto>(null, path, max, AlbumPageSize, "artist albums", cancellationToken);
+            return [.. albums.Select(ToAlbum).OfType<SpotifyAlbum>()];
+        }
+        catch (SpotifyRequestException e) when (e.Status is 400 or 404)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// How many releases (albums, singles, compilations) the artist has, from one small request. Null when Spotify has
+    /// no artist with this id. Spotify no longer gives apps follower counts or popularity, so this is what tells
+    /// same-named artists apart. Needs <see cref="SpotifyOptions.ClientSecret"/>.
+    /// </summary>
+    public async Task<int?> CountArtistReleasesAsync(string spotifyArtistId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var page = await AppGetAsync<Page<AlbumDto>>(
+                $"artists/{Uri.EscapeDataString(spotifyArtistId)}/albums?include_groups=album,single,compilation&limit=1",
+                "artist release count", cancellationToken);
+            return page.Total;
+        }
+        catch (SpotifyRequestException e) when (e.Status is 400 or 404)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// An album's tracks in disc and track order, or null when Spotify no longer has the album.
+    /// Needs <see cref="SpotifyOptions.ClientSecret"/>.
+    /// </summary>
+    public async Task<IReadOnlyList<SpotifyAlbumTrack>?> GetAlbumTracksAsync(
+        string spotifyAlbumId, string market, CancellationToken cancellationToken)
+    {
+        var path = $"albums/{Uri.EscapeDataString(spotifyAlbumId)}/tracks?market={Uri.EscapeDataString(market)}";
+        try
+        {
+            var tracks = await GetPagesAsync<TrackDto>(null, path, MaxAlbumTracks, PageSize, "album tracks", cancellationToken);
+            return [.. tracks.Select(ToAlbumTrack).OfType<SpotifyAlbumTrack>()
+                .OrderBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber)];
+        }
+        catch (SpotifyRequestException e) when (e.Status is 400 or 404)
+        {
+            return null;
+        }
+    }
+
     private async Task<T> AppGetAsync<T>(string pathAndQuery, string label, CancellationToken cancellationToken)
     {
         var token = await AppTokenAsync(cancellationToken);
@@ -193,13 +258,22 @@ public sealed partial class SpotifyClient(
         return tokens;
     }
 
+    private Task<List<T>> GetPagesAsync<T>(
+        string accessToken, string path, int max, string label, CancellationToken cancellationToken) =>
+        GetPagesAsync<T>(accessToken, path, max, PageSize, label, cancellationToken);
+
+    /// <summary>Follows Spotify's offset paging. A null <paramref name="accessToken"/> uses the app token.</summary>
     private async Task<List<T>> GetPagesAsync<T>(
-        string accessToken, string path, int max, string label, CancellationToken cancellationToken)
+        string? accessToken, string path, int max, int pageSize, string label, CancellationToken cancellationToken)
     {
         var items = new List<T>();
-        for (var offset = 0; offset < max; offset += PageSize)
+        var separator = path.Contains('?', StringComparison.Ordinal) ? '&' : '?';
+        for (var offset = 0; offset < max; offset += pageSize)
         {
-            var page = await GetAsync<Page<T>>(accessToken, $"{path}?limit={PageSize}&offset={offset}", label, cancellationToken);
+            var pathAndQuery = $"{path}{separator}limit={pageSize}&offset={offset}";
+            var page = accessToken is null
+                ? await AppGetAsync<Page<T>>(pathAndQuery, label, cancellationToken)
+                : await GetAsync<Page<T>>(accessToken, pathAndQuery, label, cancellationToken);
             items.AddRange(page.Items ?? []);
             if (page.Items is not { Count: > 0 } || page.Next is null)
             {
@@ -317,6 +391,18 @@ public sealed partial class SpotifyClient(
             ? new SpotifyTrack(id, track.Album?.Id, [.. (track.Artists ?? []).Select(a => a.Id).OfType<string>()])
             : null;
 
+    private static SpotifyAlbum? ToAlbum(AlbumDto? album) =>
+        album is { Id: { } id, Name: { } name }
+            ? new SpotifyAlbum(id, name, album.AlbumType ?? "album", album.ReleaseDate, album.ReleaseDatePrecision,
+                album.Images?.Where(i => i.Url is not null).OrderByDescending(i => i.Width ?? 0).FirstOrDefault()?.Url,
+                [.. (album.Artists ?? []).Select(a => a.Id).OfType<string>()])
+            : null;
+
+    private static SpotifyAlbumTrack? ToAlbumTrack(TrackDto? track) =>
+        track is { Id: { } id, Name: { } name } && track.Type is null or "track" && track.IsLocal != true
+            ? new SpotifyAlbumTrack(id, name, track.DiscNumber ?? 1, track.TrackNumber ?? 0)
+            : null;
+
     private static SpotifyArtist? ToArtist(ArtistDto? artist) =>
         artist is { Id: { } id, Name: { } name }
             ? new SpotifyArtist(id, name, PickImage(artist.Images), artist.Genres ?? [])
@@ -336,7 +422,7 @@ public sealed partial class SpotifyClient(
 
     private sealed record OAuthErrorDto(string? Error);
 
-    private sealed record Page<T>(IReadOnlyList<T>? Items, string? Next);
+    private sealed record Page<T>(IReadOnlyList<T>? Items, string? Next, int? Total = null);
 
     private sealed record UserDto(string? Id);
 
@@ -346,9 +432,13 @@ public sealed partial class SpotifyClient(
 
     private sealed record SearchDto(Page<ArtistDto>? Artists);
 
-    private sealed record AlbumDto(string? Id);
+    private sealed record AlbumDto(
+        string? Id, string? Name, string? AlbumType, string? ReleaseDate, string? ReleaseDatePrecision,
+        IReadOnlyList<ImageDto>? Images, IReadOnlyList<ArtistDto>? Artists);
 
-    private sealed record TrackDto(string? Id, string? Type, bool? IsLocal, AlbumDto? Album, IReadOnlyList<ArtistDto>? Artists);
+    private sealed record TrackDto(
+        string? Id, string? Name, string? Type, bool? IsLocal, int? DiscNumber, int? TrackNumber, AlbumDto? Album,
+        IReadOnlyList<ArtistDto>? Artists);
 
     private sealed record SavedTrackDto(DateTimeOffset? AddedAt, TrackDto? Track);
 
