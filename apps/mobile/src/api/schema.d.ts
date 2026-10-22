@@ -300,7 +300,11 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Albums by a tracked artist */
+        /**
+         * Albums by a tracked artist
+         * @description The artist's own albums, singles, and compilations from the catalog (ADR 0006), newest first. Releases
+         *     Spotify no longer lists are left out; they stay readable by id for the logs that mention them.
+         */
         get: operations["listArtistAlbums"];
         put?: never;
         post?: never;
@@ -343,6 +347,29 @@ export interface paths {
          * @description Aggregate only. No individual users are exposed.
          */
         get: operations["getArtistStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My stats in one list
+         * @description The signed-in fan's numbers, read from stored state and the ledger (never from Spotify at request time).
+         *     Deleted logs and comments and reversed awards don't count. Listening totals cover active tracked artists
+         *     only. `ledger_points` is the sum of unreversed awards (journal, proof of fandom). Other fans' stats will
+         *     follow their profile visibility once follows and blocks exist (Phase 8).
+         */
+        get: operations["getMyStats"];
         put?: never;
         post?: never;
         delete?: never;
@@ -422,8 +449,9 @@ export interface paths {
         };
         /**
          * Search albums
-         * @description Searches the local catalog (tracked artists only). `untracked_artists` lists Spotify artists that
-         *     match the query but are not tracked, so the app can prompt "Add this artist first".
+         * @description Searches the local catalog (tracked artists only) by album title or artist name. Only when nothing
+         *     matches, `untracked_artists` lists Spotify artists with that name that are not tracked yet, so the app
+         *     can prompt "Add this artist first" (empty if Spotify did not answer).
          */
         get: operations["searchAlbums"];
         put?: never;
@@ -1360,6 +1388,46 @@ export interface components {
             /** Format: date-time */
             computed_at: string;
         };
+        UserStats: {
+            /** @description Best percentile first. */
+            artists: {
+                artist: components["schemas"]["ArtistRef"];
+                raw_score: number;
+                percentile: number;
+                /** @description Among the artist's scored fans; ties share the better rank */
+                rank: number;
+                /** @description Scored fans of the artist */
+                fans: number;
+                is_estimated: boolean;
+                /** Format: date-time */
+                computed_at: string;
+            }[];
+            listening: {
+                /** @description Active tracked artists the fan has Spotify signals for */
+                artists: number;
+                liked_tracks: number;
+                playlist_tracks: number;
+                distinct_albums: number;
+                recent_plays: number;
+            };
+            journal: {
+                logs: number;
+                /** @description Distinct albums */
+                albums_logged: number;
+                relistens: number;
+                reviews: number;
+                ratings: number;
+                lists: number;
+                comments: number;
+            };
+            /** @description Verified submissions only. */
+            proof: {
+                tickets: number;
+                merch: number;
+                screenshots: number;
+            };
+            ledger_points: number;
+        };
         ScoreSummaryPage: {
             items: components["schemas"]["ScoreSummary"][];
             next_cursor: string | null;
@@ -1406,16 +1474,35 @@ export interface components {
             id: string;
             title: string;
             track_number?: number | null;
+            disc_number: number;
+            /** @description For the link to Spotify (ADR 0006). */
+            spotify_track_id?: string | null;
         };
+        /** @enum {string} */
+        AlbumType: "album" | "single" | "compilation";
         Album: {
             /** Format: uuid */
             id: string;
             artist: components["schemas"]["ArtistRef"];
             title: string;
-            /** Format: date */
+            album_type: components["schemas"]["AlbumType"];
+            /**
+             * Format: date
+             * @description The first day of the period when precision is year or month.
+             */
             release_date?: string | null;
-            /** Format: uri */
+            /** @enum {string} */
+            release_date_precision: "year" | "month" | "day";
+            /**
+             * Format: uri
+             * @description Spotify's cover image, to show unaltered next to the Spotify logo and a link to the album
+             *     (`https://open.spotify.com/album/{spotify_album_id}`). Null when there is none or the album is delisted.
+             */
             cover_url?: string | null;
+            /** @description Null once the album is delisted. */
+            spotify_album_id?: string | null;
+            /** @description Spotify no longer lists this release; it stays for existing logs. */
+            delisted: boolean;
             community?: {
                 log_count?: number;
                 /** @description 0.5 to 5.0 */
@@ -1426,8 +1513,10 @@ export interface components {
             /** Format: uuid */
             id: string;
             title: string;
+            album_type: components["schemas"]["AlbumType"];
             /** Format: uri */
             cover_url?: string | null;
+            spotify_album_id?: string | null;
             artist?: components["schemas"]["ArtistRef"];
         };
         AlbumDetail: components["schemas"]["Album"] & {
@@ -2378,6 +2467,26 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    getMyStats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Stats */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserStats"];
+                };
+            };
+        };
+    };
     listMyScores: {
         parameters: {
             query?: {
@@ -2496,7 +2605,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Album with tracks, community rating, and my most recent log */
+            /** @description Album with tracks, community rating, and my most recent log. Delisted albums are still returned (without cover art or Spotify link). */
             200: {
                 headers: {
                     [name: string]: unknown;

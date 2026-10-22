@@ -58,7 +58,13 @@ export function YourArtists() {
   return (
     <>
       {scores.map((score) => (
-        <ArtistRow key={score.artist_id} name={score.artist.name} imageUrl={score.artist.image_url} note={describeScore(score)} />
+        <ArtistRow
+          key={score.artist_id}
+          name={score.artist.name}
+          imageUrl={score.artist.image_url}
+          note={describeScore(score)}
+          onPress={() => router.push(`/artist/${score.artist_id}/albums`)}
+        />
       ))}
       {scores.some((score) => score.is_estimated) && (
         <Body muted>An estimate means few fans of that artist are here yet; it settles as more join.</Body>

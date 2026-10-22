@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, space } from '../../ui/theme';
 
@@ -9,14 +9,21 @@ export function ArtistRow({
   imageUrl,
   note,
   children,
+  onPress,
 }: {
   name: string;
   imageUrl?: string | null;
   note?: string;
   children?: ReactNode;
+  /** When set, the row itself is a button (e.g. opens the artist's albums). */
+  onPress?: () => void;
 }) {
+  const Row = onPress ? Pressable : View;
   return (
-    <View style={styles.row}>
+    <Row
+      style={styles.row}
+      {...(onPress ? { onPress, accessibilityRole: 'button' as const, accessibilityLabel: `Open ${name}` } : {})}
+    >
       {imageUrl ? (
         <Image source={{ uri: imageUrl }} style={styles.image} accessibilityIgnoresInvertColors />
       ) : (
@@ -29,7 +36,7 @@ export function ArtistRow({
         {note ? <Text style={styles.note}>{note}</Text> : null}
       </View>
       {children ? <View style={styles.rowAction}>{children}</View> : null}
-    </View>
+    </Row>
   );
 }
 

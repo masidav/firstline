@@ -122,7 +122,8 @@ export function HomeScreen() {
     <Screen>
       <View style={styles.header}>
         <Title>Your artists</Title>
-        <View style={styles.headerButton}>
+        <View style={styles.headerButtons}>
+          <Button label="Journal" kind="secondary" onPress={() => router.push('/journal')} />
           <Button label="Profile" kind="secondary" onPress={() => router.push('/profile')} />
         </View>
       </View>
@@ -149,6 +150,7 @@ export function HomeScreen() {
           name={artist.name}
           imageUrl={artist.image_url}
           note={artist.status === 'onboarding' ? 'Getting ready' : undefined}
+          onPress={() => router.push(`/artist/${artist.id}/albums`)}
         />
       ))}
 
@@ -197,7 +199,7 @@ function describeResult(result: ArtistSearchResult): string | undefined {
 
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md },
-  headerButton: { minWidth: 96 },
+  headerButtons: { flexDirection: 'row', gap: space.sm },
   section: { color: colors.text, fontSize: 18, fontWeight: '700', marginTop: space.md },
   note: { color: colors.muted, fontSize: 14 },
 });
