@@ -1,4 +1,6 @@
-# dev environment. State lives in the GCS bucket created by ../../bootstrap.sh:
+# beta environment: real beta testers, smaller than prod. Every push to main deploys here first (after CI), with a
+# Cloud SQL backup before migrations; prod is promoted from it after approval. State lives in the GCS bucket created
+# by ../../bootstrap.sh:
 #   terraform init -backend-config="bucket=${PROJECT_ID}-tfstate"
 terraform {
   required_version = ">= 1.9"
@@ -29,7 +31,7 @@ provider "google" {
 module "environment" {
   source = "../../modules/environment"
 
-  environment        = "dev"
+  environment        = "beta"
   project_id         = var.project_id
   region             = var.region
   api_domain         = var.api_domain
@@ -38,8 +40,8 @@ module "environment" {
   alert_email        = var.alert_email
   github_repository  = var.github_repository
 
-  sql_tier                  = "db-f1-micro"
+  sql_tier                  = "db-g1-small"
   sql_high_availability     = false
-  sql_backup_retention_days = 7
-  deletion_protection       = false
+  sql_backup_retention_days = 14
+  deletion_protection       = true
 }

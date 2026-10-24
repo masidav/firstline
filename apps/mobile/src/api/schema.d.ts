@@ -1186,6 +1186,10 @@ export interface paths {
          *     `below_threshold` (raw score under `min_raw_score`), or `already_registered` (for another allocation of the
          *     same show, or named as someone's guest for it). `raw_score`, `percentile`, and `hub_match` are the fan's
          *     current standing; a registration keeps the values from when it was made.
+         *     `standing` (while registration is upcoming or open, for a fan who can register or has) says where they would
+         *     place if the draw ran now, counting equal scores against them. `likely` is true only when the seats of
+         *     everyone ahead plus the fan's own fit within `tickets - margin_seats` (25 to start), a buffer for fans who
+         *     register later with higher scores, so the app can say "you'll most likely get a ticket" without false hope.
          */
         get: operations["getEligibility"];
         put?: never;
@@ -2024,6 +2028,26 @@ export interface components {
             is_estimated?: boolean | null;
             hub_match?: number | null;
             registration?: components["schemas"]["Registration"] | null;
+            standing?: components["schemas"]["Standing"] | null;
+        };
+        /** @description Where the fan would place if the draw ran now. Equal scores count as ahead of the fan. */
+        Standing: {
+            rank: number;
+            /** @description Live registrations including the fan's (or theirs-to-be) */
+            registrants: number;
+            /** @description The fan is in the top this-many percent of registrants */
+            top_percent: number;
+            /** @description Seats the fans ranked ahead would take (2 each with a +1) */
+            seats_ahead: number;
+            /** @enum {integer} */
+            seats_needed: 1 | 2;
+            tickets: number;
+            /** @description Seats held back before saying likely */
+            margin_seats: number;
+            /** @description The show's city is one of the fan's hub cities (local fans are ranked first) */
+            local: boolean;
+            /** @description `seats_ahead + seats_needed <= tickets - margin_seats` */
+            likely: boolean;
         };
         MyRegistration: {
             registration: components["schemas"]["Registration"];
@@ -4636,7 +4660,10 @@ export interface operations {
     };
     getEligibility: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description For a fan who hasn't registered yet, count a +1 in `standing` */
+                plus_one?: boolean;
+            };
             header?: never;
             path: {
                 allocationId: components["parameters"]["AllocationId"];

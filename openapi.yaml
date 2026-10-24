@@ -1455,6 +1455,15 @@ paths:
         `below_threshold` (raw score under `min_raw_score`), or `already_registered` (for another allocation of the
         same show, or named as someone's guest for it). `raw_score`, `percentile`, and `hub_match` are the fan's
         current standing; a registration keeps the values from when it was made.
+        `standing` (while registration is upcoming or open, for a fan who can register or has) says where they would
+        place if the draw ran now, counting equal scores against them. `likely` is true only when the seats of
+        everyone ahead plus the fan's own fit within `tickets - margin_seats` (25 to start), a buffer for fans who
+        register later with higher scores, so the app can say "you'll most likely get a ticket" without false hope.
+      parameters:
+        - name: plus_one
+          in: query
+          schema: {type: boolean, default: false}
+          description: For a fan who hasn't registered yet, count a +1 in `standing`
       responses:
         '200':
           description: Eligibility
@@ -2525,6 +2534,22 @@ components:
         hub_match: {type: [integer, 'null'], minimum: 1, maximum: 3}
         registration:
           oneOf: [{$ref: '#/components/schemas/Registration'}, {type: 'null'}]
+        standing:
+          oneOf: [{$ref: '#/components/schemas/Standing'}, {type: 'null'}]
+    Standing:
+      type: object
+      description: Where the fan would place if the draw ran now. Equal scores count as ahead of the fan.
+      required: [rank, registrants, top_percent, seats_ahead, seats_needed, tickets, margin_seats, local, likely]
+      properties:
+        rank: {type: integer, minimum: 1}
+        registrants: {type: integer, minimum: 1, description: Live registrations including the fan's (or theirs-to-be)}
+        top_percent: {type: integer, minimum: 1, maximum: 100, description: 'The fan is in the top this-many percent of registrants'}
+        seats_ahead: {type: integer, minimum: 0, description: Seats the fans ranked ahead would take (2 each with a +1)}
+        seats_needed: {type: integer, enum: [1, 2]}
+        tickets: {type: integer}
+        margin_seats: {type: integer, description: Seats held back before saying likely}
+        local: {type: boolean, description: The show's city is one of the fan's hub cities (local fans are ranked first)}
+        likely: {type: boolean, description: '`seats_ahead + seats_needed <= tickets - margin_seats`'}
     MyRegistration:
       type: object
       required: [registration, allocation, event]

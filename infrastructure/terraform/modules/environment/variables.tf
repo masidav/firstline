@@ -4,11 +4,11 @@ variable "project_id" {
 }
 
 variable "environment" {
-  description = "Environment name; also the GitHub Actions environment allowed to deploy here."
+  description = "Cloud environment: beta (real beta testers; every push to main lands here first) or prod. Also the GitHub Actions environment allowed to deploy here. dev is not a cloud environment: it runs on the developer's machine (docs/DEVELOPMENT.md)."
   type        = string
   validation {
-    condition     = contains(["dev", "staging", "prod"], var.environment)
-    error_message = "environment must be dev, staging, or prod."
+    condition     = contains(["beta", "prod"], var.environment)
+    error_message = "environment must be beta or prod (dev runs locally)."
   }
 }
 
@@ -19,7 +19,7 @@ variable "region" {
 }
 
 variable "api_domain" {
-  description = "Public hostname of the API (e.g. api.staging.example.com). TLS is issued for it by Certificate Manager."
+  description = "Public hostname of the API (e.g. api.beta.example.com). TLS is issued for it by Certificate Manager."
   type        = string
 }
 
@@ -45,7 +45,7 @@ variable "github_repository" {
 }
 
 variable "sql_tier" {
-  description = "Cloud SQL machine tier, e.g. db-f1-micro (dev), db-custom-2-7680 (prod)."
+  description = "Cloud SQL machine tier, e.g. db-g1-small (beta), db-custom-2-7680 (prod)."
   type        = string
   default     = "db-f1-micro"
 }

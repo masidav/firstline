@@ -1,5 +1,9 @@
 # Development
 
+Three environments: **dev** is your machine (everything on `127.0.0.1`, fake data, this document), **beta** is the
+GCP environment real beta testers use (every push to `main` deploys there), **prod** is promoted from beta after
+approval. The cloud side is in [infrastructure/README.md](../infrastructure/README.md).
+
 ## Prerequisites
 - .NET SDK 10.0 (see `global.json`). Without a local SDK, use the `mcr.microsoft.com/dotnet/sdk:10.0` container.
 - Docker, for the local database and for the test suite (Testcontainers).
@@ -27,6 +31,23 @@ dotnet run --project database              # apply migrations
 dotnet run --project services/api          # http://localhost:5271/v1/health
 dotnet run --project workers               # background jobs (separate terminal)
 ```
+
+## Seed data
+`tools/dev/seed.py` fills the local database with a realistic, deterministic data set: 200 fans (hub cities,
+Spotify-like signals, album journal logs that earn ledger points through the real triggers, a few verified tickets
+and merch), 8 active artists with albums and tracks, 10 shows with a fan allocation each in a different state (open,
+upcoming, high threshold, just closed, draft, cancelled) and registrations made through `register_for_allocation()`,
+plus the staff account `dev_staff`.
+```bash
+python3 tools/dev/seed.py                  # on an empty database (after the migrations above)
+python3 tools/dev/seed.py --wipe           # wipe the local database first (asks), then seed
+python3 tools/dev/seed.py --fans 2000 --seed 7
+```
+It refuses to run on a database that already has seed data. Sign in from the app with dev sign-in as `dev_staff`
+or any fan handle it prints (`Auth__DevSignIn=true`). Scores are provisional until the worker runs the queued
+rescores. Nobody has a Spotify connection; connect your own as usual. The artists are fake (`seed:` ids), so after a
+week the weekly catalog refresh logs a failed job per seed artist; re-seed or ignore. Local only: never run it
+against beta or prod (`infrastructure/README.md`).
 
 ## Fan app
 The app in `apps/mobile` runs in the browser for now; see its [README](../apps/mobile/README.md), including how to

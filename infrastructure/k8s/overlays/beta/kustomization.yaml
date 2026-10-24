@@ -1,13 +1,13 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# dev: GCP project fandomscore-dev in us-central1. Values here must match infrastructure/terraform/envs/dev.
+# beta: GCP project fandomscore-beta in us-central1. Values here must match infrastructure/terraform/envs/beta.
 namespace: fandomscore
 
 labels:
   - includeSelectors: false
     pairs:
-      app.kubernetes.io/environment: dev
+      app.kubernetes.io/environment: beta
 
 resources:
   - ../../base
@@ -16,13 +16,13 @@ resources:
 # deploy.sh sets newTag to the git commit being deployed.
 images:
   - name: api
-    newName: us-central1-docker.pkg.dev/fandomscore-dev/fandomscore/api
+    newName: us-central1-docker.pkg.dev/fandomscore-beta/fandomscore/api
     newTag: latest
   - name: worker
-    newName: us-central1-docker.pkg.dev/fandomscore-dev/fandomscore/worker
+    newName: us-central1-docker.pkg.dev/fandomscore-beta/fandomscore/worker
     newTag: latest
   - name: migrate
-    newName: us-central1-docker.pkg.dev/fandomscore-dev/fandomscore/migrate
+    newName: us-central1-docker.pkg.dev/fandomscore-beta/fandomscore/migrate
     newTag: latest
 
 configMapGenerator:
@@ -49,17 +49,17 @@ patches:
     patch: |-
       - op: replace
         path: /spec/minReplicas
-        value: 1
+        value: 2
       - op: replace
         path: /spec/maxReplicas
-        value: 3
+        value: 6
   - target:
       kind: Deployment
       name: api
     patch: |-
       - op: replace
         path: /spec/replicas
-        value: 1
+        value: 2
   - target:
       kind: Deployment
       name: worker
@@ -67,10 +67,3 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 1
-  - target:
-      kind: PodDisruptionBudget
-      name: api
-    patch: |-
-      - op: replace
-        path: /spec/minAvailable
-        value: 0
