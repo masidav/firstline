@@ -17,7 +17,10 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Let fans register for an allocation; check eligibility against the frozen snapshot from the fraud feature.
       *Registration done 2026-10-21 (eligibility from the stored score, hub and score snapshot, one per fan per
       show, withdraw while open); the fraud snapshot waits on Phase 10.*
-- [ ] Implement the chosen selection method (ranked, lottery, or tiered) with a recorded seed and inputs so every draw can be audited and reproduced.
+- [x] Implement the chosen selection method (ranked, lottery, or tiered) with a recorded seed and inputs so every draw can be audited and reproduced.
+      Migration 0016: hub fans first, then by snapshot raw score, ties by a stored seed; +1 seats; raw-score
+      threshold (two saved albums by default). Verified 2026-10-24: invariants, RegistrationApiTests, AllocationApiTests
+      (against a local stand-in for 0015's `album_saves_score`).
 - [ ] Issue non-transferable reservation tokens bound to the fan's verified identity, with expiry.
 - [ ] Support delayed ticket delivery and a face-value exchange or return path.
 - [ ] Notify selected and unselected fans; release unclaimed inventory back to the promoter on schedule.

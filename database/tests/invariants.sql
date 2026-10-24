@@ -727,8 +727,8 @@ INSERT INTO events (id, artist_id, name, city_id, city, country, starts_at) VALU
 
 SELECT pg_temp.expect_error($$INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at)
   VALUES ('41000000-0000-0000-0000-000000000001', 0, 5000, now(), now() + interval '1 day')$$, 'allocations_tickets_check');
-SELECT pg_temp.expect_error($$INSERT INTO allocations (event_id, tickets, face_value_cents, min_percentile, registration_opens_at, registration_closes_at)
-  VALUES ('41000000-0000-0000-0000-000000000001', 10, 5000, 101, now(), now() + interval '1 day')$$, 'allocations_min_percentile_check');
+SELECT pg_temp.expect_error($$INSERT INTO allocations (event_id, tickets, face_value_cents, min_raw_score, registration_opens_at, registration_closes_at)
+  VALUES ('41000000-0000-0000-0000-000000000001', 10, 5000, -1, now(), now() + interval '1 day')$$, 'allocations_min_raw_score_check');
 SELECT pg_temp.expect_error($$INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at)
   VALUES ('41000000-0000-0000-0000-000000000001', 10, 5000, now() + interval '2 days', now() + interval '1 day')$$,
   'allocations_window_check');
@@ -748,7 +748,7 @@ BEGIN
   INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at, published_at)
   VALUES ('41000000-0000-0000-0000-000000000001', 50, 4500, now() + interval '1 day', now() + interval '5 days', now())
   RETURNING id INTO upcoming;
-  UPDATE allocations SET tickets = 60, min_percentile = 70 WHERE id = upcoming;
+  UPDATE allocations SET tickets = 60, min_raw_score = 70 WHERE id = upcoming;
   ASSERT (SELECT tickets FROM allocations WHERE id = upcoming) = 60, 'rules editable before registration opens';
   BEGIN
     UPDATE events SET starts_at = now() + interval '3 days' WHERE id = '41000000-0000-0000-0000-000000000001';
@@ -868,7 +868,7 @@ BEGIN
   VALUES (show, 5, 100, clock_timestamp() + interval '200 milliseconds', now() + interval '2 days', now()) RETURNING id INTO live;
   PERFORM pg_sleep(0.3);
   BEGIN
-    UPDATE allocations SET min_percentile = 99 WHERE id = live;
+    UPDATE allocations SET min_raw_score = 99 WHERE id = live;
     RAISE EXCEPTION 'changing rules after opening (same transaction) should fail';
   EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%rules are locked%', SQLERRM;
   END;
@@ -893,7 +893,7 @@ INSERT INTO user_artist_scores (user_id, artist_id, raw_score, percentile, is_es
 INSERT INTO events (id, artist_id, name, city_id, starts_at) VALUES
   ('43000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 'Chicago again', 'us-il-chicago',
    now() + interval '20 days');
-INSERT INTO allocations (id, event_id, tickets, face_value_cents, min_percentile, registration_opens_at, registration_closes_at, published_at) VALUES
+INSERT INTO allocations (id, event_id, tickets, face_value_cents, min_raw_score, registration_opens_at, registration_closes_at, published_at) VALUES
   ('44000000-0000-0000-0000-000000000001', '43000000-0000-0000-0000-000000000001', 10, 4500, 50, now() - interval '1 hour', now() + interval '5 days', now()),
   ('44000000-0000-0000-0000-000000000002', '43000000-0000-0000-0000-000000000001', 5, 9000, 0, now() - interval '1 hour', now() + interval '5 days', now()),
   ('44000000-0000-0000-0000-000000000003', '43000000-0000-0000-0000-000000000001', 5, 9000, 0, now() + interval '1 day', now() + interval '5 days', now()),
@@ -906,7 +906,7 @@ DECLARE fan uuid := '42000000-0000-0000-0000-000000000001'; ga uuid := '44000000
 BEGIN
   -- Eligibility reasons.
   ASSERT registration_blocker(fan, later) = 'not_open', 'not open yet';
-  ASSERT registration_blocker('42000000-0000-0000-0000-000000000002', ga) = 'below_threshold', 'percentile 40 < 50';
+  ASSERT registration_blocker('42000000-0000-0000-0000-000000000002', ga) = 'below_threshold', 'raw score 10 < 50';
   ASSERT registration_blocker('42000000-0000-0000-0000-000000000003', ga) = 'hub_city_required', 'no hub city';
   ASSERT registration_blocker('42000000-0000-0000-0000-000000000004', ga) = 'no_score', 'no score for the artist';
   ASSERT registration_blocker(fan, ga) IS NULL, 'eligible';
@@ -1038,6 +1038,197 @@ BEGIN
     RAISE EXCEPTION 'withdrawing after close should fail';
   EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'registration blocked: not_open%', SQLERRM;
   END;
+END $$;
+
+-- ------------------------------------------------------------ +1, threshold, and selection (0016)
+INSERT INTO users (id, handle, email) VALUES
+  ('45000000-0000-0000-0000-000000000001', 'sel_top', 'sel_top@example.test'),
+  ('45000000-0000-0000-0000-000000000002', 'sel_tie_a', 'sel_tie_a@example.test'),
+  ('45000000-0000-0000-0000-000000000003', 'sel_tie_b', 'sel_tie_b@example.test'),
+  ('45000000-0000-0000-0000-000000000004', 'sel_far', 'sel_far@example.test'),
+  ('45000000-0000-0000-0000-000000000005', 'sel_low', 'sel_low@example.test'),
+  ('45000000-0000-0000-0000-000000000006', 'sel_guest', 'sel_guest@example.test');
+SELECT set_hub_cities(id, CASE WHEN handle = 'sel_far' THEN '{ca-on-toronto}' ELSE '{us-il-chicago}' END::text[])
+  FROM users WHERE handle LIKE 'sel\_%';
+INSERT INTO user_artist_scores (user_id, artist_id, raw_score, percentile, is_estimated, baseline_weight) VALUES
+  ('45000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 80, 95, false, 0.1),
+  ('45000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000001', 50, 70, false, 0.1),
+  ('45000000-0000-0000-0000-000000000003', '40000000-0000-0000-0000-000000000001', 50, 70, false, 0.1),
+  ('45000000-0000-0000-0000-000000000004', '40000000-0000-0000-0000-000000000001', 99, 99, false, 0.1),
+  ('45000000-0000-0000-0000-000000000005', '40000000-0000-0000-0000-000000000001', 30, 40, false, 0.1),
+  ('45000000-0000-0000-0000-000000000006', '40000000-0000-0000-0000-000000000001', 60, 80, false, 0.1);
+INSERT INTO events (id, artist_id, name, city_id, starts_at) VALUES
+  ('46000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 'Draw night', 'us-il-chicago',
+   now() + interval '20 days');
+
+DO $$
+DECLARE al uuid; low uuid; top uuid := '45000000-0000-0000-0000-000000000001'; tie_a uuid := '45000000-0000-0000-0000-000000000002';
+        tie_b uuid := '45000000-0000-0000-0000-000000000003'; far uuid := '45000000-0000-0000-0000-000000000004';
+        lowfan uuid := '45000000-0000-0000-0000-000000000005'; guest uuid := '45000000-0000-0000-0000-000000000006';
+        s allocation_selections; again allocation_selections; r record;
+BEGIN
+  -- Publishing without a threshold sets the two-saved-albums default; an explicit threshold is kept.
+  INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at, published_at)
+  VALUES ('46000000-0000-0000-0000-000000000001', 3, 4500, now() - interval '1 hour', now() + interval '5 days', now())
+  RETURNING id INTO al;
+  ASSERT (SELECT min_raw_score FROM allocations WHERE id = al) = allocation_default_threshold('40000000-0000-0000-0000-000000000001'),
+         'default threshold at publish';
+  ALTER TABLE allocations DISABLE TRIGGER trg_allocation_check;
+  UPDATE allocations SET min_raw_score = 40 WHERE id = al;
+  ALTER TABLE allocations ENABLE TRIGGER trg_allocation_check;
+  ASSERT registration_blocker(lowfan, al) = 'below_threshold', 'raw score 30 < 40';
+  BEGIN
+    INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at, selected_at)
+    VALUES ('46000000-0000-0000-0000-000000000001', 3, 4500, now() + interval '1 day', now() + interval '5 days', now());
+    RAISE EXCEPTION 'setting selected_at directly should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%only the selection draw%', SQLERRM;
+  END;
+
+  -- Register: top asks for a +1; tie_a turns one on and off while open.
+  PERFORM register_for_allocation(top, al);
+  UPDATE allocation_registrations SET plus_one = true WHERE allocation_id = al AND user_id = top;
+  PERFORM register_for_allocation(tie_a, al);
+  UPDATE allocation_registrations SET plus_one = true WHERE allocation_id = al AND user_id = tie_a;
+  UPDATE allocation_registrations SET plus_one = false WHERE allocation_id = al AND user_id = tie_a;
+  PERFORM register_for_allocation(tie_b, al);
+  PERFORM register_for_allocation(far, al);
+
+  -- Outcomes and seats come only from the draw; the draw waits for registration to close.
+  BEGIN
+    UPDATE allocation_registrations SET outcome = 'selected', seats = 1 WHERE allocation_id = al AND user_id = far;
+    RAISE EXCEPTION 'setting an outcome directly should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%only the selection draw%', SQLERRM;
+  END;
+  BEGIN
+    PERFORM run_allocation_selection(al, NULL);
+    RAISE EXCEPTION 'selection while open should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'selection blocked: registration_open%', SQLERRM;
+  END;
+
+  -- A +1 guest can be named before the draw, once.
+  PERFORM name_plus_one_guest(top, al, guest);
+  BEGIN
+    PERFORM name_plus_one_guest(top, al, lowfan);
+    RAISE EXCEPTION 'naming a second guest should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'guest blocked: already_named%', SQLERRM;
+  END;
+  BEGIN
+    PERFORM name_plus_one_guest(tie_b, al, guest);
+    RAISE EXCEPTION 'a guest without a +1 should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'guest blocked: no_plus_one%', SQLERRM;
+  END;
+  ASSERT registration_blocker(guest, al) = 'already_registered', 'a named guest can''t also register for the show';
+
+  -- Close and draw. 3 seats: top (+1) takes 2; tie_a and tie_b tie at 50 for the last one; far (99) isn't local.
+  ALTER TABLE allocations DISABLE TRIGGER trg_allocation_check;
+  UPDATE allocations SET registration_opens_at = now() - interval '2 hours', registration_closes_at = now() - interval '1 hour' WHERE id = al;
+  ALTER TABLE allocations ENABLE TRIGGER trg_allocation_check;
+  s := run_allocation_selection(al, NULL);
+  ASSERT (s.tickets, s.registrations, s.selected_fans, s.seats_assigned) = (3, 4, 2, 3), format('draw summary %s', s);
+  ASSERT (SELECT (outcome, seats, selection_rank) = ('selected', 2::smallint, 1) FROM allocation_registrations
+           WHERE allocation_id = al AND user_id = top), 'top first, with the +1';
+  ASSERT (SELECT count(*) FROM allocation_registrations WHERE allocation_id = al AND user_id IN (tie_a, tie_b)
+           AND outcome = 'selected' AND seats = 1 AND selection_rank = 2) = 1, 'one of the tied fans gets the last seat';
+  ASSERT (SELECT (outcome, seats, selection_rank) IS NOT DISTINCT FROM ('not_selected', NULL::smallint, 4) FROM allocation_registrations
+           WHERE allocation_id = al AND user_id = far), 'non-local fans after local ones';
+  ASSERT (SELECT selected_at = s.ran_at FROM allocations WHERE id = al), 'selected_at stamped';
+
+  -- The draw can be repeated from the seed, runs once, and can't be edited.
+  ASSERT NOT EXISTS (SELECT 1 FROM allocation_ranking(al, s.seed) k JOIN allocation_registrations x ON x.id = k.registration_id
+                      WHERE x.selection_rank <> k.rank), 'ranking reproduces from the seed';
+  again := run_allocation_selection(al, NULL);
+  ASSERT again.seed = s.seed AND again.ran_at = s.ran_at, 'second run returns the recorded draw';
+  BEGIN
+    UPDATE allocation_selections SET seed = 'x' WHERE allocation_id = al;
+    RAISE EXCEPTION 'editing a draw should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%never edited%', SQLERRM;
+  END;
+  BEGIN
+    DELETE FROM allocation_selections WHERE allocation_id = al;
+    RAISE EXCEPTION 'deleting a draw should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%never edited%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE allocations SET cancelled_at = now() WHERE id = al;
+    RAISE EXCEPTION 'cancelling after the draw should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%fans have been selected%', SQLERRM;
+  END;
+
+  -- After the draw: no +1 changes except a selected fan adding one when a seat is free (none is).
+  SELECT * INTO r FROM allocation_registrations WHERE allocation_id = al AND outcome = 'selected' AND seats = 1;
+  BEGIN
+    PERFORM add_plus_one(r.user_id, al);
+    RAISE EXCEPTION 'adding a +1 with no seat left should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'plus one blocked: sold_out%', SQLERRM;
+  END;
+  BEGIN
+    PERFORM add_plus_one(far, al);
+    RAISE EXCEPTION 'a +1 for a fan who wasn''t selected should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'plus one blocked: not_selected%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE allocation_registrations SET plus_one = true WHERE allocation_id = al AND user_id = far;
+    RAISE EXCEPTION 'changing the +1 after closing should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%+1 can change only%', SQLERRM;
+  END;
+END $$;
+
+-- A +1 that doesn't fit: the fan gets the last seat alone (provisional), and can add the +1 later if a seat frees up.
+DO $$
+DECLARE al uuid; first uuid := '45000000-0000-0000-0000-000000000004'; second uuid := '45000000-0000-0000-0000-000000000002';
+        s allocation_selections;
+BEGIN
+  INSERT INTO events (id, artist_id, name, city_id, starts_at) VALUES
+    ('46000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000001', 'Small room', 'ca-on-toronto',
+     now() + interval '20 days');
+  INSERT INTO allocations (event_id, tickets, face_value_cents, min_raw_score, registration_opens_at, registration_closes_at, published_at)
+  VALUES ('46000000-0000-0000-0000-000000000002', 3, 4500, 0, now() - interval '1 hour', now() + interval '5 days', now())
+  RETURNING id INTO al;
+  PERFORM register_for_allocation(first, al);    -- local (Toronto), 99
+  PERFORM register_for_allocation(second, al);   -- not local, 50, asks for a +1
+  UPDATE allocation_registrations SET plus_one = true WHERE allocation_id = al AND user_id IN (first, second);
+  ALTER TABLE allocations DISABLE TRIGGER trg_allocation_check;
+  UPDATE allocations SET registration_opens_at = now() - interval '2 hours', registration_closes_at = now() - interval '1 hour' WHERE id = al;
+  ALTER TABLE allocations ENABLE TRIGGER trg_allocation_check;
+  s := run_allocation_selection(al, NULL);
+  ASSERT (SELECT seats FROM allocation_registrations WHERE allocation_id = al AND user_id = first) = 2, 'first takes 2';
+  ASSERT (SELECT (outcome, seats, plus_one) = ('selected', 1::smallint, true) FROM allocation_registrations
+           WHERE allocation_id = al AND user_id = second), 'last seat without the +1';
+  ASSERT s.seats_assigned = 3, 'all seats assigned';
+END $$;
+
+-- A selected fan adds a +1 after the draw when a seat is free; then names the guest; the fan's guest can't be themself.
+DO $$
+DECLARE al uuid; fan uuid := '45000000-0000-0000-0000-000000000003'; guest uuid := '45000000-0000-0000-0000-000000000005';
+BEGIN
+  INSERT INTO events (id, artist_id, name, city_id, starts_at) VALUES
+    ('46000000-0000-0000-0000-000000000003', '40000000-0000-0000-0000-000000000001', 'Roomy', 'us-il-chicago',
+     now() + interval '20 days');
+  INSERT INTO allocations (event_id, tickets, face_value_cents, min_raw_score, registration_opens_at, registration_closes_at, published_at)
+  VALUES ('46000000-0000-0000-0000-000000000003', 5, 4500, 0, now() - interval '1 hour', now() + interval '5 days', now())
+  RETURNING id INTO al;
+  PERFORM register_for_allocation(fan, al);
+  ALTER TABLE allocations DISABLE TRIGGER trg_allocation_check;
+  UPDATE allocations SET registration_opens_at = now() - interval '2 hours', registration_closes_at = now() - interval '1 hour' WHERE id = al;
+  ALTER TABLE allocations ENABLE TRIGGER trg_allocation_check;
+  PERFORM run_allocation_selection(al, NULL);
+  BEGIN
+    PERFORM name_plus_one_guest(fan, al, guest);
+    RAISE EXCEPTION 'naming a guest without a +1 seat should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'guest blocked: no_plus_one%', SQLERRM;
+  END;
+  PERFORM add_plus_one(fan, al);
+  PERFORM add_plus_one(fan, al);   -- idempotent
+  ASSERT (SELECT (plus_one, seats) = (true, 2::smallint) FROM allocation_registrations WHERE allocation_id = al AND user_id = fan), '+1 added';
+  ASSERT (SELECT seats_assigned FROM allocation_selections WHERE allocation_id = al) = 2, 'seat counted once';
+  BEGIN
+    PERFORM name_plus_one_guest(fan, al, fan);
+    RAISE EXCEPTION 'naming yourself should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'guest blocked: self%', SQLERRM;
+  END;
+  PERFORM name_plus_one_guest(fan, al, guest);
+  ASSERT (SELECT guest_user_id = guest AND guest_named_at IS NOT NULL FROM allocation_registrations
+           WHERE allocation_id = al AND user_id = fan), 'guest named';
 END $$;
 
 \echo ALL INVARIANT TESTS PASSED

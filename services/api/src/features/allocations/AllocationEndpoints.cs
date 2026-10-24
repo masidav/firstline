@@ -36,6 +36,7 @@ public static partial class AllocationEndpoints
         admin.MapPost("/allocations/{allocationId:guid}/publish", PublishAsync);
         admin.MapPost("/allocations/{allocationId:guid}/cancel", CancelAsync);
         admin.MapDelete("/allocations/{allocationId:guid}", DeleteDraftAsync);
+        MapSelection(admin);
     }
 
     public sealed record Show(
@@ -48,12 +49,14 @@ public static partial class AllocationEndpoints
 
     /// <summary>
     /// <c>Status</c>: <c>draft</c> (staff only), <c>upcoming</c> (published, registration not open yet), <c>open</c>,
-    /// <c>closed</c> (registration over), or <c>cancelled</c>.
+    /// <c>closed</c> (registration over, no draw yet), <c>selected</c> (the draw has run), or <c>cancelled</c>.
+    /// <c>MinRawScore</c> is null on a draft without one: publishing sets the two-saved-albums default.
+    /// <c>SeatsLeft</c> is set once the draw has run (seats a selected fan's +1 can still take).
     /// </summary>
     public sealed record Allocation(
-        Guid Id, Guid EventId, string Name, int Tickets, int FaceValueCents, string Currency, decimal MinPercentile,
+        Guid Id, Guid EventId, string Name, int Tickets, int FaceValueCents, string Currency, decimal? MinRawScore,
         DateTime RegistrationOpensAt, DateTime RegistrationClosesAt, string Status, DateTime? PublishedAt,
-        DateTime? CancelledAt);
+        DateTime? CancelledAt, DateTime? SelectedAt, int? SeatsLeft);
 
     // ------------------------------------------------------------------ fans
 
@@ -186,7 +189,7 @@ public static partial class AllocationEndpoints
         var tickets = input.Integer("tickets", 1, 100_000, required: true);
         var faceValue = input.Integer("face_value_cents", 0, 10_000_000, required: true);
         var currency = input.Currency("currency");
-        var minPercentile = input.Percentile("min_percentile");
+        var minRawScore = input.Score("min_raw_score");
         var opensAt = input.Time("registration_opens_at", required: true);
         var closesAt = input.Time("registration_closes_at", required: true);
         input.RequireOrder(opensAt, closesAt);
@@ -200,13 +203,13 @@ public static partial class AllocationEndpoints
 
         var allocationId = await GuardAsync(() => connection.ExecuteScalarAsync<Guid>(
             """
-            INSERT INTO allocations (event_id, name, tickets, face_value_cents, currency, min_percentile,
+            INSERT INTO allocations (event_id, name, tickets, face_value_cents, currency, min_raw_score,
                                      registration_opens_at, registration_closes_at, created_by)
             VALUES (@eventId, COALESCE(@name, 'Fan allocation'), @tickets, @faceValue, COALESCE(@currency, 'USD'),
-                    COALESCE(@minPercentile, 0), @opensAt, @closesAt, @createdBy)
+                    @minRawScore, @opensAt, @closesAt, @createdBy)
             RETURNING id
             """,
-            new { eventId, name, tickets, faceValue, currency, minPercentile, opensAt, closesAt, createdBy = user.UserId() }),
+            new { eventId, name, tickets, faceValue, currency, minRawScore, opensAt, closesAt, createdBy = user.UserId() }),
             field: "registration_closes_at");
         return Results.Created($"/v1/admin/allocations/{allocationId}", await LoadAllocationAsync(connection, allocationId));
     }
@@ -219,7 +222,7 @@ public static partial class AllocationEndpoints
         var tickets = input.Integer("tickets", 1, 100_000, required: false);
         var faceValue = input.Integer("face_value_cents", 0, 10_000_000, required: false);
         var currency = input.Currency("currency");
-        var minPercentile = input.Percentile("min_percentile");
+        var minRawScore = input.Score("min_raw_score");
         var opensAt = input.Time("registration_opens_at", required: false);
         var closesAt = input.Time("registration_closes_at", required: false);
         input.ThrowIfInvalid();
@@ -230,12 +233,12 @@ public static partial class AllocationEndpoints
             UPDATE allocations
             SET name = COALESCE(@name, name), tickets = COALESCE(@tickets, tickets),
                 face_value_cents = COALESCE(@faceValue, face_value_cents), currency = COALESCE(@currency, currency),
-                min_percentile = COALESCE(@minPercentile, min_percentile),
+                min_raw_score = COALESCE(@minRawScore, min_raw_score),
                 registration_opens_at = COALESCE(@opensAt, registration_opens_at),
                 registration_closes_at = COALESCE(@closesAt, registration_closes_at)
             WHERE id = @allocationId
             """,
-            new { allocationId, name, tickets, faceValue, currency, minPercentile, opensAt, closesAt }),
+            new { allocationId, name, tickets, faceValue, currency, minRawScore, opensAt, closesAt }),
             field: "registration_closes_at");
         if (updated == 0)
         {
@@ -269,8 +272,9 @@ public static partial class AllocationEndpoints
             throw Conflict("A draft isn't visible to fans; delete it instead of cancelling.");
         }
 
-        await connection.ExecuteAsync(
-            "UPDATE allocations SET cancelled_at = now() WHERE id = @allocationId AND cancelled_at IS NULL", new { allocationId });
+        await GuardAsync(() => connection.ExecuteAsync(
+            "UPDATE allocations SET cancelled_at = now() WHERE id = @allocationId AND cancelled_at IS NULL", new { allocationId }),
+            field: null);
         return Results.Ok(await LoadAllocationAsync(connection, allocationId));
     }
 
@@ -301,14 +305,16 @@ public static partial class AllocationEndpoints
     private const string AllocationColumns =
         """
         a.id AS Id, a.event_id AS EventId, a.name AS Name, a.tickets AS Tickets, a.face_value_cents AS FaceValueCents,
-        a.currency AS Currency, a.min_percentile AS MinPercentile, a.registration_opens_at AS RegistrationOpensAt,
+        a.currency AS Currency, a.min_raw_score AS MinRawScore, a.registration_opens_at AS RegistrationOpensAt,
         a.registration_closes_at AS RegistrationClosesAt,
         CASE WHEN a.cancelled_at IS NOT NULL THEN 'cancelled'
              WHEN a.published_at IS NULL THEN 'draft'
+             WHEN a.selected_at IS NOT NULL THEN 'selected'
              WHEN now() < a.registration_opens_at THEN 'upcoming'
              WHEN now() < a.registration_closes_at THEN 'open'
              ELSE 'closed' END AS Status,
-        a.published_at AS PublishedAt, a.cancelled_at AS CancelledAt
+        a.published_at AS PublishedAt, a.cancelled_at AS CancelledAt, a.selected_at AS SelectedAt,
+        (SELECT sel.tickets - sel.seats_assigned FROM allocation_selections sel WHERE sel.allocation_id = a.id) AS SeatsLeft
         """;
 
     private static async Task<EventDetail> LoadEventAsync(NpgsqlConnection connection, Guid eventId, bool includeDrafts)
@@ -441,12 +447,12 @@ public static partial class AllocationEndpoints
                     ? number
                     : Invalid<int?>(field, $"Send a whole number from {min} to {max}.", null);
 
-        public decimal? Percentile(string field) =>
+        public decimal? Score(string field) =>
             !_body.TryGetProperty(field, out var value)
                 ? null
-                : value.ValueKind == JsonValueKind.Number && value.TryGetDecimal(out var number) && number is >= 0 and <= 100
+                : value.ValueKind == JsonValueKind.Number && value.TryGetDecimal(out var number) && number is >= 0 and < 100_000_000
                     ? Math.Round(number, 2)
-                    : Invalid<decimal?>(field, "Send a percentile from 0 to 100.", null);
+                    : Invalid<decimal?>(field, "Send a raw score of 0 or more.", null);
 
         public string? Currency(string field) =>
             !_body.TryGetProperty(field, out var value)
