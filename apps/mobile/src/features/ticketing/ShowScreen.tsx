@@ -117,8 +117,10 @@ function AllocationCard({ allocation }: { allocation: Allocation }) {
   const wantsPlusOne = registration ? registration.plus_one : plusOne;
   const message = eligibility?.standing ? standingMessage(eligibility.standing) : null;
   const canChangePlusOne =
-    allocation.status === 'open' ? !registration?.guest : registration?.status === 'selected' && registration.seats === 1;
+    !registration?.on_hold &&
+    (allocation.status === 'open' ? !registration?.guest : registration?.status === 'selected' && registration.seats === 1);
   const canNameGuest =
+    !registration?.on_hold &&
     registration?.plus_one && !registration.guest && (registration.status === 'registered' || registration.seats === 2);
 
   const togglePlusOne = () =>
@@ -151,6 +153,12 @@ function AllocationCard({ allocation }: { allocation: Allocation }) {
           {registration.seats === 2 ? 'You got tickets for you and your +1!' : 'You got a ticket!'}
           {registration.plus_one && registration.seats === 1 ? " There wasn't a seat left for your +1." : ''}
         </Text>
+      )}
+      {registration?.on_hold && (
+        <Body>
+          Your ticket is on hold because staff paused your account. We'll reach out to sort it out; you can also ask to be
+          unbanned from the home screen. You can't add or name a +1 until then.
+        </Body>
       )}
       {registration?.status === 'not_selected' && <Body>You weren't selected this time.</Body>}
       {registration?.status === 'registered' && <Text style={styles.good}>You're registered.</Text>}

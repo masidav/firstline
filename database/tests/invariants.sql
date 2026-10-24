@@ -1443,4 +1443,64 @@ SELECT pg_temp.expect_error(
   $$INSERT INTO account_suspensions (user_id, reason, ends_at) SELECT id, 'spam', now() + interval '1 day' FROM users WHERE handle = 'inv_bot'$$,
   'account_suspensions_reason_check');
 
+-- ------------------------------------------------------------ suspensions and allocations (0019)
+INSERT INTO users (id, handle, email) VALUES
+  ('47000000-0000-0000-0000-000000000001', 'hold_host', 'hold_host@example.test'),
+  ('47000000-0000-0000-0000-000000000002', 'hold_other', 'hold_other@example.test'),
+  ('47000000-0000-0000-0000-000000000003', 'hold_guest', 'hold_guest@example.test');
+SELECT set_hub_cities(id, '{us-il-chicago}') FROM users WHERE handle LIKE 'hold\_%';
+INSERT INTO user_artist_scores (user_id, artist_id, raw_score, percentile, is_estimated, baseline_weight) VALUES
+  ('47000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 90, 99, false, 0.1),
+  ('47000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000001', 50, 70, false, 0.1);
+INSERT INTO events (id, artist_id, name, city_id, starts_at) VALUES
+  ('48000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 'Held night', 'us-il-chicago',
+   now() + interval '20 days');
+
+DO $$
+DECLARE al uuid; host uuid := '47000000-0000-0000-0000-000000000001'; other uuid := '47000000-0000-0000-0000-000000000002';
+        guest uuid := '47000000-0000-0000-0000-000000000003'; v_suspension uuid;
+BEGIN
+  INSERT INTO allocations (event_id, tickets, face_value_cents, min_raw_score, registration_opens_at, registration_closes_at, published_at)
+  VALUES ('48000000-0000-0000-0000-000000000001', 5, 4500, 0, now() - interval '1 hour', now() + interval '5 days', now())
+  RETURNING id INTO al;
+  PERFORM register_for_allocation(host, al);
+  PERFORM register_for_allocation(other, al);
+  UPDATE allocation_registrations SET plus_one = true WHERE allocation_id = al AND user_id = other;
+
+  -- A suspended account can't be named as a guest.
+  INSERT INTO account_suspensions (user_id, reason, ends_at) VALUES (guest, 'bot', now() + interval '7 days');
+  BEGIN
+    PERFORM name_plus_one_guest(other, al, guest);
+    RAISE EXCEPTION 'naming a suspended guest should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'guest blocked: guest_suspended%', SQLERRM;
+  END;
+
+  -- A host suspended after registering keeps the registration but can't add a +1.
+  INSERT INTO account_suspensions (user_id, reason, ends_at) VALUES (host, 'bot', now() + interval '7 days')
+  RETURNING id INTO v_suspension;
+  BEGIN
+    UPDATE allocation_registrations SET plus_one = true WHERE allocation_id = al AND user_id = host;
+    RAISE EXCEPTION 'a suspended host adding a +1 should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'plus one blocked: host_suspended%', SQLERRM;
+  END;
+
+  -- The draw still ranks the suspended host (their ticket is held, not skipped).
+  ALTER TABLE allocations DISABLE TRIGGER trg_allocation_check;
+  UPDATE allocations SET registration_opens_at = now() - interval '2 hours', registration_closes_at = now() - interval '1 hour' WHERE id = al;
+  ALTER TABLE allocations ENABLE TRIGGER trg_allocation_check;
+  PERFORM run_allocation_selection(al, NULL);
+  ASSERT (SELECT (outcome, selection_rank) = ('selected', 1) FROM allocation_registrations WHERE allocation_id = al AND user_id = host),
+         'suspended host still ranked and selected';
+  BEGIN
+    PERFORM add_plus_one(host, al);
+    RAISE EXCEPTION 'a suspended host adding a +1 after the draw should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'plus one blocked: host_suspended%', SQLERRM;
+  END;
+
+  -- Once staff lift it, the +1 works.
+  UPDATE account_suspensions SET lifted_at = now() WHERE id = v_suspension;
+  PERFORM add_plus_one(host, al);
+  ASSERT (SELECT seats FROM allocation_registrations WHERE allocation_id = al AND user_id = host) = 2, '+1 after the suspension is lifted';
+END $$;
+
 \echo ALL INVARIANT TESTS PASSED

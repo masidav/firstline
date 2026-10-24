@@ -21,7 +21,11 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       Migration 0017: hub fans first, then by snapshot raw score, ties by a stored seed; +1 seats; raw-score
       threshold (two saved albums by default). Verified 2026-10-24: invariants, RegistrationApiTests, AllocationApiTests
       (against a local stand-in for 0015's `album_saves_score`).
+- [x] Suspensions (decided 2026-10-24): suspended accounts can't register or be a +1; a host suspended after registering
+      is ranked and, if selected, held (`on_hold`) with no +1 changes until staff resolve it. Migration 0019. Verified
+      2026-10-24: invariants, RegistrationApiTests, full suite 212/212.
 - [ ] Issue non-transferable reservation tokens bound to the fan's verified identity, with expiry.
+      Ticket delivery and a guest claiming their seat must refuse suspended accounts (holds above).
 - [ ] Support delayed ticket delivery and a face-value exchange or return path.
 - [ ] Notify selected and unselected fans; release unclaimed inventory back to the promoter on schedule.
 - [ ] Make registration and selection idempotent and safe under on-sale traffic spikes.

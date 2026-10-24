@@ -330,6 +330,59 @@ public sealed class RegistrationApiTests(PostgresFixture postgres) : IAsyncLifet
         Assert.Equal(JsonValueKind.Null, (await StandingAsync(low)).ValueKind);
     }
 
+    [Fact]
+    public async Task A_host_suspended_after_registering_is_selected_on_hold_and_cannot_add_a_plus_one()
+    {
+        var staff = await FanAsync("hold_staff", score: null);
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            await connection.ExecuteAsync("UPDATE users SET is_staff = true WHERE handle = 'hold_staff'");
+        }
+
+        var allocationId = await AllocationAsync(_eventId, minRawScore: 0, tickets: 5);
+        var host = await FanAsync("held_host", score: 70, "us-il-chicago");
+        await FanAsync("paused_guest", score: null);
+        await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{allocationId}/registration", host), HttpStatusCode.Created);
+        await SuspendAsync("paused_guest");
+        await SuspendAsync("held_host");
+
+        var noPlusOne = await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{allocationId}/registration", host,
+            new { plus_one = true }), HttpStatusCode.Forbidden);
+        Assert.Equal("account_suspended", noPlusOne.GetProperty("code").GetString());
+
+        await CloseRegistrationAsync(allocationId);
+        await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/allocations/{allocationId}/selection", staff), HttpStatusCode.Created);
+        var mine = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/registrations", host), HttpStatusCode.OK);
+        var registration = mine.GetProperty("items")[0].GetProperty("registration");
+        Assert.Equal(("selected", true), (registration.GetProperty("status").GetString(), registration.GetProperty("on_hold").GetBoolean()));
+
+        var afterDraw = await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{allocationId}/registration", host,
+            new { plus_one = true }), HttpStatusCode.Forbidden);
+        Assert.Equal("account_suspended", afterDraw.GetProperty("code").GetString());
+
+        // Lifted: the hold ends, the +1 can be added, and a suspended guest still can't be named.
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            await connection.ExecuteAsync(
+                "UPDATE account_suspensions SET lifted_at = now() WHERE user_id = (SELECT id FROM users WHERE handle = 'held_host')");
+        }
+
+        var added = await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{allocationId}/registration", host,
+            new { plus_one = true }), HttpStatusCode.OK);
+        Assert.Equal((false, 2), (added.GetProperty("on_hold").GetBoolean(), added.GetProperty("seats").GetInt32()));
+        var pausedGuest = await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{allocationId}/registration/guest", host,
+            new { handle = "paused_guest" }), HttpStatusCode.Conflict);
+        Assert.Equal("guest_unavailable", pausedGuest.GetProperty("code").GetString());
+    }
+
+    private async Task SuspendAsync(string handle)
+    {
+        await using var connection = await _db.OpenConnectionAsync();
+        await connection.ExecuteAsync(
+            "INSERT INTO account_suspensions (user_id, reason, ends_at) SELECT id, 'bot', now() + interval '7 days' FROM users WHERE handle = @handle",
+            new { handle });
+    }
+
     // Moves the window into the past directly (the API can't change an open allocation's rules, by design).
     private async Task CloseRegistrationAsync(Guid allocationId)
     {

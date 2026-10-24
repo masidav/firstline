@@ -42,6 +42,13 @@ two for a +1; with one seat left, a fan with a +1 gets it alone (provisional). T
 `allocation_selections`, so anyone can rerun the ranking and get the same order. Outcomes, ranks, and seats are written
 only by the draw (a guard trigger checks a transaction setting), and a selected allocation can't be cancelled.
 
+## Suspensions (migration 0019, decided 2026-10-24)
+A suspended account can't get a ticket: it can't register (`registration_blocker`, 0018) or be named as a +1 guest.
+A host suspended after registering is still ranked in the draw; if selected, the registration reports `on_hold` and
+the ticket is held while staff reach out to resolve the suspension (ticket delivery must check `is_suspended`). While
+suspended, the host can't add a +1 or name a guest (`trg_registration_suspension_guard`, `403 account_suspended`).
+Lifting the suspension ends the hold.
+
 ## Standing ("you'll most likely get a ticket")
 `GET /v1/allocations/{id}/eligibility` includes `standing` while registration is upcoming or open: the fan's rank if
 the draw ran now (ranked like the draw, but equal scores count against the fan), the top percent, and `likely`. It is

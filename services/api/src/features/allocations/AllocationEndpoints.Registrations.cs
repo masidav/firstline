@@ -34,11 +34,12 @@ public static partial class AllocationEndpoints
     /// <summary>
     /// <c>HubMatch</c>: where the show's city is in the fan's hub cities (1 primary, 2-3 backup), or null.
     /// <c>Status</c>: registered, withdrawn, selected, or not_selected. <c>Seats</c>: 1, or 2 with the +1, once selected.
+    /// <c>OnHold</c>: selected, but the fan's account is suspended, so the ticket is held until staff resolve it.
     /// </summary>
     public sealed record Registration(
         Guid Id, Guid AllocationId, Guid EventId, IReadOnlyList<string> HubCityIds, short? HubMatch, bool Local,
         decimal Percentile, decimal RawScore, bool IsEstimated, DateTime RegisteredAt, DateTime? WithdrawnAt, string Status,
-        bool PlusOne, Guest? Guest, int? SelectionRank, int? Seats);
+        bool PlusOne, Guest? Guest, int? SelectionRank, int? Seats, bool OnHold);
 
     /// <summary>
     /// Whether the fan can register now. <c>Reason</c> is null when they can (or already have), else one of
@@ -210,6 +211,7 @@ public static partial class AllocationEndpoints
             {
                 throw e.MessageText["plus one blocked: ".Length..] switch
                 {
+                    "host_suspended" => HostSuspended(),
                     "sold_out" => PlusOneUnavailable("Every seat in this allocation is taken, so there's no room for a +1."),
                     "show_started" => PlusOneUnavailable("The show has started."),
                     _ => PlusOneUnavailable("Only selected fans can add a +1."),
@@ -239,7 +241,9 @@ public static partial class AllocationEndpoints
         }
         catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.RaiseException)
         {
-            throw Blocked("not_open");   // registration closed in between
+            throw e.MessageText == "plus one blocked: host_suspended"
+                ? HostSuspended()
+                : Blocked("not_open");   // registration closed in between
         }
     }
 
@@ -266,6 +270,11 @@ public static partial class AllocationEndpoints
             await connection.ExecuteAsync("SELECT name_plus_one_guest(@userId, @allocationId, @guestId)", new { userId, allocationId, guestId });
         }
         catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.RaiseException
+                                          && e.MessageText == "plus one blocked: host_suspended")
+        {
+            throw HostSuspended();
+        }
+        catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.RaiseException
                                           && e.MessageText.StartsWith("guest blocked: ", StringComparison.Ordinal))
         {
             throw e.MessageText["guest blocked: ".Length..] switch
@@ -274,6 +283,7 @@ public static partial class AllocationEndpoints
                 "no_plus_one" => GuestUnavailable("You don't have a +1 seat for this allocation."),
                 "already_named" => GuestUnavailable("You've already named your guest. Guests can't be changed."),
                 "self" => GuestUnavailable("Your guest has to be someone else."),
+                "guest_suspended" => GuestUnavailable("This account is paused, so it can't be a +1 right now."),
                 "guest_has_ticket" => GuestUnavailable("This person is already registered for this show or is someone else's guest."),
                 _ => GuestUnavailable("This account can't be your guest."),
             };
@@ -344,6 +354,10 @@ public static partial class AllocationEndpoints
     private static ApiProblemException PlusOneUnavailable(string detail) =>
         new(StatusCodes.Status409Conflict, "plus_one_unavailable", "Can't change the +1", detail);
 
+    private static ApiProblemException HostSuspended() =>
+        new(StatusCodes.Status403Forbidden, "account_suspended", "Account paused",
+            "Staff paused your account, so you can't add or name a +1 until that's resolved.");
+
     private static ApiProblemException GuestUnavailable(string detail) =>
         new(StatusCodes.Status409Conflict, "guest_unavailable", "Can't name this guest", detail);
 
@@ -373,14 +387,16 @@ public static partial class AllocationEndpoints
         r.id AS Id, r.allocation_id AS AllocationId, r.event_id AS EventId, r.hub_city_ids AS HubCityIds,
         r.hub_match AS HubMatch, r.percentile AS Percentile, r.raw_score AS RawScore, r.is_estimated AS IsEstimated,
         r.registered_at AS RegisteredAt, r.withdrawn_at AS WithdrawnAt, r.plus_one AS PlusOne, r.outcome AS Outcome,
-        r.selection_rank AS SelectionRank, r.seats AS Seats, g.id AS GuestId, g.handle AS GuestHandle
+        r.selection_rank AS SelectionRank, r.seats AS Seats, g.id AS GuestId, g.handle AS GuestHandle,
+        (r.outcome = 'selected' AND r.withdrawn_at IS NULL AND is_suspended(r.user_id)) AS OnHold
         """;
 
     private static Registration ToRegistration(RegistrationRow row) =>
         new(row.Id, row.AllocationId, row.EventId, row.HubCityIds, row.HubMatch, row.HubMatch is not null, row.Percentile,
             row.RawScore, row.IsEstimated, row.RegisteredAt, row.WithdrawnAt,
             row.WithdrawnAt is not null ? "withdrawn" : row.Outcome ?? "registered",
-            row.PlusOne, row.GuestId is { } guestId ? new Guest(guestId, row.GuestHandle!) : null, row.SelectionRank, row.Seats);
+            row.PlusOne, row.GuestId is { } guestId ? new Guest(guestId, row.GuestHandle!) : null, row.SelectionRank, row.Seats,
+            row.OnHold);
 
     // A class with setters, not a positional record: Dapper reports text[] as System.Array to constructors.
     private class RegistrationRow
@@ -400,6 +416,7 @@ public static partial class AllocationEndpoints
         public int? SelectionRank { get; set; }
         public short? Seats { get; set; }
         public Guid? GuestId { get; set; }
+        public bool OnHold { get; set; }
         public string? GuestHandle { get; set; }
     }
 

@@ -1534,7 +1534,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Registration'}
         '403':
-          description: 'No score for the artist, or below the threshold (`code: not_eligible`); or staff paused the account (`code: account_suspended`)'
+          description: 'No score for the artist, or below the threshold (`code: not_eligible`); or staff paused the account, which also blocks adding a +1 (`code: account_suspended`)'
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
@@ -1572,7 +1572,8 @@ paths:
       description: |
         The guest needs an account (it can be created after registering). Allowed once the fan has asked for a +1,
         and after the draw only if the +1 got a seat. A guest is named once and can't be changed. The guest can't
-        be the fan, registered for the same show, or another fan's guest for it.
+        be the fan, registered for the same show, another fan's guest for it, or a suspended account. A suspended
+        fan can't name a guest (`403 account_suspended`).
       requestBody:
         required: true
         content:
@@ -1590,7 +1591,12 @@ paths:
               schema: {$ref: '#/components/schemas/Registration'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409':
-          description: 'No such account, no +1 seat, already named, or the guest has a ticket for the show (`code: guest_unavailable`)'
+          description: 'No such account, no +1 seat, already named, the guest is suspended, or the guest has a ticket for the show (`code: guest_unavailable`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '403':
+          description: 'The fan''s account is suspended (`code: account_suspended`)'
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
@@ -2654,7 +2660,7 @@ components:
       type: object
       description: A fan's registration, with the snapshot taken when they registered.
       required: [id, allocation_id, event_id, hub_city_ids, local, percentile, raw_score, is_estimated, registered_at, status,
-                 plus_one]
+                 plus_one, on_hold]
       properties:
         id: {type: string, format: uuid}
         allocation_id: {type: string, format: uuid}
@@ -2690,6 +2696,11 @@ components:
             - {type: 'null'}
         selection_rank: {type: [integer, 'null'], minimum: 1, description: Place in the draw's ranking}
         seats: {type: [integer, 'null'], enum: [1, 2, null], description: 'Seats the draw gave: 1, or 2 with the +1'}
+        on_hold:
+          type: boolean
+          description: |
+            Selected, but the fan's account is suspended: the ticket is held until staff resolve it, and no +1 can be
+            added or named meanwhile.
     Eligibility:
       type: object
       required: [allocation_id, eligible, min_raw_score]

@@ -1265,7 +1265,8 @@ export interface paths {
          * Name my +1's account
          * @description The guest needs an account (it can be created after registering). Allowed once the fan has asked for a +1,
          *     and after the draw only if the +1 got a seat. A guest is named once and can't be changed. The guest can't
-         *     be the fan, registered for the same show, or another fan's guest for it.
+         *     be the fan, registered for the same show, another fan's guest for it, or a suspended account. A suspended
+         *     fan can't name a guest (`403 account_suspended`).
          */
         put: operations["nameGuest"];
         post?: never;
@@ -2161,6 +2162,11 @@ export interface components {
              * @enum {integer|null}
              */
             seats?: 1 | 2 | null;
+            /**
+             * @description Selected, but the fan's account is suspended: the ticket is held until staff resolve it, and no +1 can be
+             *     added or named meanwhile.
+             */
+            on_hold: boolean;
         };
         Eligibility: {
             /** Format: uuid */
@@ -4905,7 +4911,7 @@ export interface operations {
                     "application/json": components["schemas"]["Registration"];
                 };
             };
-            /** @description No score for the artist, or below the threshold (`code: not_eligible`); or staff paused the account (`code: account_suspended`) */
+            /** @description No score for the artist, or below the threshold (`code: not_eligible`); or staff paused the account, which also blocks adding a +1 (`code: account_suspended`) */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4987,8 +4993,17 @@ export interface operations {
                     "application/json": components["schemas"]["Registration"];
                 };
             };
+            /** @description The fan's account is suspended (`code: account_suspended`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             404: components["responses"]["NotFound"];
-            /** @description No such account, no +1 seat, already named, or the guest has a ticket for the show (`code: guest_unavailable`) */
+            /** @description No such account, no +1 seat, already named, the guest is suspended, or the guest has a ticket for the show (`code: guest_unavailable`) */
             409: {
                 headers: {
                     [name: string]: unknown;
