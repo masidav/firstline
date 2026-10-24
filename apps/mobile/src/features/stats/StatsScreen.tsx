@@ -61,6 +61,10 @@ export function StatsScreen() {
             <Stat label="Songs in your playlists" value={stats.listening.playlist_tracks} />
             <Stat label="Albums you have songs from" value={stats.listening.distinct_albums} />
             <Stat label="Recent plays (of your last 50)" value={stats.listening.recent_plays} />
+            <Stat label="Plays in the last 90 days" value={stats.listening.plays_last_quarter} />
+            <Stat label="Saved albums" value={stats.listening.saved_albums} />
+            <Stat label="Songs in your top tracks" value={stats.listening.top_tracks} />
+            <Stat label="Artists you follow" value={stats.listening.followed_artists} />
           </Section>
 
           <Section title="Journal" hint="Deleted logs and comments don't count.">

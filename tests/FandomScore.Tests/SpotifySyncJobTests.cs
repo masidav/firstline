@@ -118,6 +118,106 @@ public sealed class SpotifySyncJobTests(PostgresFixture postgres) : IAsyncLifeti
     }
 
     [Fact]
+    public async Task Sync_stores_the_wider_signals_album_saves_and_seeds_the_play_ledger()
+    {
+        _spotify.TopArtistIds.AddRange([ArtistX, ArtistA]);
+        _spotify.TopArtistIdsShort.AddRange([ArtistA]);
+        _spotify.TopArtistIdsLong.AddRange([ArtistX, ArtistB, ArtistA]);
+        _spotify.TopTracks.AddRange([
+            FakeSpotify.Track("tr-a1", "al-a1", ArtistA), FakeSpotify.Track("tr-a9", "al-a9", ArtistA), FakeSpotify.Track("tr-x1", "al-x1", ArtistX),
+        ]);
+        _spotify.SavedAlbums.AddRange([
+            FakeSpotify.SavedAlbum("al-a1", "2025-05-05T00:00:00Z", ArtistA),   // in the catalog
+            FakeSpotify.SavedAlbum("al-a7", "2025-06-06T00:00:00Z", ArtistA),   // not in the catalog: not stored
+            FakeSpotify.SavedAlbum("al-x1", "2025-07-07T00:00:00Z", ArtistX),
+        ]);
+        _spotify.FollowedArtistIds.AddRange([ArtistA, ArtistX]);
+        _spotify.Playlists.AddRange([FakeSpotify.Playlist("pl-all-a", "sp-user-1"), FakeSpotify.Playlist("pl-mixed", "sp-user-1")]);
+        // Five A tracks: dedicated. One A track among three: featuring only.
+        _spotify.PlaylistItems["pl-all-a"] = [.. Enumerable.Range(1, 5).Select(i => FakeSpotify.PlaylistItem(FakeSpotify.Track($"tr-a{i}", "al-a1", ArtistA)))];
+        _spotify.PlaylistItems["pl-mixed"] = [
+            FakeSpotify.PlaylistItem(FakeSpotify.Track("tr-a1", "al-a1", ArtistA)),
+            FakeSpotify.PlaylistItem(FakeSpotify.Track("tr-x1", "al-x1", ArtistX)),
+            FakeSpotify.PlaylistItem(FakeSpotify.Track("tr-x2", "al-x2", ArtistX)),
+        ];
+        _spotify.RecentlyPlayed.AddRange([
+            FakeSpotify.Played(FakeSpotify.Track("tr-a1", "al-a1", ArtistA), "2026-10-20T10:00:00Z"),
+            FakeSpotify.Played(FakeSpotify.Track("tr-a1", "al-a1", ArtistA), "2026-10-20T09:00:00Z"),
+            FakeSpotify.Played(FakeSpotify.Track("tr-x1", "al-x1", ArtistX), "2026-10-20T11:00:00Z"),
+        ]);
+
+        await RunAsync();
+
+        var signals = Assert.Single(await SignalsAsync());
+        Assert.Equal(((short?)2, (short?)1, (short?)3, 2, 2, 1, true),
+            (signals.TopArtistRank, signals.TopArtistRankShort, signals.TopArtistRankLong, signals.TopTracks,
+             signals.PlaylistsFeaturing, signals.DedicatedPlaylists, signals.Followed));
+        await using var connection = await _db.OpenConnectionAsync();
+        Assert.Equal(["al-a1:2025-05-05"], await connection.QueryAsync<string>(
+            """
+            SELECT al.spotify_album_id || ':' || to_char(s.saved_at AT TIME ZONE 'UTC', 'YYYY-MM-DD')
+            FROM user_album_saves s JOIN albums al ON al.id = s.album_id WHERE s.user_id = @_userId
+            """, new { _userId }));
+        // Only A's plays enter the ledger; the cursor is the newest play Spotify returned for A.
+        Assert.Equal(["2026-10-20T09:00:00Z", "2026-10-20T10:00:00Z"], await connection.QueryAsync<string>(
+            "SELECT to_char(played_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') FROM user_plays WHERE user_id = @_userId ORDER BY played_at", new { _userId }));
+        Assert.Equal(new DateTimeOffset(2026, 10, 20, 10, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds(),
+            await connection.ExecuteScalarAsync<long>("SELECT plays_cursor FROM spotify_connections WHERE user_id = @_userId", new { _userId }));
+        Assert.Contains(_spotify.Calls, c => c.Path == "me/following");
+        Assert.Equal(3, _spotify.Calls.Count(c => c.Path == "me/top/artists"));
+        Assert.Equal(3, _spotify.Calls.Count(c => c.Path == "me/top/tracks"));
+    }
+
+    [Fact]
+    public async Task Follows_are_skipped_for_connections_made_without_the_follow_scope()
+    {
+        await using var connection = await _db.OpenConnectionAsync();
+        await connection.ExecuteAsync("UPDATE spotify_connections SET scopes = array_remove(scopes, @scope) WHERE user_id = @_userId",
+            new { _userId, scope = SpotifyOptions.FollowScope });
+        _spotify.FollowedArtistIds.Add(ArtistA);
+        _spotify.TopArtistIds.Add(ArtistA);
+
+        await RunAsync();
+
+        Assert.False(Assert.Single(await SignalsAsync()).Followed);
+        Assert.DoesNotContain(_spotify.Calls, c => c.Path == "me/following");
+        Assert.Equal("idle", (await StateAsync()).SyncState);
+    }
+
+    [Fact]
+    public async Task Polling_extends_the_play_ledger_from_the_cursor_and_prunes_old_plays()
+    {
+        _spotify.RecentlyPlayed.Add(FakeSpotify.Played(FakeSpotify.Track("tr-a1", "al-a1", ArtistA), "2026-10-20T10:00:00Z"));
+        await RunAsync();   // seeds one play and the cursor
+        await using var connection = await _db.OpenConnectionAsync();
+        await connection.ExecuteAsync(
+            "INSERT INTO user_plays (user_id, artist_id, spotify_track_id, played_at) VALUES (@_userId, @_artistA, 'tr-a1', now() - interval '500 days')",
+            new { _userId, _artistA });
+        _spotify.RecentlyPlayed.Clear();
+        _spotify.RecentlyPlayed.AddRange([
+            FakeSpotify.Played(FakeSpotify.Track("tr-a1", "al-a1", ArtistA), "2026-10-20T10:00:00Z"),   // already stored (cursor)
+            FakeSpotify.Played(FakeSpotify.Track("tr-a2", "al-a2", ArtistA), "2026-10-21T08:00:00Z"),
+            FakeSpotify.Played(FakeSpotify.Track("tr-x1", "al-x1", ArtistX), "2026-10-21T09:00:00Z"),   // untracked: dropped, moves the cursor
+        ]);
+        await connection.ExecuteAsync("DELETE FROM jobs WHERE kind = 'scoring.score_artist'");
+
+        var job = new PollPlaysJob(_db, _spotify.Client(), _protector, Options.Create(FakeSpotify.Options()), NullLogger<PollPlaysJob>.Instance);
+        await job.RunAsync(new ClaimedJob(2, PollPlaysJob.JobKind, JsonSerializer.Serialize(new { user_id = _userId }), 1, 10), CancellationToken.None);
+
+        Assert.Equal(["tr-a1", "tr-a2"], await connection.QueryAsync<string>(
+            "SELECT spotify_track_id FROM user_plays WHERE user_id = @_userId ORDER BY played_at", new { _userId }));
+        var state = await connection.QuerySingleAsync<(long Cursor, DateTime? PolledAt)>(
+            "SELECT plays_cursor, plays_polled_at FROM spotify_connections WHERE user_id = @_userId", new { _userId });
+        Assert.Equal(new DateTimeOffset(2026, 10, 21, 9, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds(), state.Cursor);
+        Assert.NotNull(state.PolledAt);
+        var poll = Assert.Single(_spotify.Calls, c => c.Path == "me/player/recently-played" && c.Query.Contains("after=", StringComparison.Ordinal));
+        Assert.Contains($"after={new DateTimeOffset(2026, 10, 20, 10, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds()}", poll.Query, StringComparison.Ordinal);
+        // New plays queue a rescore of that artist.
+        Assert.Equal(1, await connection.ExecuteScalarAsync<int>(
+            "SELECT count(*) FROM jobs WHERE kind = 'scoring.score_artist' AND status = 'queued' AND payload->>'artist_id' = @id", new { id = _artistA.ToString() }));
+    }
+
+    [Fact]
     public async Task Pages_through_saved_tracks_and_replaces_earlier_results()
     {
         for (var i = 0; i < 120; i++)
@@ -258,6 +358,20 @@ public sealed class SpotifySyncJobTests(PostgresFixture postgres) : IAsyncLifeti
         Assert.Equal(new HashSet<Guid> { _userId, stale }, queued);
         Assert.Equal("queued", await connection.ExecuteScalarAsync<string>(
             "SELECT sync_state FROM spotify_connections WHERE user_id = @stale", new { stale }));
+        // Play polls go to connections that have synced before and were not polled within the hour.
+        await connection.ExecuteAsync(
+            """
+            -- Both synced an hour ago (not due for a sync), never polled.
+            UPDATE spotify_connections SET sync_state = 'idle', last_sync_attempt_at = now() - interval '1 hour',
+                   last_synced_at = now() - interval '1 hour', plays_polled_at = NULL
+             WHERE user_id IN (@recent, @stale);
+            UPDATE spotify_connections SET last_synced_at = now(), plays_polled_at = now() - interval '10 minutes' WHERE user_id = @reauth;
+            """, new { recent, stale, reauth });
+        await new ScheduleSpotifySyncsJob(_db, Options.Create(FakeSpotify.Options()), NullLogger<ScheduleSpotifySyncsJob>.Instance)
+            .RunAsync(new ClaimedJob(2, "spotify.schedule_syncs", "{}", 1, 10), CancellationToken.None);
+        var polls = (await connection.QueryAsync<Guid>(
+            "SELECT (payload->>'user_id')::uuid FROM jobs WHERE kind = 'spotify.poll_plays' AND status = 'queued'")).ToHashSet();
+        Assert.Equal(new HashSet<Guid> { recent, stale }, polls);
     }
 
     [Fact]
@@ -321,7 +435,9 @@ public sealed class SpotifySyncJobTests(PostgresFixture postgres) : IAsyncLifeti
     }
 
     private sealed record SignalRow(
-        Guid ArtistId, int LikedTracks, int PlaylistTracks, int DistinctAlbums, short? TopArtistRank, int RecentPlays);
+        Guid ArtistId, int LikedTracks, int PlaylistTracks, int DistinctAlbums, short? TopArtistRank, int RecentPlays,
+        short? TopArtistRankShort, short? TopArtistRankLong, int TopTracks, int PlaylistsFeaturing, int DedicatedPlaylists,
+        bool Followed);
 
     private async Task<List<SignalRow>> SignalsAsync()
     {
@@ -329,7 +445,9 @@ public sealed class SpotifySyncJobTests(PostgresFixture postgres) : IAsyncLifeti
         return [.. await connection.QueryAsync<SignalRow>(
             """
             SELECT artist_id AS ArtistId, liked_tracks AS LikedTracks, playlist_tracks AS PlaylistTracks,
-                   distinct_albums AS DistinctAlbums, top_artist_rank AS TopArtistRank, recent_plays AS RecentPlays
+                   distinct_albums AS DistinctAlbums, top_artist_rank AS TopArtistRank, recent_plays AS RecentPlays,
+                   top_artist_rank_short AS TopArtistRankShort, top_artist_rank_long AS TopArtistRankLong, top_tracks AS TopTracks,
+                   playlists_featuring AS PlaylistsFeaturing, dedicated_playlists AS DedicatedPlaylists, followed AS Followed
             FROM user_artist_signals WHERE user_id = @_userId
             """,
             new { _userId })];

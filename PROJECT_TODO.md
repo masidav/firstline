@@ -80,6 +80,12 @@ Details: [Spotify API feature](services/api/src/features/spotify-sync/TODO.md) �
       `scoring_rules`, an even split across the five Spotify signals (decided 2026-10-21); change them with
       `testScripts/scoringWeights.sh` or `PUT /v1/admin/scoring-rules/{key}`, and every artist is rescored.
 - [x] Implement raw score calculation and diminishing returns. Formula: `workers/scoring/README.md`.
+- [x] Score the wider Spotify signals (2026-10-24, migration 0015): top artists over three time ranges, top
+      tracks, saved albums, early saves and tenure, playlist detail, follows (new scope `user-follow-read`), an
+      hourly play ledger with 90-day plays and weekly streaks, catalog coverage, and deep cuts: 18 Spotify rules,
+      even split. Verified: `dotnet test` 199/199 (invariants for every share), fan app 83/83. Not done from the
+      review of 2026-10-24: live "listening now" check-ins (needs events to check against) and the Spotify data
+      export upload (needs the submissions upload flow); both are listed under Open decisions / Phase 7.
 - [x] Implement synthetic baseline generation and real/synthetic percentile blending.
 - [x] Store and refresh computed scores for active artists only. Worker `scoring.score_artist` after syncs,
       weight changes, on request, and daily. Verified 2026-10-21: `dotnet test` 128/128.
@@ -258,7 +264,11 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
 - [ ] Confirm ticketing partner and purchase-confirmation capability.
 - [ ] Confirm archive meaning and user-facing archive requirements.
 - [ ] Decide how much ledger points (journal, proof of fandom) weigh against the 0–100 Spotify score. For now
-      they are added on top.
+      they are added on top. *Since 2026-10-24 the Spotify score is spread over 18 signals (each worth at most
+      100/18 points), so a few awards can outrank a strong listener; see `workers/scoring/README.md`.*
+- [ ] Decide whether to add live "listening now" check-ins (scope `user-read-currently-playing`; release-day or
+      listening-party windows) and a Spotify data-export upload (full streaming history as proof of fandom) as
+      further signals. Both wait on events and on the submissions upload flow (reviewed 2026-10-24).
 - [ ] Confirm verification thresholds and baseline blend parameters. *Provisional defaults in code since 2026-10-21*
       (`Baseline__MedianScore` 15 on the 0–100 score scale since migration 0008, `Baseline__Sigma` 1, `Baseline__BlendK` 200; stored baselines carry `provisional: true`).
 - [x] Define data retention and account deletion behavior. Deleted accounts: personal data scrubbed at once, content hard-deleted after 30 days, comments others replied to kept as "[deleted]", ledger kept anonymously (decided 2026-10-18). File retention (quarantine/archive) still to define with submissions.

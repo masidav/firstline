@@ -307,7 +307,7 @@ paths:
         their artists appear on the home screen right away, and scores tracked artists already active.
 
         Request every scope: `user-library-read`, `user-top-read`, `user-read-recently-played`,
-        `playlist-read-private`, `playlist-read-collaborative`. `redirect_uri` must be one the server allows
+        `playlist-read-private`, `playlist-read-collaborative`, `user-follow-read`. `redirect_uri` must be one the server allows
         (`Spotify__RedirectUris`) and the same one used for the authorization.
 
         `422 validation_failed` (field `code`) when Spotify rejects the code, a scope is missing, or Spotify
@@ -2113,6 +2113,9 @@ components:
         scopes:
           type: array
           items: {type: string}
+          description: |
+            Scopes the connection was made with. A connection made before `user-follow-read` was required lacks it;
+            the sync then skips followed artists, and the app should ask the fan to connect again.
         connected_at: {type: [string, 'null'], format: date-time}
         last_synced_at: {type: [string, 'null'], format: date-time}
         sync_state:
@@ -2400,13 +2403,17 @@ components:
               computed_at: {type: string, format: date-time}
         listening:
           type: object
-          required: [artists, liked_tracks, playlist_tracks, distinct_albums, recent_plays]
+          required: [artists, liked_tracks, playlist_tracks, distinct_albums, recent_plays, saved_albums, top_tracks, followed_artists, plays_last_quarter]
           properties:
             artists: {type: integer, description: Active tracked artists the fan has Spotify signals for}
             liked_tracks: {type: integer}
             playlist_tracks: {type: integer}
             distinct_albums: {type: integer}
-            recent_plays: {type: integer}
+            recent_plays: {type: integer, description: Plays of tracked artists among the fan's last 50 at the last sync}
+            saved_albums: {type: integer, description: Tracked artists' albums in the fan's saved albums}
+            top_tracks: {type: integer, description: Tracked artists' tracks among the fan's Spotify top tracks}
+            followed_artists: {type: integer, description: Tracked artists the fan follows on Spotify}
+            plays_last_quarter: {type: integer, description: Plays of tracked artists in the last 90 days (play ledger, polled hourly)}
         journal:
           type: object
           required: [logs, albums_logged, relistens, reviews, ratings, lists, comments]
@@ -2455,13 +2462,29 @@ components:
           properties:
             spotify:
               type: object
+              description: Counts behind each share (workers/scoring/README.md lists the rule for each).
               properties:
                 liked_tracks: {type: integer}
                 playlist_tracks: {type: integer}
                 distinct_albums: {type: integer}
-                top_artist_rank: {type: [integer, 'null']}
+                top_artist_rank: {type: [integer, 'null'], description: Rank in the fan's top artists of the last 6 months}
                 recent_plays: {type: integer}
+                top_artist_rank_short: {type: [integer, 'null'], description: Rank over the last 4 weeks}
+                top_artist_rank_long: {type: [integer, 'null'], description: Rank over the fan's history}
+                top_tracks: {type: integer}
+                saved_albums: {type: integer}
+                early_saves: {type: integer, description: Releases saved within a week of release day}
+                first_saved_at: {type: [string, 'null'], format: date-time}
+                tenure_days: {type: integer}
+                playlists_featuring: {type: integer}
+                dedicated_playlists: {type: integer}
+                followed: {type: boolean}
+                plays_last_quarter: {type: integer, description: Plays in the last 90 days}
+                streak_weeks: {type: integer}
+                tracks_touched: {type: integer, description: Catalog tracks saved, in a playlist, or played}
+                deep_cuts: {type: integer}
                 catalog_releases: {type: integer}
+                catalog_tracks: {type: integer}
                 shares:
                   type: object
                   properties:
@@ -2470,6 +2493,19 @@ components:
                     album_depth: {type: [number, 'null']}
                     top_artist: {type: [number, 'null']}
                     recent: {type: [number, 'null']}
+                    top_artist_short: {type: [number, 'null']}
+                    top_artist_long: {type: [number, 'null']}
+                    top_track: {type: [number, 'null']}
+                    saved_album: {type: [number, 'null']}
+                    early_save: {type: [number, 'null']}
+                    tenure: {type: [number, 'null']}
+                    playlist_feature: {type: [number, 'null']}
+                    dedicated_playlist: {type: [number, 'null']}
+                    follow: {type: [number, 'null']}
+                    play_history: {type: [number, 'null']}
+                    play_streak: {type: [number, 'null']}
+                    catalog_coverage: {type: [number, 'null']}
+                    deep_cut: {type: [number, 'null']}
                 points: {type: number}
             ledger_points: {type: number}
             total: {type: number}

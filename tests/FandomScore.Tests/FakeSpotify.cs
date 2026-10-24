@@ -41,6 +41,19 @@ public sealed class FakeSpotify : HttpMessageHandler
 
     public List<string> TopArtistIds { get; } = [];
 
+    /// <summary>Top artists for time_range=short_term and long_term (medium_term is <see cref="TopArtistIds"/>).</summary>
+    public List<string> TopArtistIdsShort { get; } = [];
+
+    public List<string> TopArtistIdsLong { get; } = [];
+
+    /// <summary>Top tracks, served for every time range.</summary>
+    public List<object> TopTracks { get; } = [];
+
+    /// <summary>Saved albums (<see cref="SavedAlbum"/>).</summary>
+    public List<object> SavedAlbums { get; } = [];
+
+    public List<string> FollowedArtistIds { get; } = [];
+
     public List<object> RecentlyPlayed { get; } = [];
 
     public List<object> Playlists { get; } = [];
@@ -126,7 +139,10 @@ public sealed class FakeSpotify : HttpMessageHandler
 
     public static object Saved(object track, string addedAt = "2026-01-02T03:04:05Z") => new { added_at = addedAt, track };
 
-    public static object Played(object track) => new { track, played_at = "2026-10-01T00:00:00Z" };
+    public static object Played(object track, string playedAt = "2026-10-01T00:00:00Z") => new { track, played_at = playedAt };
+
+    public static object SavedAlbum(string id, string addedAt = "2026-01-02T03:04:05Z", params string[] artistIds) =>
+        new { added_at = addedAt, album = new { id, artists = artistIds.Select(a => new { id = a }).ToArray() } };
 
     public static object Playlist(string id, string owner, bool collaborative = false) =>
         new { id, collaborative, owner = new { id = owner } };
@@ -190,9 +206,24 @@ public sealed class FakeSpotify : HttpMessageHandler
         {
             "me" => new { id = UserId, display_name = "Fan" },
             "me/tracks" => Page(SavedTracks, limit, offset),
-            "me/top/artists" => Page(TopArtistIds.Select(id => Artists.FirstOrDefault(a => a.Id == id)?.Json ?? new { id, name = id })
-                .ToList(), limit, offset),
-            "me/player/recently-played" => new { items = RecentlyPlayed.Take(limit).ToArray(), next = (string?)null },
+            "me/top/artists" => Page((query["time_range"] switch
+                {
+                    "short_term" => TopArtistIdsShort,
+                    "long_term" => TopArtistIdsLong,
+                    _ => TopArtistIds,
+                }).Select(id => Artists.FirstOrDefault(a => a.Id == id)?.Json ?? new { id, name = id }).ToList(), limit, offset),
+            "me/top/tracks" => Page(TopTracks, limit, offset),
+            "me/albums" => Page(SavedAlbums, limit, offset),
+            "me/following" => new { artists = new { items = FollowedArtistIds.Select(id => new { id }).ToArray(), cursors = new { after = (string?)null } } },
+            // Spotify's after=<ms> cursor: only plays after that instant.
+            "me/player/recently-played" => new
+            {
+                items = RecentlyPlayed.Where(p => query["after"] is not { } after
+                        || DateTimeOffset.Parse((string)p.GetType().GetProperty("played_at")!.GetValue(p)!, System.Globalization.CultureInfo.InvariantCulture)
+                               .ToUnixTimeMilliseconds() > long.Parse(after, System.Globalization.CultureInfo.InvariantCulture))
+                    .Take(limit).ToArray(),
+                next = (string?)null,
+            },
             "me/playlists" => Page(Playlists, limit, offset),
             "search" => new
             {

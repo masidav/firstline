@@ -55,8 +55,19 @@ public sealed partial class ScoreArtistJob(
             """
             SELECT user_id AS UserId, liked_tracks AS LikedTracks, playlist_tracks AS PlaylistTracks,
                    distinct_albums AS DistinctAlbums, top_artist_rank AS TopArtistRank, recent_plays AS RecentPlays,
-                   catalog_releases AS CatalogReleases, liked_share AS LikedShare, playlist_share AS PlaylistShare,
+                   top_artist_rank_short AS TopArtistRankShort, top_artist_rank_long AS TopArtistRankLong,
+                   top_tracks AS TopTracks, saved_albums AS SavedAlbums, early_saves AS EarlySaves,
+                   first_saved_at AS FirstSavedAt, tenure_days AS TenureDays, playlists_featuring AS PlaylistsFeaturing,
+                   dedicated_playlists AS DedicatedPlaylists, followed AS Followed, plays_90d AS PlaysLastQuarter,
+                   streak_weeks AS StreakWeeks, tracks_touched AS TracksTouched, deep_cuts AS DeepCuts,
+                   catalog_releases AS CatalogReleases, catalog_tracks AS CatalogTracks,
+                   liked_share AS LikedShare, playlist_share AS PlaylistShare,
                    depth_share AS DepthShare, top_share AS TopShare, recent_share AS RecentShare,
+                   top_short_share AS TopShortShare, top_long_share AS TopLongShare, top_track_share AS TopTrackShare,
+                   saved_album_share AS SavedAlbumShare, early_save_share AS EarlySaveShare, tenure_share AS TenureShare,
+                   playlist_feature_share AS PlaylistFeatureShare, dedicated_playlist_share AS DedicatedPlaylistShare,
+                   follow_share AS FollowShare, play_history_share AS PlayHistoryShare, play_streak_share AS PlayStreakShare,
+                   catalog_coverage_share AS CatalogCoverageShare, deep_cut_share AS DeepCutShare,
                    spotify_score AS SpotifyScore, ledger_points AS LedgerPoints, raw_score AS RawScore
             FROM v_raw_scores WHERE artist_id = @artistId
             """,
@@ -111,7 +122,22 @@ public sealed partial class ScoreArtistJob(
             row.DistinctAlbums,
             row.TopArtistRank,
             row.RecentPlays,
+            row.TopArtistRankShort,
+            row.TopArtistRankLong,
+            row.TopTracks,
+            row.SavedAlbums,
+            row.EarlySaves,
+            row.FirstSavedAt,
+            row.TenureDays,
+            row.PlaylistsFeaturing,
+            row.DedicatedPlaylists,
+            row.Followed,
+            row.PlaysLastQuarter,
+            row.StreakWeeks,
+            row.TracksTouched,
+            row.DeepCuts,
             row.CatalogReleases,
+            row.CatalogTracks,
             Shares = new
             {
                 Liked = row.LikedShare,
@@ -119,6 +145,19 @@ public sealed partial class ScoreArtistJob(
                 AlbumDepth = row.DepthShare,
                 TopArtist = row.TopShare,
                 Recent = row.RecentShare,
+                TopArtistShort = row.TopShortShare,
+                TopArtistLong = row.TopLongShare,
+                TopTrack = row.TopTrackShare,
+                SavedAlbum = row.SavedAlbumShare,
+                EarlySave = row.EarlySaveShare,
+                Tenure = row.TenureShare,
+                PlaylistFeature = row.PlaylistFeatureShare,
+                DedicatedPlaylist = row.DedicatedPlaylistShare,
+                Follow = row.FollowShare,
+                PlayHistory = row.PlayHistoryShare,
+                PlayStreak = row.PlayStreakShare,
+                CatalogCoverage = row.CatalogCoverageShare,
+                DeepCut = row.DeepCutShare,
             },
             Points = row.SpotifyScore,
         },
@@ -136,8 +175,14 @@ public sealed partial class ScoreArtistJob(
 
     private sealed record RawScoreRow(
         Guid UserId, int LikedTracks, int PlaylistTracks, int DistinctAlbums, short? TopArtistRank, int RecentPlays,
-        long CatalogReleases, decimal? LikedShare, decimal? PlaylistShare, decimal? DepthShare, decimal? TopShare,
-        decimal? RecentShare, decimal SpotifyScore, decimal LedgerPoints, decimal RawScore);
+        short? TopArtistRankShort, short? TopArtistRankLong, int TopTracks, long SavedAlbums, long EarlySaves,
+        DateTime? FirstSavedAt, int TenureDays, int PlaylistsFeaturing, int DedicatedPlaylists, bool Followed,
+        long PlaysLastQuarter, long StreakWeeks, long TracksTouched, long DeepCuts, long CatalogReleases, long CatalogTracks,
+        decimal? LikedShare, decimal? PlaylistShare, decimal? DepthShare, decimal? TopShare, decimal? RecentShare,
+        decimal? TopShortShare, decimal? TopLongShare, decimal? TopTrackShare, decimal? SavedAlbumShare,
+        decimal? EarlySaveShare, decimal? TenureShare, decimal? PlaylistFeatureShare, decimal? DedicatedPlaylistShare,
+        decimal? FollowShare, decimal? PlayHistoryShare, decimal? PlayStreakShare, decimal? CatalogCoverageShare,
+        decimal? DeepCutShare, decimal SpotifyScore, decimal LedgerPoints, decimal RawScore);
 }
 
 /// <summary>Daily safety net: queues a rescore of every active artist (a missed or failed rescore heals within a day).</summary>

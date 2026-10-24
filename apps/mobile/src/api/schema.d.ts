@@ -181,7 +181,7 @@ export interface paths {
          *     their artists appear on the home screen right away, and scores tracked artists already active.
          *
          *     Request every scope: `user-library-read`, `user-top-read`, `user-read-recently-played`,
-         *     `playlist-read-private`, `playlist-read-collaborative`. `redirect_uri` must be one the server allows
+         *     `playlist-read-private`, `playlist-read-collaborative`, `user-follow-read`. `redirect_uri` must be one the server allows
          *     (`Spotify__RedirectUris`) and the same one used for the authorization.
          *
          *     `422 validation_failed` (field `code`) when Spotify rejects the code, a scope is missing, or Spotify
@@ -1657,6 +1657,10 @@ export interface components {
         };
         SpotifyStatus: {
             connected: boolean;
+            /**
+             * @description Scopes the connection was made with. A connection made before `user-follow-read` was required lacks it;
+             *     the sync then skips followed artists, and the app should ask the fan to connect again.
+             */
             scopes?: string[];
             /** Format: date-time */
             connected_at?: string | null;
@@ -1938,7 +1942,16 @@ export interface components {
                 liked_tracks: number;
                 playlist_tracks: number;
                 distinct_albums: number;
+                /** @description Plays of tracked artists among the fan's last 50 at the last sync */
                 recent_plays: number;
+                /** @description Tracked artists' albums in the fan's saved albums */
+                saved_albums: number;
+                /** @description Tracked artists' tracks among the fan's Spotify top tracks */
+                top_tracks: number;
+                /** @description Tracked artists the fan follows on Spotify */
+                followed_artists: number;
+                /** @description Plays of tracked artists in the last 90 days (play ledger */
+                plays_last_quarter: number;
             };
             journal: {
                 logs: number;
@@ -1979,19 +1992,55 @@ export interface components {
              *     the Spotify rules in `scoring_rules`. `total` adds ledger points (journal, proof of fandom).
              */
             breakdown?: {
+                /** @description Counts behind each share (workers/scoring/README.md lists the rule for each). */
                 spotify?: {
                     liked_tracks?: number;
                     playlist_tracks?: number;
                     distinct_albums?: number;
+                    /** @description Rank in the fan's top artists of the last 6 months */
                     top_artist_rank?: number | null;
                     recent_plays?: number;
+                    /** @description Rank over the last 4 weeks */
+                    top_artist_rank_short?: number | null;
+                    /** @description Rank over the fan's history */
+                    top_artist_rank_long?: number | null;
+                    top_tracks?: number;
+                    saved_albums?: number;
+                    /** @description Releases saved within a week of release day */
+                    early_saves?: number;
+                    /** Format: date-time */
+                    first_saved_at?: string | null;
+                    tenure_days?: number;
+                    playlists_featuring?: number;
+                    dedicated_playlists?: number;
+                    followed?: boolean;
+                    /** @description Plays in the last 90 days */
+                    plays_last_quarter?: number;
+                    streak_weeks?: number;
+                    /** @description Catalog tracks saved */
+                    tracks_touched?: number;
+                    deep_cuts?: number;
                     catalog_releases?: number;
+                    catalog_tracks?: number;
                     shares?: {
                         liked?: number | null;
                         playlist?: number | null;
                         album_depth?: number | null;
                         top_artist?: number | null;
                         recent?: number | null;
+                        top_artist_short?: number | null;
+                        top_artist_long?: number | null;
+                        top_track?: number | null;
+                        saved_album?: number | null;
+                        early_save?: number | null;
+                        tenure?: number | null;
+                        playlist_feature?: number | null;
+                        dedicated_playlist?: number | null;
+                        follow?: number | null;
+                        play_history?: number | null;
+                        play_streak?: number | null;
+                        catalog_coverage?: number | null;
+                        deep_cut?: number | null;
                     };
                     points?: number;
                 };

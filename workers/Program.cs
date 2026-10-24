@@ -31,6 +31,7 @@ builder.Services.AddSingleton<IJobHandler, PruneJobsJob>();
 builder.Services.AddSingleton<IJobHandler, PurgeDeletedAccountsJob>();
 builder.Services.AddSingleton<IJobHandler, SpotifySyncJob>();
 builder.Services.AddSingleton<IJobHandler, ScheduleSpotifySyncsJob>();
+builder.Services.AddSingleton<IJobHandler, PollPlaysJob>();
 builder.Services.AddSingleton<IJobHandler, ArtistOnboardingJob>();
 builder.Services.AddSingleton<IJobHandler, CatalogRefreshJob>();
 builder.Services.AddSingleton<IJobHandler, ScheduleCatalogRefreshesJob>();
