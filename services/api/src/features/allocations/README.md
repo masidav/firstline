@@ -5,11 +5,14 @@ Face-value, non-transferable tickets set aside for an artist's top fans before t
 ## Model (migration 0013)
 - **Show** (`events`): an artist, a name and venue, a start time, and a hub city (`city_id`, one of the cities from
   migration 0010), so "fans whose hubs include the show's city" is an exact match.
-- **Allocation** (`allocations`): a pool of tickets for a show, one per selected fan, at face value
-  (`face_value_cents`, `currency`), open to fans at or above `min_percentile` for the artist, with a registration
-  window (`registration_opens_at`, `registration_closes_at`, which must close before the show).
-- **Lifecycle**: `draft` (staff only) → published (`upcoming`, `open`, `closed` by the clock) → optionally
-  `cancelled`. Drafts are deleted rather than cancelled; publishing and cancelling can't be undone.
+- **Allocation** (`allocations`): a pool of seats for a show at face value (`face_value_cents`, `currency`): one
+  per selected fan, two with a +1. Open to fans whose raw score for the artist is at least `min_raw_score`, with a
+  registration window (`registration_opens_at`, `registration_closes_at`, which must close before the show).
+  Published without a threshold, it gets `allocation_default_threshold()`: the raw score of a fan whose only signal
+  is two saved albums (`album_saves_score()` from migration 0015), fixed at publishing (migration 0017).
+- **Lifecycle**: `draft` (staff only) → published (`upcoming`, `open`, `closed` by the clock) → `selected` once the
+  draw has run, or `cancelled` before that. Drafts are deleted rather than cancelled; publishing, cancelling, and the
+  draw can't be undone.
 
 The database enforces the timing and locking rules with triggers (`trg_allocation_check`, `trg_allocation_delete`,
 `trg_event_lock`): an allocation can only be published for an active artist and a show with a city, its rules lock
@@ -24,16 +27,33 @@ keeps a snapshot: the fan's hub cities (and where the show's city sits in them, 
 score, and whether it was an estimate. Withdrawing is allowed while registration is open and keeps the row;
 deleting an account withdraws its registrations. Registrations are never edited or deleted.
 
+## +1 and guests (migration 0017)
+A fan asks for a +1 when registering (`PUT .../registration` with `{"plus_one": true}`) and can turn it off or on
+while registration is open; a selected fan can add one after the draw while seats are left (`add_plus_one()`). The
+guest needs an account, which can come later: the fan names it by handle (`PUT .../registration/guest`), once
+(`name_plus_one_guest()`). A guest can't be the fan, registered for the same show, or another fan's guest for it, and a
+named guest can't register for that show.
+
+## The draw (migration 0017)
+Staff run it after registration closes (`POST /v1/admin/allocations/{id}/selection`; `run_allocation_selection()`).
+`allocation_ranking(allocation, seed)` orders live registrations: hub fans (the show's city in their three hub cities)
+first, then the rest; each by snapshot raw score; ties by `md5(seed || registration id)`. Seats go down the ranking,
+two for a +1; with one seat left, a fan with a +1 gets it alone (provisional). The seed and counts are stored once in
+`allocation_selections`, so anyone can rerun the ranking and get the same order. Outcomes, ranks, and seats are written
+only by the draw (a guard trigger checks a transaction setting), and a selected allocation can't be cancelled.
+
 ## Endpoints
 - Fans: `GET /v1/artists/{id}/events` (upcoming shows, `tickets_available`), `GET /v1/events/{id}` (a show and
   its published allocations), `GET /v1/allocations/{id}/eligibility`, `PUT`/`DELETE /v1/allocations/{id}/registration`,
-  `GET /v1/me/registrations`.
+  `PUT /v1/allocations/{id}/registration/guest`, `GET /v1/me/registrations`.
 - Staff (`/v1/admin`, staff policy, until promoter organizations exist): create and edit shows, create and edit
-  allocations, publish, cancel, delete drafts.
+  allocations, publish, cancel, delete drafts, run the draw, and list registrations in ranking order.
 
-Locally, `tools/dev/allocations.py` creates a show with a published allocation as a dev staff user.
+Locally, `tools/dev/allocations.py` creates a show with a published allocation as a dev staff user, and can close
+registration (`close`) and run the draw (`draw`).
 
 ## Not yet
-The ranked selection with a recorded tiebreak, reservations, ticketing partners,
-and organizations. Provisional rules (one ticket per fan, percentile threshold, lock at opening) are listed as
-open decisions in `PROJECT_TODO.md`.
+Reservations and tickets (delivery to the fan and the named guest), notifying fans of the outcome, giving unclaimed
+seats back, ticketing partners, and organizations. Provisional rules are listed as open decisions in
+`PROJECT_TODO.md`: a +1 that doesn't fit gets the fan a single seat; a guest can't be changed; a selected fan can't
+drop a +1 after the draw; a +1 can be added after the draw until the show starts.

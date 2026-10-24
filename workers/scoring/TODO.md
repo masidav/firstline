@@ -13,6 +13,8 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Invalidate/update Redis cache entries after successful writes. *No Redis yet; not needed at this size.*
 - [x] Handle empty populations, missing baselines, malformed curve data, and partial failures.
 - [x] Add deterministic tests for formula behavior, percentile monotonicity, and repeatable results.
+- [x] Score the wider Spotify signals (13 more rules, migration 0015, 2026-10-24): shares in `v_raw_scores`, counts
+      and shares in the breakdown, `album_saves_score()` for thresholds. Verified: invariants and `ScoringJobTests`.
 
 ## Verification
 - [x] Add or update automated tests for the behavior above.

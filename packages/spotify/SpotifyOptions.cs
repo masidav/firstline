@@ -20,7 +20,14 @@ public sealed class SpotifyOptions
         "user-read-recently-played",   // recent plays
         "playlist-read-private",       // the user's private playlists
         "playlist-read-collaborative", // playlists they collaborate on
+        FollowScope,                   // artists they follow
     ];
+
+    /// <summary>
+    /// Scope for followed artists, added 2026-10-24. Connections made before it was required lack it: the sync
+    /// then skips follows and the app asks the fan to connect again.
+    /// </summary>
+    public const string FollowScope = "user-follow-read";
 
     /// <summary>Client ID of the app in the Spotify developer dashboard. Not a secret. Empty disables Spotify.</summary>
     public string ClientId { get; set; } = "";
@@ -66,6 +73,21 @@ public sealed class SpotifyOptions
 
     /// <summary>Tracks read per playlist.</summary>
     public int MaxPlaylistItems { get; set; } = 500;
+
+    /// <summary>Saved albums read per sync (50 per request).</summary>
+    public int MaxSavedAlbums { get; set; } = 1000;
+
+    /// <summary>Followed artists read per sync (50 per request).</summary>
+    public int MaxFollowedArtists { get; set; } = 1000;
+
+    /// <summary>
+    /// How often the play ledger is extended from Spotify's last-50-plays endpoint (job spotify.poll_plays).
+    /// Spotify keeps only the last 50 plays, so a heavy listener needs frequent polls to be counted in full.
+    /// </summary>
+    public TimeSpan PollPlaysEvery { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>How long plays stay in the ledger (the play-history and streak signals look back 90 days).</summary>
+    public TimeSpan PlayHistoryRetention { get; set; } = TimeSpan.FromDays(400);
 
     /// <summary>
     /// ISO 3166-1 country whose releases make up an artist's catalog (ADR 0006). One market keeps each release to

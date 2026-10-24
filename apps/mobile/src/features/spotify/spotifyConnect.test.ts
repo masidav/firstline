@@ -3,7 +3,7 @@
  */
 import { ApiError } from '../../api/client';
 import { codeChallenge, randomString } from './pkce';
-import { authorizeUrl, completeConnect, describeStatus, SPOTIFY_SCOPES } from './spotifyConnect';
+import { authorizeUrl, completeConnect, describeStatus, missingScopes, SPOTIFY_SCOPES } from './spotifyConnect';
 
 const pending = { state: 'state-123', verifier: 'v'.repeat(64), redirectUri: 'http://127.0.0.1:8081/spotify-callback' };
 const connected = { connected: true, sync_state: 'queued' as const };
@@ -90,4 +90,12 @@ test('status lines', () => {
   });
   expect(withAdded).toContain('Found 3 tracked artists');
   expect(withAdded).toContain('Added 5 of your top artists');
+});
+
+test('missing scopes are reported only for connections that list their scopes', () => {
+  expect(missingScopes({ connected: false, sync_state: 'idle' })).toEqual([]);
+  expect(missingScopes({ connected: true, sync_state: 'idle', scopes: SPOTIFY_SCOPES })).toEqual([]);
+  expect(missingScopes({ connected: true, sync_state: 'idle', scopes: SPOTIFY_SCOPES.filter((s) => s !== 'user-follow-read') })).toEqual([
+    'user-follow-read',
+  ]);
 });

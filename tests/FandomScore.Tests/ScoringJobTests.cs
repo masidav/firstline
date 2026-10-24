@@ -72,10 +72,11 @@ public sealed class ScoringJobTests(PostgresFixture postgres) : IAsyncLifetime
         await RescoreAsync();
 
         var scores = await ScoresAsync();
+        var rules = await RuleCountAsync();   // 18 since migration 0015; the five classic signals are full for the top fan
         Assert.Equal(3, scores.Count);
-        Assert.Equal(100m, scores[top].RawScore);
-        // (ln 11 / ln 101 + 1/4) / 5 signals.
-        Assert.Equal(Math.Round(100 * (Math.Log(11) / Math.Log(101) + 0.25) / 5, 2), (double)scores[casual].RawScore, 2);
+        Assert.Equal(Math.Round(100.0 * 5 / rules, 2), (double)scores[top].RawScore, 2);
+        // (ln 11 / ln 101 + 1/4) / n signals.
+        Assert.Equal(Math.Round(100 * (Math.Log(11) / Math.Log(101) + 0.25) / rules, 2), (double)scores[casual].RawScore, 2);
         Assert.True(scores[top].Percentile > scores[casual].Percentile && scores[casual].Percentile > scores[once].Percentile);
         Assert.All(scores.Values, s => Assert.True(s.IsEstimated));
         Assert.All(scores.Values, s => Assert.Equal(0.985m, s.BaselineWeight));
@@ -85,7 +86,9 @@ public sealed class ScoringJobTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal(100, spotify.GetProperty("liked_tracks").GetInt32());
         Assert.Equal(4, spotify.GetProperty("catalog_releases").GetInt32());
         Assert.Equal(1m, spotify.GetProperty("shares").GetProperty("album_depth").GetDecimal());
-        Assert.Equal(100m, breakdown.RootElement.GetProperty("total").GetDecimal());
+        Assert.Equal(0m, spotify.GetProperty("shares").GetProperty("follow").GetDecimal());
+        Assert.False(spotify.GetProperty("followed").GetBoolean());
+        Assert.Equal(scores[top].RawScore, breakdown.RootElement.GetProperty("total").GetDecimal());
     }
 
     [Fact]
@@ -114,7 +117,8 @@ public sealed class ScoringJobTests(PostgresFixture postgres) : IAsyncLifetime
     {
         var fan = await ScoringSetup.FanAsync(_db, "fan", _artistId, liked: 100, playlist: 0, albums: 0, rank: null, recent: 0);
         await RescoreAsync();
-        Assert.Equal(20m, (await ScoresAsync())[fan].RawScore);
+        var rules = await RuleCountAsync();
+        Assert.Equal(Math.Round(100.0 / rules, 2), (double)(await ScoresAsync())[fan].RawScore, 2);
 
         await using (var connection = await _db.OpenConnectionAsync())
         {
@@ -122,7 +126,7 @@ public sealed class ScoringJobTests(PostgresFixture postgres) : IAsyncLifetime
         }
 
         Assert.True(await RunQueuedAsync());
-        Assert.Equal(50m, (await ScoresAsync())[fan].RawScore);
+        Assert.Equal(Math.Round(100.0 * 4 / (rules + 3), 2), (double)(await ScoresAsync())[fan].RawScore, 2);
     }
 
     [Fact]
@@ -151,6 +155,12 @@ public sealed class ScoringJobTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     private async Task<bool> RunQueuedAsync() => await ScoringSetup.RunQueuedAsync(_db);
+
+    private async Task<int> RuleCountAsync()
+    {
+        await using var connection = await _db.OpenConnectionAsync();
+        return await connection.ExecuteScalarAsync<int>("SELECT count(*) FROM scoring_rules WHERE active AND rule_key LIKE 'spotify\\_%'");
+    }
 
     private sealed record ScoreRow(Guid UserId, decimal RawScore, decimal Percentile, bool IsEstimated, decimal BaselineWeight, string Breakdown);
 

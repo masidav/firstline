@@ -70,7 +70,7 @@ public sealed class AllocationApiTests(PostgresFixture postgres) : IAsyncLifetim
         Assert.Equal("draft", draft.GetProperty("status").GetString());
         Assert.Equal(("Fan allocation", 100, 4500, "USD", 70m),
             (draft.GetProperty("name").GetString(), draft.GetProperty("tickets").GetInt32(), draft.GetProperty("face_value_cents").GetInt32(),
-             draft.GetProperty("currency").GetString(), draft.GetProperty("min_percentile").GetDecimal()));
+             draft.GetProperty("currency").GetString(), draft.GetProperty("min_raw_score").GetDecimal()));
 
         var fanView = await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/events/{eventId}", _fan), HttpStatusCode.OK);
         Assert.Empty(fanView.GetProperty("allocations").EnumerateArray());
@@ -88,6 +88,27 @@ public sealed class AllocationApiTests(PostgresFixture postgres) : IAsyncLifetim
     }
 
     [Fact]
+    public async Task Publishing_without_a_threshold_sets_the_two_saved_albums_default()
+    {
+        var eventId = await ShowIdAsync();
+        var draft = await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/events/{eventId}/allocations", _staff, new
+        {
+            tickets = 10,
+            face_value_cents = 4500,
+            registration_opens_at = DateTimeOffset.UtcNow.AddDays(1),
+            registration_closes_at = DateTimeOffset.UtcNow.AddDays(5),
+        }), HttpStatusCode.Created);
+        Assert.Equal(JsonValueKind.Null, draft.GetProperty("min_raw_score").ValueKind);
+
+        var published = await JsonAsync(await SendAsync(HttpMethod.Post,
+            $"/v1/admin/allocations/{draft.GetProperty("id").GetString()}/publish", _staff), HttpStatusCode.OK);
+
+        await using var connection = await _db.OpenConnectionAsync();
+        var expected = await connection.ExecuteScalarAsync<decimal>("SELECT allocation_default_threshold(@_artistId)", new { _artistId });
+        Assert.Equal(expected, published.GetProperty("min_raw_score").GetDecimal());
+    }
+
+    [Fact]
     public async Task Fans_cannot_manage_shows()
     {
         Assert.Equal(HttpStatusCode.Forbidden, (await CreateShowAsync(_fan)).StatusCode);
@@ -101,8 +122,8 @@ public sealed class AllocationApiTests(PostgresFixture postgres) : IAsyncLifetim
         await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/allocations/{allocationId}/publish", _staff), HttpStatusCode.OK);
 
         var changed = await JsonAsync(await SendAsync(HttpMethod.Patch, $"/v1/admin/allocations/{allocationId}", _staff,
-            new { tickets = 120, min_percentile = 80.5 }), HttpStatusCode.OK);
-        Assert.Equal((120, 80.5m), (changed.GetProperty("tickets").GetInt32(), changed.GetProperty("min_percentile").GetDecimal()));
+            new { tickets = 120, min_raw_score = 80.5 }), HttpStatusCode.OK);
+        Assert.Equal((120, 80.5m), (changed.GetProperty("tickets").GetInt32(), changed.GetProperty("min_raw_score").GetDecimal()));
 
         await OpenRegistrationAsync(allocationId);
         Assert.Equal("open", (await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/events/{eventId}", _fan), HttpStatusCode.OK))
@@ -190,7 +211,7 @@ public sealed class AllocationApiTests(PostgresFixture postgres) : IAsyncLifetim
     [Theory]
     [InlineData("""{"tickets": 0, "face_value_cents": 100}""", "tickets")]
     [InlineData("""{"tickets": 10, "face_value_cents": -1}""", "face_value_cents")]
-    [InlineData("""{"tickets": 10, "face_value_cents": 100, "min_percentile": 120}""", "min_percentile")]
+    [InlineData("""{"tickets": 10, "face_value_cents": 100, "min_raw_score": -1}""", "min_raw_score")]
     [InlineData("""{"tickets": 10, "face_value_cents": 100, "currency": "usd"}""", "currency")]
     public async Task Allocations_are_validated(string partial, string field)
     {
@@ -276,7 +297,7 @@ public sealed class AllocationApiTests(PostgresFixture postgres) : IAsyncLifetim
         {
             tickets = 100,
             face_value_cents = 4500,
-            min_percentile = 70,
+            min_raw_score = 70,
             registration_opens_at = DateTimeOffset.UtcNow.AddDays(1),
             registration_closes_at = DateTimeOffset.UtcNow.AddDays(closesInDays),
         });

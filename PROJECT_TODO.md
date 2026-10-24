@@ -80,6 +80,12 @@ Details: [Spotify API feature](services/api/src/features/spotify-sync/TODO.md) �
       `scoring_rules`, an even split across the five Spotify signals (decided 2026-10-21); change them with
       `testScripts/scoringWeights.sh` or `PUT /v1/admin/scoring-rules/{key}`, and every artist is rescored.
 - [x] Implement raw score calculation and diminishing returns. Formula: `workers/scoring/README.md`.
+- [x] Score the wider Spotify signals (2026-10-24, migration 0015): top artists over three time ranges, top
+      tracks, saved albums, early saves and tenure, playlist detail, follows (new scope `user-follow-read`), an
+      hourly play ledger with 90-day plays and weekly streaks, catalog coverage, and deep cuts: 18 Spotify rules,
+      even split. Verified: `dotnet test` 199/199 (invariants for every share), fan app 83/83. Not done from the
+      review of 2026-10-24: live "listening now" check-ins (needs events to check against) and the Spotify data
+      export upload (needs the submissions upload flow); both are listed under Open decisions / Phase 7.
 - [x] Implement synthetic baseline generation and real/synthetic percentile blending.
 - [x] Store and refresh computed scores for active artists only. Worker `scoring.score_artist` after syncs,
       weight changes, on request, and daily. Verified 2026-10-21: `dotnet test` 128/128.
@@ -174,8 +180,8 @@ Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](servi
 - [ ] Fan registration for an allocation and a fair, auditable selection: ranked by fandom score among fans
       whose three hub cities include the show's city, then other fans for unfilled seats; ties broken by a
       recorded random draw; a registration keeps the hubs it was made with (decided 2026-10-20).
-      *Registration done 2026-10-21 (allocations branch): eligibility, one per fan per show, hub and score snapshot,
-      withdraw while open; RegistrationApiTests 8/8. Selection is next.*
+      *Registration done 2026-10-21; selection done 2026-10-24 (migration 0017, `POST /v1/admin/allocations/{id}/selection`):
+      hub fans first, snapshot raw score, seeded tiebreak, +1 seats. Reservations and notifications are next.*
 - [ ] Non-transferable reservation tokens, delayed delivery, and face-value exchange for fans who can't attend.
 - [ ] Primary ticketing integration (Ticketmaster, AXS, SeatGeek): reserve seats from the pool and hand off checkout.
 - [ ] Promoter web dashboard: set up allocations, monitor registration, export reports.
@@ -264,7 +270,11 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
 - [ ] Confirm ticketing partner and purchase-confirmation capability.
 - [ ] Confirm archive meaning and user-facing archive requirements.
 - [ ] Decide how much ledger points (journal, proof of fandom) weigh against the 0–100 Spotify score. For now
-      they are added on top.
+      they are added on top. *Since 2026-10-24 the Spotify score is spread over 18 signals (each worth at most
+      100/18 points), so a few awards can outrank a strong listener; see `workers/scoring/README.md`.*
+- [ ] Decide whether to add live "listening now" check-ins (scope `user-read-currently-playing`; release-day or
+      listening-party windows) and a Spotify data-export upload (full streaming history as proof of fandom) as
+      further signals. Both wait on events and on the submissions upload flow (reviewed 2026-10-24).
 - [ ] Confirm verification thresholds and baseline blend parameters. *Provisional defaults in code since 2026-10-21*
       (`Baseline__MedianScore` 15 on the 0–100 score scale since migration 0008, `Baseline__Sigma` 1, `Baseline__BlendK` 200; stored baselines carry `provisional: true`).
 - [x] Define data retention and account deletion behavior. Deleted accounts: personal data scrubbed at once, content hard-deleted after 30 days, comments others replied to kept as "[deleted]", ledger kept anonymously (decided 2026-10-18). File retention (quarantine/archive) still to define with submissions.
@@ -293,10 +303,13 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
       registration opens** (it can still be cancelled); selection ranks fans by the score snapshot taken **when
       they registered** (frozen, can't be pumped afterwards). Staff, not promoters, manage shows until
       organizations exist.
-- [ ] Eligibility threshold: **not a minimum percentile** (decided 2026-10-24). What replaces it: no threshold
-      (ranking alone decides), or a minimum raw score? Code still uses `min_percentile` until this is decided.
-- [ ] +1 details: does a +1 use a second ticket from the allocation's count, does the guest need an account or a
-      name on the ticket, and is the +1 chosen at registration or after selection?
+- [x] Eligibility threshold (decided 2026-10-24): a **low raw-score minimum, equal to having 2 saved albums** by the
+      artist (`min_raw_score`, set from `album_saves_score()` when an allocation is published, unless staff set one).
+- [x] +1 (decided 2026-10-24): the guest **takes a seat from the allocation**; the guest **needs an account, which can be
+      made later**; the +1 can be asked for **at registration or added after being selected**.
+- [ ] +1 rules set provisionally in code (2026-10-24), confirm or change: when only one seat is left for a fan with a
+      +1, they **get the seat alone**; a named guest **can't be changed**; a selected fan **can't drop** their +1 after the
+      draw; a +1 can be added after the draw **until the show starts**, first come first served while seats are left.
 - [ ] What pausing an artist (takedown) does to an open allocation (for now it's allowed, and registration and
       selection will refuse).
 - [x] Concert-photo points: `concert_photo_verified` is 5, the same as a screenshot (decided 2026-10-21).

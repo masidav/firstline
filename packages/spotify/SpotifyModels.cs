@@ -10,18 +10,40 @@ public sealed record SpotifyTrack(string Id, string? AlbumId, IReadOnlyList<stri
 
 public sealed record SpotifySavedTrack(SpotifyTrack Track, DateTimeOffset? SavedAt);
 
+/// <summary>A saved album: its id, its artists in credit order (the first is primary), and when it was saved.</summary>
+public sealed record SpotifySavedAlbum(string AlbumId, IReadOnlyList<string> ArtistIds, DateTimeOffset? SavedAt);
+
+/// <summary>One play from the fan's history.</summary>
+public sealed record SpotifyPlay(SpotifyTrack Track, DateTimeOffset PlayedAt);
+
+/// <summary>A playlist the fan owns or collaborates on, with its tracks.</summary>
+public sealed record SpotifyPlaylist(string Id, bool Collaborative, IReadOnlyList<SpotifyTrack> Tracks);
+
 /// <summary>
 /// One user's listening signals as Spotify returned them, for every artist. Held in memory only: the sync
 /// worker keeps tracked artists' data and drops the rest before anything is stored.
 /// </summary>
+/// <param name="TopArtists">Top artists of the last 6 months, in rank order (index + 1 is the rank).</param>
+/// <param name="TopArtistsShort">Top artists of the last 4 weeks.</param>
+/// <param name="TopArtistsLong">Top artists over the fan's history.</param>
+/// <param name="TopTracks">Distinct top tracks across the three time ranges.</param>
+/// <param name="FollowedArtistIds">Artists the fan follows; null when the connection lacks scope user-follow-read.</param>
 public sealed record SpotifyLibrary(
     IReadOnlyList<SpotifySavedTrack> SavedTracks,
-    IReadOnlyList<SpotifyTrack> PlaylistTracks,
+    IReadOnlyList<SpotifyPlaylist> Playlists,
     IReadOnlyList<SpotifyArtist> TopArtists,
-    IReadOnlyList<SpotifyTrack> RecentlyPlayed)
+    IReadOnlyList<SpotifyArtist> TopArtistsShort,
+    IReadOnlyList<SpotifyArtist> TopArtistsLong,
+    IReadOnlyList<SpotifyTrack> TopTracks,
+    IReadOnlyList<SpotifySavedAlbum> SavedAlbums,
+    IReadOnlyList<string>? FollowedArtistIds,
+    IReadOnlyList<SpotifyPlay> RecentlyPlayed)
 {
-    /// <summary>Top artists' Spotify ids in rank order (index + 1 is the rank).</summary>
+    /// <summary>Top artists' (6 months) Spotify ids in rank order.</summary>
     public IReadOnlyList<string> TopArtistIds => [.. TopArtists.Select(a => a.Id)];
+
+    /// <summary>Every track in the fan's own or collaborative playlists (a track in two playlists appears twice).</summary>
+    public IReadOnlyList<SpotifyTrack> PlaylistTracks => [.. Playlists.SelectMany(p => p.Tracks)];
 }
 
 /// <summary>An artist from search or lookup. <see cref="ImageUrl"/> is the smallest image at least 300 px wide.</summary>

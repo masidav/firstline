@@ -35,9 +35,6 @@ const photo = {
   details: [],
 };
 
-// The CI runner can be slow on a suite's first render; give async waits room.
-const slow = { timeout: 5000 };
-
 beforeEach(() => jest.clearAllMocks());
 
 test('staff take a post down with a note, or dismiss its reports', async () => {
@@ -45,18 +42,18 @@ test('staff take a post down with a note, or dismiss its reports', async () => {
   mockApi.POST.mockResolvedValue(ok({}));
   render(<ModerationScreen />);
 
-  expect(await screen.findByText('3 reports: Abuse or harassment ×2, Spam', {}, slow)).toBeTruthy();
+  expect(await screen.findByText('3 reports: Abuse or harassment ×2, Spam')).toBeTruthy();
   expect(screen.getByText('“Insults another fan”')).toBeTruthy();
   fireEvent.changeText(screen.getAllByLabelText('Note (staff only, optional)')[0]!, 'Abusive');
   fireEvent.press(screen.getAllByRole('button', { name: 'Take down' })[0]!);
-  await waitFor(() => expect(screen.queryByText('Rude review')).toBeNull(), slow);
+  await waitFor(() => expect(screen.queryByText('Rude review')).toBeNull());
   expect(mockApi.POST).toHaveBeenCalledWith('/admin/reports/{targetType}/{targetId}/decision', {
     params: { path: { targetType: 'log', targetId: 'l1' } },
     body: { action: 'take_down', note: 'Abusive' },
   });
 
   fireEvent.press(screen.getByRole('button', { name: 'Dismiss reports' }));
-  expect(await screen.findByText('No open reports.', {}, slow)).toBeTruthy();
+  expect(await screen.findByText('No open reports.')).toBeTruthy();
   expect(mockApi.POST).toHaveBeenLastCalledWith('/admin/reports/{targetType}/{targetId}/decision', {
     params: { path: { targetType: 'photo', targetId: 's1' } },
     body: { action: 'dismiss' },

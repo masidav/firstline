@@ -117,3 +117,14 @@ test('disconnecting asks first, then clears the connection', async () => {
   expect(await screen.findByText('Not connected.')).toBeTruthy();
   expect(mockApi.DELETE).toHaveBeenCalledWith('/me/spotify');
 });
+
+test('a connection made without the follow permission asks to connect again', async () => {
+  mockApi.GET.mockResolvedValue(
+    ok({ connected: true, sync_state: 'idle', scopes: ['user-library-read', 'user-top-read'], last_synced_at: '2026-10-18T12:00:00Z' }),
+  );
+  render(<SpotifyScreen />);
+
+  expect(await screen.findByText(/We now also count the artists you follow/)).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Connect again' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Sync now' })).toBeNull();
+});

@@ -181,7 +181,7 @@ export interface paths {
          *     their artists appear on the home screen right away, and scores tracked artists already active.
          *
          *     Request every scope: `user-library-read`, `user-top-read`, `user-read-recently-played`,
-         *     `playlist-read-private`, `playlist-read-collaborative`. `redirect_uri` must be one the server allows
+         *     `playlist-read-private`, `playlist-read-collaborative`, `user-follow-read`. `redirect_uri` must be one the server allows
          *     (`Spotify__RedirectUris`) and the same one used for the authorization.
          *
          *     `422 validation_failed` (field `code`) when Spotify rejects the code, a scope is missing, or Spotify
@@ -1183,8 +1183,9 @@ export interface paths {
         /**
          * Can I register for this allocation?
          * @description `reason` says why not: `not_open`, `artist_not_active`, `hub_city_required`, `no_score`,
-         *     `below_threshold`, or `already_registered` (for another allocation of the same show). `percentile` and
-         *     `hub_match` are the fan's current standing; a registration keeps the values from when it was made.
+         *     `below_threshold` (raw score under `min_raw_score`), or `already_registered` (for another allocation of the
+         *     same show, or named as someone's guest for it). `raw_score`, `percentile`, and `hub_match` are the fan's
+         *     current standing; a registration keeps the values from when it was made.
          */
         get: operations["getEligibility"];
         put?: never;
@@ -1209,6 +1210,9 @@ export interface paths {
          * Register for an allocation
          * @description Registers the fan while registration is open, keeping a snapshot of their hub cities and score. One
          *     registration per fan per show. Registering again returns the existing registration (`200`).
+         *     The body is optional. `plus_one` asks for a +1 (a second seat from the allocation, for a guest with an
+         *     account): it can be turned on or off while registration is open, and a selected fan can add one after the
+         *     draw while seats are left (`409 plus_one_unavailable` otherwise). Omitted, the +1 stays as it is.
          */
         put: operations["register"];
         post?: never;
@@ -1218,6 +1222,30 @@ export interface paths {
          *     its registrations automatically, and deleting an account withdraws the fan's.
          */
         delete: operations["withdraw"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/allocations/{allocationId}/registration/guest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Name my +1's account
+         * @description The guest needs an account (it can be created after registering). Allowed once the fan has asked for a +1,
+         *     and after the draw only if the +1 got a seat. A guest is named once and can't be changed. The guest can't
+         *     be the fan, registered for the same show, or another fan's guest for it.
+         */
+        put: operations["nameGuest"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1371,6 +1399,54 @@ export interface paths {
          * @description Can't be undone; cancelling again returns it unchanged. Drafts are deleted instead (`409 conflict`).
          */
         post: operations["cancelAllocation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/allocations/{allocationId}/selection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run the draw
+         * @description After registration closes. Fans whose hub cities include the show's city come first, then everyone else;
+         *     each group is ranked by the raw score in their registration snapshot, and equal scores are ordered by a
+         *     random seed that is stored, so the draw can be repeated. Each selected fan takes one seat, two with a +1;
+         *     when only one seat is left for a fan with a +1, they get it without the +1. Runs once: calling again
+         *     returns the recorded draw (`200`). A selected allocation can't be cancelled.
+         */
+        post: operations["runSelection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/allocations/{allocationId}/registrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Registrations, in ranking order
+         * @description Live registrations in ranking order once the draw has run (registration order before); withdrawn ones last.
+         */
+        get: operations["listAllocationRegistrations"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1590,7 +1666,7 @@ export interface components {
              * @description Stable machine-readable code.
              * @enum {string}
              */
-            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
+            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
             errors?: {
                 field?: string;
                 message?: string;
@@ -1646,6 +1722,17 @@ export interface components {
             is_staff?: boolean;
             /** Format: date-time */
             created_at: string;
+            /** @description The fan is an artist. The band links below are only kept while this is true. */
+            is_artist: boolean;
+            /**
+             * Format: uri
+             * @description The band's profile page (an https link, e.g. a Spotify artist page or website).
+             */
+            band_url?: string | null;
+            /** @description The band's Instagram handle without the @; the link is `https://instagram.com/{handle}`. */
+            instagram_handle?: string | null;
+            /** @description The band's X handle without the @; the link is `https://x.com/{handle}`. */
+            x_handle?: string | null;
             /** @description Same as `GET /me/spotify`. */
             spotify?: components["schemas"]["SpotifyStatus"];
             /** @description Primary first. Empty until the fan chooses them (the app asks right after sign-up). */
@@ -1673,6 +1760,17 @@ export interface components {
              * @description Null removes the avatar. Setting one needs uploads (`POST /uploads`), not available yet.
              */
             avatar_upload_id?: string | null;
+            /** @description Setting false also clears `band_url`, `instagram_handle`, and `x_handle`. */
+            is_artist?: boolean;
+            /**
+             * Format: uri
+             * @description Null clears it. Needs `is_artist` (422 otherwise).
+             */
+            band_url?: string | null;
+            /** @description A leading @ is dropped. Null clears it. Needs `is_artist` (422 otherwise). */
+            instagram_handle?: string | null;
+            /** @description A leading @ is dropped. Null clears it. Needs `is_artist` (422 otherwise). */
+            x_handle?: string | null;
         };
         SpotifyConnect: {
             code: string;
@@ -1681,6 +1779,10 @@ export interface components {
         };
         SpotifyStatus: {
             connected: boolean;
+            /**
+             * @description Scopes the connection was made with. A connection made before `user-follow-read` was required lacks it;
+             *     the sync then skips followed artists, and the app should ask the fan to connect again.
+             */
             scopes?: string[];
             /** Format: date-time */
             connected_at?: string | null;
@@ -1831,8 +1933,8 @@ export interface components {
             starts_at?: string;
         };
         /**
-         * @description Face-value tickets set aside for top fans of the show's artist, one per selected fan. Fans at or above
-         *     `min_percentile` for the artist can register while registration is open.
+         * @description Face-value tickets set aside for top fans of the show's artist: one seat per selected fan, two with a +1.
+         *     Fans whose raw score for the artist is at least `min_raw_score` can register while registration is open.
          */
         Allocation: {
             /** Format: uuid */
@@ -1843,20 +1945,29 @@ export interface components {
             tickets: number;
             face_value_cents: number;
             currency: string;
-            min_percentile: number;
+            /**
+             * @description Null only on a draft without one: publishing sets the raw score of a fan with two saved albums by the
+             *     artist. Locks once registration opens.
+             */
+            min_raw_score: number | null;
             /** Format: date-time */
             registration_opens_at: string;
             /** Format: date-time */
             registration_closes_at: string;
             /**
-             * @description `draft` is staff-only; `upcoming` is published but not open yet; `closed` means registration is over
+             * @description `draft` is staff-only; `upcoming` is published but not open yet; `closed` means registration is over;
+             *     `selected` means the draw has run
              * @enum {string}
              */
-            status: "draft" | "upcoming" | "open" | "closed" | "cancelled";
+            status: "draft" | "upcoming" | "open" | "closed" | "selected" | "cancelled";
             /** Format: date-time */
             published_at?: string | null;
             /** Format: date-time */
             cancelled_at?: string | null;
+            /** Format: date-time */
+            selected_at?: string | null;
+            /** @description After the draw: seats a selected fan's +1 can still take */
+            seats_left?: number | null;
         };
         /** @description A fan's registration, with the snapshot taken when they registered. */
         Registration: {
@@ -1879,8 +1990,26 @@ export interface components {
             registered_at: string;
             /** Format: date-time */
             withdrawn_at?: string | null;
-            /** @enum {string} */
-            status: "registered" | "withdrawn";
+            /**
+             * @description `selected` and `not_selected` come from the draw
+             * @enum {string}
+             */
+            status: "registered" | "withdrawn" | "selected" | "not_selected";
+            /** @description The fan asked for a +1 */
+            plus_one: boolean;
+            /** @description The +1's account, once named */
+            guest?: {
+                /** Format: uuid */
+                id: string;
+                handle: string;
+            } | null;
+            /** @description Place in the draw's ranking */
+            selection_rank?: number | null;
+            /**
+             * @description Seats the draw gave: 1, or 2 with the +1
+             * @enum {integer|null}
+             */
+            seats?: 1 | 2 | null;
         };
         Eligibility: {
             /** Format: uuid */
@@ -1889,7 +2018,8 @@ export interface components {
             eligible: boolean;
             /** @enum {string|null} */
             reason?: "not_open" | "artist_not_active" | "hub_city_required" | "no_score" | "below_threshold" | "already_registered" | null;
-            min_percentile: number;
+            min_raw_score: number | null;
+            raw_score?: number | null;
             percentile?: number | null;
             is_estimated?: boolean | null;
             hub_match?: number | null;
@@ -1907,8 +2037,8 @@ export interface components {
             face_value_cents: number;
             /** @default USD */
             currency: string;
-            /** @default 0 */
-            min_percentile: number;
+            /** @description Omit to get the two-saved-albums default when the allocation is published */
+            min_raw_score?: number;
             /** Format: date-time */
             registration_opens_at: string;
             /**
@@ -1922,11 +2052,25 @@ export interface components {
             tickets?: number;
             face_value_cents?: number;
             currency?: string;
-            min_percentile?: number;
+            min_raw_score?: number;
             /** Format: date-time */
             registration_opens_at?: string;
             /** Format: date-time */
             registration_closes_at?: string;
+        };
+        /** @description A recorded draw. With the registrations' snapshots, `seed` is enough to repeat it. */
+        Selection: {
+            /** Format: uuid */
+            allocation_id: string;
+            seed: string;
+            tickets: number;
+            /** @description Live registrations in the draw */
+            registrations: number;
+            selected_fans: number;
+            /** @description Grows when a selected fan adds a +1 afterwards */
+            seats_assigned: number;
+            /** Format: date-time */
+            ran_at: string;
         };
         EventPage: {
             items: components["schemas"]["Event"][];
@@ -1962,7 +2106,16 @@ export interface components {
                 liked_tracks: number;
                 playlist_tracks: number;
                 distinct_albums: number;
+                /** @description Plays of tracked artists among the fan's last 50 at the last sync */
                 recent_plays: number;
+                /** @description Tracked artists' albums in the fan's saved albums */
+                saved_albums: number;
+                /** @description Tracked artists' tracks among the fan's Spotify top tracks */
+                top_tracks: number;
+                /** @description Tracked artists the fan follows on Spotify */
+                followed_artists: number;
+                /** @description Plays of tracked artists in the last 90 days (play ledger */
+                plays_last_quarter: number;
             };
             journal: {
                 logs: number;
@@ -2003,19 +2156,55 @@ export interface components {
              *     the Spotify rules in `scoring_rules`. `total` adds ledger points (journal, proof of fandom).
              */
             breakdown?: {
+                /** @description Counts behind each share (workers/scoring/README.md lists the rule for each). */
                 spotify?: {
                     liked_tracks?: number;
                     playlist_tracks?: number;
                     distinct_albums?: number;
+                    /** @description Rank in the fan's top artists of the last 6 months */
                     top_artist_rank?: number | null;
                     recent_plays?: number;
+                    /** @description Rank over the last 4 weeks */
+                    top_artist_rank_short?: number | null;
+                    /** @description Rank over the fan's history */
+                    top_artist_rank_long?: number | null;
+                    top_tracks?: number;
+                    saved_albums?: number;
+                    /** @description Releases saved within a week of release day */
+                    early_saves?: number;
+                    /** Format: date-time */
+                    first_saved_at?: string | null;
+                    tenure_days?: number;
+                    playlists_featuring?: number;
+                    dedicated_playlists?: number;
+                    followed?: boolean;
+                    /** @description Plays in the last 90 days */
+                    plays_last_quarter?: number;
+                    streak_weeks?: number;
+                    /** @description Catalog tracks saved */
+                    tracks_touched?: number;
+                    deep_cuts?: number;
                     catalog_releases?: number;
+                    catalog_tracks?: number;
                     shares?: {
                         liked?: number | null;
                         playlist?: number | null;
                         album_depth?: number | null;
                         top_artist?: number | null;
                         recent?: number | null;
+                        top_artist_short?: number | null;
+                        top_artist_long?: number | null;
+                        top_track?: number | null;
+                        saved_album?: number | null;
+                        early_save?: number | null;
+                        tenure?: number | null;
+                        playlist_feature?: number | null;
+                        dedicated_playlist?: number | null;
+                        follow?: number | null;
+                        play_history?: number | null;
+                        play_streak?: number | null;
+                        catalog_coverage?: number | null;
+                        deep_cut?: number | null;
                     };
                     points?: number;
                 };
@@ -4477,7 +4666,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    plus_one?: boolean;
+                };
+            };
+        };
         responses: {
             /** @description Already registered */
             200: {
@@ -4510,8 +4705,9 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             /**
-             * @description `registration_closed` (not open), `artist_not_active`, `hub_city_required`, or `already_registered`
-             *     (registered for another allocation of the same show)
+             * @description `registration_closed` (not open), `artist_not_active`, `hub_city_required`, `already_registered`
+             *     (registered for another allocation of the same show, or someone's guest for it), or
+             *     `plus_one_unavailable` (no seat left, not selected, a named guest, or the show has started)
              */
             409: {
                 headers: {
@@ -4551,6 +4747,46 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+        };
+    };
+    nameGuest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The guest's handle (a leading @ is ignored) */
+                    handle: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Guest named */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Registration"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description No such account, no +1 seat, already named, or the guest has a ticket for the show (`code: guest_unavailable`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
         };
     };
     listMyRegistrations: {
@@ -4789,6 +5025,80 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    runSelection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The draw had already run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Selection"];
+                };
+            };
+            /** @description Draw run */
+            201: {
+                headers: {
+                    /** @description `/v1/admin/allocations/{allocationId}/registrations` */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Selection"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Registration still open (`code: selection_not_ready`), a draft or cancelled (`conflict`), or the artist isn't active */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listAllocationRegistrations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Registrations and the draw, if it has run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        selection: components["schemas"]["Selection"] | null;
+                        items: {
+                            handle: string;
+                            registration: components["schemas"]["Registration"];
+                        }[];
+                    };
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     listReviewQueue: {

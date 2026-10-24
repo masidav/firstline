@@ -14,7 +14,17 @@ jest.mock('expo-router', () => ({ router: { replace: jest.fn() } }));
 
 const empty = {
   artists: [],
-  listening: { artists: 0, liked_tracks: 0, playlist_tracks: 0, distinct_albums: 0, recent_plays: 0 },
+  listening: {
+    artists: 0,
+    liked_tracks: 0,
+    playlist_tracks: 0,
+    distinct_albums: 0,
+    recent_plays: 0,
+    saved_albums: 0,
+    top_tracks: 0,
+    followed_artists: 0,
+    plays_last_quarter: 0,
+  },
   journal: { logs: 0, albums_logged: 0, relistens: 0, reviews: 0, ratings: 0, lists: 0, comments: 0 },
   proof: { tickets: 0, merch: 0, screenshots: 0 },
   ledger_points: 0,

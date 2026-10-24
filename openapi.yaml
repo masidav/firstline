@@ -307,7 +307,7 @@ paths:
         their artists appear on the home screen right away, and scores tracked artists already active.
 
         Request every scope: `user-library-read`, `user-top-read`, `user-read-recently-played`,
-        `playlist-read-private`, `playlist-read-collaborative`. `redirect_uri` must be one the server allows
+        `playlist-read-private`, `playlist-read-collaborative`, `user-follow-read`. `redirect_uri` must be one the server allows
         (`Spotify__RedirectUris`) and the same one used for the authorization.
 
         `422 validation_failed` (field `code`) when Spotify rejects the code, a scope is missing, or Spotify
@@ -1452,8 +1452,9 @@ paths:
       summary: Can I register for this allocation?
       description: |
         `reason` says why not: `not_open`, `artist_not_active`, `hub_city_required`, `no_score`,
-        `below_threshold`, or `already_registered` (for another allocation of the same show). `percentile` and
-        `hub_match` are the fan's current standing; a registration keeps the values from when it was made.
+        `below_threshold` (raw score under `min_raw_score`), or `already_registered` (for another allocation of the
+        same show, or named as someone's guest for it). `raw_score`, `percentile`, and `hub_match` are the fan's
+        current standing; a registration keeps the values from when it was made.
       responses:
         '200':
           description: Eligibility
@@ -1471,6 +1472,17 @@ paths:
       description: |
         Registers the fan while registration is open, keeping a snapshot of their hub cities and score. One
         registration per fan per show. Registering again returns the existing registration (`200`).
+        The body is optional. `plus_one` asks for a +1 (a second seat from the allocation, for a guest with an
+        account): it can be turned on or off while registration is open, and a selected fan can add one after the
+        draw while seats are left (`409 plus_one_unavailable` otherwise). Omitted, the +1 stays as it is.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                plus_one: {type: boolean}
       responses:
         '200':
           description: Already registered
@@ -1492,8 +1504,9 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409':
           description: |
-            `registration_closed` (not open), `artist_not_active`, `hub_city_required`, or `already_registered`
-            (registered for another allocation of the same show)
+            `registration_closed` (not open), `artist_not_active`, `hub_city_required`, `already_registered`
+            (registered for another allocation of the same show, or someone's guest for it), or
+            `plus_one_unavailable` (no seat left, not selected, a named guest, or the show has started)
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
@@ -1512,6 +1525,39 @@ paths:
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
+  /allocations/{allocationId}/registration/guest:
+    parameters:
+      - {$ref: '#/components/parameters/AllocationId'}
+    put:
+      tags: [Allocations]
+      operationId: nameGuest
+      summary: Name my +1's account
+      description: |
+        The guest needs an account (it can be created after registering). Allowed once the fan has asked for a +1,
+        and after the draw only if the +1 got a seat. A guest is named once and can't be changed. The guest can't
+        be the fan, registered for the same show, or another fan's guest for it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [handle]
+              properties:
+                handle: {type: string, description: 'The guest''s handle (a leading @ is ignored)'}
+      responses:
+        '200':
+          description: Guest named
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Registration'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: 'No such account, no +1 seat, already named, or the guest has a ticket for the show (`code: guest_unavailable`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
   /me/registrations:
     get:
       tags: [Allocations]
@@ -1680,6 +1726,68 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
+  /admin/allocations/{allocationId}/selection:
+    parameters:
+      - {$ref: '#/components/parameters/AllocationId'}
+    post:
+      tags: [Admin, Allocations]
+      operationId: runSelection
+      summary: Run the draw
+      description: |
+        After registration closes. Fans whose hub cities include the show's city come first, then everyone else;
+        each group is ranked by the raw score in their registration snapshot, and equal scores are ordered by a
+        random seed that is stored, so the draw can be repeated. Each selected fan takes one seat, two with a +1;
+        when only one seat is left for a fan with a +1, they get it without the +1. Runs once: calling again
+        returns the recorded draw (`200`). A selected allocation can't be cancelled.
+      responses:
+        '201':
+          description: Draw run
+          headers:
+            Location: {schema: {type: string}, description: '`/v1/admin/allocations/{allocationId}/registrations`'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Selection'}
+        '200':
+          description: The draw had already run
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Selection'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: 'Registration still open (`code: selection_not_ready`), a draft or cancelled (`conflict`), or the artist isn''t active'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+  /admin/allocations/{allocationId}/registrations:
+    parameters:
+      - {$ref: '#/components/parameters/AllocationId'}
+    get:
+      tags: [Admin, Allocations]
+      operationId: listAllocationRegistrations
+      summary: Registrations, in ranking order
+      description: Live registrations in ranking order once the draw has run (registration order before); withdrawn ones last.
+      responses:
+        '200':
+          description: Registrations and the draw, if it has run
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [selection, items]
+                properties:
+                  selection:
+                    oneOf: [{$ref: '#/components/schemas/Selection'}, {type: 'null'}]
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [handle, registration]
+                      properties:
+                        handle: {type: string}
+                        registration: {$ref: '#/components/schemas/Registration'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
 
   # ------------------------------------------------------------------ Admin
   /admin/reviews:
@@ -2015,6 +2123,9 @@ components:
             - hub_city_required
             - not_eligible
             - already_registered
+            - plus_one_unavailable
+            - guest_unavailable
+            - selection_not_ready
             - hub_change_limit
             - artist_not_active
             - spotify_artist_not_found
@@ -2082,7 +2193,7 @@ components:
         user: {$ref: '#/components/schemas/Me'}
     Me:
       type: object
-      required: [id, handle, email, created_at, hub_cities]
+      required: [id, handle, email, created_at, hub_cities, is_artist]
       properties:
         id: {type: string, format: uuid}
         handle: {type: string}
@@ -2091,6 +2202,19 @@ components:
         avatar_url: {type: [string, 'null'], format: uri}
         is_staff: {type: boolean}
         created_at: {type: string, format: date-time}
+        is_artist:
+          type: boolean
+          description: The fan is an artist. The band links below are only kept while this is true.
+        band_url:
+          type: [string, 'null']
+          format: uri
+          description: The band's profile page (an https link, e.g. a Spotify artist page or website).
+        instagram_handle:
+          type: [string, 'null']
+          description: The band's Instagram handle without the @; the link is `https://instagram.com/{handle}`.
+        x_handle:
+          type: [string, 'null']
+          description: The band's X handle without the @; the link is `https://x.com/{handle}`.
         spotify:
           $ref: '#/components/schemas/SpotifyStatus'
           description: Same as `GET /me/spotify`.
@@ -2120,6 +2244,23 @@ components:
           type: [string, 'null']
           format: uuid
           description: Null removes the avatar. Setting one needs uploads (`POST /uploads`), not available yet.
+        is_artist:
+          type: boolean
+          description: Setting false also clears `band_url`, `instagram_handle`, and `x_handle`.
+        band_url:
+          type: [string, 'null']
+          format: uri
+          maxLength: 200
+          pattern: '^https://[^\s/]+'
+          description: Null clears it. Needs `is_artist` (422 otherwise).
+        instagram_handle:
+          type: [string, 'null']
+          pattern: '^@?[A-Za-z0-9._]{1,30}$'
+          description: A leading @ is dropped. Null clears it. Needs `is_artist` (422 otherwise).
+        x_handle:
+          type: [string, 'null']
+          pattern: '^@?[A-Za-z0-9_]{1,15}$'
+          description: A leading @ is dropped. Null clears it. Needs `is_artist` (422 otherwise).
     SpotifyConnect:
       type: object
       required: [code, code_verifier, redirect_uri]
@@ -2135,6 +2276,9 @@ components:
         scopes:
           type: array
           items: {type: string}
+          description: |
+            Scopes the connection was made with. A connection made before `user-follow-read` was required lacks it;
+            the sync then skips followed artists, and the app should ask the fan to connect again.
         connected_at: {type: [string, 'null'], format: date-time}
         last_synced_at: {type: [string, 'null'], format: date-time}
         sync_state:
@@ -2296,9 +2440,9 @@ components:
     Allocation:
       type: object
       description: |
-        Face-value tickets set aside for top fans of the show's artist, one per selected fan. Fans at or above
-        `min_percentile` for the artist can register while registration is open.
-      required: [id, event_id, name, tickets, face_value_cents, currency, min_percentile, registration_opens_at,
+        Face-value tickets set aside for top fans of the show's artist: one seat per selected fan, two with a +1.
+        Fans whose raw score for the artist is at least `min_raw_score` can register while registration is open.
+      required: [id, event_id, name, tickets, face_value_cents, currency, min_raw_score, registration_opens_at,
                  registration_closes_at, status]
       properties:
         id: {type: string, format: uuid}
@@ -2307,19 +2451,29 @@ components:
         tickets: {type: integer, minimum: 1}
         face_value_cents: {type: integer, minimum: 0}
         currency: {type: string, pattern: '^[A-Z]{3}$'}
-        min_percentile: {type: number, minimum: 0, maximum: 100}
+        min_raw_score:
+          type: [number, 'null']
+          minimum: 0
+          description: |
+            Null only on a draft without one: publishing sets the raw score of a fan with two saved albums by the
+            artist. Locks once registration opens.
         registration_opens_at: {type: string, format: date-time}
         registration_closes_at: {type: string, format: date-time}
         status:
           type: string
-          enum: [draft, upcoming, open, closed, cancelled]
-          description: '`draft` is staff-only; `upcoming` is published but not open yet; `closed` means registration is over'
+          enum: [draft, upcoming, open, closed, selected, cancelled]
+          description: |
+            `draft` is staff-only; `upcoming` is published but not open yet; `closed` means registration is over;
+            `selected` means the draw has run
         published_at: {type: [string, 'null'], format: date-time}
         cancelled_at: {type: [string, 'null'], format: date-time}
+        selected_at: {type: [string, 'null'], format: date-time}
+        seats_left: {type: [integer, 'null'], minimum: 0, description: 'After the draw: seats a selected fan''s +1 can still take'}
     Registration:
       type: object
       description: A fan's registration, with the snapshot taken when they registered.
-      required: [id, allocation_id, event_id, hub_city_ids, local, percentile, raw_score, is_estimated, registered_at, status]
+      required: [id, allocation_id, event_id, hub_city_ids, local, percentile, raw_score, is_estimated, registered_at, status,
+                 plus_one]
       properties:
         id: {type: string, format: uuid}
         allocation_id: {type: string, format: uuid}
@@ -2339,17 +2493,33 @@ components:
         is_estimated: {type: boolean}
         registered_at: {type: string, format: date-time}
         withdrawn_at: {type: [string, 'null'], format: date-time}
-        status: {type: string, enum: [registered, withdrawn]}
+        status:
+          type: string
+          enum: [registered, withdrawn, selected, not_selected]
+          description: '`selected` and `not_selected` come from the draw'
+        plus_one: {type: boolean, description: The fan asked for a +1}
+        guest:
+          description: The +1's account, once named
+          oneOf:
+            - type: object
+              required: [id, handle]
+              properties:
+                id: {type: string, format: uuid}
+                handle: {type: string}
+            - {type: 'null'}
+        selection_rank: {type: [integer, 'null'], minimum: 1, description: Place in the draw's ranking}
+        seats: {type: [integer, 'null'], enum: [1, 2, null], description: 'Seats the draw gave: 1, or 2 with the +1'}
     Eligibility:
       type: object
-      required: [allocation_id, eligible, min_percentile]
+      required: [allocation_id, eligible, min_raw_score]
       properties:
         allocation_id: {type: string, format: uuid}
         eligible: {type: boolean, description: 'True if the fan can register now, or already has'}
         reason:
           type: [string, 'null']
           enum: [not_open, artist_not_active, hub_city_required, no_score, below_threshold, already_registered, null]
-        min_percentile: {type: number}
+        min_raw_score: {type: [number, 'null']}
+        raw_score: {type: [number, 'null']}
         percentile: {type: [number, 'null']}
         is_estimated: {type: [boolean, 'null']}
         hub_match: {type: [integer, 'null'], minimum: 1, maximum: 3}
@@ -2370,7 +2540,10 @@ components:
         tickets: {type: integer, minimum: 1, maximum: 100000}
         face_value_cents: {type: integer, minimum: 0, maximum: 10000000}
         currency: {type: string, pattern: '^[A-Z]{3}$', default: USD}
-        min_percentile: {type: number, minimum: 0, maximum: 100, default: 0}
+        min_raw_score:
+          type: number
+          minimum: 0
+          description: Omit to get the two-saved-albums default when the allocation is published
         registration_opens_at: {type: string, format: date-time}
         registration_closes_at: {type: string, format: date-time, description: Before the show starts}
     AllocationUpdate:
@@ -2380,9 +2553,21 @@ components:
         tickets: {type: integer, minimum: 1, maximum: 100000}
         face_value_cents: {type: integer, minimum: 0, maximum: 10000000}
         currency: {type: string, pattern: '^[A-Z]{3}$'}
-        min_percentile: {type: number, minimum: 0, maximum: 100}
+        min_raw_score: {type: number, minimum: 0}
         registration_opens_at: {type: string, format: date-time}
         registration_closes_at: {type: string, format: date-time}
+    Selection:
+      type: object
+      description: A recorded draw. With the registrations' snapshots, `seed` is enough to repeat it.
+      required: [allocation_id, seed, tickets, registrations, selected_fans, seats_assigned, ran_at]
+      properties:
+        allocation_id: {type: string, format: uuid}
+        seed: {type: string}
+        tickets: {type: integer}
+        registrations: {type: integer, description: Live registrations in the draw}
+        selected_fans: {type: integer}
+        seats_assigned: {type: integer, description: Grows when a selected fan adds a +1 afterwards}
+        ran_at: {type: string, format: date-time}
     EventPage:
       type: object
       required: [items, next_cursor]
@@ -2422,13 +2607,17 @@ components:
               computed_at: {type: string, format: date-time}
         listening:
           type: object
-          required: [artists, liked_tracks, playlist_tracks, distinct_albums, recent_plays]
+          required: [artists, liked_tracks, playlist_tracks, distinct_albums, recent_plays, saved_albums, top_tracks, followed_artists, plays_last_quarter]
           properties:
             artists: {type: integer, description: Active tracked artists the fan has Spotify signals for}
             liked_tracks: {type: integer}
             playlist_tracks: {type: integer}
             distinct_albums: {type: integer}
-            recent_plays: {type: integer}
+            recent_plays: {type: integer, description: Plays of tracked artists among the fan's last 50 at the last sync}
+            saved_albums: {type: integer, description: Tracked artists' albums in the fan's saved albums}
+            top_tracks: {type: integer, description: Tracked artists' tracks among the fan's Spotify top tracks}
+            followed_artists: {type: integer, description: Tracked artists the fan follows on Spotify}
+            plays_last_quarter: {type: integer, description: Plays of tracked artists in the last 90 days (play ledger, polled hourly)}
         journal:
           type: object
           required: [logs, albums_logged, relistens, reviews, ratings, lists, comments]
@@ -2477,13 +2666,29 @@ components:
           properties:
             spotify:
               type: object
+              description: Counts behind each share (workers/scoring/README.md lists the rule for each).
               properties:
                 liked_tracks: {type: integer}
                 playlist_tracks: {type: integer}
                 distinct_albums: {type: integer}
-                top_artist_rank: {type: [integer, 'null']}
+                top_artist_rank: {type: [integer, 'null'], description: Rank in the fan's top artists of the last 6 months}
                 recent_plays: {type: integer}
+                top_artist_rank_short: {type: [integer, 'null'], description: Rank over the last 4 weeks}
+                top_artist_rank_long: {type: [integer, 'null'], description: Rank over the fan's history}
+                top_tracks: {type: integer}
+                saved_albums: {type: integer}
+                early_saves: {type: integer, description: Releases saved within a week of release day}
+                first_saved_at: {type: [string, 'null'], format: date-time}
+                tenure_days: {type: integer}
+                playlists_featuring: {type: integer}
+                dedicated_playlists: {type: integer}
+                followed: {type: boolean}
+                plays_last_quarter: {type: integer, description: Plays in the last 90 days}
+                streak_weeks: {type: integer}
+                tracks_touched: {type: integer, description: Catalog tracks saved, in a playlist, or played}
+                deep_cuts: {type: integer}
                 catalog_releases: {type: integer}
+                catalog_tracks: {type: integer}
                 shares:
                   type: object
                   properties:
@@ -2492,6 +2697,19 @@ components:
                     album_depth: {type: [number, 'null']}
                     top_artist: {type: [number, 'null']}
                     recent: {type: [number, 'null']}
+                    top_artist_short: {type: [number, 'null']}
+                    top_artist_long: {type: [number, 'null']}
+                    top_track: {type: [number, 'null']}
+                    saved_album: {type: [number, 'null']}
+                    early_save: {type: [number, 'null']}
+                    tenure: {type: [number, 'null']}
+                    playlist_feature: {type: [number, 'null']}
+                    dedicated_playlist: {type: [number, 'null']}
+                    follow: {type: [number, 'null']}
+                    play_history: {type: [number, 'null']}
+                    play_streak: {type: [number, 'null']}
+                    catalog_coverage: {type: [number, 'null']}
+                    deep_cut: {type: [number, 'null']}
                 points: {type: number}
             ledger_points: {type: number}
             total: {type: number}

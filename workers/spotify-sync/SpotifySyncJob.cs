@@ -24,7 +24,7 @@ public sealed partial class SpotifySyncJob(
 
     public string Kind => JobKind;
 
-    private sealed record Connection(string SpotifyUserId, byte[] RefreshTokenEnc);
+    private sealed record Connection(string SpotifyUserId, byte[] RefreshTokenEnc, bool CanReadFollows);
 
     public async Task RunAsync(ClaimedJob job, CancellationToken cancellationToken)
     {
@@ -55,9 +55,10 @@ public sealed partial class SpotifySyncJob(
             """
             UPDATE spotify_connections SET sync_state = 'running', last_sync_attempt_at = now()
             WHERE user_id = @userId AND sync_state <> 'reauth_required'
-            RETURNING spotify_user_id AS SpotifyUserId, refresh_token_enc AS RefreshTokenEnc
+            RETURNING spotify_user_id AS SpotifyUserId, refresh_token_enc AS RefreshTokenEnc,
+                      @followScope = ANY(scopes) AS CanReadFollows
             """,
-            new { userId });
+            new { userId, followScope = SpotifyOptions.FollowScope });
         if (start is null)
         {
             // Disconnected, or waiting for the user to reconnect.
@@ -80,7 +81,7 @@ public sealed partial class SpotifySyncJob(
                 "UPDATE spotify_connections SET refresh_token_enc = @token WHERE user_id = @userId AND spotify_user_id = @spotifyUserId",
                 new { userId, start.SpotifyUserId, token = protector.Protect(userId, tokens.RefreshToken ?? refreshToken) });
 
-            var library = await spotify.GetLibraryAsync(tokens.AccessToken, start.SpotifyUserId, cancellationToken);
+            var library = await spotify.GetLibraryAsync(tokens.AccessToken, start.SpotifyUserId, start.CanReadFollows, cancellationToken);
             var added = await TrackTopArtistsAsync(connection, userId, library.TopArtists, cancellationToken);
             var tracked = (await connection.QueryAsync<(string SpotifyArtistId, Guid Id)>(
                     "SELECT spotify_artist_id, id FROM artists WHERE status = 'active'"))
@@ -203,8 +204,10 @@ public sealed partial class SpotifySyncJob(
             SELECT request_artist_rescore(artist_id) FROM user_artist_signals WHERE user_id = @userId;
             DELETE FROM user_artist_signals WHERE user_id = @userId;
             INSERT INTO user_artist_signals (user_id, artist_id, liked_tracks, playlist_tracks, distinct_albums,
-                                             top_artist_rank, recent_plays)
-            SELECT @userId, * FROM unnest(@artistIds, @liked, @playlist, @albums, @ranks, @recent);
+                                             top_artist_rank, recent_plays, top_artist_rank_short, top_artist_rank_long,
+                                             top_tracks, playlists_featuring, dedicated_playlists, followed)
+            SELECT @userId, * FROM unnest(@artistIds, @liked, @playlist, @albums, @ranks, @recent, @ranksShort, @ranksLong,
+                                          @topTracks, @featuring, @dedicated, @followed);
             SELECT request_artist_rescore(a) FROM unnest(@artistIds) a;
 
             DELETE FROM user_track_likes WHERE user_id = @userId;
@@ -214,9 +217,22 @@ public sealed partial class SpotifySyncJob(
             JOIN tracks t ON t.spotify_track_id = x.spotify_track_id
             ON CONFLICT DO NOTHING;
 
+            DELETE FROM user_album_saves WHERE user_id = @userId;
+            INSERT INTO user_album_saves (user_id, album_id, saved_at)
+            SELECT @userId, al.id, x.saved_at
+            FROM unnest(@albumIds, @albumSavedAt) AS x (spotify_album_id, saved_at)
+            JOIN albums al ON al.spotify_album_id = x.spotify_album_id
+            ON CONFLICT DO NOTHING;
+
+            -- The last 50 plays seed the ledger; the hourly poll extends it from the cursor.
+            INSERT INTO user_plays (user_id, artist_id, spotify_track_id, played_at)
+            SELECT @userId, * FROM unnest(@playArtistIds, @playTrackIds, @playedAt)
+            ON CONFLICT DO NOTHING;
+
             -- A sync requested while this one ran stays queued.
             UPDATE spotify_connections
             SET last_synced_at = now(), tracked_artists_found = @found, top_artists_added = @topArtistsAdded, sync_error = NULL,
+                plays_cursor = greatest(plays_cursor, @playsCursor),
                 sync_state = CASE WHEN sync_state = 'running' THEN 'idle' ELSE sync_state END
             WHERE user_id = @userId;
             """,
@@ -229,9 +245,21 @@ public sealed partial class SpotifySyncJob(
                 albums = artists.Select(a => a.DistinctAlbums).ToArray(),
                 ranks = artists.Select(a => a.TopArtistRank).ToArray(),
                 recent = artists.Select(a => a.RecentPlays).ToArray(),
+                ranksShort = artists.Select(a => a.TopArtistRankShort).ToArray(),
+                ranksLong = artists.Select(a => a.TopArtistRankLong).ToArray(),
+                topTracks = artists.Select(a => a.TopTracks).ToArray(),
+                featuring = artists.Select(a => a.PlaylistsFeaturing).ToArray(),
+                dedicated = artists.Select(a => a.DedicatedPlaylists).ToArray(),
+                followed = artists.Select(a => a.Followed).ToArray(),
                 trackIds = signals.Tracks.Select(t => t.SpotifyTrackId).ToArray(),
                 sources = signals.Tracks.Select(t => t.Source).ToArray(),
                 savedAt = signals.Tracks.Select(t => t.SavedAt).ToArray(),
+                albumIds = signals.Albums.Select(a => a.SpotifyAlbumId).ToArray(),
+                albumSavedAt = signals.Albums.Select(a => a.SavedAt).ToArray(),
+                playArtistIds = signals.Plays.Select(p => p.ArtistId).ToArray(),
+                playTrackIds = signals.Plays.Select(p => p.SpotifyTrackId).ToArray(),
+                playedAt = signals.Plays.Select(p => p.PlayedAt).ToArray(),
+                playsCursor = PollPlaysJob.Cursor(signals.Plays),
                 found = artists.Count,
                 topArtistsAdded,
             },
