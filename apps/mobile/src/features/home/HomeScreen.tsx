@@ -8,12 +8,14 @@ import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Field, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { ArtistRow } from './ArtistRow';
+import { Feed } from '../feed/Feed';
 import { YourArtists } from './YourArtists';
 
 const DEBOUNCE_MS = 300;
 
 /**
- * Home after sign-in: the fan's artists with their scores while the search box is empty (YourArtists), and a
+ * Home after sign-in: while the search box is empty, the fan's artists with their scores (YourArtists), a button to
+ * post a photo, and the feed of fans' shared photos and album logs (Feed). Otherwise a
  * search of the artists already on Fandom Score as you type (GET /artists, no Spotify calls).
  * Pressing Enter with no exact match asks Spotify (GET /artists/search) and offers to add an artist (POST /artists).
  */
@@ -140,7 +142,13 @@ export function HomeScreen() {
       />
       <ErrorText>{searchError}</ErrorText>
 
-      {!text && <YourArtists />}
+      {!text && (
+        <>
+          <YourArtists />
+          <Button label="Post a photo" onPress={() => router.push('/post')} />
+          <Feed />
+        </>
+      )}
       {text !== '' && tracked?.length === 0 && !spotify && !askingSpotify && (
         <Body muted>No artist here matches "{text}" yet. Press Enter to look on Spotify.</Body>
       )}

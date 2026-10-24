@@ -21,3 +21,11 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Run the relevant tests and record actual results.
 - [ ] Update the feature README with setup, interfaces, dependencies, and known limitations.
 - [ ] Update `PROJECT_TODO.md` when this feature reaches a verified milestone.
+
+## Status (2026-10-21, branch `proof-feed`)
+Built: `POST /uploads` with signed `PUT` links, metadata stripping (JPEG/PNG), `POST /submissions` (straight to
+`needs_review`; concert photos pinned to a show: `event_id` of the band's past show, or a typed-in `concert`),
+`GET /me/submissions`, `GET`/`DELETE /submissions/{id}`, `PUT /submissions/{id}/share`, the staff
+queue and decisions, and `GET /feed`. Tests: ProofApiTests (6), invariants for 0012.
+Not yet: automated checks, Cloud Storage in production, cleanup of expired uploads and of deleted accounts' files,
+`client_extracted`, avatars, HEIC/WebP on the server.

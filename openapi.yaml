@@ -59,6 +59,7 @@ tags:
   - name: Comments
   - name: Lists
   - name: Submissions
+  - name: Feed
   - name: Share and shop
   - name: Social
   - name: Allocations
@@ -396,9 +397,10 @@ paths:
       operationId: createUpload
       summary: Get a presigned upload URL
       description: |
-        Used for submission images and avatars. The client PUTs the file to `url`; files land in a
-        quarantine bucket. Declaring `sha256` up front lets the server reject same-user duplicates early.
-      x-requires-schema: [uploads]
+        Used for submission photos (avatars aren't supported yet). The client PUTs the file to `url` with
+        `headers`; the link is signed and short-lived, so it needs no sign-in. Files land in quarantine storage
+        with their metadata (EXIF location, camera details, comments) stripped. JPEG and PNG only: convert HEIC
+        or WebP on the device first. 50 uploads per day per user.
       requestBody:
         required: true
         content:
@@ -411,6 +413,58 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/UploadIntent'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /uploads/{uploadId}/content:
+    put:
+      tags: [Me]
+      operationId: putUploadContent
+      summary: Upload the file (signed link from POST /uploads)
+      description: |
+        The `url` from `POST /uploads`; its `exp` and `sig` authorize the request, so no bearer token is sent.
+        The body must be the declared type and no bigger than declared (and match `sha256` if it was declared).
+      security: []
+      parameters:
+        - {name: uploadId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: exp, in: query, required: true, schema: {type: integer}}
+        - {name: sig, in: query, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          image/jpeg:
+            schema: {type: string, format: binary}
+          image/png:
+            schema: {type: string, format: binary}
+      responses:
+        '204': {description: Stored}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: 'Already uploaded, or expired (`code: upload_expired`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /files/{fileId}:
+    get:
+      tags: [Submissions]
+      operationId: getFile
+      summary: A stored submission photo (signed link)
+      description: The `url` of a submission file; signed and valid for an hour, so image tags can load it without sign-in.
+      security: []
+      parameters:
+        - {name: fileId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: exp, in: query, required: true, schema: {type: integer}}
+        - {name: sig, in: query, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The photo
+          content:
+            image/jpeg:
+              schema: {type: string, format: binary}
+            image/png:
+              schema: {type: string, format: binary}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
 
   # ------------------------------------------------------------------ Artists
   /artists/search:
@@ -1028,10 +1082,11 @@ paths:
     post:
       tags: [Submissions]
       operationId: createSubmission
-      summary: Submit a ticket, merch purchase, or screenshot
+      summary: Submit a ticket, merch, screenshot, or concert photo
       description: |
-        Upload files first (`POST /uploads`), then submit their ids. The submission starts as `pending`
-        and runs the verification pipeline. A same-user duplicate returns `409 duplicate_submission`.
+        Upload files first (`POST /uploads`), then submit their ids. With no automated checks yet, every
+        submission starts as `needs_review` for staff. A same-user duplicate (the same photo, unless it was
+        rejected) returns `409 duplicate_submission`. 20 submissions per day per user.
         Duplicates against other users are handled silently by verification (never revealed).
         `client_extracted` carries optional on-device OCR text; the server still verifies on its own.
       parameters:
@@ -1067,6 +1122,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/SubmissionPage'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
   /submissions/{submissionId}:
     parameters:
       - {$ref: '#/components/parameters/SubmissionId'}
@@ -1093,6 +1149,55 @@ paths:
         '204': {description: Withdrawn}
         '409': {$ref: '#/components/responses/Conflict'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /submissions/{submissionId}/share:
+    put:
+      tags: [Submissions]
+      operationId: shareSubmission
+      summary: Share a verified photo to the home feed, or stop sharing
+      description: |
+        Only verified `merch` and `concert_photo` submissions can be shared (`can_share`). Tickets and screenshots
+        never are: they can show barcodes or personal details. A later rejection takes the photo off the feed.
+      parameters:
+        - {$ref: '#/components/parameters/SubmissionId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [shared]
+              properties:
+                shared: {type: boolean}
+      responses:
+        '200':
+          description: Updated submission
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Submission'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  # ------------------------------------------------------------------ Feed
+  /feed:
+    get:
+      tags: [Feed]
+      operationId: getFeed
+      summary: Home feed
+      description: |
+        Shared photos (verified merch and concert photos) and public album logs from every fan, newest first.
+        Deleted accounts, deleted logs, and inactive artists are left out; followers-only logs stay out until
+        follows exist (Phase 8).
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page of feed items
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FeedPage'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
 
   # ------------------------------------------------------------------ Share and shop
   /artists/{artistId}/share-cards:
@@ -1589,6 +1694,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/AdminSubmissionPage'}
         '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
   /admin/submissions/{submissionId}:
     get:
       tags: [Admin]
@@ -1628,6 +1734,7 @@ paths:
               schema: {$ref: '#/components/schemas/AdminSubmission'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/Conflict'}
+        '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
   /admin/artists:
     post:
@@ -2008,8 +2115,8 @@ components:
       type: object
       required: [purpose, mime_type, bytes]
       properties:
-        purpose: {type: string, enum: [submission, avatar]}
-        mime_type: {type: string, enum: [image/jpeg, image/png, image/heic, image/webp]}
+        purpose: {type: string, enum: [submission]}
+        mime_type: {type: string, enum: [image/jpeg, image/png]}
         bytes: {type: integer, minimum: 1, maximum: 15728640}
         sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
     UploadIntent:
@@ -2534,7 +2641,7 @@ components:
 
     SubmissionKind:
       type: string
-      enum: [ticket, merch, screenshot]
+      enum: [ticket, merch, screenshot, concert_photo]
     SubmissionStatus:
       type: string
       enum: [pending, processing, needs_review, verified, rejected]
@@ -2552,20 +2659,43 @@ components:
         event_id:
           type: string
           format: uuid
-          description: Optional hint for tickets; the server still matches the event itself.
+          description: |
+            The show, from `GET /artists/{artistId}/events?include_past=true`: one of this artist's shows that has
+            already happened. A concert photo needs `event_id` or `concert`; a ticket may name its show.
+        concert:
+          type: object
+          description: For a concert photo whose show isn't listed. Not with `event_id`; not for other kinds.
+          required: [date, venue, city]
+          properties:
+            date: {type: string, format: date, description: Not in the future.}
+            venue: {type: string, minLength: 1, maxLength: 200}
+            city: {type: string, minLength: 1, maxLength: 100}
         client_extracted:
           type: object
-          description: Optional on-device OCR output. Treated as untrusted.
+          description: Optional on-device OCR output. Treated as untrusted. Not used yet.
           additionalProperties: true
+        caption: {type: [string, 'null'], maxLength: 500, description: Shown on the feed if the photo is shared.}
     Submission:
       type: object
-      required: [id, artist_id, kind, status, submitted_at]
+      required: [id, artist_id, artist, kind, status, submitted_at, can_share]
       properties:
         id: {type: string, format: uuid}
         artist_id: {type: string, format: uuid}
+        artist: {$ref: '#/components/schemas/ArtistRef'}
+        concert:
+          type: [object, 'null']
+          description: The show the fan entered because it wasn't listed (otherwise see `event`).
+          required: [date, venue, city]
+          properties:
+            date: {type: string, format: date}
+            venue: {type: string}
+            city: {type: string}
+        caption: {type: [string, 'null']}
+        shared_at: {type: [string, 'null'], format: date-time, description: On the home feed since; null when not shared.}
+        can_share: {type: boolean, description: Verified merch or concert photo.}
         kind: {$ref: '#/components/schemas/SubmissionKind'}
         status: {$ref: '#/components/schemas/SubmissionStatus'}
-        event: {oneOf: [{$ref: '#/components/schemas/Event'}, {type: 'null'}]}
+        event: {oneOf: [{$ref: '#/components/schemas/EventRef'}, {type: 'null'}]}
         rejection_reason: {type: [string, 'null']}
         submitted_at: {type: string, format: date-time}
         verified_at: {type: [string, 'null'], format: date-time}
@@ -2583,6 +2713,73 @@ components:
         points_awarded:
           type: array
           items: {$ref: '#/components/schemas/PointsAward'}
+    EventRef:
+      type: object
+      required: [id, name, starts_at]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        venue: {type: [string, 'null']}
+        city: {type: [string, 'null']}
+        starts_at: {type: string, format: date-time}
+    FeedPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/FeedItem'}
+        next_cursor: {type: [string, 'null']}
+    FeedItem:
+      type: object
+      required: [type, id, at, user, artist]
+      properties:
+        type: {type: string, enum: [photo, album_log]}
+        id: {type: string, format: uuid, description: The submission or album log id.}
+        at: {type: string, format: date-time, description: When it was shared or logged.}
+        user: {$ref: '#/components/schemas/UserRef'}
+        artist: {$ref: '#/components/schemas/ArtistRef'}
+        photo:
+          type: [object, 'null']
+          required: [kind, files]
+          properties:
+            kind: {type: string, enum: [merch, concert_photo]}
+            caption: {type: [string, 'null']}
+            concert:
+              type: [object, 'null']
+              description: Where a concert photo was taken; `name` is set when it was a listed show.
+              required: [date]
+              properties:
+                name: {type: [string, 'null']}
+                venue: {type: [string, 'null']}
+                city: {type: [string, 'null']}
+                date: {type: string, format: date}
+            files:
+              type: array
+              items:
+                type: object
+                required: [id, mime_type, url, redacted]
+                properties:
+                  id: {type: string, format: uuid}
+                  mime_type: {type: string}
+                  url: {type: string, format: uri, description: Short-lived signed URL.}
+                  redacted: {type: boolean}
+        log:
+          type: [object, 'null']
+          required: [album, review_truncated, is_relisten, listened_on]
+          properties:
+            album:
+              type: object
+              required: [id, title]
+              properties:
+                id: {type: string, format: uuid}
+                title: {type: string}
+                cover_url: {type: [string, 'null'], format: uri}
+            rating: {type: [integer, 'null'], minimum: 1, maximum: 10}
+            review: {type: [string, 'null'], description: 'At most 280 characters; a longer review is cut and ends with "…".'}
+            review_truncated: {type: boolean}
+            is_relisten: {type: boolean}
+            listened_on: {type: string, format: date}
     SubmissionPage:
       type: object
       required: [items, next_cursor]
@@ -2632,7 +2829,7 @@ components:
           type: string
           maxLength: 500
           description: Required on reject. Shown to the user, so keep it generic.
-        event_id: {type: string, format: uuid}
+        event_id: {type: string, format: uuid, description: Not used yet (events come later).}
         notes:
           type: string
           maxLength: 2000
