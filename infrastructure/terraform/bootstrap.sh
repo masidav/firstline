@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time setup of a GCP project for an environment, before the first `terraform apply`:
+# One-time setup of a GCP project for a cloud environment (beta or prod), before the first `terraform apply`:
 # links billing, enables the APIs Terraform itself needs, and creates the state bucket.
 #
 #   ./bootstrap.sh <project-id> <billing-account-id> [region]

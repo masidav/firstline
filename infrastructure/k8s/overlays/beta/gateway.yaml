@@ -4,11 +4,11 @@ kind: Gateway
 metadata:
   name: api
   annotations:
-    networking.gke.io/certmap: fandomscore-dev-api
+    networking.gke.io/certmap: fandomscore-beta-api
 spec:
   addresses:
     - type: networking.gke.io/named-address
-      value: fandomscore-dev-api
+      value: fandomscore-beta-api
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -16,7 +16,7 @@ metadata:
   name: api
 spec:
   hostnames:
-    - api.dev.example.com
+    - api.beta.example.com
 ---
 apiVersion: networking.gke.io/v1
 kind: GCPBackendPolicy
@@ -24,4 +24,4 @@ metadata:
   name: api
 spec:
   default:
-    securityPolicy: fandomscore-dev-api
+    securityPolicy: fandomscore-beta-api

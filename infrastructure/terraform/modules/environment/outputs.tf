@@ -40,6 +40,11 @@ output "security_policy" {
   value       = google_compute_security_policy.api.name
 }
 
+output "sql_instance_name" {
+  description = "Cloud SQL instance deploy.sh backs up before each migration (gcloud sql backups create --instance)."
+  value       = google_sql_database_instance.main.name
+}
+
 output "sql_instance_connection_name" {
   value = google_sql_database_instance.main.connection_name
 }

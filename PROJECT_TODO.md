@@ -189,7 +189,7 @@ Details: [Organizations](services/api/src/features/organizations/TODO.md) · [Al
 ## Phase 12 — Hosting on GCP (GKE)
 Code for all of this exists in `infrastructure/` and `Dockerfile` (2026-10-21; Terraform validated, manifests
 built, images built locally). Nothing is applied to a GCP project yet; `infrastructure/README.md` has the steps.
-- [ ] Set up GCP projects per environment (dev, staging, prod), billing alerts, and IAM baseline. (Budgets and IAM in Terraform; projects not created.)
+- [ ] Set up GCP projects for beta and prod (dev runs locally; decided 2026-10-24), billing alerts, and IAM baseline. (Budgets and IAM in Terraform; projects not created.)
 - [ ] Provision infrastructure with Terraform: GKE Autopilot, Cloud SQL for PostgreSQL 16, Cloud Storage, Artifact Registry, Secret Manager. (Written and validated; not applied.)
 - [x] Containerize the API, migrator, and workers; publish images to Artifact Registry. (`Dockerfile`; publishing is the deploy workflow's first step, not run yet.)
 - [x] Deploy with Kubernetes manifests (Kustomize overlays per environment); run migrations as a pre-deploy Job. (`infrastructure/k8s`; not run against a cluster yet.)
@@ -205,7 +205,10 @@ Details: [ADR 0002](docs/adr/0002-hosting-gcp-gke.md) · [Infrastructure](infras
 - [ ] Mobile component tests (Jest + React Native Testing Library) and end-to-end flows (Maestro) in CI.
 - [ ] Promoter dashboard end-to-end tests (Playwright) and accessibility checks.
 - [ ] API contract tests against `openapi.yaml`; load tests for on-sale registration spikes.
-- [ ] Staging environment with synthetic data and test accounts for every external provider.
+- [x] Dev environment with synthetic data: `tools/dev/seed.py` (fans, artists, shows, allocations, registrations),
+      verified 2026-10-24 against a scratch database and run by CI. The cloud proving ground is **beta** with real
+      testers, not a synthetic staging (ADR 0002, amended 2026-10-24); see `infrastructure/README.md`.
+- [ ] Test accounts for every external provider (Spotify, Apple, ticketers) usable on beta.
 - [ ] Beta distribution: TestFlight and Google Play closed testing.
 - [ ] App Store and Google Play readiness: privacy labels, data safety form, in-app account deletion, Sign in with Apple.
 - [ ] Staged rollout: internal, closed alpha, one pilot show, public beta, general availability.

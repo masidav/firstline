@@ -6,7 +6,7 @@ on:
   workflow_call:
     inputs:
       environment:
-        description: dev, staging, or prod (the GitHub environment and the Kustomize overlay)
+        description: beta or prod (the GitHub environment and the Kustomize overlay)
         type: string
         required: true
       promote_from:

@@ -12,7 +12,7 @@ dashboard. Backend tests are already in place (`tests/FandomScore.Tests`).
 | API contract | Responses validated against `openapi.yaml` (shared by both clients) | Same | Every pull request |
 | Accessibility | Automated label checks in component tests; manual VoiceOver and TalkBack pass | axe checks in Playwright; keyboard-only pass | PR (automated), each release (manual) |
 | Real devices | Device cloud (Maestro Cloud, BrowserStack, or Firebase Test Lab): recent and older iOS and Android phones | Latest two versions of each major browser | Before each release |
-| Load | k6 against staging: allocation registration and selection at expected peak | Same | Before each pilot on-sale |
+| Load | k6 against a seeded local stack (`tools/dev/seed.py --fans 20000`) or beta outside testers' hours: allocation registration and selection at expected peak | Same | Before each pilot on-sale |
 | Exploratory | Scripted charters per release (offline mode, slow network, expired session, background/resume) | Same | Each release |
 
 **Why Maestro for mobile:** flows are short YAML files, it works with Expo development builds, it tolerates
@@ -30,22 +30,23 @@ need gray-box control of the app's internals.
 7. **Promoter:** create an event and allocation pool, open registration, run the draw, export the report.
 
 ### Test data and external providers
-- UI tests run against **staging** only. Staging holds synthetic data seeded by a script; it never holds real fan data.
-- Each external provider gets a test path in staging. Spotify and Apple Music use dedicated test accounts.
-  Ticketers use their sandboxes. Sign-in can also use a staging-only test identity provider, which is
+- UI tests run against a **local dev stack** seeded by `tools/dev/seed.py` (ADR 0002, amended 2026-10-24: there is
+  no synthetic staging; beta holds real testers' data and only gets read-only smoke checks).
+- Each external provider gets a test path on beta. Spotify and Apple Music use dedicated test accounts.
+  Ticketers use their sandboxes. Sign-in can also use a beta-only test identity provider, which is
   compiled out of production builds.
 - Every test account and sandbox credential lives in Secret Manager and CI secrets, never in the repo.
 
 ## 2. Build and distribution pipeline
 
 - **Builds:** EAS Build produces iOS and Android binaries with one profile per environment
-  (development, staging, production).
+  (development, beta, production).
 - **Internal and beta distribution:** TestFlight (iOS) and Google Play internal and closed testing (Android).
 - **Over-the-air fixes:** EAS Update ships JavaScript-only fixes without a store review. Native changes
   always need a new store build. Every update gets a rollback channel.
 - **Feature flags:** allocation features ship behind server-side flags, so a pilot can be enabled for one
   artist or show and switched off instantly.
-- **Promoter web:** deployed to staging on merge and to prod with approval (see ADR 0002).
+- **Promoter web:** deployed to beta on merge and to prod with approval (see ADR 0002).
 
 ## 3. Launch stages
 
@@ -69,7 +70,7 @@ paused automatically if crash or error rates rise.
 - [ ] Payment rules: tickets for live events are normally outside in-app purchase rules. Confirm how a
       fan-side subscription or "guaranteed access" fee is classified before building it.
 - [ ] Photo, notification, and camera permission prompts with clear purpose strings.
-- [ ] Demo account and review notes for the App Review team (staging-backed, allocation flags on).
+- [ ] Demo account and review notes for the App Review team (beta-backed, allocation flags on).
 - [ ] Support URL, privacy policy, and terms published.
 - [ ] Allow several days of review lead time before any date-bound pilot on-sale.
 
@@ -83,7 +84,7 @@ paused automatically if crash or error rates rise.
 ## 6. Order of work
 1. Phase 14 basics: git, CI, branch protection. Everything below runs in CI.
 2. Scaffold the Expo app with Jest and one Maestro smoke flow; scaffold the promoter web with Playwright.
-3. Stand up staging on GKE (ADR 0002) with seeded synthetic data.
+3. Stand up beta on GKE (ADR 0002); seeded synthetic data is the local dev stack's job.
 4. Grow the critical-journey suite feature by feature, as each journey is built.
 5. Contract tests and k6 load tests before the closed alpha's dry-run allocation.
 6. Store readiness checklist before the closed alpha (TestFlight external testing also gets a review).

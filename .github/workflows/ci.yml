@@ -54,28 +54,47 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Migrations already on the base branch may have run somewhere; only new files are allowed.
       # Pull requests compare with their base branch; pushes compare with the commit before the push.
-      - name: Check for modified, renamed, or deleted migrations
+      - name: Find the commit range
+        id: range
         env:
           BASE_REF: ${{ github.base_ref }}
           BEFORE: ${{ github.event.before }}
         run: |
           if [ -n "$BASE_REF" ]; then
-            range="origin/${BASE_REF}...HEAD"
+            echo "range=origin/${BASE_REF}...HEAD" >> "$GITHUB_OUTPUT"
           elif [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
-            range="${BEFORE}..HEAD"
+            echo "range=${BEFORE}..HEAD" >> "$GITHUB_OUTPUT"
           else
             echo "No previous commit to compare with (new branch)."
-            exit 0
           fi
-          changed=$(git diff --name-status --no-renames "$range" -- database/migrations | grep -v '^A' || true)
+
+      # Migrations already on the base branch may have run somewhere; only new files are allowed.
+      - name: Check for modified, renamed, or deleted migrations
+        if: steps.range.outputs.range != ''
+        run: |
+          changed=$(git diff --name-status --no-renames "${{ steps.range.outputs.range }}" -- database/migrations | grep -v '^A' || true)
           if [ -n "$changed" ]; then
             echo "::error::Applied migrations must not change. Add a new migration instead."
             echo "$changed"
             exit 1
           fi
           echo "Only new migrations added (or none)."
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Migration safety check tests
+        run: python -m unittest discover -s tools/ci -v
+
+      # Beta and prod have real users and roll out with the previous version still running (deploy.sh): a new
+      # migration must not drop, rename, or tighten what that version uses. tools/ci/check_migration_safety.py.
+      - name: New migrations keep the running version working
+        if: steps.range.outputs.range != ''
+        run: |
+          git diff --name-only --diff-filter=A "${{ steps.range.outputs.range }}" -- 'database/migrations/*.sql' \
+            | xargs -r python3 tools/ci/check_migration_safety.py
 
   contract:
     name: OpenAPI contract is valid
@@ -123,6 +142,43 @@ jobs:
 
       - name: Web build
         run: npm run build:web
+
+  # The dev seed (tools/dev/seed.py) must keep working against the current schema and triggers.
+  seed:
+    name: Dev seed script
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: fandom_score
+          POSTGRES_USER: fandom
+          POSTGRES_PASSWORD: ci
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U fandom -d fandom_score" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Apply migrations
+        env:
+          ConnectionStrings__Database: Host=localhost;Port=5432;Database=fandom_score;Username=fandom;Password=ci
+        run: dotnet run --project database
+
+      - name: Seed and check
+        env:
+          PGPASSWORD: ci
+        run: |
+          python3 tools/dev/seed.py --sql --fans 60 --artists 4 --shows 10 \
+            | psql -h localhost -U fandom -d fandom_score -v ON_ERROR_STOP=1 -q
+          live=$(psql -h localhost -U fandom -d fandom_score -Atc "SELECT count(*) FROM allocation_registrations WHERE withdrawn_at IS NULL")
+          scores=$(psql -h localhost -U fandom -d fandom_score -Atc "SELECT count(*) FROM user_artist_scores")
+          echo "live registrations: $live, scores: $scores"
+          [ "$live" -gt 0 ] && [ "$scores" -gt 0 ]
 
   agent-hooks:
     name: Agent hook tests

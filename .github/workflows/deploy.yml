@@ -1,4 +1,8 @@
-# Builds the images once, deploys staging automatically, and promotes the same images to prod after approval.
+# Builds the images once, deploys beta automatically, and promotes the same images to prod after approval.
+# Beta has real users, so a push to main must not break it: CI blocks migrations the running version can't live with
+# (tools/ci/check_migration_safety.py), deploy.sh takes a Cloud SQL backup before the migrate Job, migrations run
+# before any new pod takes traffic, and the deploy fails (leaving the previous images available for a rollback) if
+# the health endpoint doesn't answer afterwards. dev is not deployed: it runs on the developer's machine.
 # Authentication is Workload Identity Federation (no keys): each GitHub environment holds the variables
 # GCP_PROJECT_ID, GCP_REGION, GCP_WIF_PROVIDER, and GCP_DEPLOY_SA (terraform outputs), and the prod environment
 # has required reviewers. Nothing runs until the repository variable DEPLOY_ENABLED is "true" (set it once the
@@ -11,37 +15,32 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: Environment to deploy (staging also promotes to prod after approval)
+        description: Deploy beta only, or beta and then prod (after approval). Prod always goes through beta first.
         type: choice
-        options: [dev, staging, prod]
-        default: dev
+        options: [beta, prod]
+        default: beta
 
 permissions:
   contents: read
   id-token: write
 
+# One deploy at a time: beta then prod, in commit order.
 concurrency:
-  group: deploy-${{ github.event.inputs.environment || 'staging' }}
+  group: deploy
   cancel-in-progress: false
 
 jobs:
-  dev:
-    if: vars.DEPLOY_ENABLED == 'true' && github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'
+  beta:
+    if: vars.DEPLOY_ENABLED == 'true'
     uses: ./.github/workflows/deploy-environment.yml
     with:
-      environment: dev
-
-  staging:
-    if: vars.DEPLOY_ENABLED == 'true' && (github.event_name == 'push' || github.event.inputs.environment != 'dev')
-    uses: ./.github/workflows/deploy-environment.yml
-    with:
-      environment: staging
+      environment: beta
 
   prod:
-    needs: staging
+    needs: beta
     if: vars.DEPLOY_ENABLED == 'true' && (github.event_name == 'push' || github.event.inputs.environment == 'prod')
     uses: ./.github/workflows/deploy-environment.yml
     with:
       environment: prod
-      # Same image digests as staging, copied into the prod registry.
-      promote_from: ${{ needs.staging.outputs.image_repository }}
+      # Same image digests as beta, copied into the prod registry.
+      promote_from: ${{ needs.beta.outputs.image_repository }}
