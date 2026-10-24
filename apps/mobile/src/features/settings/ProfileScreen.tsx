@@ -66,6 +66,7 @@ export function ProfileScreen({ me }: { me: Me }) {
       <Button label="Your stats" kind="secondary" onPress={() => router.push('/stats')} />
       <Button label="My posts" kind="secondary" onPress={() => router.push('/posts')} />
       {me.is_staff && <Button label="Review queue" kind="secondary" onPress={() => router.push('/review')} />}
+      {me.is_staff && <Button label="Reported posts" kind="secondary" onPress={() => router.push('/moderation')} />}
 
       <Field
         label="Handle"

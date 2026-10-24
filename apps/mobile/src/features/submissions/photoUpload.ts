@@ -106,6 +106,7 @@ export function kindLabel(kind: SubmissionKind): string {
 export function statusLabel(submission: Submission): string {
   switch (submission.status) {
     case 'verified':
+      if (submission.removed) return 'Verified · taken off the feed by staff';
       return submission.shared_at ? 'Verified · on the feed' : 'Verified';
     case 'rejected':
       return submission.rejection_reason ? `Not accepted: ${submission.rejection_reason}` : 'Not accepted';
