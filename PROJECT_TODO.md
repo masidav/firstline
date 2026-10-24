@@ -328,8 +328,10 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
       city entered by the fan when the show isn't listed.
 - [ ] Confirm takedown effects (provisional, 2026-10-24): a taken-down photo leaves the feed for good but stays as
       proof with its points; a taken-down log is hidden from everyone but its author and loses its points.
-- [x] The allocation draw skips fans who are paused when it runs (decided 2026-10-24); built by the allocations
-      work in migration 0019 on `is_suspended()`.
+- [x] Paused accounts and allocations (decided 2026-10-24, replacing "the draw skips paused fans"): a paused account
+      can't register, and can't be named as or claim a +1 guest seat; a host paused after registering is still ranked
+      in the draw, and if selected their ticket is held while staff reach out to resolve the pause; while paused, a
+      host can't add or name a +1. Built by the allocations work (migration 0019, on `is_suspended()`).
 - [ ] Choose an email provider for staff notifications (and later fan email), e.g. a transactional email API.
 - [ ] Decide on the fan-side fee and whether App Store / Google Play payment rules apply to it.
 - [ ] Choose the first pilot artist(s) and promoter.
