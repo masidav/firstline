@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using Dapper;
 using FandomScore.Api.Features.Authentication;
+using FandomScore.Api.Features.Moderation;
 using FandomScore.Api.Features.Scoring;
 using FandomScore.Api.Infrastructure;
 using Microsoft.AspNetCore.Http.Json;
@@ -83,6 +84,8 @@ public static class SubmissionEndpoints
             await transaction.CommitAsync(cancellationToken);
             return replay.ToResult();
         }
+
+        await Suspensions.EnsureNotSuspendedAsync(connection, userId, transaction);
 
         // One submission at a time per user, so the daily limit and duplicate check can't be raced.
         await connection.ExecuteAsync("SELECT pg_advisory_xact_lock(hashtextextended('submission:' || @userId::text, 0))",
@@ -371,6 +374,11 @@ public static class SubmissionEndpoints
         var userId = user.UserId();
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
         var current = await LoadMineAsync(connection, userId, request, urls, submissionId);
+        if (value.GetBoolean())
+        {
+            await Suspensions.EnsureNotSuspendedAsync(connection, userId);
+        }
+
         if (value.GetBoolean() && !current.CanShare)
         {
             throw new ApiProblemException(StatusCodes.Status409Conflict, "conflict", "Can't share this",

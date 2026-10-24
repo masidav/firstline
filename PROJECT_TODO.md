@@ -154,6 +154,11 @@ Details: [Sharing API](services/api/src/features/sharing/TODO.md) · [Sharing UI
       post down or dismiss the reports; every decision is recorded (`moderation_actions`). Migration 0014.
       Verified: `dotnet test` (ReportApiTests 3, invariants), app Jest (Feed, ModerationScreen), clicked through in Chrome.
 - [ ] Blocking: not wanted for now (decided 2026-10-24); revisit with follows (Phase 8).
+- [x] Pause accounts (2026-10-24): staff flag an account as a bot (or another reason) for 1–365 days (30 by
+      default), from "Reported posts" or `POST /v1/admin/users/{handle}/suspension`. While paused the fan can't register
+      for allocations or post (photos, sharing, album logs): `403 account_suspended`. The fan sees why and until when on
+      home and can ask once per pause to be unbanned; staff lift it or deny with a reply ("Paused accounts").
+      Every decision is in `moderation_actions`. Migration 0018. Verified: SuspensionApiTests 3, invariants, app Jest.
 - [ ] Email staff when something needs them: a post is reported, proof is submitted for review, and allocation
       selection runs for a show (winners chosen). Needs an email provider (open decision) and a staff address list.
 - [ ] Complete privacy review, deletion flows, and retention rules.
@@ -323,6 +328,10 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
       city entered by the fan when the show isn't listed.
 - [ ] Confirm takedown effects (provisional, 2026-10-24): a taken-down photo leaves the feed for good but stays as
       proof with its points; a taken-down log is hidden from everyone but its author and loses its points.
+- [x] Paused accounts and allocations (decided 2026-10-24, replacing "the draw skips paused fans"): a paused account
+      can't register, and can't be named as or claim a +1 guest seat; a host paused after registering is still ranked
+      in the draw, and if selected their ticket is held while staff reach out to resolve the pause; while paused, a
+      host can't add or name a +1. Built by the allocations work (migration 0019, on `is_suspended()`).
 - [ ] Choose an email provider for staff notifications (and later fan email), e.g. a transactional email API.
 - [ ] Decide on the fan-side fee and whether App Store / Google Play payment rules apply to it.
 - [ ] Choose the first pilot artist(s) and promoter.

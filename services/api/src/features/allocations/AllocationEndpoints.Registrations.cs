@@ -336,6 +336,8 @@ public static partial class AllocationEndpoints
             "You don't have a fandom score for this artist yet. Connect Spotify and listen to them."),
         "below_threshold" => new(StatusCodes.Status403Forbidden, "not_eligible", "Not eligible",
             "Your fandom score for this artist is below this allocation's threshold."),
+        "suspended" => new(StatusCodes.Status403Forbidden, "account_suspended", "Account paused",
+            "Staff paused your account, so you can't register for tickets right now. You can ask to be unbanned from the home screen."),
         _ => new(StatusCodes.Status409Conflict, "conflict", "Conflict", reason),
     };
 

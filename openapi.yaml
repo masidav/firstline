@@ -1360,6 +1360,34 @@ paths:
       x-requires-schema: [follows]
       responses:
         '204': {description: Not following}
+  /me/suspension/appeal:
+    post:
+      tags: [Me]
+      operationId: appealSuspension
+      summary: Ask to be unbanned
+      description: Once per suspension. Staff lift the pause or deny with a reply (see `Me.suspension.appeal`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message: {type: string, minLength: 1, maxLength: 1000}
+      responses:
+        '201':
+          description: Request sent
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Suspension'}
+        '404':
+          description: 'The account isn''t paused (`code: not_found`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
   /reports:
     post:
       tags: [Social]
@@ -1506,7 +1534,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Registration'}
         '403':
-          description: 'No score for the artist, or below the threshold (`code: not_eligible`)'
+          description: 'No score for the artist, or below the threshold (`code: not_eligible`); or staff paused the account (`code: account_suspended`)'
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
@@ -1857,6 +1885,103 @@ paths:
         '409': {$ref: '#/components/responses/Conflict'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+  /admin/suspensions:
+    get:
+      tags: [Admin]
+      operationId: listSuspensions
+      summary: Paused accounts
+      description: Accounts paused now. Those waiting on a request to be unbanned come first, oldest request first.
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page of suspensions
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminSuspensionPage'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /admin/users/{handle}/suspension:
+    post:
+      tags: [Admin]
+      operationId: suspendUser
+      summary: Pause an account (for example, flag it as a bot)
+      description: |
+        For `days` (default 30, at most 365). While paused the fan can't register for tickets, upload or submit
+        photos, share, or write or edit album logs (`403 account_suspended`); what they posted stays. Recorded in the
+        moderation audit trail.
+      parameters:
+        - {$ref: '#/components/parameters/Handle'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: {type: string, enum: [bot, other]}
+                days: {type: integer, minimum: 1, maximum: 365, default: 30}
+                message: {type: string, maxLength: 500, description: Shown to the fan.}
+                note: {type: string, maxLength: 2000, description: Staff only.}
+      responses:
+        '201':
+          description: Paused
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminSuspension'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /admin/users/{handle}/suspension/lift:
+    post:
+      tags: [Admin]
+      operationId: liftSuspension
+      summary: End a pause early
+      parameters:
+        - {$ref: '#/components/parameters/Handle'}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: {type: string, maxLength: 2000, description: Staff only.}
+      responses:
+        '204': {description: Lifted}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /admin/appeals/{appealId}/decision:
+    post:
+      tags: [Admin]
+      operationId: decideAppeal
+      summary: Lift a pause or deny the fan's request to be unbanned
+      parameters:
+        - {name: appealId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: {type: string, enum: [lift, deny]}
+                reply: {type: string, maxLength: 500, description: Shown to the fan; required to deny.}
+      responses:
+        '200':
+          description: Decided
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminSuspension'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
   /admin/reports:
     get:
       tags: [Admin]
@@ -2131,6 +2256,7 @@ components:
             - registration_closed
             - hub_city_required
             - not_eligible
+            - account_suspended
             - already_registered
             - plus_one_unavailable
             - guest_unavailable
@@ -2236,6 +2362,52 @@ components:
           type: [string, 'null']
           format: date-time
           description: When hub cities may next be changed; null when they may be changed now.
+        suspension:
+          oneOf: [{$ref: '#/components/schemas/Suspension'}, {type: 'null'}]
+          description: Set while staff have paused the account. No posting or registering for tickets until it ends.
+    Suspension:
+      type: object
+      required: [id, reason, started_at, ends_at]
+      properties:
+        id: {type: string, format: uuid}
+        reason: {type: string, enum: [bot, other], description: 'bot: automated or fake activity'}
+        message: {type: [string, 'null'], description: 'From staff, shown to the fan.'}
+        started_at: {type: string, format: date-time}
+        ends_at: {type: string, format: date-time}
+        appeal:
+          oneOf: [{$ref: '#/components/schemas/Appeal'}, {type: 'null'}]
+    Appeal:
+      type: object
+      description: The fan's request to be unbanned (one per suspension) and the staff decision.
+      required: [id, status, message, submitted_at]
+      properties:
+        id: {type: string, format: uuid}
+        status: {type: string, enum: [pending, lifted, denied]}
+        message: {type: string}
+        submitted_at: {type: string, format: date-time}
+        reply: {type: [string, 'null'], description: 'From staff, shown to the fan (always set when denied).'}
+        decided_at: {type: [string, 'null'], format: date-time}
+    AdminSuspension:
+      type: object
+      required: [id, user, reason, started_at, ends_at]
+      properties:
+        id: {type: string, format: uuid}
+        user: {$ref: '#/components/schemas/UserRef'}
+        reason: {type: string, enum: [bot, other]}
+        message: {type: [string, 'null']}
+        note: {type: [string, 'null'], description: Staff only.}
+        started_at: {type: string, format: date-time}
+        ends_at: {type: string, format: date-time}
+        appeal:
+          oneOf: [{$ref: '#/components/schemas/Appeal'}, {type: 'null'}]
+    AdminSuspensionPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/AdminSuspension'}
+        next_cursor: {type: [string, 'null']}
     HubCity:
       type: object
       required: [id, name, region, country]
@@ -2526,7 +2698,7 @@ components:
         eligible: {type: boolean, description: 'True if the fan can register now, or already has'}
         reason:
           type: [string, 'null']
-          enum: [not_open, artist_not_active, hub_city_required, no_score, below_threshold, already_registered, null]
+          enum: [not_open, suspended, artist_not_active, hub_city_required, no_score, below_threshold, already_registered, null]
         min_raw_score: {type: [number, 'null']}
         raw_score: {type: [number, 'null']}
         percentile: {type: [number, 'null']}

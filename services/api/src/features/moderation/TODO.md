@@ -24,3 +24,10 @@ the staff queue grouped by post (`GET /admin/reports`), take down or dismiss (`P
 and the append-only audit trail (`moderation_actions`). Takedown: photos leave the feed for good (proof and points
 stay); logs are hidden from everyone but their author and lose their points. Tests: ReportApiTests, invariants.
 Not yet: restoring a taken-down post, reporting comments, lists, or users, blocking (not wanted for now), staff email.
+
+## Account pauses (2026-10-24, branch `reports`)
+Built: staff pause an account (`bot` or `other`, 1–365 days) and lift it early; a paused fan can't register for
+allocations (`registration_blocker()` returns `suspended`) or post (uploads, submissions, sharing, album logs), gets
+`403 account_suspended`, sees the pause on `GET /me`, and can ask once per pause to be unbanned; staff lift or deny
+with a reply. Audit in `moderation_actions` (`account` target). Tests: SuspensionApiTests, invariants.
+Not yet: emailing staff about new requests, hiding a paused fan's existing posts, an automatic bot detector (Phase 10).

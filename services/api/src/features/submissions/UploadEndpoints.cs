@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Dapper;
 using FandomScore.Api.Features.Authentication;
+using FandomScore.Api.Features.Moderation;
 using FandomScore.Api.Infrastructure;
 using Npgsql;
 
@@ -89,6 +90,7 @@ public static class UploadEndpoints
 
         var userId = user.UserId();
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        await Suspensions.EnsureNotSuspendedAsync(connection, userId);
         var today = await connection.ExecuteScalarAsync<int>(
             "SELECT count(*) FROM uploads WHERE user_id = @userId AND created_at >= now() - interval '1 day'", new { userId });
         if (today >= DailyUploads)

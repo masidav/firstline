@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Dapper;
+using FandomScore.Api.Features.Moderation;
 using FandomScore.Api.Features.SpotifySync;
 using FandomScore.Api.Infrastructure;
 using Npgsql;
@@ -22,6 +23,9 @@ public sealed record MeResponse(
 
     /// <summary>When the hub cities may next be changed; null when they may be changed now.</summary>
     public DateTime? HubCitiesChangeAvailableAt { get; init; }
+
+    /// <summary>Set while staff have paused the account (no posting or registering).</summary>
+    public Suspensions.Suspension? Suspension { get; init; }
 }
 
 public static partial class UserProfiles
@@ -79,6 +83,7 @@ public static partial class UserProfiles
             Spotify = await SpotifyConnections.LoadStatusAsync(connection, userId, transaction),
             HubCities = hubs,
             HubCitiesChangeAvailableAt = changeAvailableAt,
+            Suspension = await Suspensions.LoadForFanAsync(connection, userId, transaction),
         };
     }
 }

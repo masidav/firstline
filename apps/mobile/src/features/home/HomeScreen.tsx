@@ -9,6 +9,7 @@ import { Body, Button, ErrorText, Field, Screen, Title } from '../../ui/componen
 import { colors, space } from '../../ui/theme';
 import { ArtistRow } from './ArtistRow';
 import { Feed } from '../feed/Feed';
+import { SuspensionBanner } from '../moderation/SuspensionBanner';
 import { YourArtists } from './YourArtists';
 
 const DEBOUNCE_MS = 300;
@@ -20,7 +21,8 @@ const DEBOUNCE_MS = 300;
  * Pressing Enter with no exact match asks Spotify (GET /artists/search) and offers to add an artist (POST /artists).
  */
 export function HomeScreen() {
-  const { session } = useSession();
+  const { session, state } = useSession();
+  const suspension = state?.status === 'signedIn' ? state.me.suspension : null;
   const [query, setQuery] = useState('');
   const [tracked, setTracked] = useState<Artist[] | null>(null);
   const [searchError, setSearchError] = useState<string>();
@@ -141,11 +143,12 @@ export function HomeScreen() {
         maxLength={100}
       />
       <ErrorText>{searchError}</ErrorText>
+      {suspension && <SuspensionBanner suspension={suspension} />}
 
       {!text && (
         <>
           <YourArtists />
-          <Button label="Post a photo" onPress={() => router.push('/post')} />
+          {!suspension && <Button label="Post a photo" onPress={() => router.push('/post')} />}
           <Feed />
         </>
       )}
