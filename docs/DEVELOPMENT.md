@@ -67,6 +67,9 @@ The suite starts its own PostgreSQL 16 container, so it needs Docker but not the
   in the local compose database and re-applies migrations; asks first unless given `--yes`), and
   `scoringWeights.sh` (lists the Spotify scoring weights, or sets one: `scoringWeights.sh spotify_liked_track 2`;
   the worker rescores every artist afterwards).
+- Uploaded photos are stored on local disk under `services/api/.local-storage/` (`Storage__LocalPath` to change it;
+  git ignores it). Production needs the Cloud Storage quarantine bucket, which isn't wired up yet. To review posts
+  locally, make your account staff: `UPDATE users SET is_staff = true WHERE handle = '...'` in the compose database.
 - Production logs are JSON on the console. Development uses the plain formatter.
 - In Kubernetes, secrets arrive as files in `Secrets__Directory` (one per configuration key) instead of environment
   variables, and `ForwardedHeaders__KnownProxies`/`KnownNetworks` tell the API which load balancer to trust for

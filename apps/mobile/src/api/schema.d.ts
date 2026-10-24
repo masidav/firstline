@@ -256,10 +256,53 @@ export interface paths {
         put?: never;
         /**
          * Get a presigned upload URL
-         * @description Used for submission images and avatars. The client PUTs the file to `url`; files land in a
-         *     quarantine bucket. Declaring `sha256` up front lets the server reject same-user duplicates early.
+         * @description Used for submission photos (avatars aren't supported yet). The client PUTs the file to `url` with
+         *     `headers`; the link is signed and short-lived, so it needs no sign-in. Files land in quarantine storage
+         *     with their metadata (EXIF location, camera details, comments) stripped. JPEG and PNG only: convert HEIC
+         *     or WebP on the device first. 50 uploads per day per user.
          */
         post: operations["createUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/uploads/{uploadId}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Upload the file (signed link from POST /uploads)
+         * @description The `url` from `POST /uploads`; its `exp` and `sig` authorize the request, so no bearer token is sent.
+         *     The body must be the declared type and no bigger than declared (and match `sha256` if it was declared).
+         */
+        put: operations["putUploadContent"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files/{fileId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A stored submission photo (signed link)
+         * @description The `url` of a submission file; signed and valid for an hour, so image tags can load it without sign-in.
+         */
+        get: operations["getFile"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -767,9 +810,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Submit a ticket, merch purchase, or screenshot
-         * @description Upload files first (`POST /uploads`), then submit their ids. The submission starts as `pending`
-         *     and runs the verification pipeline. A same-user duplicate returns `409 duplicate_submission`.
+         * Submit a ticket, merch, screenshot, or concert photo
+         * @description Upload files first (`POST /uploads`), then submit their ids. With no automated checks yet, every
+         *     submission starts as `needs_review` for staff. A same-user duplicate (the same photo, unless it was
+         *     rejected) returns `409 duplicate_submission`. 20 submissions per day per user.
          *     Duplicates against other users are handled silently by verification (never revealed).
          *     `client_extracted` carries optional on-device OCR text; the server still verifies on its own.
          */
@@ -819,6 +863,49 @@ export interface paths {
          * @description Allowed while `pending`, `processing`, `needs_review`, or `rejected`. Verified submissions cannot be withdrawn.
          */
         delete: operations["withdrawSubmission"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/submissions/{submissionId}/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Share a verified photo to the home feed, or stop sharing
+         * @description Only verified `merch` and `concert_photo` submissions can be shared (`can_share`). Tickets and screenshots
+         *     never are: they can show barcodes or personal details. A later rejection takes the photo off the feed.
+         */
+        put: operations["shareSubmission"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Home feed
+         * @description Shared photos (verified merch and concert photos) and public album logs from every fan, newest first.
+         *     Deleted accounts, deleted logs, and inactive artists are left out; followers-only logs stay out until
+         *     follows exist (Phase 8).
+         */
+        get: operations["getFeed"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1349,9 +1436,9 @@ export interface components {
         };
         UploadIntentRequest: {
             /** @enum {string} */
-            purpose: "submission" | "avatar";
+            purpose: "submission";
             /** @enum {string} */
-            mime_type: "image/jpeg" | "image/png" | "image/heic" | "image/webp";
+            mime_type: "image/jpeg" | "image/png";
             bytes: number;
             sha256?: string;
         };
@@ -1699,7 +1786,7 @@ export interface components {
             next_cursor: string | null;
         };
         /** @enum {string} */
-        SubmissionKind: "ticket" | "merch" | "screenshot";
+        SubmissionKind: "ticket" | "merch" | "screenshot" | "concert_photo";
         /** @enum {string} */
         SubmissionStatus: "pending" | "processing" | "needs_review" | "verified" | "rejected";
         SubmissionCreate: {
@@ -1709,22 +1796,51 @@ export interface components {
             upload_ids: string[];
             /**
              * Format: uuid
-             * @description Optional hint for tickets; the server still matches the event itself.
+             * @description The show, from `GET /artists/{artistId}/events?include_past=true`: one of this artist's shows that has
+             *     already happened. A concert photo needs `event_id` or `concert`; a ticket may name its show.
              */
             event_id?: string;
-            /** @description Optional on-device OCR output. Treated as untrusted. */
+            /** @description For a concert photo whose show isn't listed. Not with `event_id`; not for other kinds. */
+            concert?: {
+                /**
+                 * Format: date
+                 * @description Not in the future.
+                 */
+                date: string;
+                venue: string;
+                city: string;
+            };
+            /** @description Optional on-device OCR output. Treated as untrusted. Not used yet. */
             client_extracted?: {
                 [key: string]: unknown;
             };
+            /** @description Shown on the feed if the photo is shared. */
+            caption?: string | null;
         };
         Submission: {
             /** Format: uuid */
             id: string;
             /** Format: uuid */
             artist_id: string;
+            artist: components["schemas"]["ArtistRef"];
+            /** @description The show the fan entered because it wasn't listed (otherwise see `event`). */
+            concert?: {
+                /** Format: date */
+                date: string;
+                venue: string;
+                city: string;
+            } | null;
+            caption?: string | null;
+            /**
+             * Format: date-time
+             * @description On the home feed since; null when not shared.
+             */
+            shared_at?: string | null;
+            /** @description Verified merch or concert photo. */
+            can_share: boolean;
             kind: components["schemas"]["SubmissionKind"];
             status: components["schemas"]["SubmissionStatus"];
-            event?: components["schemas"]["Event"] | null;
+            event?: components["schemas"]["EventRef"] | null;
             rejection_reason?: string | null;
             /** Format: date-time */
             submitted_at: string;
@@ -1743,6 +1859,75 @@ export interface components {
                 redacted: boolean;
             }[];
             points_awarded?: components["schemas"]["PointsAward"][];
+        };
+        EventRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            venue?: string | null;
+            city?: string | null;
+            /** Format: date-time */
+            starts_at: string;
+        };
+        FeedPage: {
+            items: components["schemas"]["FeedItem"][];
+            next_cursor: string | null;
+        };
+        FeedItem: {
+            /** @enum {string} */
+            type: "photo" | "album_log";
+            /**
+             * Format: uuid
+             * @description The submission or album log id.
+             */
+            id: string;
+            /**
+             * Format: date-time
+             * @description When it was shared or logged.
+             */
+            at: string;
+            user: components["schemas"]["UserRef"];
+            artist: components["schemas"]["ArtistRef"];
+            photo?: {
+                /** @enum {string} */
+                kind: "merch" | "concert_photo";
+                caption?: string | null;
+                /** @description Where a concert photo was taken; `name` is set when it was a listed show. */
+                concert?: {
+                    name?: string | null;
+                    venue?: string | null;
+                    city?: string | null;
+                    /** Format: date */
+                    date: string;
+                } | null;
+                files: {
+                    /** Format: uuid */
+                    id: string;
+                    mime_type: string;
+                    /**
+                     * Format: uri
+                     * @description Short-lived signed URL.
+                     */
+                    url: string;
+                    redacted: boolean;
+                }[];
+            } | null;
+            log?: {
+                album: {
+                    /** Format: uuid */
+                    id: string;
+                    title: string;
+                    /** Format: uri */
+                    cover_url?: string | null;
+                };
+                rating?: number | null;
+                /** @description At most 280 characters; a longer review is cut and ends with "…". */
+                review?: string | null;
+                review_truncated: boolean;
+                is_relisten: boolean;
+                /** Format: date */
+                listened_on: string;
+            } | null;
         };
         SubmissionPage: {
             items: components["schemas"]["Submission"][];
@@ -1781,7 +1966,10 @@ export interface components {
             decision: "approve" | "reject";
             /** @description Required on reject. Shown to the user, so keep it generic. */
             reason?: string;
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description Not used yet (events come later).
+             */
             event_id?: string;
             /** @description Internal only; stored in the manual check details. */
             notes?: string;
@@ -2380,6 +2568,75 @@ export interface operations {
                 };
             };
             422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    putUploadContent: {
+        parameters: {
+            query: {
+                exp: number;
+                sig: string;
+            };
+            header?: never;
+            path: {
+                uploadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "image/jpeg": string;
+                "image/png": string;
+            };
+        };
+        responses: {
+            /** @description Stored */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Already uploaded, or expired (`code: upload_expired`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getFile: {
+        parameters: {
+            query: {
+                exp: number;
+                sig: string;
+            };
+            header?: never;
+            path: {
+                fileId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The photo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                    "image/png": string;
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     searchArtists: {
@@ -3276,6 +3533,7 @@ export interface operations {
                     "application/json": components["schemas"]["SubmissionPage"];
                 };
             };
+            422: components["responses"]["ValidationFailed"];
         };
     };
     getSubmission: {
@@ -3321,6 +3579,61 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    shareSubmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submissionId: components["parameters"]["SubmissionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    shared: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated submission */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Submission"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getFeed: {
+        parameters: {
+            query?: {
+                limit?: components["parameters"]["Limit"];
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of feed items */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedPage"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
         };
     };
     createShareCard: {
@@ -3658,6 +3971,7 @@ export interface operations {
                 };
             };
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
         };
     };
     getAdminSubmission: {
@@ -3709,6 +4023,7 @@ export interface operations {
                 };
             };
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
         };
