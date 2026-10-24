@@ -11,9 +11,10 @@ What you get, all deterministic for a given --seed:
   - fans with hub cities, Spotify-like signals, album journal logs (which award ledger points through the real
     triggers), a few verified ticket and merch submissions, and a fandom score per followed artist;
   - active artists ('seed:...' Spotify ids, so nothing talks to Spotify) with albums and tracks;
-  - shows in hub cities, each with a fan allocation in a different state: open, upcoming, open with a high threshold,
-    just closed (awaiting selection), draft, cancelled; registrations through register_for_allocation(), so every
-    snapshot and rule is the real one. A few fans have withdrawn.
+  - shows in hub cities, each with a fan allocation in a different state: open, upcoming, open with a high
+    raw-score threshold, closed with the selection draw run (selected and not-selected fans, +1 guests), draft,
+    cancelled; registrations through register_for_allocation(), so every snapshot and rule is the real one. Some
+    fans bring a +1, a few have withdrawn.
   - the staff account dev_staff (tools/dev/allocations.py uses it too).
 
 Sign in from the app with dev sign-in (Auth__DevSignIn=true in .env) as any handle the script prints, e.g. dev_staff.
@@ -74,7 +75,7 @@ REVIEWS = [
     "Finally, the live energy on a studio record. You can hear the room, the count-ins, somebody laughing at the end "
     "of track six. It feels like being let in on something.",
 ]
-ALLOCATION_STATES = ["open", "upcoming", "open", "open_high_threshold", "closing", "draft", "cancelled", "open",
+ALLOCATION_STATES = ["open", "upcoming", "open", "open_high_threshold", "selected", "draft", "cancelled", "open",
                      "upcoming", "open"]
 
 
@@ -248,7 +249,7 @@ SELECT request_full_rescore() AS rescore_jobs_queued;""")
 
     # --- shows, allocations, registrations ----------------------------------------------------------------------
     sql.append("-- Shows and allocations, one state each; registrations through register_for_allocation().")
-    event_rows, allocation_rows, candidates, cancelled, withdrawals = [], [], [], [], []
+    event_rows, allocation_rows, candidates, cancelled, withdrawals, plus_ones, selections = [], [], [], [], [], [], []
     day = datetime.timedelta(days=1)
     for i in range(shows):
         artist_id = artist_ids[i % len(artist_ids)]
@@ -259,29 +260,33 @@ SELECT request_full_rescore() AS rescore_jobs_queued;""")
         event_rows.append((event_id, artist_id, f"{catalog[artist_id]['name']} at {venue}", venue, CITIES[city_id], "US",
                            city_id, starts, staff_id))
         state = ALLOCATION_STATES[i % len(ALLOCATION_STATES)]
-        opens, closes, published, threshold = now - day, min(now + 4 * day, starts - 2 * day), True, 0
+        # threshold None: the database applies the default (a fan with two saved albums) when publishing.
+        opens, closes, published, threshold = now - day, min(now + 4 * day, starts - 2 * day), True, None
         if state == "upcoming":
             opens, closes = now + 2 * day, now + 6 * day
         elif state == "open_high_threshold":
-            threshold = 75
-        elif state == "closing":
+            threshold = 60
+        elif state == "selected":
             opens, closes = now - 3 * day, "clock_timestamp() + interval '2 seconds'"
+            selections.append(allocation_id := new_id())
         elif state == "draft":
             opens, closes, published = now + 3 * day, now + 7 * day, False
-        allocation_id = new_id()
+        allocation_id = selections[-1] if state == "selected" else new_id()
         allocation_rows.append((allocation_id, event_id, "Fan allocation", rng.choice([20, 40, 60, 100, 150]),
                                 rng.choice([3500, 4500, 6000, 8500, 12000]), threshold, opens, closes,
                                 "now()" if published else None, staff_id, state))
         if state == "cancelled":
             cancelled.append(allocation_id)
-        if state in ("open", "open_high_threshold", "closing", "cancelled"):
+        if state in ("open", "open_high_threshold", "selected", "cancelled"):
             fans_of_artist = follows.get(artist_id, [])
             for user_id in rng.sample(fans_of_artist, int(len(fans_of_artist) * 0.7)):
                 candidates.append((user_id, allocation_id))
                 if state == "open" and rng.random() < 0.05:
                     withdrawals.append((user_id, allocation_id))
+                elif rng.random() < 0.2:
+                    plus_ones.append((user_id, allocation_id))
         if i == 0:
-            allocation_rows.append((new_id(), event_id, "Balcony", 10, 15000, 90, now + 3 * day, now + 7 * day, None,
+            allocation_rows.append((new_id(), event_id, "Balcony", 10, 15000, 80, now + 3 * day, now + 7 * day, None,
                                     staff_id, "draft"))
     sql.append(insert("events", ["id", "artist_id", "name", "venue", "city", "country", "city_id", "starts_at", "created_by"],
                       event_rows))
@@ -290,7 +295,7 @@ SELECT request_full_rescore() AS rescore_jobs_queued;""")
                          a[7] if isinstance(a[7], str) else lit(a[7]), a[8] if isinstance(a[8], str) else "NULL",
                          lit(a[9])]) + f") /* {a[10]} */"
         for a in allocation_rows)
-    sql.append("INSERT INTO allocations (id, event_id, name, tickets, face_value_cents, min_percentile, "
+    sql.append("INSERT INTO allocations (id, event_id, name, tickets, face_value_cents, min_raw_score, "
                f"registration_opens_at, registration_closes_at, published_at, created_by) VALUES\n  {values};")
     if candidates:
         rows = ",\n  ".join(f"({lit(u)}::uuid, {lit(a)}::uuid)" for u, a in candidates)
@@ -299,9 +304,16 @@ SELECT request_full_rescore() AS rescore_jobs_queued;""")
     if withdrawals:
         rows = ",\n  ".join(f"({lit(u)}::uuid, {lit(a)}::uuid)" for u, a in withdrawals)
         sql.append(f"SELECT count(*) FILTER (WHERE withdraw_registration(u, a)) AS withdrawn FROM (VALUES\n  {rows}) AS c (u, a);")
+    if plus_ones:
+        rows = ",\n  ".join(f"({lit(u)}::uuid, {lit(a)}::uuid)" for u, a in plus_ones)
+        sql.append("-- A +1 while registration is open (what PUT /allocations/{id}/registration with plus_one does).\n"
+                   "UPDATE allocation_registrations r SET plus_one = true FROM (VALUES\n  "
+                   f"{rows}) AS c (u, a) WHERE r.user_id = c.u AND r.allocation_id = c.a AND r.withdrawn_at IS NULL;")
     for allocation_id in cancelled:
         sql.append(f"UPDATE allocations SET cancelled_at = now() WHERE id = {lit(allocation_id)};")
-    sql.append("DO $$ BEGIN PERFORM pg_sleep(2.5); END $$;  -- the 'closing' allocation closes before anyone looks")
+    sql.append("DO $$ BEGIN PERFORM pg_sleep(2.5); END $$;  -- the 'selected' allocation's registration closes")
+    for allocation_id in selections:
+        sql.append(f"SELECT selected_fans, seats_assigned, registrations FROM run_allocation_selection({lit(allocation_id)}, {lit(staff_id)});")
     sql.append("COMMIT;")
     sql.append("""SELECT 'fans' AS seeded, count(*) FROM users WHERE NOT is_staff AND deleted_at IS NULL
 UNION ALL SELECT 'artists (active)', count(*) FROM artists WHERE status = 'active'
@@ -312,7 +324,9 @@ UNION ALL SELECT 'scores', count(*) FROM user_artist_scores
 UNION ALL SELECT 'shows', count(*) FROM events
 UNION ALL SELECT 'allocations', count(*) FROM allocations
 UNION ALL SELECT 'registrations (live)', count(*) FROM allocation_registrations WHERE withdrawn_at IS NULL
-UNION ALL SELECT 'registrations (withdrawn)', count(*) FROM allocation_registrations WHERE withdrawn_at IS NOT NULL;""")
+UNION ALL SELECT 'registrations (withdrawn)', count(*) FROM allocation_registrations WHERE withdrawn_at IS NOT NULL
+UNION ALL SELECT 'registrations with a +1', count(*) FROM allocation_registrations WHERE plus_one AND withdrawn_at IS NULL
+UNION ALL SELECT 'fans selected by the draw', count(*) FROM allocation_registrations WHERE outcome = 'selected';""")
     examples = [u[1] for u in users[1:6]]
     return "\n\n".join(sql) + "\n", examples
 

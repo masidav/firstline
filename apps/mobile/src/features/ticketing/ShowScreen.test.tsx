@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { ShowScreen } from './ShowScreen';
-import { standingMessage } from './standing';
+import { type Standing, standingMessage } from './standing';
 
 const ok = (data: unknown, status = 200) => ({ data, response: { ok: true, status } });
 
@@ -10,7 +10,7 @@ const mockSession = { api: mockApi };
 jest.mock('../../auth/SessionProvider', () => ({ useSession: () => ({ session: mockSession, state: { status: 'signedIn' } }) }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn(), replace: jest.fn(), back: jest.fn(), canGoBack: () => false } }));
 
-const standing = (likely: boolean, extra: Record<string, unknown> = {}) => ({
+const standing = (likely: boolean, extra: Partial<Standing> = {}): Standing => ({
   rank: 4, registrants: 40, top_percent: 10, seats_ahead: 5, seats_needed: 1, tickets: 100, margin_seats: 25,
   local: true, likely, ...extra,
 });
