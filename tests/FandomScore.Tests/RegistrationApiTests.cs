@@ -16,7 +16,7 @@ namespace FandomScore.Tests;
 
 /// <summary>
 /// Fan registration for allocations: eligibility, register, withdraw, and the snapshot (migration 0013); the +1, its
-/// guest, and the draw (0016).
+/// guest, and the draw (0017).
 /// </summary>
 [Collection(PostgresCollection.Name)]
 public sealed class RegistrationApiTests(PostgresFixture postgres) : IAsyncLifetime

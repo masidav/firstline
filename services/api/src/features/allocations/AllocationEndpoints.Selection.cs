@@ -7,7 +7,7 @@ using Npgsql;
 namespace FandomScore.Api.Features.Allocations;
 
 /// <summary>
-/// The selection draw (migration 0016), run by staff once registration has closed: fans whose hub cities include the
+/// The selection draw (migration 0017), run by staff once registration has closed: fans whose hub cities include the
 /// show's city first, then everyone else, each ranked by their registration-time raw score, ties ordered by a stored
 /// random seed. <c>run_allocation_selection()</c> does the work and records the draw once.
 /// </summary>

@@ -11,7 +11,14 @@ export const SPOTIFY_SCOPES = [
   'user-read-recently-played',
   'playlist-read-private',
   'playlist-read-collaborative',
+  'user-follow-read',
 ];
+
+/** Scopes a connection must have for every signal to count; older connections may lack newer ones. */
+export function missingScopes(status: SpotifyStatus): string[] {
+  if (!status.connected || !status.scopes) return [];
+  return SPOTIFY_SCOPES.filter((scope) => !status.scopes?.includes(scope));
+}
 
 /** Kept between leaving for Spotify and coming back to the callback route. */
 export interface PendingConnect {

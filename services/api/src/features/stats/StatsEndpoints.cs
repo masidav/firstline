@@ -19,7 +19,9 @@ public static class StatsEndpoints
         ScoringEndpoints.ArtistRef Artist, decimal RawScore, decimal Percentile, int Rank, int Fans, bool IsEstimated,
         DateTime ComputedAt);
 
-    public sealed record ListeningStats(int Artists, int LikedTracks, int PlaylistTracks, int DistinctAlbums, int RecentPlays);
+    public sealed record ListeningStats(
+        int Artists, int LikedTracks, int PlaylistTracks, int DistinctAlbums, int RecentPlays, int SavedAlbums, int TopTracks,
+        int FollowedArtists, int PlaysLastQuarter);
 
     public sealed record JournalStats(int Logs, int AlbumsLogged, int Relistens, int Reviews, int Ratings, int Lists, int Comments);
 
@@ -45,7 +47,13 @@ public static class StatsEndpoints
 
             SELECT count(*)::int AS Artists, COALESCE(sum(liked_tracks), 0)::int AS LikedTracks,
                    COALESCE(sum(playlist_tracks), 0)::int AS PlaylistTracks,
-                   COALESCE(sum(distinct_albums), 0)::int AS DistinctAlbums, COALESCE(sum(recent_plays), 0)::int AS RecentPlays
+                   COALESCE(sum(distinct_albums), 0)::int AS DistinctAlbums, COALESCE(sum(recent_plays), 0)::int AS RecentPlays,
+                   (SELECT count(*) FROM user_album_saves v JOIN albums al ON al.id = v.album_id AND al.delisted_at IS NULL
+                     JOIN artists aa ON aa.id = al.artist_id AND aa.status = 'active' WHERE v.user_id = @userId)::int AS SavedAlbums,
+                   COALESCE(sum(top_tracks), 0)::int AS TopTracks,
+                   count(*) FILTER (WHERE followed)::int AS FollowedArtists,
+                   (SELECT count(*) FROM user_plays p JOIN artists pa ON pa.id = p.artist_id AND pa.status = 'active'
+                     WHERE p.user_id = @userId AND p.played_at >= now() - interval '90 days')::int AS PlaysLastQuarter
             FROM user_artist_signals s JOIN artists a ON a.id = s.artist_id AND a.status = 'active'
             WHERE s.user_id = @userId;
 

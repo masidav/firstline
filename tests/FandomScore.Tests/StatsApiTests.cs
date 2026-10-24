@@ -111,7 +111,9 @@ public sealed class StatsApiTests(PostgresFixture postgres) : IAsyncLifetime
 
         var geese = Assert.Single(stats.GetProperty("artists").EnumerateArray());
         Assert.Equal("Geese", geese.GetProperty("artist").GetProperty("name").GetString());
-        Assert.Equal(2, geese.GetProperty("rank").GetInt32());
+        // My journal and proof points outweigh the other fan's Spotify signals (each of the 18 Spotify signals is
+        // worth at most 100/18 points; how much ledger points should weigh is an open decision), so I rank first of two.
+        Assert.Equal(1, geese.GetProperty("rank").GetInt32());
         Assert.Equal(2, geese.GetProperty("fans").GetInt32());
         Assert.True(geese.GetProperty("is_estimated").GetBoolean());
 
@@ -119,6 +121,8 @@ public sealed class StatsApiTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal((1, 10, 2, 1, 3), (listening.GetProperty("artists").GetInt32(), listening.GetProperty("liked_tracks").GetInt32(),
             listening.GetProperty("playlist_tracks").GetInt32(), listening.GetProperty("distinct_albums").GetInt32(),
             listening.GetProperty("recent_plays").GetInt32()));
+        Assert.Equal((0, 0, 0, 0), (listening.GetProperty("saved_albums").GetInt32(), listening.GetProperty("top_tracks").GetInt32(),
+            listening.GetProperty("followed_artists").GetInt32(), listening.GetProperty("plays_last_quarter").GetInt32()));
 
         var journal = stats.GetProperty("journal");
         Assert.Equal((2, 1, 1, 1, 1, 1, 1), (journal.GetProperty("logs").GetInt32(), journal.GetProperty("albums_logged").GetInt32(),

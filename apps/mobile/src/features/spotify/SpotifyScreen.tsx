@@ -6,7 +6,7 @@ import { ApiError, unwrap } from '../../api/client';
 import { useSession } from '../../auth/SessionProvider';
 import { config } from '../../config';
 import { Body, Button, ErrorText, Loading, Screen, Title } from '../../ui/components';
-import { connectErrorMessage, describeStatus, isSyncing, type SpotifyStatus } from './spotifyConnect';
+import { connectErrorMessage, describeStatus, isSyncing, missingScopes, type SpotifyStatus } from './spotifyConnect';
 import { startSpotifyConnect } from './spotifyRedirect';
 
 const POLL_MS = 3000;
@@ -99,18 +99,25 @@ export function SpotifyScreen() {
   }
 
   const connectLabel = status?.connected ? 'Connect again' : 'Connect Spotify';
-  const needsConnect = !status?.connected || status.sync_state === 'reauth_required';
+  const outdated = status ? missingScopes(status).length > 0 : false;
+  const needsConnect = !status?.connected || status.sync_state === 'reauth_required' || outdated;
 
   return (
     <Screen>
       <Title>Spotify</Title>
       <Body muted>
-        We read your saved tracks, top artists, recent plays, and your own playlists to measure how much you listen
-        to the artists we track. Your top artists are added to the tracked list automatically; nothing about other
-        artists is stored. We never post or change anything.
+        We read your saved tracks and albums, top artists and tracks, recent plays, the artists you follow, and your
+        own playlists to measure how much you listen to the artists we track, and we check your recent plays hourly.
+        Your top artists are added to the tracked list automatically; nothing about other artists is stored. We never
+        post or change anything.
       </Body>
 
       {status && <Body>{describeStatus(status)}</Body>}
+      {outdated && (
+        <Body muted>
+          We now also count the artists you follow. Connect again to give the app that permission; your synced data stays.
+        </Body>
+      )}
       <ErrorText>{error}</ErrorText>
 
       {!config.spotifyClientId ? (

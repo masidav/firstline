@@ -74,18 +74,34 @@ public sealed partial class SpotifyClient(
     /// Saved tracks, top artists (about six months), the last 50 plays, and tracks in playlists the user owns or
     /// collaborates on (Spotify returns no items for other playlists). Capped by <see cref="SpotifyOptions"/>.
     /// </summary>
-    public async Task<SpotifyLibrary> GetLibraryAsync(string accessToken, string spotifyUserId, CancellationToken cancellationToken)
+    /// <summary>
+    /// Everything the sync reads about a fan. <paramref name="includeFollowed"/> is false for connections made
+    /// without scope <see cref="SpotifyOptions.FollowScope"/>, which Spotify would answer with 403.
+    /// </summary>
+    public async Task<SpotifyLibrary> GetLibraryAsync(
+        string accessToken, string spotifyUserId, bool includeFollowed, CancellationToken cancellationToken)
     {
         var saved = await GetPagesAsync<SavedTrackDto>(
             accessToken, "me/tracks", _options.MaxSavedTracks, "saved tracks", cancellationToken);
-        var top = await GetAsync<Page<ArtistDto>>(
-            accessToken, "me/top/artists?time_range=medium_term&limit=50", "top artists", cancellationToken);
-        var recent = await GetAsync<Page<PlayHistoryDto>>(
-            accessToken, "me/player/recently-played?limit=50", "recently played", cancellationToken);
+        var topMedium = await GetTopArtistsAsync(accessToken, "medium_term", cancellationToken);
+        var topShort = await GetTopArtistsAsync(accessToken, "short_term", cancellationToken);
+        var topLong = await GetTopArtistsAsync(accessToken, "long_term", cancellationToken);
+        var topTracks = new List<SpotifyTrack>();
+        foreach (var range in new[] { "short_term", "medium_term", "long_term" })
+        {
+            var page = await GetAsync<Page<TrackDto>>(
+                accessToken, $"me/top/tracks?time_range={range}&limit=50", "top tracks", cancellationToken);
+            topTracks.AddRange((page.Items ?? []).Select(ToTrack).OfType<SpotifyTrack>());
+        }
+
+        var recent = await GetRecentlyPlayedAsync(accessToken, after: null, cancellationToken);
+        var savedAlbums = await GetPagesAsync<SavedAlbumDto>(
+            accessToken, "me/albums", _options.MaxSavedAlbums, "saved albums", cancellationToken);
+        var followed = includeFollowed ? await GetFollowedArtistIdsAsync(accessToken, cancellationToken) : null;
         var playlists = await GetPagesAsync<PlaylistDto>(
             accessToken, "me/playlists", _options.MaxPlaylists, "playlists", cancellationToken);
 
-        var playlistTracks = new List<SpotifyTrack>();
+        var ownPlaylists = new List<SpotifyPlaylist>();
         foreach (var playlist in playlists)
         {
             if (playlist.Id is null || !(playlist.Collaborative || playlist.Owner?.Id == spotifyUserId))
@@ -95,16 +111,67 @@ public sealed partial class SpotifyClient(
 
             var items = await GetPagesAsync<PlaylistItemDto>(accessToken,
                 $"playlists/{Uri.EscapeDataString(playlist.Id)}/items", _options.MaxPlaylistItems, "playlist items", cancellationToken);
-            playlistTracks.AddRange(items.Select(i => ToTrack(i.Item ?? i.Track)).OfType<SpotifyTrack>());
+            ownPlaylists.Add(new SpotifyPlaylist(playlist.Id, playlist.Collaborative,
+                [.. items.Select(i => ToTrack(i.Item ?? i.Track)).OfType<SpotifyTrack>()]));
         }
 
         return new SpotifyLibrary(
             [.. saved.Select(s => ToTrack(s.Track) is { } track ? new SpotifySavedTrack(track, s.AddedAt) : null)
                 .OfType<SpotifySavedTrack>()],
-            playlistTracks,
-            // Keep positions: the index is the rank. Names and images let the sync track new ones.
-            [.. (top.Items ?? []).Select(ToArtist).OfType<SpotifyArtist>()],
-            [.. (recent.Items ?? []).Select(p => ToTrack(p.Track)).OfType<SpotifyTrack>()]);
+            ownPlaylists,
+            topMedium,
+            topShort,
+            topLong,
+            [.. topTracks.DistinctBy(t => t.Id)],
+            [.. savedAlbums.Select(a => a.Album is { Id: { } id }
+                    ? new SpotifySavedAlbum(id, [.. (a.Album.Artists ?? []).Select(x => x.Id).OfType<string>()], a.AddedAt)
+                    : null)
+                .OfType<SpotifySavedAlbum>()],
+            followed,
+            recent);
+    }
+
+    /// <summary>
+    /// The fan's most recent plays (Spotify keeps 50), newest first; only plays after <paramref name="after"/>
+    /// (milliseconds since the epoch) when given. Used hourly to extend the play ledger.
+    /// </summary>
+    public async Task<IReadOnlyList<SpotifyPlay>> GetRecentlyPlayedAsync(
+        string accessToken, long? after, CancellationToken cancellationToken)
+    {
+        var query = after is { } cursor ? $"me/player/recently-played?limit=50&after={cursor}" : "me/player/recently-played?limit=50";
+        var page = await GetAsync<Page<PlayHistoryDto>>(accessToken, query, "recently played", cancellationToken);
+        return [.. (page.Items ?? [])
+            .Select(p => ToTrack(p.Track) is { } track && p.PlayedAt is { } playedAt ? new SpotifyPlay(track, playedAt) : null)
+            .OfType<SpotifyPlay>()];
+    }
+
+    private async Task<IReadOnlyList<SpotifyArtist>> GetTopArtistsAsync(string accessToken, string range, CancellationToken cancellationToken)
+    {
+        var page = await GetAsync<Page<ArtistDto>>(
+            accessToken, $"me/top/artists?time_range={range}&limit=50", "top artists", cancellationToken);
+        // Keep positions: the index is the rank. Names and images let the sync track new ones.
+        return [.. (page.Items ?? []).Select(ToArtist).OfType<SpotifyArtist>()];
+    }
+
+    // Cursor paging (after=<last id>) rather than offsets.
+    private async Task<IReadOnlyList<string>> GetFollowedArtistIdsAsync(string accessToken, CancellationToken cancellationToken)
+    {
+        var ids = new List<string>();
+        string? after = null;
+        while (ids.Count < _options.MaxFollowedArtists)
+        {
+            var query = after is null ? "me/following?type=artist&limit=50" : $"me/following?type=artist&limit=50&after={Uri.EscapeDataString(after)}";
+            var page = (await GetAsync<FollowingDto>(accessToken, query, "followed artists", cancellationToken)).Artists;
+            var batch = (page?.Items ?? []).Select(a => a.Id).OfType<string>().ToList();
+            ids.AddRange(batch);
+            after = page?.Cursors?.After;
+            if (batch.Count == 0 || after is null)
+            {
+                break;
+            }
+        }
+
+        return ids;
     }
 
     /// <summary>
@@ -442,7 +509,15 @@ public sealed partial class SpotifyClient(
 
     private sealed record SavedTrackDto(DateTimeOffset? AddedAt, TrackDto? Track);
 
-    private sealed record PlayHistoryDto(TrackDto? Track);
+    private sealed record PlayHistoryDto(TrackDto? Track, DateTimeOffset? PlayedAt);
+
+    private sealed record SavedAlbumDto(DateTimeOffset? AddedAt, AlbumDto? Album);
+
+    private sealed record CursorsDto(string? After);
+
+    private sealed record CursorPage<T>(IReadOnlyList<T>? Items, CursorsDto? Cursors);
+
+    private sealed record FollowingDto(CursorPage<ArtistDto>? Artists);
 
     private sealed record OwnerDto(string? Id);
 

@@ -442,16 +442,18 @@ END $$;
 DO $$
 DECLARE v_artist uuid := (SELECT id FROM artists WHERE spotify_artist_id = 'sp-active');
         alice uuid := '00000000-0000-0000-0000-000000000001';
+        n_rules numeric := (SELECT count(*) FROM scoring_rules WHERE active AND rule_key LIKE 'spotify\_%');
         v record;
 BEGIN
-  -- 100 liked tracks (saturation) and rank 1 in top artists; nothing else. Even split: 2 of 5 signals full.
+  -- 100 liked tracks (saturation) and rank 1 in top artists; nothing else. Even split: 2 of n signals full
+  -- (n = 18 since migration 0015; the expectations below count the rules so weights can be added later).
   INSERT INTO user_artist_signals (user_id, artist_id, liked_tracks, playlist_tracks, distinct_albums, top_artist_rank, recent_plays)
   VALUES (alice, v_artist, 100, 0, 0, 1, 0)
   ON CONFLICT (user_id, artist_id) DO UPDATE SET liked_tracks = 100, playlist_tracks = 0, distinct_albums = 0,
                                                  top_artist_rank = 1, recent_plays = 0;
   SELECT * INTO v FROM v_raw_scores WHERE user_id = alice AND artist_id = v_artist;
   ASSERT v.liked_share = 1 AND v.top_share = 1 AND v.playlist_share = 0, 'saturated signals earn full shares';
-  ASSERT v.spotify_score = 40, format('even split of 5 signals: expected 40, got %s', v.spotify_score);
+  ASSERT v.spotify_score = round(100 * 2 / n_rules, 2), format('even split of %s signals: expected %s, got %s', n_rules, round(100 * 2 / n_rules, 2), v.spotify_score);
   ASSERT v.raw_score = v.spotify_score + v.ledger_points, 'raw score adds ledger points';
 
   -- Diminishing returns: 10 liked tracks of 100 earn ln(11)/ln(101), about half.
@@ -468,14 +470,15 @@ BEGIN
   UPDATE scoring_rules SET points = 3 WHERE rule_key = 'spotify_liked_track';
   ASSERT (SELECT count(*) FROM jobs WHERE kind = 'scoring.score_artist' AND status = 'queued'
             AND payload->>'artist_id' = v_artist::text) = 1, 'at most one queued rescore per artist';
-  ASSERT (SELECT spotify_score FROM v_raw_scores WHERE user_id = alice AND artist_id = v_artist) = round(100 * 4 / 7.0, 2),
+  ASSERT (SELECT spotify_score FROM v_raw_scores WHERE user_id = alice AND artist_id = v_artist) = round(100 * 4 / (n_rules + 2), 2),
          'weights are relative shares';
 
   -- A disabled rule drops out of the weights and reports no share.
   UPDATE scoring_rules SET points = 1 WHERE rule_key = 'spotify_liked_track';
   UPDATE scoring_rules SET active = false WHERE rule_key = 'spotify_playlist_track';
   SELECT * INTO v FROM v_raw_scores WHERE user_id = alice AND artist_id = v_artist;
-  ASSERT v.playlist_share IS NULL AND v.spotify_score = 50, format('disabled rule: expected 50, got %s', v.spotify_score);
+  ASSERT v.playlist_share IS NULL AND v.spotify_score = round(100 * 2 / (n_rules - 1), 2),
+         format('disabled rule: expected %s, got %s', round(100 * 2 / (n_rules - 1), 2), v.spotify_score);
   UPDATE scoring_rules SET active = true WHERE rule_key = 'spotify_playlist_track';
 END $$;
 
@@ -484,11 +487,12 @@ SELECT pg_temp.expect_error($$UPDATE scoring_rules SET saturation = 0 WHERE rule
 SELECT pg_temp.expect_error($$UPDATE scoring_rules SET points = -1 WHERE rule_key = 'spotify_liked_track'$$, 'scoring_rules_spotify_weight');
 SELECT pg_temp.expect_error($$UPDATE scoring_rules SET saturation = NULL WHERE rule_key = 'spotify_liked_track'$$, 'scoring_rules_spotify_weight');
 SELECT pg_temp.expect_error($$UPDATE scoring_rules SET saturation = 5 WHERE rule_key = 'comment_posted'$$, 'scoring_rules_ledger_saturation');
-SELECT pg_temp.expect_error($$INSERT INTO scoring_rules (rule_key, points, saturation) VALUES ('spotify_follow', 5, 10)$$, 'scoring_rules_spotify_known');
+SELECT pg_temp.expect_error($$INSERT INTO scoring_rules (rule_key, points, saturation) VALUES ('spotify_bogus', 5, 10)$$, 'scoring_rules_spotify_known');
 
 DO $$
 DECLARE v_artist uuid := (SELECT id FROM artists WHERE spotify_artist_id = 'sp-active');
         alice uuid := '00000000-0000-0000-0000-000000000001';
+        n_rules numeric := (SELECT count(*) FROM scoring_rules WHERE active AND rule_key LIKE 'spotify\_%');
         v_depth uuid;
         v record;
 BEGIN
@@ -513,7 +517,8 @@ BEGIN
   DELETE FROM scoring_rules WHERE rule_key = 'spotify_recent_play';
   ASSERT EXISTS (SELECT 1 FROM jobs WHERE kind = 'scoring.score_artist'), 'deleting a Spotify rule queues a rescore';
   SELECT * INTO v FROM v_raw_scores WHERE user_id = alice AND artist_id = v_artist;
-  ASSERT v.recent_share IS NULL AND v.spotify_score = 50, format('4 rules left: expected 50, got %s', v.spotify_score);
+  ASSERT v.recent_share IS NULL AND v.spotify_score = round(100 * 2 / (n_rules - 1), 2),
+         format('one rule fewer: expected %s, got %s', round(100 * 2 / (n_rules - 1), 2), v.spotify_score);
   DELETE FROM jobs WHERE kind = 'scoring.score_artist';
   INSERT INTO scoring_rules (rule_key, points, saturation) VALUES ('spotify_recent_play', 1, 50);
   ASSERT EXISTS (SELECT 1 FROM jobs WHERE kind = 'scoring.score_artist'), 'adding a Spotify rule queues a rescore';
@@ -693,6 +698,89 @@ BEGIN
   END;
   INSERT INTO submissions (user_id, artist_id, kind, event_id)
   VALUES ('00000000-0000-0000-0000-000000000001', v_other, 'concert_photo', v_event);
+END $$;
+
+-- ------------------------------------------------------------ Spotify signals (0015)
+DO $$
+DECLARE v_artist uuid := (SELECT id FROM artists WHERE spotify_artist_id = 'sp-active');
+        alice uuid := '00000000-0000-0000-0000-000000000001';
+        n_rules numeric := (SELECT count(*) FROM scoring_rules WHERE active AND rule_key LIKE 'spotify\_%');
+        v_album uuid; v_old uuid; v_track uuid; v_old_track uuid; fan uuid; i integer;
+        v_releases numeric; v_tracks numeric;
+        v record;
+BEGIN
+  -- Two more releases (the fixture may have some already): one out last week, one years ago, one track each.
+  INSERT INTO albums (artist_id, title, spotify_album_id, release_date) VALUES (v_artist, 'New', 'al-inv-new', current_date - 5)
+  RETURNING id INTO v_album;
+  INSERT INTO albums (artist_id, title, spotify_album_id, release_date) VALUES (v_artist, 'Old', 'al-inv-old', current_date - 2000)
+  RETURNING id INTO v_old;
+  INSERT INTO tracks (album_id, title, spotify_track_id) VALUES (v_album, 'New 1', 'tr-inv-new') RETURNING id INTO v_track;
+  INSERT INTO tracks (album_id, title, spotify_track_id) VALUES (v_old, 'Old 1', 'tr-inv-old') RETURNING id INTO v_old_track;
+  SELECT count(DISTINCT al.id), count(t.id) INTO v_releases, v_tracks
+    FROM albums al LEFT JOIN tracks t ON t.album_id = al.id WHERE al.artist_id = v_artist AND al.delisted_at IS NULL;
+  UPDATE user_artist_signals SET liked_tracks = 0, top_artist_rank = NULL, top_artist_rank_short = 1, top_artist_rank_long = 25,
+         top_tracks = 20, playlists_featuring = 5, dedicated_playlists = 1, followed = true
+   WHERE user_id = alice AND artist_id = v_artist;
+  -- Saved the new album the day it came out (early, and the earliest save: tenure 5 days) and the old one last year.
+  INSERT INTO user_album_saves (user_id, album_id, saved_at) VALUES
+    (alice, v_album, (current_date - 5)::timestamptz + interval '12 hours'),
+    (alice, v_old, now() - interval '365 days')
+  ON CONFLICT DO NOTHING;
+  -- Plays: 3 this week and 1 in each of the 2 weeks before (streak 3), plus one a year ago (outside 90 days).
+  INSERT INTO user_plays (user_id, artist_id, spotify_track_id, played_at) VALUES
+    (alice, v_artist, 'tr-inv-new', now() - interval '1 hour'),
+    (alice, v_artist, 'tr-inv-new', now() - interval '2 hours'),
+    (alice, v_artist, 'tr-inv-old', date_trunc('week', now()) + interval '1 minute'),
+    (alice, v_artist, 'tr-inv-new', date_trunc('week', now()) - interval '3 days'),
+    (alice, v_artist, 'tr-inv-new', date_trunc('week', now()) - interval '10 days'),
+    (alice, v_artist, 'tr-inv-new', now() - interval '300 days');
+
+  SELECT * INTO v FROM v_raw_scores WHERE user_id = alice AND artist_id = v_artist;
+  ASSERT v.top_short_share = 1 AND v.top_long_share = round((50 + 1 - 25) / 50.0, 4), format('short/long ranks: %s %s', v.top_short_share, v.top_long_share);
+  ASSERT v.top_track_share = 1, 'top tracks at saturation earn full marks';
+  ASSERT v.saved_albums = 2 AND v.saved_album_share = round(2 / least(10, v_releases), 4),
+         format('2 saved albums of %s releases: expected %s, got %s', v_releases, round(2 / least(10, v_releases), 4), v.saved_album_share);
+  ASSERT v.early_saves = 1 AND v.early_save_share = round(ln(2::numeric) / ln(11::numeric), 4), format('one early save: %s', v.early_save_share);
+  ASSERT v.tenure_days = 365 AND v.tenure_share = round(365 / 730.0, 4), format('tenure from the earliest save: %s days', v.tenure_days);
+  ASSERT v.playlist_feature_share = 1 AND v.dedicated_playlist_share = 1 AND v.follow_share = 1, 'playlist and follow signals';
+  ASSERT v.plays_90d = 5 AND v.play_history_share = round(ln(6::numeric) / ln(101::numeric), 4), format('plays in 90 days: %s', v.plays_90d);
+  ASSERT v.streak_weeks = 3 AND v.play_streak_share = round(3 / 12.0, 4), format('streak of 3 weeks, got %s', v.streak_weeks);
+  ASSERT v.tracks_touched = 2 AND v.catalog_coverage_share = round(2 / least(50, v_tracks), 4),
+         format('2 of %s catalog tracks played: coverage %s, got %s', v_tracks, round(2 / least(50, v_tracks), 4), v.catalog_coverage_share);
+  ASSERT v.deep_cuts = 0, 'deep cuts need 10 fans of the artist';
+
+  -- Deep cuts: 10 fans like the new track; only alice has the old one, so it is a deep cut for her.
+  FOR i IN 1..9 LOOP
+    INSERT INTO users (handle, email) VALUES ('inv_deep_' || i, 'inv_deep_' || i || '@example.test') RETURNING id INTO fan;
+    INSERT INTO user_track_likes (user_id, track_id, source) VALUES (fan, v_track, 'liked');
+  END LOOP;
+  INSERT INTO user_track_likes (user_id, track_id, source) VALUES (alice, v_track, 'liked') ON CONFLICT DO NOTHING;
+  SELECT * INTO v FROM v_raw_scores WHERE user_id = alice AND artist_id = v_artist;
+  ASSERT v.deep_cuts = 1 AND v.deep_cut_share = round(ln(2::numeric) / ln(11::numeric), 4), format('one deep cut, got %s', v.deep_cuts);
+  -- A fan with only plays and no signals row is still scored.
+  INSERT INTO user_plays (user_id, artist_id, spotify_track_id, played_at) VALUES (fan, v_artist, 'tr-inv-old', now());
+  ASSERT (SELECT plays_90d FROM v_raw_scores WHERE user_id = fan AND artist_id = v_artist) = 1, 'plays alone score';
+
+  -- The threshold helper: the saved-album signal alone, weighted like the view does it.
+  ASSERT album_saves_score(v_artist, 2) = round(100 * least(1, 2 / least(10, v_releases)) / n_rules, 2),
+         format('album_saves_score: %s', album_saves_score(v_artist, 2));
+  ASSERT album_saves_score(v_artist, 2) = v.saved_album_share * 100 / n_rules
+      OR abs(album_saves_score(v_artist, 2) - v.saved_album_share * 100 / n_rules) < 0.01, 'matches the view';
+  ASSERT album_saves_score(v_artist, 0) = 0 AND album_saves_score(gen_random_uuid(), 3) = round(100 * 0.3 / n_rules, 2),
+         'no catalog falls back to the saturation';
+  UPDATE scoring_rules SET active = false WHERE rule_key = 'spotify_saved_album';
+  ASSERT album_saves_score(v_artist, 2) = 0, 'disabled rule scores nothing';
+  UPDATE scoring_rules SET active = true WHERE rule_key = 'spotify_saved_album';
+
+  -- The ledgers follow deleted users and the artist's albums.
+  DELETE FROM users WHERE handle LIKE 'inv_deep_%';
+  DELETE FROM user_plays WHERE user_id = alice AND artist_id = v_artist;
+  DELETE FROM user_album_saves WHERE user_id = alice;
+  DELETE FROM user_track_likes WHERE user_id = alice AND track_id IN (v_track, v_old_track);
+  DELETE FROM albums WHERE id IN (v_album, v_old);
+  UPDATE user_artist_signals SET liked_tracks = 100, top_artist_rank = 1, top_artist_rank_short = NULL, top_artist_rank_long = NULL,
+         top_tracks = 0, playlists_featuring = 0, dedicated_playlists = 0, followed = false
+   WHERE user_id = alice AND artist_id = v_artist;
 END $$;
 
 -- Migration 0011: top_artists_added counts what a sync added; never negative.
@@ -1040,7 +1128,7 @@ BEGIN
   END;
 END $$;
 
--- ------------------------------------------------------------ +1, threshold, and selection (0016)
+-- ------------------------------------------------------------ +1, threshold, and selection (0017)
 INSERT INTO users (id, handle, email) VALUES
   ('45000000-0000-0000-0000-000000000001', 'sel_top', 'sel_top@example.test'),
   ('45000000-0000-0000-0000-000000000002', 'sel_tie_a', 'sel_tie_a@example.test'),
@@ -1230,5 +1318,30 @@ BEGIN
   ASSERT (SELECT guest_user_id = guest AND guest_named_at IS NOT NULL FROM allocation_registrations
            WHERE allocation_id = al AND user_id = fan), 'guest named';
 END $$;
+
+-- ------------------------------------------------------------ artist profile (0016)
+-- Links need the artist flag; handles are bare; deletion clears the flag and links and they stay empty.
+INSERT INTO users (id, handle, email, is_artist, band_url, instagram_handle, x_handle) VALUES
+  ('00000000-0000-0000-0000-000000000013', 'gina', 'gina@example.test', true,
+   'https://open.spotify.com/artist/abc', 'gina.band', 'ginaband');
+SELECT pg_temp.expect_error(
+  $$UPDATE users SET is_artist = false WHERE id = '00000000-0000-0000-0000-000000000013'$$, 'users_artist_links');
+SELECT pg_temp.expect_error(
+  $$UPDATE users SET band_url = 'http://example.test' WHERE id = '00000000-0000-0000-0000-000000000013'$$, 'users_band_url_check');
+SELECT pg_temp.expect_error(
+  $$UPDATE users SET instagram_handle = '@gina' WHERE id = '00000000-0000-0000-0000-000000000013'$$, 'users_instagram_handle_check');
+SELECT pg_temp.expect_error(
+  $$UPDATE users SET x_handle = 'this_handle_is_too_long' WHERE id = '00000000-0000-0000-0000-000000000013'$$, 'users_x_handle_check');
+UPDATE users SET deleted_at = now() WHERE id = '00000000-0000-0000-0000-000000000013';
+DO $$
+DECLARE u users%ROWTYPE;
+BEGIN
+  SELECT * INTO u FROM users WHERE id = '00000000-0000-0000-0000-000000000013';
+  ASSERT NOT u.is_artist AND u.band_url IS NULL AND u.instagram_handle IS NULL AND u.x_handle IS NULL,
+         'deletion clears the artist flag and links';
+END $$;
+SELECT pg_temp.expect_error(
+  $$UPDATE users SET is_artist = true WHERE id = '00000000-0000-0000-0000-000000000013'$$, 'personal fields stay empty');
+DELETE FROM users WHERE id = '00000000-0000-0000-0000-000000000013';
 
 \echo ALL INVARIANT TESTS PASSED

@@ -77,7 +77,8 @@ public sealed class ScoringApiTests(PostgresFixture postgres) : IAsyncLifetime
 
         var ready = await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/artists/{artistId}/score", token), HttpStatusCode.OK);
         Assert.Equal("ready", ready.GetProperty("status").GetString());
-        Assert.Equal(60m, ready.GetProperty("raw_score").GetDecimal());
+        // Liked tracks, album depth, and top artist are full: 3 of the 18 even signals.
+        Assert.Equal(Math.Round(100.0 * 3 / 18, 2), (double)ready.GetProperty("raw_score").GetDecimal(), 2);
         Assert.True(ready.GetProperty("is_estimated").GetBoolean());
         Assert.Equal(1m, ready.GetProperty("breakdown").GetProperty("spotify").GetProperty("shares").GetProperty("top_artist").GetDecimal());
 
@@ -142,7 +143,7 @@ public sealed class ScoringApiTests(PostgresFixture postgres) : IAsyncLifetime
         var rules = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/admin/scoring-rules", token), HttpStatusCode.OK);
         var spotify = rules.GetProperty("items").EnumerateArray()
             .Where(r => r.GetProperty("rule_key").GetString()!.StartsWith("spotify_", StringComparison.Ordinal)).ToList();
-        Assert.Equal(5, spotify.Count);
+        Assert.Equal(18, spotify.Count);
         Assert.All(spotify, r => Assert.Equal(1m, r.GetProperty("points").GetDecimal()));
         Assert.All(spotify, r => Assert.True(r.GetProperty("saturation").GetDecimal() > 0));
 
