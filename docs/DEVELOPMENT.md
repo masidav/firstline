@@ -36,8 +36,8 @@ dotnet run --project workers               # background jobs (separate terminal)
 `tools/dev/seed.py` fills the local database with a realistic, deterministic data set: 200 fans (hub cities,
 Spotify-like signals, album journal logs that earn ledger points through the real triggers, a few verified tickets
 and merch), 8 active artists with albums and tracks, 10 shows with a fan allocation each in a different state (open,
-upcoming, high threshold, just closed, draft, cancelled) and registrations made through `register_for_allocation()`,
-plus the staff account `dev_staff`.
+upcoming, high threshold, closed with the selection draw run, draft, cancelled), registrations made through
+`register_for_allocation()` (some with a +1), plus the staff account `dev_staff`.
 ```bash
 python3 tools/dev/seed.py                  # on an empty database (after the migrations above)
 python3 tools/dev/seed.py --wipe           # wipe the local database first (asks), then seed
