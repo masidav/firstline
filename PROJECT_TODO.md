@@ -175,7 +175,8 @@ Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](servi
       whose three hub cities include the show's city, then other fans for unfilled seats; ties broken by a
       recorded random draw; a registration keeps the hubs it was made with (decided 2026-10-20).
       *Registration done 2026-10-21; selection done 2026-10-24 (migration 0017, `POST /v1/admin/allocations/{id}/selection`):
-      hub fans first, snapshot raw score, seeded tiebreak, +1 seats. Reservations and notifications are next.*
+      hub fans first, snapshot raw score, seeded tiebreak, +1 seats. The app shows each fan's standing and says "most likely"
+      only inside a 25-seat margin (decided 2026-10-24). Reservations and notifications are next.*
 - [ ] Non-transferable reservation tokens, delayed delivery, and face-value exchange for fans who can't attend.
 - [ ] Primary ticketing integration (Ticketmaster, AXS, SeatGeek): reserve seats from the pool and hand off checkout.
 - [ ] Promoter web dashboard: set up allocations, monitor registration, export reports.
