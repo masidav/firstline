@@ -1091,11 +1091,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Report a post on the feed
-         * @description A shared photo or a public album log by another fan. Staff review reports and take the post down or
-         *     dismiss them. Reporting the same post again while your report is open changes nothing. 30 reports per day.
-         */
+        /** Report content or a user */
         post: operations["createReport"];
         delete?: never;
         options?: never;
@@ -1510,48 +1506,6 @@ export interface paths {
          *     verified submission reverses its points.
          */
         post: operations["decideSubmission"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/reports": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Reported posts waiting for a decision
-         * @description One item per post with open reports, oldest report first.
-         */
-        get: operations["listReportedPosts"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/reports/{targetType}/{targetId}/decision": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Take a reported post down, or dismiss its reports
-         * @description Closes every open report on the post and records the decision (`moderation_actions`). Taking down a photo
-         *     removes it from the feed for good (it stays as proof; points unchanged). Taking down a log hides it from
-         *     everyone but its author and reverses its points.
-         */
-        post: operations["decideReportedPost"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2448,10 +2402,8 @@ export interface components {
              * @description On the home feed since; null when not shared.
              */
             shared_at?: string | null;
-            /** @description Verified merch or concert photo that staff haven't taken down. */
+            /** @description Verified merch or concert photo. */
             can_share: boolean;
-            /** @description Staff took it off the feed after a report; it stays as proof. */
-            removed: boolean;
             kind: components["schemas"]["SubmissionKind"];
             status: components["schemas"]["SubmissionStatus"];
             event?: components["schemas"]["EventRef"] | null;
@@ -2644,70 +2596,12 @@ export interface components {
             purchased_at: string;
         };
         ReportCreate: {
-            /**
-             * @description photo: a shared submission; log: an album log
-             * @enum {string}
-             */
-            target_type: "photo" | "log";
-            /** Format: uuid */
+            /** @enum {string} */
+            target_type: "log" | "comment" | "list" | "user";
             target_id: string;
             /** @enum {string} */
             reason: "spam" | "abuse" | "impersonation" | "inappropriate" | "other";
             details?: string;
-        };
-        ReportedPostPage: {
-            items: components["schemas"]["ReportedPost"][];
-            next_cursor: string | null;
-        };
-        /** @description One reported post with its open reports. */
-        ReportedPost: {
-            /** @enum {string} */
-            target_type: "photo" | "log";
-            /** Format: uuid */
-            target_id: string;
-            author: components["schemas"]["UserRef"];
-            artist: components["schemas"]["ArtistRef"];
-            photo?: {
-                kind: components["schemas"]["SubmissionKind"];
-                caption?: string | null;
-                files: {
-                    /** Format: uuid */
-                    id: string;
-                    mime_type: string;
-                    /** Format: uri */
-                    url: string;
-                    redacted: boolean;
-                }[];
-            } | null;
-            log?: {
-                /** Format: uuid */
-                album_id: string;
-                album_title: string;
-                rating?: number | null;
-                /** @description The full review. */
-                review?: string | null;
-                /** @enum {string} */
-                visibility: "public" | "followers" | "private";
-            } | null;
-            report_count: number;
-            reasons: {
-                /** @enum {string} */
-                reason: "spam" | "abuse" | "impersonation" | "inappropriate" | "other";
-                count: number;
-            }[];
-            /** @description The latest five reporters' notes. */
-            details: string[];
-            /** Format: date-time */
-            first_reported_at: string;
-        };
-        ModerationDecision: {
-            /** @enum {string} */
-            target_type: "photo" | "log";
-            /** Format: uuid */
-            target_id: string;
-            /** @enum {string} */
-            action: "take_down" | "dismiss";
-            reports_resolved: number;
         };
         ScoringRule: {
             rule_key: string;
@@ -4578,9 +4472,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
-            429: components["responses"]["RateLimited"];
         };
     };
     ticketingWebhook: {
@@ -5204,66 +5096,6 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
-            422: components["responses"]["ValidationFailed"];
-        };
-    };
-    listReportedPosts: {
-        parameters: {
-            query?: {
-                limit?: components["parameters"]["Limit"];
-                cursor?: components["parameters"]["Cursor"];
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Page of reported posts */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ReportedPostPage"];
-                };
-            };
-            403: components["responses"]["Forbidden"];
-            422: components["responses"]["ValidationFailed"];
-        };
-    };
-    decideReportedPost: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                targetType: "photo" | "log";
-                targetId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @enum {string} */
-                    action: "take_down" | "dismiss";
-                    /** @description Internal only. */
-                    note?: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Decision recorded */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ModerationDecision"];
-                };
-            };
-            403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
         };
     };

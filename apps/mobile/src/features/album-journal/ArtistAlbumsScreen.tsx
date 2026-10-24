@@ -36,7 +36,6 @@ export function ArtistAlbumsScreen({ artistId }: { artistId: string }) {
     <Screen>
       <Button label="Back" kind="secondary" onPress={() => (router.canGoBack() ? router.back() : router.replace('/home'))} />
       <Title>{artistName ?? 'Albums'}</Title>
-      <Button label="Upcoming shows" kind="secondary" onPress={() => router.push(`/artist/${artistId}/shows`)} />
       {error && (
         <>
           <ErrorText>{error}</ErrorText>

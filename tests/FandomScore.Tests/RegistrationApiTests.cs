@@ -293,43 +293,6 @@ public sealed class RegistrationApiTests(PostgresFixture postgres) : IAsyncLifet
         Assert.Equal("late_guest", named.GetProperty("guest").GetProperty("handle").GetString());
     }
 
-    [Fact]
-    public async Task Standing_says_likely_only_inside_the_tickets_minus_a_25_seat_margin()
-    {
-        // 28 tickets - 25 margin = 3 seats count as "likely".
-        var allocationId = await AllocationAsync(_eventId, minRawScore: 0, tickets: 28);
-        var top = await FanAsync("st_top", score: 90, "us-il-chicago");
-        var next = await FanAsync("st_next", score: 80, "us-il-chicago");
-        var far = await FanAsync("st_far", score: 99, "ca-on-toronto");
-        var tied = await FanAsync("st_tied", score: 80, "us-il-chicago");
-        await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{allocationId}/registration", top, new { plus_one = true }), HttpStatusCode.Created);
-        await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{allocationId}/registration", next), HttpStatusCode.Created);
-        await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{allocationId}/registration", far), HttpStatusCode.Created);
-
-        async Task<JsonElement> StandingAsync(string token, string query = "") =>
-            (await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/allocations/{allocationId}/eligibility{query}", token), HttpStatusCode.OK))
-            .GetProperty("standing");
-
-        var nextStanding = await StandingAsync(next);   // behind top's 2 seats: 2 + 1 = 3 fits
-        Assert.Equal((2, 3, 67, 2, 1, true), (nextStanding.GetProperty("rank").GetInt32(), nextStanding.GetProperty("registrants").GetInt32(),
-            nextStanding.GetProperty("top_percent").GetInt32(), nextStanding.GetProperty("seats_ahead").GetInt32(),
-            nextStanding.GetProperty("seats_needed").GetInt32(), nextStanding.GetProperty("likely").GetBoolean()));
-        Assert.Equal(25, nextStanding.GetProperty("margin_seats").GetInt32());
-
-        var farStanding = await StandingAsync(far);      // highest score, but not local: behind 3 seats, 3 + 1 > 3
-        Assert.Equal((3, false, false), (farStanding.GetProperty("rank").GetInt32(), farStanding.GetProperty("local").GetBoolean(),
-            farStanding.GetProperty("likely").GetBoolean()));
-
-        var tiedStanding = await StandingAsync(tied);    // not registered yet; the tie with next counts against them
-        Assert.Equal((3, 4, 3, false), (tiedStanding.GetProperty("rank").GetInt32(), tiedStanding.GetProperty("registrants").GetInt32(),
-            tiedStanding.GetProperty("seats_ahead").GetInt32(), tiedStanding.GetProperty("likely").GetBoolean()));
-        var withPlusOne = await StandingAsync(tied, "?plus_one=true");
-        Assert.Equal(2, withPlusOne.GetProperty("seats_needed").GetInt32());
-
-        var low = await FanAsync("st_none", score: null, "us-il-chicago");
-        Assert.Equal(JsonValueKind.Null, (await StandingAsync(low)).ValueKind);
-    }
-
     // Moves the window into the past directly (the API can't change an open allocation's rules, by design).
     private async Task CloseRegistrationAsync(Guid allocationId)
     {

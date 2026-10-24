@@ -10,12 +10,6 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Handle unsupported or invalid URLs gracefully.
 - [ ] Add tests for link display, click tracking, and failure fallback.
 
-## Fan allocations
-- [x] Upcoming shows per artist (from the artist's albums page) and a show screen with each allocation: register,
-      +1, withdraw, name the +1, and the outcome after the draw. Shows the fan's standing and says "You'll most likely
-      get a ticket!" only inside the 25-seat margin. Verified 2026-10-24: ShowScreen tests, jest 88/88, web build.
-- [ ] Notify fans when the draw has run (Phase 9 notifications).
-
 ## Verification
 - [ ] Add or update automated tests for the behavior above.
 - [ ] Run the relevant tests and record actual results.

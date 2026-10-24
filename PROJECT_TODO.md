@@ -152,13 +152,7 @@ Details: [Sharing API](services/api/src/features/sharing/TODO.md) · [Sharing UI
 
 ## Phase 9 — Notifications, moderation, release
 - [ ] Implement opt-in push notifications and preferences.
-- [x] Reports and staff takedowns (2026-10-24): fans report a shared photo or public album log (`POST /reports`);
-      staff see reported posts grouped with their reasons (`/admin/reports`, app screen "Reported posts") and take the
-      post down or dismiss the reports; every decision is recorded (`moderation_actions`). Migration 0014.
-      Verified: `dotnet test` (ReportApiTests 3, invariants), app Jest (Feed, ModerationScreen), clicked through in Chrome.
-- [ ] Blocking: not wanted for now (decided 2026-10-24); revisit with follows (Phase 8).
-- [ ] Email staff when something needs them: a post is reported, proof is submitted for review, and allocation
-      selection runs for a show (winners chosen). Needs an email provider (open decision) and a staff address list.
+- [ ] Implement reports, blocking, staff moderation, and takedown handling.
 - [ ] Complete privacy review, deletion flows, and retention rules.
 - [ ] Complete integration, end-to-end, security, and performance testing.
 - [ ] Document deployment, backups, monitoring, and recovery.
@@ -324,9 +318,6 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
       never (barcodes, personal details). The feed shows everyone's shared photos and public album logs.
 - [x] Concert photos are pinned to the band and the concert (decided 2026-10-21): a listed show, or date, venue, and
       city entered by the fan when the show isn't listed.
-- [ ] Confirm takedown effects (provisional, 2026-10-24): a taken-down photo leaves the feed for good but stays as
-      proof with its points; a taken-down log is hidden from everyone but its author and loses its points.
-- [ ] Choose an email provider for staff notifications (and later fan email), e.g. a transactional email API.
 - [ ] Decide on the fan-side fee and whether App Store / Google Play payment rules apply to it.
 - [ ] Choose the first pilot artist(s) and promoter.
 - [x] Concert data source (decided 2026-10-20): **concert APIs** for shows and sale dates (candidates:

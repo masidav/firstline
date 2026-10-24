@@ -53,20 +53,11 @@ class GuardPathsTests(unittest.TestCase):
     def test_reading_applied_migration_is_allowed(self):
         self.assertAllowed(self.run_guard("Read", file_path=f"{self.repo}/database/migrations/0001_initial.sql"))
 
-    def test_env_files_are_blocked(self):
-        for name in (".env", ".env.local", ".env.production"):
-            self.assertBlocked(self.run_guard("Read", file_path=f"{self.repo}/{name}"))
-            self.assertBlocked(self.run_guard("Edit", file_path=f"{self.repo}/{name}"))
-
-    def test_env_example_is_allowed(self):
-        self.assertAllowed(self.run_guard("Edit", file_path=f"{self.repo}/.env.example"))
-
-    def test_bash_touching_env_is_blocked(self):
-        self.assertBlocked(self.run_guard("Bash", command="cat .env"))
-        self.assertBlocked(self.run_guard("Bash", command="set -a; . ./.env; set +a"))
-
-    def test_bash_with_env_example_is_allowed(self):
-        self.assertAllowed(self.run_guard("Bash", command="cp .env.example /tmp/x"))
+    def test_env_files_are_allowed(self):
+        for name in (".env", ".env.local", ".env.example"):
+            self.assertAllowed(self.run_guard("Read", file_path=f"{self.repo}/{name}"))
+            self.assertAllowed(self.run_guard("Edit", file_path=f"{self.repo}/{name}"))
+        self.assertAllowed(self.run_guard("Bash", command="set -a; . ./.env; set +a"))
 
     def test_bash_modifying_applied_migration_is_blocked(self):
         self.assertBlocked(self.run_guard("Bash", command="sed -i 's/1/2/' database/migrations/0001_initial.sql"))

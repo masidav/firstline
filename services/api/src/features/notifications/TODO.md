@@ -17,9 +17,3 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Run the relevant tests and record actual results.
 - [ ] Update the feature README with setup, interfaces, dependencies, and known limitations.
 - [ ] Update `PROJECT_TODO.md` when this feature reaches a verified milestone.
-
-## Staff email (added 2026-10-24)
-- [ ] Email staff when a post is reported (first open report on a post, not every report).
-- [ ] Email staff when proof is submitted and waits in the review queue.
-- [ ] Email staff when allocation selection runs for a show (who was selected, counts).
-- [ ] Choose the provider and a staff address list; send from the worker (job queue), never inline in a request.

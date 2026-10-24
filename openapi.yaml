@@ -1364,10 +1364,8 @@ paths:
     post:
       tags: [Social]
       operationId: createReport
-      summary: Report a post on the feed
-      description: |
-        A shared photo or a public album log by another fan. Staff review reports and take the post down or
-        dismiss them. Reporting the same post again while your report is open changes nothing. 30 reports per day.
+      summary: Report content or a user
+      x-requires-schema: [reports]
       requestBody:
         required: true
         content:
@@ -1375,9 +1373,7 @@ paths:
             schema: {$ref: '#/components/schemas/ReportCreate'}
       responses:
         '202': {description: Report received}
-        '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
-        '429': {$ref: '#/components/responses/RateLimited'}
 
   # ------------------------------------------------------------------ Webhooks
   /webhooks/ticketing/{partner}:
@@ -1855,54 +1851,6 @@ paths:
               schema: {$ref: '#/components/schemas/AdminSubmission'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/Conflict'}
-        '404': {$ref: '#/components/responses/NotFound'}
-        '422': {$ref: '#/components/responses/ValidationFailed'}
-  /admin/reports:
-    get:
-      tags: [Admin]
-      operationId: listReportedPosts
-      summary: Reported posts waiting for a decision
-      description: One item per post with open reports, oldest report first.
-      parameters:
-        - {$ref: '#/components/parameters/Limit'}
-        - {$ref: '#/components/parameters/Cursor'}
-      responses:
-        '200':
-          description: Page of reported posts
-          content:
-            application/json:
-              schema: {$ref: '#/components/schemas/ReportedPostPage'}
-        '403': {$ref: '#/components/responses/Forbidden'}
-        '422': {$ref: '#/components/responses/ValidationFailed'}
-  /admin/reports/{targetType}/{targetId}/decision:
-    post:
-      tags: [Admin]
-      operationId: decideReportedPost
-      summary: Take a reported post down, or dismiss its reports
-      description: |
-        Closes every open report on the post and records the decision (`moderation_actions`). Taking down a photo
-        removes it from the feed for good (it stays as proof; points unchanged). Taking down a log hides it from
-        everyone but its author and reverses its points.
-      parameters:
-        - {name: targetType, in: path, required: true, schema: {type: string, enum: [photo, log]}}
-        - {name: targetId, in: path, required: true, schema: {type: string, format: uuid}}
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [action]
-              properties:
-                action: {type: string, enum: [take_down, dismiss]}
-                note: {type: string, maxLength: 2000, description: Internal only.}
-      responses:
-        '200':
-          description: Decision recorded
-          content:
-            application/json:
-              schema: {$ref: '#/components/schemas/ModerationDecision'}
-        '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
   /admin/artists:
@@ -2972,7 +2920,7 @@ components:
         caption: {type: [string, 'null'], maxLength: 500, description: Shown on the feed if the photo is shared.}
     Submission:
       type: object
-      required: [id, artist_id, artist, kind, status, submitted_at, can_share, removed]
+      required: [id, artist_id, artist, kind, status, submitted_at, can_share]
       properties:
         id: {type: string, format: uuid}
         artist_id: {type: string, format: uuid}
@@ -2987,8 +2935,7 @@ components:
             city: {type: string}
         caption: {type: [string, 'null']}
         shared_at: {type: [string, 'null'], format: date-time, description: On the home feed since; null when not shared.}
-        can_share: {type: boolean, description: Verified merch or concert photo that staff haven't taken down.}
-        removed: {type: boolean, description: Staff took it off the feed after a report; it stays as proof.}
+        can_share: {type: boolean, description: Verified merch or concert photo.}
         kind: {$ref: '#/components/schemas/SubmissionKind'}
         status: {$ref: '#/components/schemas/SubmissionStatus'}
         event: {oneOf: [{$ref: '#/components/schemas/EventRef'}, {type: 'null'}]}
@@ -3187,71 +3134,10 @@ components:
       type: object
       required: [target_type, target_id, reason]
       properties:
-        target_type: {type: string, enum: [photo, log], description: 'photo: a shared submission; log: an album log'}
-        target_id: {type: string, format: uuid}
+        target_type: {type: string, enum: [log, comment, list, user]}
+        target_id: {type: string}
         reason: {type: string, enum: [spam, abuse, impersonation, inappropriate, other]}
         details: {type: string, maxLength: 1000}
-    ReportedPostPage:
-      type: object
-      required: [items, next_cursor]
-      properties:
-        items:
-          type: array
-          items: {$ref: '#/components/schemas/ReportedPost'}
-        next_cursor: {type: [string, 'null']}
-    ReportedPost:
-      type: object
-      description: One reported post with its open reports.
-      required: [target_type, target_id, author, artist, report_count, reasons, details, first_reported_at]
-      properties:
-        target_type: {type: string, enum: [photo, log]}
-        target_id: {type: string, format: uuid}
-        author: {$ref: '#/components/schemas/UserRef'}
-        artist: {$ref: '#/components/schemas/ArtistRef'}
-        photo:
-          type: [object, 'null']
-          required: [kind, files]
-          properties:
-            kind: {$ref: '#/components/schemas/SubmissionKind'}
-            caption: {type: [string, 'null']}
-            files:
-              type: array
-              items:
-                type: object
-                required: [id, mime_type, url, redacted]
-                properties:
-                  id: {type: string, format: uuid}
-                  mime_type: {type: string}
-                  url: {type: string, format: uri}
-                  redacted: {type: boolean}
-        log:
-          type: [object, 'null']
-          required: [album_id, album_title, visibility]
-          properties:
-            album_id: {type: string, format: uuid}
-            album_title: {type: string}
-            rating: {type: [integer, 'null']}
-            review: {type: [string, 'null'], description: The full review.}
-            visibility: {type: string, enum: [public, followers, private]}
-        report_count: {type: integer, minimum: 1}
-        reasons:
-          type: array
-          items:
-            type: object
-            required: [reason, count]
-            properties:
-              reason: {type: string, enum: [spam, abuse, impersonation, inappropriate, other]}
-              count: {type: integer}
-        details: {type: array, items: {type: string}, description: The latest five reporters' notes.}
-        first_reported_at: {type: string, format: date-time}
-    ModerationDecision:
-      type: object
-      required: [target_type, target_id, action, reports_resolved]
-      properties:
-        target_type: {type: string, enum: [photo, log]}
-        target_id: {type: string, format: uuid}
-        action: {type: string, enum: [take_down, dismiss]}
-        reports_resolved: {type: integer}
 
     ScoringRule:
       type: object
