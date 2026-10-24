@@ -66,6 +66,7 @@ v1.MapUploads();
 v1.MapSubmissions();
 v1.MapFeed();
 v1.MapReports();
+v1.MapSuspensions();
 
 app.Run();
 

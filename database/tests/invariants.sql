@@ -1404,4 +1404,43 @@ SELECT pg_temp.expect_error(
   $$UPDATE users SET is_artist = true WHERE id = '00000000-0000-0000-0000-000000000013'$$, 'personal fields stay empty');
 DELETE FROM users WHERE id = '00000000-0000-0000-0000-000000000013';
 
+-- ------------------------------------------------------------ account suspensions (0018)
+DO $$
+DECLARE fan uuid; v_alloc uuid; v_susp uuid;
+BEGIN
+  INSERT INTO users (handle, email) VALUES ('inv_bot', 'inv_bot@example.test') RETURNING id INTO fan;
+  INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at, published_at)
+  VALUES ('41000000-0000-0000-0000-000000000001', 10, 4500, now() - interval '1 hour', now() + interval '2 days', now())
+  RETURNING id INTO v_alloc;
+  ASSERT NOT is_suspended(fan), 'not suspended to start';
+  ASSERT registration_blocker(fan, v_alloc) = 'hub_city_required', 'blocked for another reason first';
+
+  INSERT INTO account_suspensions (user_id, reason, ends_at) VALUES (fan, 'bot', now() + interval '30 days') RETURNING id INTO v_susp;
+  ASSERT is_suspended(fan) AND (active_suspension(fan)).id = v_susp, 'suspended';
+  ASSERT registration_blocker(fan, v_alloc) = 'suspended', 'suspended fans cannot register';
+
+  -- One request to be unbanned per suspension.
+  INSERT INTO suspension_appeals (suspension_id, message) VALUES (v_susp, 'I am a real fan');
+  BEGIN
+    INSERT INTO suspension_appeals (suspension_id, message) VALUES (v_susp, 'Please');
+    RAISE EXCEPTION 'second appeal accepted';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+
+  -- Lifting early, or running out, ends it.
+  UPDATE account_suspensions SET lifted_at = now() WHERE id = v_susp;
+  ASSERT NOT is_suspended(fan), 'lifted';
+  INSERT INTO account_suspensions (user_id, reason, created_at, ends_at)
+  VALUES (fan, 'other', now() - interval '10 days', now() - interval '1 day');
+  ASSERT NOT is_suspended(fan) AND active_suspension(fan) IS NULL, 'expired';
+
+  INSERT INTO moderation_actions (target_type, target_id, action, reports) VALUES ('account', fan, 'suspend', 0);
+END $$;
+SELECT pg_temp.expect_error(
+  $$INSERT INTO account_suspensions (user_id, reason, ends_at) SELECT id, 'bot', now() - interval '1 day' FROM users WHERE handle = 'inv_bot'$$,
+  'account_suspensions_check');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO account_suspensions (user_id, reason, ends_at) SELECT id, 'spam', now() + interval '1 day' FROM users WHERE handle = 'inv_bot'$$,
+  'account_suspensions_reason_check');
+
 \echo ALL INVARIANT TESTS PASSED

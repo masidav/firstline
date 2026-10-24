@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using Dapper;
 using FandomScore.Api.Features.Authentication;
+using FandomScore.Api.Features.Moderation;
 using FandomScore.Api.Infrastructure;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Options;
@@ -50,6 +51,7 @@ public static class JournalEndpoints
         var userId = user.UserId();
 
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        await Suspensions.EnsureNotSuspendedAsync(connection, userId);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         if (key is not null
             && await Idempotency.BeginAsync(connection, transaction, userId, key, Idempotency.Hash(body.GetRawText())) is { } replay)
@@ -114,6 +116,7 @@ public static class JournalEndpoints
         var userId = user.UserId();
 
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        await Suspensions.EnsureNotSuspendedAsync(connection, userId);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await RequireOwnAsync(connection, transaction, logId, userId, "Only the log's owner can edit it.");
 
