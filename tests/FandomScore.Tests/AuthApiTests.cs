@@ -206,6 +206,48 @@ public sealed class AuthApiTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Artist_profile_links_need_the_artist_flag()
+    {
+        var session = await SignInAsync(TestAuth.IdToken("g-1", "fan@example.test"), "fan_one", HttpStatusCode.Created);
+        var token = session.GetProperty("access_token").GetString()!;
+        Assert.False(session.GetProperty("user").GetProperty("is_artist").GetBoolean());
+
+        // Links without the flag: the database constraint answers as a validation error.
+        var early = await ProblemAsync(await PatchMeAsync(token, new { band_url = "https://example.test/band" }), 422);
+        Assert.Equal("is_artist", early.GetProperty("errors")[0].GetProperty("field").GetString());
+
+        var artist = await JsonAsync(await PatchMeAsync(token, new
+        {
+            is_artist = true, band_url = "https://open.spotify.com/artist/abc", instagram_handle = "@the.band", x_handle = "theband",
+        }), HttpStatusCode.OK);
+        Assert.True(artist.GetProperty("is_artist").GetBoolean());
+        Assert.Equal("https://open.spotify.com/artist/abc", artist.GetProperty("band_url").GetString());
+        Assert.Equal("the.band", artist.GetProperty("instagram_handle").GetString()); // leading @ dropped
+        Assert.Equal("theband", artist.GetProperty("x_handle").GetString());
+
+        var invalid = await ProblemAsync(await PatchMeAsync(token, new
+        {
+            band_url = "http://example.test", instagram_handle = "no spaces", x_handle = new string('x', 16),
+        }), 422);
+        Assert.Equal(3, invalid.GetProperty("errors").GetArrayLength());
+
+        var contradiction = await ProblemAsync(await PatchMeAsync(token, new { is_artist = false, x_handle = "theband" }), 422);
+        Assert.Equal("x_handle", contradiction.GetProperty("errors")[0].GetProperty("field").GetString());
+        var doubleAt = await ProblemAsync(await PatchMeAsync(token, new { x_handle = "@@theband" }), 422);
+        Assert.Equal("x_handle", doubleAt.GetProperty("errors")[0].GetProperty("field").GetString());
+
+        var cleared = await JsonAsync(await PatchMeAsync(token, new { x_handle = (string?)null }), HttpStatusCode.OK);
+        Assert.Equal(JsonValueKind.Null, cleared.GetProperty("x_handle").ValueKind);
+        Assert.Equal("the.band", cleared.GetProperty("instagram_handle").GetString());
+
+        // Leaving the artist role drops the links (also when the client clears one explicitly in the same request).
+        var fan = await JsonAsync(await PatchMeAsync(token, new { is_artist = false, band_url = (string?)null }), HttpStatusCode.OK);
+        Assert.False(fan.GetProperty("is_artist").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, fan.GetProperty("band_url").ValueKind);
+        Assert.Equal(JsonValueKind.Null, fan.GetProperty("instagram_handle").ValueKind);
+    }
+
+    [Fact]
     public async Task Deleting_the_account_ends_access_and_frees_the_identity()
     {
         var idToken = TestAuth.IdToken("g-1", "fan@example.test");

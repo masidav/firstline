@@ -1600,6 +1600,17 @@ export interface components {
             is_staff?: boolean;
             /** Format: date-time */
             created_at: string;
+            /** @description The fan is an artist. The band links below are only kept while this is true. */
+            is_artist: boolean;
+            /**
+             * Format: uri
+             * @description The band's profile page (an https link, e.g. a Spotify artist page or website).
+             */
+            band_url?: string | null;
+            /** @description The band's Instagram handle without the @; the link is `https://instagram.com/{handle}`. */
+            instagram_handle?: string | null;
+            /** @description The band's X handle without the @; the link is `https://x.com/{handle}`. */
+            x_handle?: string | null;
             /** @description Same as `GET /me/spotify`. */
             spotify?: components["schemas"]["SpotifyStatus"];
             /** @description Primary first. Empty until the fan chooses them (the app asks right after sign-up). */
@@ -1627,6 +1638,17 @@ export interface components {
              * @description Null removes the avatar. Setting one needs uploads (`POST /uploads`), not available yet.
              */
             avatar_upload_id?: string | null;
+            /** @description Setting false also clears `band_url`, `instagram_handle`, and `x_handle`. */
+            is_artist?: boolean;
+            /**
+             * Format: uri
+             * @description Null clears it. Needs `is_artist` (422 otherwise).
+             */
+            band_url?: string | null;
+            /** @description A leading @ is dropped. Null clears it. Needs `is_artist` (422 otherwise). */
+            instagram_handle?: string | null;
+            /** @description A leading @ is dropped. Null clears it. Needs `is_artist` (422 otherwise). */
+            x_handle?: string | null;
         };
         SpotifyConnect: {
             code: string;

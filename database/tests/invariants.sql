@@ -1040,4 +1040,29 @@ BEGIN
   END;
 END $$;
 
+-- ------------------------------------------------------------ artist profile (0016)
+-- Links need the artist flag; handles are bare; deletion clears the flag and links and they stay empty.
+INSERT INTO users (id, handle, email, is_artist, band_url, instagram_handle, x_handle) VALUES
+  ('00000000-0000-0000-0000-000000000013', 'gina', 'gina@example.test', true,
+   'https://open.spotify.com/artist/abc', 'gina.band', 'ginaband');
+SELECT pg_temp.expect_error(
+  $$UPDATE users SET is_artist = false WHERE id = '00000000-0000-0000-0000-000000000013'$$, 'users_artist_links');
+SELECT pg_temp.expect_error(
+  $$UPDATE users SET band_url = 'http://example.test' WHERE id = '00000000-0000-0000-0000-000000000013'$$, 'users_band_url_check');
+SELECT pg_temp.expect_error(
+  $$UPDATE users SET instagram_handle = '@gina' WHERE id = '00000000-0000-0000-0000-000000000013'$$, 'users_instagram_handle_check');
+SELECT pg_temp.expect_error(
+  $$UPDATE users SET x_handle = 'this_handle_is_too_long' WHERE id = '00000000-0000-0000-0000-000000000013'$$, 'users_x_handle_check');
+UPDATE users SET deleted_at = now() WHERE id = '00000000-0000-0000-0000-000000000013';
+DO $$
+DECLARE u users%ROWTYPE;
+BEGIN
+  SELECT * INTO u FROM users WHERE id = '00000000-0000-0000-0000-000000000013';
+  ASSERT NOT u.is_artist AND u.band_url IS NULL AND u.instagram_handle IS NULL AND u.x_handle IS NULL,
+         'deletion clears the artist flag and links';
+END $$;
+SELECT pg_temp.expect_error(
+  $$UPDATE users SET is_artist = true WHERE id = '00000000-0000-0000-0000-000000000013'$$, 'personal fields stay empty');
+DELETE FROM users WHERE id = '00000000-0000-0000-0000-000000000013';
+
 \echo ALL INVARIANT TESTS PASSED
