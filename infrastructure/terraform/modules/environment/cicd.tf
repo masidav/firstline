@@ -55,3 +55,24 @@ resource "google_project_iam_member" "deploy_cluster" {
   role    = "roles/container.developer"
   member  = google_service_account.deploy.member
 }
+
+# deploy.sh takes an on-demand Cloud SQL backup right before the migrate Job, so a bad migration on an environment
+# with real users (beta, prod) can be undone by restoring the moment before it ran. Backup permissions only.
+resource "google_project_iam_custom_role" "deploy_backup" {
+  role_id     = "fandomscoreDeployBackup"
+  project     = var.project_id
+  title       = "Fandom Score deploy backups (${var.environment})"
+  description = "Create and read Cloud SQL on-demand backups before running migrations."
+  permissions = [
+    "cloudsql.backupRuns.create",
+    "cloudsql.backupRuns.get",
+    "cloudsql.backupRuns.list",
+    "cloudsql.instances.get",
+  ]
+}
+
+resource "google_project_iam_member" "deploy_backup" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.deploy_backup.id
+  member  = google_service_account.deploy.member
+}

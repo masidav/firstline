@@ -19,12 +19,21 @@
 | Edge protection | **Cloud Armor** (WAF rules, rate limiting, bot management), optionally reCAPTCHA Enterprise on registration | Bots are the product's main adversary; on-sale registration must be defended at the edge. |
 | Cache/queue | Memorystore for Redis only if the job library or rate limiting needs it | Postgres-backed jobs may make it unnecessary (ADR 0001 open item). |
 | Infrastructure as code | **Terraform** for GCP resources; **Kustomize** overlays for Kubernetes manifests | Reviewable, repeatable environments. |
-| CI/CD | GitHub Actions (or Cloud Build) using Workload Identity Federation; staging auto-deploys, prod needs approval | No long-lived cloud credentials in CI. |
+| CI/CD | GitHub Actions (or Cloud Build) using Workload Identity Federation; beta auto-deploys, prod needs approval | No long-lived cloud credentials in CI. |
 | Observability | Cloud Logging (the API already logs JSON), Cloud Monitoring, OpenTelemetry traces to Cloud Trace, uptime checks | Managed and already integrated with GKE. |
 
 ## Environments
-`dev`, `staging`, `prod` as separate GCP projects. Staging mirrors prod at a smaller size and holds only
-synthetic data, so UI tests and load tests can run against it safely.
+Amended 2026-10-24. Three environments, two of them in the cloud:
+- **dev** runs on the developer's machine (`127.0.0.1`): docker-compose PostgreSQL, `dotnet run`, the app in the
+  browser, and fake data from `tools/dev/seed.py`. There is no GCP dev project.
+- **beta** is a GCP project with real beta testers. Every push to `main` deploys there after CI, with a Cloud SQL
+  backup before migrations, additive-only migrations enforced by CI, and a health check after the rollout
+  (`infrastructure/README.md`, "Changing beta (and prod) without breaking them").
+- **prod** is a GCP project at full size; the images that ran on beta are promoted after approval.
+
+The original plan had a synthetic-data `staging` project between dev and prod. It was dropped: the local seed
+gives every developer a full data set, and a small group of real testers on beta finds what synthetic data
+doesn't. Load tests run against a seeded local stack or against beta outside testers' hours.
 
 ## On-sale traffic
 Allocation registration opens at announced times, so traffic arrives in sharp spikes:
@@ -32,7 +41,7 @@ Allocation registration opens at announced times, so traffic arrives in sharp sp
 - Use HorizontalPodAutoscalers for normal load, and PodDisruptionBudgets so upgrades don't drop capacity.
 - Keep registration writes small and idempotent. Run selection as a background job after the window closes,
   not on the request path.
-- Load-test the expected peak with k6 against staging before every pilot (see the UI testing and launch plan).
+- Load-test the expected peak with k6 against a seeded local stack, or beta outside testers' hours, before every pilot (see the UI testing and launch plan).
 
 ## Consequences
 - Running Cloud SQL with high availability roughly doubles the database cost. Use it in prod only.
