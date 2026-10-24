@@ -71,7 +71,14 @@ export function YourArtists() {
           imageUrl={score.artist.image_url}
           note={describeScore(score)}
           onPress={() => router.push(`/artist/${score.artist_id}/albums`)}
-        />
+        >
+          <Button
+            label="Score"
+            accessibilityLabel={`Your ${score.artist.name} score`}
+            kind="secondary"
+            onPress={() => router.push(`/artist/${score.artist_id}/score`)}
+          />
+        </ArtistRow>
       ))}
       {scores.some((score) => score.is_estimated) && (
         <Body muted>An estimate means few fans of that artist are here yet; it settles as more join.</Body>

@@ -65,6 +65,8 @@ test('with an empty search box, your artists show with their scores', async () =
   expect(screen.getByText('Top 60% of fans · score 61')).toBeTruthy();
   expect(screen.getByText(/An estimate means few fans/)).toBeTruthy();
   expect(calls('/me/scores')[0]?.[1]).toEqual({ params: { query: { sort: 'percentile', limit: 100 } } });
+  fireEvent.press(screen.getByRole('button', { name: 'Your Geese score' }));
+  expect(jest.requireMock('expo-router').router.push).toHaveBeenCalledWith('/artist/id-Geese/score');
 
   // Typing replaces them with search results.
   fireEvent.changeText(screen.getByLabelText('Search artists'), 'zz');

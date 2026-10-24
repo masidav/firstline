@@ -18,12 +18,9 @@ export function ArtistRow({
   /** When set, the row itself is a button (e.g. opens the artist's albums). */
   onPress?: () => void;
 }) {
-  const Row = onPress ? Pressable : View;
-  return (
-    <Row
-      style={styles.row}
-      {...(onPress ? { onPress, accessibilityRole: 'button' as const, accessibilityLabel: `Open ${name}` } : {})}
-    >
+  // The action on the right stays outside the pressable area, so buttons are never nested.
+  const body = (
+    <>
       {imageUrl ? (
         <Image source={{ uri: imageUrl }} style={styles.image} accessibilityIgnoresInvertColors />
       ) : (
@@ -35,13 +32,25 @@ export function ArtistRow({
         </Text>
         {note ? <Text style={styles.note}>{note}</Text> : null}
       </View>
+    </>
+  );
+  return (
+    <View style={styles.row}>
+      {onPress ? (
+        <Pressable style={styles.main} onPress={onPress} accessibilityRole="button" accessibilityLabel={`Open ${name}`}>
+          {body}
+        </Pressable>
+      ) : (
+        <View style={styles.main}>{body}</View>
+      )}
       {children ? <View style={styles.rowAction}>{children}</View> : null}
-    </Row>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  main: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md },
   image: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.surface },
   rowText: { flex: 1, gap: 2 },
   rowAction: { minWidth: 88 },

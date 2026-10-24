@@ -89,7 +89,10 @@ Details: [Spotify API feature](services/api/src/features/spotify-sync/TODO.md) �
 - [x] Implement synthetic baseline generation and real/synthetic percentile blending.
 - [x] Store and refresh computed scores for active artists only. Worker `scoring.score_artist` after syncs,
       weight changes, on request, and daily. Verified 2026-10-21: `dotnet test` 128/128.
-- [ ] Label estimates in the UI and test score edge cases.
+- [x] Label estimates in the UI and test score edge cases. Score screen in the fan app (`/artist/{id}/score`):
+      percentile, estimate label with the baseline share, what a percentile means, every signal with its count and
+      share, onboarding/computing/unavailable states with polling and Refresh. Verified 2026-10-24: fan app
+      typecheck and jest (`ScoreScreen.test.tsx`, `score.test.ts`).
 
 Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring worker](workers/scoring/TODO.md) · [Fandom score UI](apps/mobile/src/features/fandom-score/TODO.md)
 
