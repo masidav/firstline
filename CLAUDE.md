@@ -35,6 +35,8 @@ Local setup: `docs/DEVELOPMENT.md`. If the .NET SDK isn't installed, run these i
 - **The points ledger (`score_events`) is append-only.** Reverse awards with `reverse_points()`; never update or delete.
 - **Only tracked artists** are synced, scored, journaled, or verified. Don't store untracked-artist listening data.
 - **Never archive unredacted submission files.**
+- **No secrets in the repo, in `appsettings*.json`, or in logs.** Configuration comes from environment variables;
+  `.env.example` holds placeholders only. Never read or edit `.env`.
 - Errors are RFC 9457 problem+json with a stable `code` from `openapi.yaml` (`ApiProblemException`).
 - Every `/v1` endpoint requires sign-in unless it calls `AllowAnonymous()`. Staff-only (`/admin`) endpoints add
   `RequireAuthorization(AuthSetup.StaffPolicy)`.
@@ -49,5 +51,5 @@ Local setup: `docs/DEVELOPMENT.md`. If the .NET SDK isn't installed, run these i
   Commit and push when a piece of work is done and verified; no need to wait to be asked.
 - Run `dotnet build` and `dotnet test` before committing, and report the actual results.
   CI (`.github/workflows/ci.yml`) runs on every push to `main`; check that it passes.
-- Hooks in `.claude/settings.json` block edits to applied migrations. Their reviewed source
+- Hooks in `.claude/settings.json` block edits to applied migrations and `.env` files. Their reviewed source
   is `tools/claude-config/`; change it there first, then copy.

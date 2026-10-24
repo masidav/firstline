@@ -42,6 +42,14 @@ two for a +1; with one seat left, a fan with a +1 gets it alone (provisional). T
 `allocation_selections`, so anyone can rerun the ranking and get the same order. Outcomes, ranks, and seats are written
 only by the draw (a guard trigger checks a transaction setting), and a selected allocation can't be cancelled.
 
+## Standing ("you'll most likely get a ticket")
+`GET /v1/allocations/{id}/eligibility` includes `standing` while registration is upcoming or open: the fan's rank if
+the draw ran now (ranked like the draw, but equal scores count against the fan), the top percent, and `likely`. It is
+true only when the seats of everyone ranked ahead plus the fan's own (2 with a +1) fit within `tickets` minus a
+margin, `Allocations:LikelyMarginSeats` (25 to start, decided 2026-10-24), which leaves room for fans who register
+later with higher scores. `?plus_one=true` projects a +1 for a fan who hasn't registered yet. The app shows it on the
+show screen above the Register button.
+
 ## Endpoints
 - Fans: `GET /v1/artists/{id}/events` (upcoming shows, `tickets_available`), `GET /v1/events/{id}` (a show and
   its published allocations), `GET /v1/allocations/{id}/eligibility`, `PUT`/`DELETE /v1/allocations/{id}/registration`,

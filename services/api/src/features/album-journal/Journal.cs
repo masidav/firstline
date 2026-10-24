@@ -53,7 +53,8 @@ public static class Journal
     /// Which logs the viewer may see: their own, and public ones. Followers-only logs are visible to their owner
     /// alone until follows exist (Phase 8); private logs are 404 to everyone else.
     /// </summary>
-    public const string VisibleToViewer = "(l.user_id = @viewer OR l.visibility = 'public')";
+    // Taken-down logs (moderation) stay visible to their author only.
+    public const string VisibleToViewer = "(l.user_id = @viewer OR (l.visibility = 'public' AND l.removed_at IS NULL))";
 
     /// <summary>Album columns with community stats (needs alias <c>a</c> for albums and <c>ar</c> for artists).</summary>
     public const string AlbumSelect =
@@ -62,9 +63,9 @@ public static class Journal
                CASE WHEN a.delisted_at IS NULL THEN a.cover_url END AS CoverUrl,
                CASE WHEN a.delisted_at IS NULL THEN a.spotify_album_id END AS SpotifyAlbumId,
                a.album_type AS AlbumType, (a.delisted_at IS NOT NULL) AS Delisted,
-               (SELECT count(*) FROM album_logs l WHERE l.album_id = a.id AND l.deleted_at IS NULL)::int AS LogCount,
+               (SELECT count(*) FROM album_logs l WHERE l.album_id = a.id AND l.deleted_at IS NULL AND l.removed_at IS NULL)::int AS LogCount,
                (SELECT round(avg(l.rating) / 2.0, 2) FROM album_logs l
-                 WHERE l.album_id = a.id AND l.deleted_at IS NULL AND l.rating IS NOT NULL) AS AverageRating,
+                 WHERE l.album_id = a.id AND l.deleted_at IS NULL AND l.removed_at IS NULL AND l.rating IS NOT NULL) AS AverageRating,
                ar.id AS ArtistId, ar.name AS ArtistName, ar.image_url AS ArtistImageUrl
         FROM albums a JOIN artists ar ON ar.id = a.artist_id
         """;

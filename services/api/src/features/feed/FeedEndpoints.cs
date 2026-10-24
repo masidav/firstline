@@ -72,7 +72,7 @@ public static class FeedEndpoints
                      NULL, NULL, NULL, NULL,
                      al.id, al.title, al.cover_url, l.rating, l.review, l.is_relisten, l.listened_on
               FROM album_logs l JOIN albums al ON al.id = l.album_id
-              WHERE l.deleted_at IS NULL AND l.visibility = 'public'
+              WHERE l.deleted_at IS NULL AND l.removed_at IS NULL AND l.visibility = 'public'
             ) item
             JOIN users u ON u.id = item.UserId AND u.deleted_at IS NULL
             JOIN artists a ON a.id = item.ArtistId AND a.status = 'active'

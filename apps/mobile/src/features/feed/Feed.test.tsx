@@ -3,10 +3,11 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import { Feed, stars } from './Feed';
 
 const ok = (data: unknown) => ({ data, response: { ok: true, status: 200 } });
-const mockApi = { GET: jest.fn() };
+const mockApi = { GET: jest.fn(), POST: jest.fn() };
 const mockSession = { api: mockApi };
+const mockState = { status: 'signedIn', me: { handle: 'fan_one' } };
 
-jest.mock('../../auth/SessionProvider', () => ({ useSession: () => ({ session: mockSession }) }));
+jest.mock('../../auth/SessionProvider', () => ({ useSession: () => ({ session: mockSession, state: mockState }) }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 
 const artist = { id: 'a1', name: 'Geese', image_url: null };
@@ -57,4 +58,24 @@ test('an empty feed says how to fill it', async () => {
 test('stars are half steps', () => {
   expect(stars(10)).toBe('★ 5');
   expect(stars(7)).toBe('★ 3.5');
+});
+
+test("other fans' posts can be reported; your own can't", async () => {
+  mockApi.GET.mockResolvedValue(ok({ items: [photo, log], next_cursor: null }));
+  mockApi.POST.mockResolvedValue({ data: undefined, response: { ok: true, status: 202 } });
+  render(<Feed />);
+
+  // fan_one wrote the log (as "Ana"), so only fan_two's photo has a Report link.
+  fireEvent.press(await screen.findByRole('button', { name: "Report @fan_two's post" }));
+  expect(screen.queryByRole('button', { name: "Report Ana's post" })).toBeNull();
+
+  expect(screen.getByRole('button', { name: 'Send report' })).toBeDisabled();
+  fireEvent.press(screen.getByRole('radio', { name: 'Inappropriate' }));
+  fireEvent.changeText(screen.getByLabelText('Details (optional)'), '  Not ok  ');
+  fireEvent.press(screen.getByRole('button', { name: 'Send report' }));
+
+  expect(await screen.findByText('Thanks. Staff will look at it.')).toBeTruthy();
+  expect(mockApi.POST).toHaveBeenCalledWith('/reports', {
+    body: { target_type: 'photo', target_id: 's1', reason: 'inappropriate', details: 'Not ok' },
+  });
 });

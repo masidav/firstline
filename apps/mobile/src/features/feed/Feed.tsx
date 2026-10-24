@@ -8,6 +8,7 @@ import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { concertLine } from '../submissions/photoUpload';
+import { ReportForm } from './ReportForm';
 
 export type FeedItem = components['schemas']['FeedItem'];
 
@@ -15,7 +16,8 @@ const PAGE = 20;
 
 /** The home feed (GET /feed): photos fans shared and new public album logs, everyone's, newest first. */
 export function Feed() {
-  const { session } = useSession();
+  const { session, state } = useSession();
+  const myHandle = state?.status === 'signedIn' ? state.me.handle : null;
   const [items, setItems] = useState<FeedItem[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState<string>();
@@ -54,14 +56,24 @@ export function Feed() {
       <ErrorText>{error}</ErrorText>
       {error && <Button label="Try again" kind="secondary" onPress={() => void load()} />}
       {items?.length === 0 && <Body muted>Nothing yet. Log an album or post a photo and it shows up here.</Body>}
-      {items?.map((item) => <FeedCard key={`${item.type}:${item.id}`} item={item} />)}
+      {items?.map((item) => (
+        <FeedCard key={`${item.type}:${item.id}`} item={item} mine={item.user.handle != null && item.user.handle === myHandle} />
+      ))}
       {cursor && <Button label="Show more" kind="secondary" busy={loadingMore} onPress={() => void more()} />}
     </View>
   );
 }
 
-function FeedCard({ item }: { item: FeedItem }) {
+function FeedCard({ item, mine }: { item: FeedItem; mine: boolean }) {
+  const [reporting, setReporting] = useState(false);
   const who = item.user.display_name || `@${item.user.handle ?? 'someone'}`;
+  const report = mine ? null : reporting ? (
+    <ReportForm targetType={item.type === 'photo' ? 'photo' : 'log'} targetId={item.id} onClose={() => setReporting(false)} />
+  ) : (
+    <Pressable accessibilityRole="button" accessibilityLabel={`Report ${who}'s post`} onPress={() => setReporting(true)} hitSlop={8}>
+      <Text style={styles.report}>Report</Text>
+    </Pressable>
+  );
   if (item.type === 'photo' && item.photo) {
     const what = item.photo.kind === 'merch' ? 'merch' : 'a concert photo';
     return (
@@ -79,19 +91,20 @@ function FeedCard({ item }: { item: FeedItem }) {
         )}
         {item.photo.concert ? <Text style={styles.muted}>{concertLine(item.photo.concert)}</Text> : null}
         {item.photo.caption ? <Text style={styles.text}>{item.photo.caption}</Text> : null}
+        {report}
       </View>
     );
   }
   if (item.type === 'album_log' && item.log) {
     const log = item.log;
     return (
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${who} logged ${log.album.title} by ${item.artist.name}`}
-        onPress={() => router.push(`/album/${log.album.id}`)}
-        style={styles.card}
-      >
-        <View style={styles.logRow}>
+      <View style={styles.card}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${who} logged ${log.album.title} by ${item.artist.name}`}
+          onPress={() => router.push(`/album/${log.album.id}`)}
+          style={styles.logRow}
+        >
           {log.album.cover_url ? <Image source={{ uri: log.album.cover_url }} style={styles.cover} /> : <View style={styles.cover} />}
           <View style={styles.logText}>
             <Text style={styles.line}>
@@ -105,9 +118,10 @@ function FeedCard({ item }: { item: FeedItem }) {
               {log.rating != null ? ` · ${stars(log.rating)}` : ''}
             </Text>
           </View>
-        </View>
+        </Pressable>
         {log.review ? <Text style={styles.text}>{log.review}</Text> : null}
-      </Pressable>
+        {report}
+      </View>
     );
   }
   return null;
@@ -130,4 +144,5 @@ const styles = StyleSheet.create({
   logRow: { flexDirection: 'row', gap: space.md, alignItems: 'center' },
   cover: { width: 56, height: 56, borderRadius: 6, backgroundColor: colors.surface },
   logText: { flex: 1, gap: 2 },
+  report: { color: colors.muted, fontSize: 13, textDecorationLine: 'underline', alignSelf: 'flex-end' },
 });
