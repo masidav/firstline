@@ -2114,7 +2114,7 @@ export interface components {
                 top_tracks: number;
                 /** @description Tracked artists the fan follows on Spotify */
                 followed_artists: number;
-                /** @description Plays of tracked artists in the last 90 days (play ledger */
+                /** @description Plays of tracked artists in the last 90 days (play ledger, polled hourly) */
                 plays_last_quarter: number;
             };
             journal: {
@@ -2181,7 +2181,7 @@ export interface components {
                     /** @description Plays in the last 90 days */
                     plays_last_quarter?: number;
                     streak_weeks?: number;
-                    /** @description Catalog tracks saved */
+                    /** @description Catalog tracks saved, in a playlist, or played */
                     tracks_touched?: number;
                     deep_cuts?: number;
                     catalog_releases?: number;
