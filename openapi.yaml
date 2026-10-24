@@ -2082,7 +2082,7 @@ components:
         user: {$ref: '#/components/schemas/Me'}
     Me:
       type: object
-      required: [id, handle, email, created_at, hub_cities]
+      required: [id, handle, email, created_at, hub_cities, is_artist]
       properties:
         id: {type: string, format: uuid}
         handle: {type: string}
@@ -2091,6 +2091,19 @@ components:
         avatar_url: {type: [string, 'null'], format: uri}
         is_staff: {type: boolean}
         created_at: {type: string, format: date-time}
+        is_artist:
+          type: boolean
+          description: The fan is an artist. The band links below are only kept while this is true.
+        band_url:
+          type: [string, 'null']
+          format: uri
+          description: The band's profile page (an https link, e.g. a Spotify artist page or website).
+        instagram_handle:
+          type: [string, 'null']
+          description: The band's Instagram handle without the @; the link is `https://instagram.com/{handle}`.
+        x_handle:
+          type: [string, 'null']
+          description: The band's X handle without the @; the link is `https://x.com/{handle}`.
         spotify:
           $ref: '#/components/schemas/SpotifyStatus'
           description: Same as `GET /me/spotify`.
@@ -2120,6 +2133,23 @@ components:
           type: [string, 'null']
           format: uuid
           description: Null removes the avatar. Setting one needs uploads (`POST /uploads`), not available yet.
+        is_artist:
+          type: boolean
+          description: Setting false also clears `band_url`, `instagram_handle`, and `x_handle`.
+        band_url:
+          type: [string, 'null']
+          format: uri
+          maxLength: 200
+          pattern: '^https://[^\s/]+'
+          description: Null clears it. Needs `is_artist` (422 otherwise).
+        instagram_handle:
+          type: [string, 'null']
+          pattern: '^@?[A-Za-z0-9._]{1,30}$'
+          description: A leading @ is dropped. Null clears it. Needs `is_artist` (422 otherwise).
+        x_handle:
+          type: [string, 'null']
+          pattern: '^@?[A-Za-z0-9_]{1,15}$'
+          description: A leading @ is dropped. Null clears it. Needs `is_artist` (422 otherwise).
     SpotifyConnect:
       type: object
       required: [code, code_verifier, redirect_uri]

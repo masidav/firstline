@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Dapper;
 using FandomScore.Api.Features.Authentication;
 using FandomScore.Api.Infrastructure;
@@ -85,6 +86,64 @@ public static class MeEndpoints
             }
         }
 
+        if (body.TryGetProperty("is_artist", out var isArtist))
+        {
+            if (isArtist.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                sets.Add("is_artist = @is_artist");
+                parameters.Add("is_artist", isArtist.GetBoolean());
+                if (!isArtist.GetBoolean())
+                {
+                    // Links only exist for artists (users_artist_links); leaving the artist role drops them.
+                    sets.Add("band_url = NULL");
+                    sets.Add("instagram_handle = NULL");
+                    sets.Add("x_handle = NULL");
+                }
+            }
+            else
+            {
+                errors.Add(new FieldError("is_artist", "Send true or false."));
+            }
+        }
+
+        var links = new (string Field, Regex Pattern, string Rule, Func<string, string> Normalize)[]
+        {
+            ("band_url", UserProfiles.BandUrlPattern(), UserProfiles.BandUrlRule, static v => v),
+            ("instagram_handle", UserProfiles.InstagramHandlePattern(), UserProfiles.InstagramHandleRule, DropAt),
+            ("x_handle", UserProfiles.XHandlePattern(), UserProfiles.XHandleRule, DropAt),
+        };
+        foreach (var (field, pattern, rule, normalize) in links)
+        {
+            if (!body.TryGetProperty(field, out var link))
+            {
+                continue;
+            }
+
+            if (link.ValueKind == JsonValueKind.Null)
+            {
+                if (isArtist.ValueKind != JsonValueKind.False)
+                {
+                    sets.Add($"{field} = NULL"); // is_artist: false already clears it
+                }
+            }
+            else if (link.ValueKind == JsonValueKind.String && normalize(link.GetString()!.Trim()) is { } value
+                     && value.Length <= UserProfiles.BandUrlMaxLength && pattern.IsMatch(value))
+            {
+                if (isArtist.ValueKind == JsonValueKind.False)
+                {
+                    errors.Add(new FieldError(field, UserProfiles.LinksNeedArtistRule));
+                    continue;
+                }
+
+                sets.Add($"{field} = @{field}");
+                parameters.Add(field, value);
+            }
+            else
+            {
+                errors.Add(new FieldError(field, rule));
+            }
+        }
+
         if (errors.Count > 0)
         {
             throw ApiProblemException.Validation([.. errors]);
@@ -102,10 +161,17 @@ public static class MeEndpoints
             {
                 throw UserProfiles.HandleTaken();
             }
+            catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.CheckViolation && e.ConstraintName == "users_artist_links")
+            {
+                throw ApiProblemException.Validation(new FieldError("is_artist", UserProfiles.LinksNeedArtistRule));
+            }
         }
 
         return Results.Ok(await LoadAsync(connection, user.UserId()));
     }
+
+    // One leading @ is allowed, as in openapi MeUpdate's handle patterns.
+    private static string DropAt(string handle) => handle.StartsWith('@') ? handle[1..] : handle;
 
     public sealed record DeleteMeRequest(string? AppleAuthorizationCode);
 
