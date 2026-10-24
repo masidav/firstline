@@ -2590,7 +2590,7 @@ components:
             saved_albums: {type: integer, description: Tracked artists' albums in the fan's saved albums}
             top_tracks: {type: integer, description: Tracked artists' tracks among the fan's Spotify top tracks}
             followed_artists: {type: integer, description: Tracked artists the fan follows on Spotify}
-            plays_last_quarter: {type: integer, description: Plays of tracked artists in the last 90 days (play ledger, polled hourly)}
+            plays_last_quarter: {type: integer, description: 'Plays of tracked artists in the last 90 days (play ledger, polled hourly)'}
         journal:
           type: object
           required: [logs, albums_logged, relistens, reviews, ratings, lists, comments]
@@ -2658,7 +2658,7 @@ components:
                 followed: {type: boolean}
                 plays_last_quarter: {type: integer, description: Plays in the last 90 days}
                 streak_weeks: {type: integer}
-                tracks_touched: {type: integer, description: Catalog tracks saved, in a playlist, or played}
+                tracks_touched: {type: integer, description: 'Catalog tracks saved, in a playlist, or played'}
                 deep_cuts: {type: integer}
                 catalog_releases: {type: integer}
                 catalog_tracks: {type: integer}
