@@ -62,6 +62,8 @@ tags:
   - name: Feed
   - name: Share and shop
   - name: Social
+  - name: Allocations
+    description: Shows and their fan allocations (face-value tickets set aside for top fans).
   - name: Webhooks
   - name: Admin
   - name: Meta
@@ -616,6 +618,9 @@ paths:
       tags: [Artists]
       operationId: listArtistEvents
       summary: Upcoming events
+      description: |
+        The artist's shows, soonest first. `tickets_available` is true while a published fan allocation is upcoming or
+        open for registration. Past shows only with `include_past`.
       parameters:
         - {name: include_past, in: query, schema: {type: boolean, default: false}}
         - {$ref: '#/components/parameters/Limit'}
@@ -627,6 +632,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/EventPage'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
   /artists/{artistId}/stats:
     parameters:
       - {$ref: '#/components/parameters/ArtistId'}
@@ -1421,6 +1427,260 @@ paths:
         '200': {description: Processed}
         '401': {$ref: '#/components/responses/Unauthorized'}
 
+  # ------------------------------------------------------------------ Allocations
+  /events/{eventId}:
+    parameters:
+      - {$ref: '#/components/parameters/EventId'}
+    get:
+      tags: [Allocations]
+      operationId: getEvent
+      summary: A show and its fan allocations
+      description: Published allocations only (including cancelled ones). Drafts are visible to staff only.
+      responses:
+        '200':
+          description: Show
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EventDetail'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /allocations/{allocationId}/eligibility:
+    parameters:
+      - {$ref: '#/components/parameters/AllocationId'}
+    get:
+      tags: [Allocations]
+      operationId: getEligibility
+      summary: Can I register for this allocation?
+      description: |
+        `reason` says why not: `not_open`, `artist_not_active`, `hub_city_required`, `no_score`,
+        `below_threshold`, or `already_registered` (for another allocation of the same show). `percentile` and
+        `hub_match` are the fan's current standing; a registration keeps the values from when it was made.
+      responses:
+        '200':
+          description: Eligibility
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Eligibility'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /allocations/{allocationId}/registration:
+    parameters:
+      - {$ref: '#/components/parameters/AllocationId'}
+    put:
+      tags: [Allocations]
+      operationId: register
+      summary: Register for an allocation
+      description: |
+        Registers the fan while registration is open, keeping a snapshot of their hub cities and score. One
+        registration per fan per show. Registering again returns the existing registration (`200`).
+      responses:
+        '200':
+          description: Already registered
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Registration'}
+        '201':
+          description: Registered
+          headers:
+            Location: {schema: {type: string}, description: '`/v1/allocations/{allocationId}/registration`'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Registration'}
+        '403':
+          description: 'No score for the artist, or below the threshold (`code: not_eligible`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: |
+            `registration_closed` (not open), `artist_not_active`, `hub_city_required`, or `already_registered`
+            (registered for another allocation of the same show)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+    delete:
+      tags: [Allocations]
+      operationId: withdraw
+      summary: Withdraw a registration
+      description: |
+        Allowed while registration is open. The registration is kept as withdrawn. Cancelling an allocation withdraws
+        its registrations automatically, and deleting an account withdraws the fan's.
+      responses:
+        '204': {description: Withdrawn}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: 'Registration has closed (`code: registration_closed`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+  /me/registrations:
+    get:
+      tags: [Allocations]
+      operationId: listMyRegistrations
+      summary: My registrations
+      description: Newest first, withdrawn ones included, at most 100.
+      responses:
+        '200':
+          description: Registrations
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/MyRegistration'}
+  /admin/events:
+    post:
+      tags: [Admin, Allocations]
+      operationId: createEvent
+      summary: Add a show
+      description: Staff only until promoter organizations exist. The city is one of the hub cities (`GET /cities`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EventCreate'}
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: {schema: {type: string}, description: '`/v1/events/{eventId}`'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EventDetail'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /admin/events/{eventId}:
+    parameters:
+      - {$ref: '#/components/parameters/EventId'}
+    get:
+      tags: [Admin, Allocations]
+      operationId: getEventForStaff
+      summary: A show with all its allocations, drafts included
+      responses:
+        '200':
+          description: Show
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EventDetail'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      tags: [Admin, Allocations]
+      operationId: updateEvent
+      summary: Change a show
+      description: |
+        Partial update. Once an allocation for the show has opened, its time and city are locked
+        (`allocation_locked`), and the show can never move to before an allocation's registration closes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EventUpdate'}
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EventDetail'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/AllocationLocked'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /admin/events/{eventId}/allocations:
+    parameters:
+      - {$ref: '#/components/parameters/EventId'}
+    post:
+      tags: [Admin, Allocations]
+      operationId: createAllocation
+      summary: Set aside a fan allocation (as a draft)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AllocationCreate'}
+      responses:
+        '201':
+          description: Draft created
+          headers:
+            Location: {schema: {type: string}, description: '`/v1/admin/allocations/{allocationId}`'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Allocation'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /admin/allocations/{allocationId}:
+    parameters:
+      - {$ref: '#/components/parameters/AllocationId'}
+    patch:
+      tags: [Admin, Allocations]
+      operationId: updateAllocation
+      summary: Change an allocation's rules
+      description: Partial update. Allowed until registration opens; after that, `allocation_locked`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AllocationUpdate'}
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Allocation'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/AllocationLocked'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+    delete:
+      tags: [Admin, Allocations]
+      operationId: deleteAllocationDraft
+      summary: Delete a draft
+      description: Only drafts; a published allocation is cancelled instead (`409 conflict`).
+      responses:
+        '204': {description: Deleted}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /admin/allocations/{allocationId}/publish:
+    parameters:
+      - {$ref: '#/components/parameters/AllocationId'}
+    post:
+      tags: [Admin, Allocations]
+      operationId: publishAllocation
+      summary: Show an allocation to fans
+      description: |
+        Needs an active artist and a show with a city (`409 conflict` otherwise). Can't be undone. Publishing again
+        returns the allocation unchanged.
+      responses:
+        '200':
+          description: Published
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Allocation'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /admin/allocations/{allocationId}/cancel:
+    parameters:
+      - {$ref: '#/components/parameters/AllocationId'}
+    post:
+      tags: [Admin, Allocations]
+      operationId: cancelAllocation
+      summary: Cancel a published allocation
+      description: Can't be undone; cancelling again returns it unchanged. Drafts are deleted instead (`409 conflict`).
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Allocation'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
   # ------------------------------------------------------------------ Admin
   /admin/reviews:
     get:
@@ -1662,6 +1922,10 @@ components:
       schema: {type: string, maxLength: 64}
     ArtistId:
       {name: artistId, in: path, required: true, schema: {type: string, format: uuid}}
+    EventId:
+      {name: eventId, in: path, required: true, schema: {type: string, format: uuid}}
+    AllocationId:
+      {name: allocationId, in: path, required: true, schema: {type: string, format: uuid}}
     AlbumId:
       {name: albumId, in: path, required: true, schema: {type: string, format: uuid}}
     LogId:
@@ -1693,6 +1957,11 @@ components:
           schema: {$ref: '#/components/schemas/Problem'}
     Conflict:
       description: State conflict
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    AllocationLocked:
+      description: 'Registration has opened, so the allocation''s rules and the show''s time and city are fixed (`code: allocation_locked`)'
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
@@ -1741,6 +2010,11 @@ components:
             - idempotency_conflict
             - rate_limited
             - artist_add_limit
+            - allocation_locked
+            - registration_closed
+            - hub_city_required
+            - not_eligible
+            - already_registered
             - hub_change_limit
             - artist_not_active
             - spotify_artist_not_found
@@ -1983,16 +2257,132 @@ components:
               share: {type: number}
     Event:
       type: object
-      required: [id, artist_id, name, starts_at]
+      required: [id, artist_id, name, starts_at, tickets_available]
       properties:
         id: {type: string, format: uuid}
         artist_id: {type: string, format: uuid}
         name: {type: string}
         venue: {type: [string, 'null']}
+        city_id: {type: [string, 'null'], description: 'The hub city (`HubCity.id`); null for shows not entered by staff'}
         city: {type: [string, 'null']}
+        region: {type: [string, 'null']}
         country: {type: [string, 'null']}
         starts_at: {type: string, format: date-time}
         tickets_available: {type: boolean}
+    EventDetail:
+      type: object
+      required: [event, allocations]
+      properties:
+        event: {$ref: '#/components/schemas/Event'}
+        allocations:
+          type: array
+          items: {$ref: '#/components/schemas/Allocation'}
+    EventCreate:
+      type: object
+      required: [artist_id, name, city_id, starts_at]
+      properties:
+        artist_id: {type: string, format: uuid}
+        name: {type: string, maxLength: 200}
+        venue: {type: [string, 'null'], maxLength: 200}
+        city_id: {type: string}
+        starts_at: {type: string, format: date-time}
+    EventUpdate:
+      type: object
+      properties:
+        name: {type: string, maxLength: 200}
+        venue: {type: [string, 'null'], maxLength: 200}
+        city_id: {type: string}
+        starts_at: {type: string, format: date-time}
+    Allocation:
+      type: object
+      description: |
+        Face-value tickets set aside for top fans of the show's artist, one per selected fan. Fans at or above
+        `min_percentile` for the artist can register while registration is open.
+      required: [id, event_id, name, tickets, face_value_cents, currency, min_percentile, registration_opens_at,
+                 registration_closes_at, status]
+      properties:
+        id: {type: string, format: uuid}
+        event_id: {type: string, format: uuid}
+        name: {type: string}
+        tickets: {type: integer, minimum: 1}
+        face_value_cents: {type: integer, minimum: 0}
+        currency: {type: string, pattern: '^[A-Z]{3}$'}
+        min_percentile: {type: number, minimum: 0, maximum: 100}
+        registration_opens_at: {type: string, format: date-time}
+        registration_closes_at: {type: string, format: date-time}
+        status:
+          type: string
+          enum: [draft, upcoming, open, closed, cancelled]
+          description: '`draft` is staff-only; `upcoming` is published but not open yet; `closed` means registration is over'
+        published_at: {type: [string, 'null'], format: date-time}
+        cancelled_at: {type: [string, 'null'], format: date-time}
+    Registration:
+      type: object
+      description: A fan's registration, with the snapshot taken when they registered.
+      required: [id, allocation_id, event_id, hub_city_ids, local, percentile, raw_score, is_estimated, registered_at, status]
+      properties:
+        id: {type: string, format: uuid}
+        allocation_id: {type: string, format: uuid}
+        event_id: {type: string, format: uuid}
+        hub_city_ids:
+          type: array
+          items: {type: string}
+          description: The fan's hub cities when they registered, primary first
+        hub_match:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 3
+          description: Position of the show's city in `hub_city_ids` (1 is the primary city); null if none
+        local: {type: boolean, description: The show's city is one of the fan's hub cities}
+        percentile: {type: number}
+        raw_score: {type: number}
+        is_estimated: {type: boolean}
+        registered_at: {type: string, format: date-time}
+        withdrawn_at: {type: [string, 'null'], format: date-time}
+        status: {type: string, enum: [registered, withdrawn]}
+    Eligibility:
+      type: object
+      required: [allocation_id, eligible, min_percentile]
+      properties:
+        allocation_id: {type: string, format: uuid}
+        eligible: {type: boolean, description: 'True if the fan can register now, or already has'}
+        reason:
+          type: [string, 'null']
+          enum: [not_open, artist_not_active, hub_city_required, no_score, below_threshold, already_registered, null]
+        min_percentile: {type: number}
+        percentile: {type: [number, 'null']}
+        is_estimated: {type: [boolean, 'null']}
+        hub_match: {type: [integer, 'null'], minimum: 1, maximum: 3}
+        registration:
+          oneOf: [{$ref: '#/components/schemas/Registration'}, {type: 'null'}]
+    MyRegistration:
+      type: object
+      required: [registration, allocation, event]
+      properties:
+        registration: {$ref: '#/components/schemas/Registration'}
+        allocation: {$ref: '#/components/schemas/Allocation'}
+        event: {$ref: '#/components/schemas/Event'}
+    AllocationCreate:
+      type: object
+      required: [tickets, face_value_cents, registration_opens_at, registration_closes_at]
+      properties:
+        name: {type: string, maxLength: 100, default: Fan allocation}
+        tickets: {type: integer, minimum: 1, maximum: 100000}
+        face_value_cents: {type: integer, minimum: 0, maximum: 10000000}
+        currency: {type: string, pattern: '^[A-Z]{3}$', default: USD}
+        min_percentile: {type: number, minimum: 0, maximum: 100, default: 0}
+        registration_opens_at: {type: string, format: date-time}
+        registration_closes_at: {type: string, format: date-time, description: Before the show starts}
+    AllocationUpdate:
+      type: object
+      properties:
+        name: {type: string, maxLength: 100}
+        tickets: {type: integer, minimum: 1, maximum: 100000}
+        face_value_cents: {type: integer, minimum: 0, maximum: 10000000}
+        currency: {type: string, pattern: '^[A-Z]{3}$'}
+        min_percentile: {type: number, minimum: 0, maximum: 100}
+        registration_opens_at: {type: string, format: date-time}
+        registration_closes_at: {type: string, format: date-time}
     EventPage:
       type: object
       required: [items, next_cursor]

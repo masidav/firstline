@@ -169,10 +169,13 @@ Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](servi
 
 ## Phase 11 — Promoter allocation platform (B2B)
 - [ ] Promoter and artist organizations with staff roles and permissions.
-- [ ] Events and allocation pools: share of inventory, eligibility thresholds, registration window.
+- [x] Events and allocation pools: share of inventory, eligibility thresholds, registration window. Staff-managed
+      for now (`/v1/admin/events`, `tools/dev/allocations.py`); verified 2026-10-21, AllocationApiTests 16/16.
 - [ ] Fan registration for an allocation and a fair, auditable selection: ranked by fandom score among fans
       whose three hub cities include the show's city, then other fans for unfilled seats; ties broken by a
       recorded random draw; a registration keeps the hubs it was made with (decided 2026-10-20).
+      *Registration done 2026-10-21 (allocations branch): eligibility, one per fan per show, hub and score snapshot,
+      withdraw while open; RegistrationApiTests 8/8. Selection is next.*
 - [ ] Non-transferable reservation tokens, delayed delivery, and face-value exchange for fans who can't attend.
 - [ ] Primary ticketing integration (Ticketmaster, AXS, SeatGeek): reserve seats from the pool and hand off checkout.
 - [ ] Promoter web dashboard: set up allocations, monitor registration, export reports.
@@ -286,6 +289,16 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
       fans who have the show's city in one of their **three hub cities**.
 - [x] Allocation edge cases (decided 2026-10-20): seats hub fans leave unfilled **open to fans outside the
       city**; **equal scores are broken by a coin flip** (a random draw, recorded so the result can be audited).
+- [x] Allocation rules (decided 2026-10-24): a selected fan may bring a **+1**; an allocation's **rules lock once
+      registration opens** (it can still be cancelled); selection ranks fans by the score snapshot taken **when
+      they registered** (frozen, can't be pumped afterwards). Staff, not promoters, manage shows until
+      organizations exist.
+- [ ] Eligibility threshold: **not a minimum percentile** (decided 2026-10-24). What replaces it: no threshold
+      (ranking alone decides), or a minimum raw score? Code still uses `min_percentile` until this is decided.
+- [ ] +1 details: does a +1 use a second ticket from the allocation's count, does the guest need an account or a
+      name on the ticket, and is the +1 chosen at registration or after selection?
+- [ ] What pausing an artist (takedown) does to an open allocation (for now it's allowed, and registration and
+      selection will refuse).
 - [x] Concert-photo points: `concert_photo_verified` is 5, the same as a screenshot (decided 2026-10-21).
 - [x] Sharing rules (decided 2026-10-21): only verified merch and concert photos can be shared; tickets and screenshots
       never (barcodes, personal details). The feed shows everyone's shared photos and public album logs.
