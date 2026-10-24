@@ -1082,6 +1082,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/suspension/appeal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask to be unbanned
+         * @description Once per suspension. Staff lift the pause or deny with a reply (see `Me.suspension.appeal`).
+         */
+        post: operations["appealSuspension"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/reports": {
         parameters: {
             query?: never;
@@ -1516,6 +1536,82 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/suspensions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Paused accounts
+         * @description Accounts paused now. Those waiting on a request to be unbanned come first, oldest request first.
+         */
+        get: operations["listSuspensions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{handle}/suspension": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause an account (for example, flag it as a bot)
+         * @description For `days` (default 30, at most 365). While paused the fan can't register for tickets, upload or submit
+         *     photos, share, or write or edit album logs (`403 account_suspended`); what they posted stays. Recorded in the
+         *     moderation audit trail.
+         */
+        post: operations["suspendUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{handle}/suspension/lift": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** End a pause early */
+        post: operations["liftSuspension"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/appeals/{appealId}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Lift a pause or deny the fan's request to be unbanned */
+        post: operations["decideAppeal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/reports": {
         parameters: {
             query?: never;
@@ -1670,7 +1766,7 @@ export interface components {
              * @description Stable machine-readable code.
              * @enum {string}
              */
-            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
+            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "account_suspended" | "already_registered" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
             errors?: {
                 field?: string;
                 message?: string;
@@ -1746,6 +1842,57 @@ export interface components {
              * @description When hub cities may next be changed; null when they may be changed now.
              */
             hub_cities_change_available_at?: string | null;
+            /** @description Set while staff have paused the account. No posting or registering for tickets until it ends. */
+            suspension?: components["schemas"]["Suspension"] | null;
+        };
+        Suspension: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description bot: automated or fake activity
+             * @enum {string}
+             */
+            reason: "bot" | "other";
+            /** @description From staff, shown to the fan. */
+            message?: string | null;
+            /** Format: date-time */
+            started_at: string;
+            /** Format: date-time */
+            ends_at: string;
+            appeal?: components["schemas"]["Appeal"] | null;
+        };
+        /** @description The fan's request to be unbanned (one per suspension) and the staff decision. */
+        Appeal: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            status: "pending" | "lifted" | "denied";
+            message: string;
+            /** Format: date-time */
+            submitted_at: string;
+            /** @description From staff, shown to the fan (always set when denied). */
+            reply?: string | null;
+            /** Format: date-time */
+            decided_at?: string | null;
+        };
+        AdminSuspension: {
+            /** Format: uuid */
+            id: string;
+            user: components["schemas"]["UserRef"];
+            /** @enum {string} */
+            reason: "bot" | "other";
+            message?: string | null;
+            /** @description Staff only. */
+            note?: string | null;
+            /** Format: date-time */
+            started_at: string;
+            /** Format: date-time */
+            ends_at: string;
+            appeal?: components["schemas"]["Appeal"] | null;
+        };
+        AdminSuspensionPage: {
+            items: components["schemas"]["AdminSuspension"][];
+            next_cursor: string | null;
         };
         HubCity: {
             /** @description Stable id, e.g. `us-il-chicago` */
@@ -2021,7 +2168,7 @@ export interface components {
             /** @description True if the fan can register now, or already has */
             eligible: boolean;
             /** @enum {string|null} */
-            reason?: "not_open" | "artist_not_active" | "hub_city_required" | "no_score" | "below_threshold" | "already_registered" | null;
+            reason?: "not_open" | "suspended" | "artist_not_active" | "hub_city_required" | "no_score" | "below_threshold" | "already_registered" | null;
             min_raw_score: number | null;
             raw_score?: number | null;
             percentile?: number | null;
@@ -4558,6 +4705,43 @@ export interface operations {
             };
         };
     };
+    appealSuspension: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    message: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Request sent */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Suspension"];
+                };
+            };
+            /** @description The account isn't paused (`code: not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
     createReport: {
         parameters: {
             query?: never;
@@ -4721,7 +4905,7 @@ export interface operations {
                     "application/json": components["schemas"]["Registration"];
                 };
             };
-            /** @description No score for the artist, or below the threshold (`code: not_eligible`) */
+            /** @description No score for the artist, or below the threshold (`code: not_eligible`); or staff paused the account (`code: account_suspended`) */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5199,6 +5383,135 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminSubmission"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    listSuspensions: {
+        parameters: {
+            query?: {
+                limit?: components["parameters"]["Limit"];
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of suspensions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSuspensionPage"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    suspendUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: components["parameters"]["Handle"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    reason: "bot" | "other";
+                    /** @default 30 */
+                    days?: number;
+                    /** @description Shown to the fan. */
+                    message?: string;
+                    /** @description Staff only. */
+                    note?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Paused */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSuspension"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    liftSuspension: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: components["parameters"]["Handle"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Staff only. */
+                    note?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Lifted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    decideAppeal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    decision: "lift" | "deny";
+                    /** @description Shown to the fan; required to deny. */
+                    reply?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Decided */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSuspension"];
                 };
             };
             403: components["responses"]["Forbidden"];

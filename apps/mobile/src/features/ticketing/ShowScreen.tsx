@@ -20,6 +20,7 @@ const reasons: Record<string, string> = {
   no_score: "You don't have a fandom score for this artist yet. Connect Spotify and listen to them.",
   below_threshold: "Your fandom score for this artist is below this allocation's minimum.",
   already_registered: "You're registered for another allocation of this show, or you're someone's +1 for it.",
+  suspended: "Staff paused your account, so you can't register right now. You can ask to be unbanned from the home screen.",
 };
 
 /** A show and its fan allocations (GET /events/{id}), with registration for each. */

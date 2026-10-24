@@ -22,6 +22,7 @@ export function ModerationScreen() {
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [paused, setPaused] = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
     setError(undefined);
@@ -48,6 +49,28 @@ export function ModerationScreen() {
         }),
       );
       setPosts((current) => current?.filter((p) => p.target_id !== post.target_id) ?? null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Flag the post's author as a bot: paused for 30 days (no posting or registering); they can ask to be unbanned.
+  async function pauseAuthor(post: ReportedPost) {
+    const handle = post.author.handle;
+    if (!handle) return;
+    setBusy(post.target_id);
+    setError(undefined);
+    try {
+      const note = notes[post.target_id]?.trim();
+      unwrap(
+        await session.api.POST('/admin/users/{handle}/suspension', {
+          params: { path: { handle } },
+          body: { reason: 'bot', days: 30, ...(note ? { note } : {}) },
+        }),
+      );
+      setPaused((current) => ({ ...current, [handle]: true }));
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -100,6 +123,17 @@ export function ModerationScreen() {
             />
             <Button label="Take down" kind="danger" busy={busy === post.target_id} onPress={() => void decide(post, 'take_down')} />
             <Button label="Dismiss reports" kind="secondary" busy={busy === post.target_id} onPress={() => void decide(post, 'dismiss')} />
+            {post.author.handle &&
+              (paused[post.author.handle] ? (
+                <Text style={styles.detail}>@{post.author.handle} is paused for 30 days.</Text>
+              ) : (
+                <Button
+                  label="Flag author as a bot (pause 30 days)"
+                  kind="secondary"
+                  busy={busy === post.target_id}
+                  onPress={() => void pauseAuthor(post)}
+                />
+              ))}
           </View>
         );
       })}

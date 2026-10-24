@@ -59,3 +59,17 @@ test('staff take a post down with a note, or dismiss its reports', async () => {
     body: { action: 'dismiss' },
   });
 });
+
+test("staff can flag a reported post's author as a bot", async () => {
+  mockApi.GET.mockResolvedValue(ok({ items: [log], next_cursor: null }));
+  mockApi.POST.mockResolvedValue({ data: {}, response: { ok: true, status: 201 } });
+  render(<ModerationScreen />);
+
+  fireEvent.press(await screen.findByRole('button', { name: 'Flag author as a bot (pause 30 days)' }));
+
+  expect(await screen.findByText('@author is paused for 30 days.')).toBeTruthy();
+  expect(mockApi.POST).toHaveBeenCalledWith('/admin/users/{handle}/suspension', {
+    params: { path: { handle: 'author' } },
+    body: { reason: 'bot', days: 30 },
+  });
+});
