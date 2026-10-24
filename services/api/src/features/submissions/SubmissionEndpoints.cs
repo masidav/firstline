@@ -50,7 +50,7 @@ public static class SubmissionEndpoints
     public sealed record Submission(
         Guid Id, Guid ArtistId, ScoringEndpoints.ArtistRef Artist, string Kind, string Status, EventRef? Event,
         Concert? Concert, string? RejectionReason, DateTime SubmittedAt, DateTime? VerifiedAt, bool Archived, string? Caption,
-        DateTime? SharedAt, bool CanShare, IReadOnlyList<SubmissionFile> Files, IReadOnlyList<PointsAward> PointsAwarded);
+        DateTime? SharedAt, bool CanShare, bool Removed, IReadOnlyList<SubmissionFile> Files, IReadOnlyList<PointsAward> PointsAwarded);
 
     public sealed record SubmissionPage(IReadOnlyList<Submission> Items, string? NextCursor);
 
@@ -62,7 +62,7 @@ public static class SubmissionEndpoints
     public sealed record AdminSubmission(
         Guid Id, Guid ArtistId, ScoringEndpoints.ArtistRef Artist, string Kind, string Status, EventRef? Event,
         Concert? Concert, string? RejectionReason, DateTime SubmittedAt, DateTime? VerifiedAt, bool Archived, string? Caption,
-        DateTime? SharedAt, bool CanShare, IReadOnlyList<SubmissionFile> Files, IReadOnlyList<PointsAward> PointsAwarded,
+        DateTime? SharedAt, bool CanShare, bool Removed, IReadOnlyList<SubmissionFile> Files, IReadOnlyList<PointsAward> PointsAwarded,
         UserRef User, decimal? TrustScore, JsonElement Extracted, IReadOnlyList<VerificationCheck> Checks);
 
     public sealed record AdminSubmissionPage(IReadOnlyList<AdminSubmission> Items, string? NextCursor);
@@ -374,7 +374,8 @@ public static class SubmissionEndpoints
         if (value.GetBoolean() && !current.CanShare)
         {
             throw new ApiProblemException(StatusCodes.Status409Conflict, "conflict", "Can't share this",
-                ShareableKinds.Contains(current.Kind)
+                current.Removed ? "Staff took this photo down, so it can't be shared."
+                : ShareableKinds.Contains(current.Kind)
                     ? "Only verified photos can be shared. This one is still being checked."
                     : "Tickets and screenshots can't be shared; they can show barcodes or personal details.");
         }
@@ -383,12 +384,12 @@ public static class SubmissionEndpoints
         if (await connection.ExecuteAsync(
                 """
                 UPDATE submissions SET shared_at = CASE WHEN @shared THEN COALESCE(shared_at, now()) END
-                WHERE id = @submissionId AND (NOT @shared OR status = 'verified')
+                WHERE id = @submissionId AND (NOT @shared OR (status = 'verified' AND removed_at IS NULL))
                 """,
                 new { submissionId, shared = value.GetBoolean() }) == 0)
         {
             throw new ApiProblemException(StatusCodes.Status409Conflict, "conflict", "Can't share this",
-                "This photo is no longer verified.");
+                "This photo can't be shared: it's no longer verified, or staff took it down.");
         }
         return Results.Ok(await LoadMineAsync(connection, userId, request, urls, submissionId));
     }
@@ -527,7 +528,7 @@ public static class SubmissionEndpoints
                    s.status::text AS Status, s.rejection_reason AS RejectionReason, s.submitted_at AS SubmittedAt,
                    s.verified_at AS VerifiedAt, s.archived_at IS NOT NULL AS Archived, s.caption AS Caption, s.shared_at AS SharedAt,
                    s.user_id AS UserId, s.trust_score AS TrustScore, s.extracted::text AS Extracted,
-                   s.event_id AS EventId, s.concert_date AS ConcertDate, s.concert_venue AS ConcertVenue, s.concert_city AS ConcertCity
+                   s.removed_at IS NOT NULL AS Removed, s.event_id AS EventId, s.concert_date AS ConcertDate, s.concert_venue AS ConcertVenue, s.concert_city AS ConcertCity
             FROM submissions s JOIN artists a ON a.id = s.artist_id WHERE s.id = @submissionId
             """,
             new { submissionId }, transaction);
@@ -543,7 +544,7 @@ public static class SubmissionEndpoints
         var awards = (await connection.QueryAsync<PointsAward>(
             "SELECT rule_key AS RuleKey, points AS Points FROM score_events WHERE source_type = 'submission' AND source_id = @submissionId AND reversed_at IS NULL",
             new { submissionId }, transaction)).ToList();
-        var canShare = row.Status == "verified" && ShareableKinds.Contains(row.Kind);
+        var canShare = row.Status == "verified" && ShareableKinds.Contains(row.Kind) && !row.Removed;
         var pinned = row.EventId is { } eventId
             ? await connection.QuerySingleOrDefaultAsync<EventRef>(
                 """
@@ -554,7 +555,7 @@ public static class SubmissionEndpoints
         var concert = row.ConcertDate is { } date ? new Concert(date, row.ConcertVenue!, row.ConcertCity!) : null;
         return new Submission(row.Id, row.ArtistId, new ScoringEndpoints.ArtistRef(row.ArtistId, row.ArtistName, row.ArtistImageUrl),
             row.Kind, row.Status, pinned, concert, row.RejectionReason, row.SubmittedAt, row.VerifiedAt, row.Archived, row.Caption,
-            row.SharedAt, canShare, files, awards);
+            row.SharedAt, canShare, row.Removed, files, awards);
     }
 
     private static async Task<AdminSubmission?> LoadForReviewAsync(
@@ -582,7 +583,7 @@ public static class SubmissionEndpoints
             .Select(c => new VerificationCheck(c.Id, c.CheckType, c.Result, c.Confidence, Parse(c.Details), c.ReviewerId, c.CreatedAt))
             .ToList();
         return new AdminSubmission(s.Id, s.ArtistId, s.Artist, s.Kind, s.Status, s.Event, s.Concert, s.RejectionReason, s.SubmittedAt,
-            s.VerifiedAt, s.Archived, s.Caption, s.SharedAt, s.CanShare, s.Files, s.PointsAwarded,
+            s.VerifiedAt, s.Archived, s.Caption, s.SharedAt, s.CanShare, s.Removed, s.Files, s.PointsAwarded,
             new UserRef(extra.Handle, extra.Deleted, extra.DisplayName, null), extra.TrustScore, Parse(extra.Extracted), checks);
     }
 
@@ -595,7 +596,7 @@ public static class SubmissionEndpoints
     private sealed record SubmissionRow(
         Guid Id, Guid ArtistId, string ArtistName, string? ArtistImageUrl, string Kind, string Status, string? RejectionReason,
         DateTime SubmittedAt, DateTime? VerifiedAt, bool Archived, string? Caption, DateTime? SharedAt, Guid UserId,
-        decimal? TrustScore, string Extracted, Guid? EventId, DateOnly? ConcertDate, string? ConcertVenue, string? ConcertCity);
+        decimal? TrustScore, string Extracted, bool Removed, Guid? EventId, DateOnly? ConcertDate, string? ConcertVenue, string? ConcertCity);
 
     private sealed record CheckRow(
         Guid Id, string CheckType, string Result, decimal? Confidence, string Details, Guid? ReviewerId, DateTime CreatedAt);
