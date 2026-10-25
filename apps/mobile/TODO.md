@@ -22,13 +22,22 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Non-music items break from the sheet and **bounce in vertically**: reviews from people the fan follows,
       upcoming concerts (in the fan's hub cities), merch someone shared.
 - [ ] After some scrolling, a **bouncer at a door**. Tapping the door shows a real track from the **grab bag**
-      of someone the fan follows, with that fan's name and a link to the song on Spotify.
+      of someone the fan follows, with that fan's name and a link to the song on Spotify. *The draw exists as its
+      own screen (`/bouncer-door`, 2026-10-25); the door inside the feed is not built.*
 - [ ] **Grab bag** screen: pick up to 5 favorite songs (any artist), reorder or remove them. Shared with
-      followers; sharing can't be turned off.
+      followers; sharing can't be turned off. *Built 2026-10-25 (`/grab-bag`) except reordering.*
+- [ ] **Change "Post a photo" to something better** (requested 2026-10-25): the full-width button under the artist
+      list on the home screen is the wrong shape for it; find a better name, place, and entry for posting a photo
+      (for example a camera or plus action near the feed). Not designed yet.
+- [ ] **Use real artists and albums for dev testing** (requested 2026-10-25): `tools/dev/seed.py` makes up artists
+      ("Glass Harbor") with `seed:` ids, so covers, Spotify links, song search, and the bouncer door look wrong in the
+      app. Seed real artists and albums (real Spotify ids, names, and cover art) instead, so the dev app looks like
+      the real thing; the artist catalog loader (ADR 0006) already knows how to fetch them.
 - [x] Sign-up: choose a primary hub city (required), plus up to two backups.
 - [x] Changing hub cities: allowed once a week; warn before saving (next change possible in 7 days, and hub
       cities decide which allocations the fan qualifies for).
-- [ ] Profile: followers and following lists, remove a follower, block someone.
+- [ ] Profile: followers and following lists, remove a follower, block someone. *Lists and remove built 2026-10-25
+      (`/people`); blocking not wanted for now (decided 2026-10-24).*
 - [ ] Respect reduced-motion settings: the bounce and horizontal scroll need a calmer fallback, and the feed
       must work with VoiceOver and TalkBack.
 

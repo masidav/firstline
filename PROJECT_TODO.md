@@ -229,6 +229,8 @@ Details: [ADR 0002](docs/adr/0002-hosting-gcp-gke.md) · [Infrastructure](infras
 - [x] Dev environment with synthetic data: `tools/dev/seed.py` (fans, artists, shows, allocations, registrations),
       verified 2026-10-24 against a scratch database and run by CI. The cloud proving ground is **beta** with real
       testers, not a synthetic staging (ADR 0002, amended 2026-10-24); see `infrastructure/README.md`.
+      *Requested 2026-10-25: seed real artists and albums (real Spotify ids and covers) instead of made-up ones, so the
+      dev app looks right; see `apps/mobile/TODO.md`.*
 - [ ] Test accounts for every external provider (Spotify, Apple, ticketers) usable on beta.
 - [ ] Beta distribution: TestFlight and Google Play closed testing.
 - [ ] App Store and Google Play readiness: privacy labels, data safety form, in-app account deletion, Sign in with Apple.
