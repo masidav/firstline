@@ -1909,4 +1909,41 @@ DO $$ BEGIN
   ASSERT EXISTS (SELECT 1 FROM grab_bag_songs WHERE user_id = '00000000-0000-0000-0000-000000000001'), 'other grab bags stay';
 END $$;
 
+-- ------------------------------------------------------------ storage cleanup (0027)
+-- Removing a row that names a stored file queues its key in storage_deletions, once, in the same transaction.
+DELETE FROM storage_deletions;
+DO $$
+DECLARE up uuid; sub uuid := '40000000-0000-0000-0000-0000000000c1';
+BEGIN
+  -- An unattached slot without a file queues nothing; one with a file queues its key.
+  INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes) VALUES ('00000000-0000-0000-0000-000000000001', 'submission', 'image/jpeg', 10)
+    RETURNING id INTO up;
+  DELETE FROM uploads WHERE id = up;
+  ASSERT NOT EXISTS (SELECT 1 FROM storage_deletions), 'a slot with no file queues nothing';
+  INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes, storage_key, sha256, bytes, uploaded_at)
+    VALUES ('00000000-0000-0000-0000-000000000001', 'submission', 'image/jpeg', 10, 'quarantine/inv-slot', sha256('s'), 10, now())
+    RETURNING id INTO up;
+  DELETE FROM uploads WHERE id = up;
+  ASSERT EXISTS (SELECT 1 FROM storage_deletions WHERE storage_key = 'quarantine/inv-slot'), 'a deleted slot queues its key';
+
+  -- A submission's file and its attached slot name the same key: deleting the submission queues it once.
+  INSERT INTO submissions (id, user_id, artist_id, kind)
+    SELECT sub, '00000000-0000-0000-0000-000000000001', id, 'merch' FROM artists WHERE spotify_artist_id = 'sp-active';
+  INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes, storage_key, sha256, bytes, uploaded_at, submission_id)
+    VALUES ('00000000-0000-0000-0000-000000000001', 'submission', 'image/jpeg', 10, 'quarantine/inv-sub', sha256('t'), 10, now(), sub);
+  INSERT INTO submission_files (submission_id, storage_key, sha256, mime_type, bytes)
+    VALUES (sub, 'quarantine/inv-sub', sha256('t'), 'image/jpeg', 10), (sub, 'quarantine/inv-sub-2', sha256('u'), 'image/jpeg', 10);
+  ASSERT NOT EXISTS (SELECT 1 FROM storage_deletions WHERE storage_key LIKE 'quarantine/inv-sub%'), 'live files are not queued';
+
+  -- A changed key queues the old one.
+  UPDATE submission_files SET storage_key = 'quarantine/inv-sub-2b' WHERE storage_key = 'quarantine/inv-sub-2';
+  ASSERT EXISTS (SELECT 1 FROM storage_deletions WHERE storage_key = 'quarantine/inv-sub-2'), 'a replaced key is queued';
+
+  DELETE FROM submissions WHERE id = sub;
+  ASSERT (SELECT count(*) FROM storage_deletions WHERE storage_key = 'quarantine/inv-sub') = 1, 'a shared key is queued once';
+  ASSERT EXISTS (SELECT 1 FROM storage_deletions WHERE storage_key = 'quarantine/inv-sub-2b'), 'every file of the submission is queued';
+END $$;
+SELECT pg_temp.expect_error($$INSERT INTO storage_deletions (storage_key) VALUES ('')$$, 'storage_deletions_storage_key_check');
+DELETE FROM storage_deletions;
+
 \echo ALL INVARIANT TESTS PASSED

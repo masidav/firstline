@@ -27,5 +27,16 @@ Built: `POST /uploads` with signed `PUT` links, metadata stripping (JPEG/PNG), `
 `needs_review`; concert photos pinned to a show: `event_id` of the band's past show, or a typed-in `concert`),
 `GET /me/submissions`, `GET`/`DELETE /submissions/{id}`, `PUT /submissions/{id}/share`, the staff
 queue and decisions, and `GET /feed`. Tests: ProofApiTests (6), invariants for 0012.
-Not yet: automated checks, Cloud Storage in production, cleanup of expired uploads and of deleted accounts' files,
-`client_extracted`, avatars, HEIC/WebP on the server.
+Not yet: automated checks, Cloud Storage in production, `client_extracted`, avatars, HEIC/WebP on the server.
+
+## Stored-file cleanup (2026-10-25)
+- [x] `IFileStore` is in `packages/storage`, shared with the worker.
+- [x] Every deleted (or re-keyed) `uploads`/`submission_files` row queues its key in `storage_deletions` (migration
+      0027, same transaction). Withdrawing deletes the files at once and dequeues them; if storage fails, the worker
+      retries.
+- [x] Worker `storage.cleanup` (hourly, `workers/storage-cleanup`): expired unused slots (a day past `expires_at`, not
+      attached, not a featured video), all files of accounts deleted 30+ days ago (unblocks `purge_deleted_user`),
+      and queued keys no live row names. Verified: StorageCleanupJobTests (5), ProofApiTests, invariants.
+- [ ] Rejected submissions keep their files: retention is an open decision (`PROJECT_TODO.md`).
+- [ ] Files stored before migration 0027 whose rows were already deleted are not known to the queue; there is no
+      storage listing to find them (local disk only so far, nothing deployed).

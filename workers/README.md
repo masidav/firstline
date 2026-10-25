@@ -13,6 +13,7 @@ dotnet run --project workers        # needs ConnectionStrings__Database, like th
 | `Program.cs` | Host setup and the list of registered job handlers. |
 | `jobs/` | Queue runtime: `JobQueue` (claim, finish, retry, schedules), `JobRunner` (polling loops), `IJobHandler`, `PruneJobsJob`. |
 | `account-retention/` | `PurgeDeletedAccountsJob`: hourly, purges content of accounts deleted 30+ days ago. |
+| `storage-cleanup/` | `StorageCleanupJob` (`storage.cleanup`, hourly): deletes stored files nothing needs (expired upload slots, deleted accounts' files before their purge, files queued in `storage_deletions`). See the folder's README. |
 | `spotify-sync/` | `SpotifySyncJob` (`spotify.sync`) and hourly `ScheduleSpotifySyncsJob`. See [ADR 0005](../docs/adr/0005-spotify-integration.md). |
 | `grab-bag/` | `GrabBagRefreshJob` (`grab_bag.refresh_songs`, daily): keeps grab-bag song titles and covers current from Spotify. See the folder's README. |
 | `artist-onboarding/` | `ArtistOnboardingJob` (`artist.onboard`), `CatalogRefreshJob` (`catalog.refresh`) and its hourly scheduler, `CatalogLoader`. See [ADR 0006](../docs/adr/0006-album-catalog.md) and the folder's README. |
@@ -33,6 +34,11 @@ dotnet run --project workers        # needs ConnectionStrings__Database, like th
 | `Jobs__Concurrency` | `2` jobs at a time per process |
 | `Jobs__KeepSucceeded` / `Jobs__KeepFailed` | `7.00:00:00` / `30.00:00:00` |
 
+## Storage (`Storage` section)
+The worker deletes stored files, so it needs the same storage as the API: `Storage__LocalPath` (default
+`.local-storage` under the worker's content root) must name the API's directory. Locally, set it to the absolute
+path of `services/api/.local-storage` for the worker. `packages/storage/README.md`.
+
 ## Operating
 - Inspect: `SELECT kind, status, attempts, last_error, run_at FROM jobs WHERE status <> 'succeeded' ORDER BY run_at;`
 - Retry a failed job: `UPDATE jobs SET status = 'queued', finished_at = NULL, attempts = 0, run_at = now() WHERE id = ...;`
@@ -41,3 +47,4 @@ dotnet run --project workers        # needs ConnectionStrings__Database, like th
 ## Tests
 `tests/FandomScore.Tests/JobQueueTests.cs`: success, dedupe, scheduled runs, retries with backoff, permanent
 failure, unknown kinds, crashed-worker recovery, concurrent claims, and the deleted-account purge.
+`StorageCleanupJobTests.cs`: storage cleanup against a temporary directory.

@@ -7,6 +7,7 @@ using FandomScore.Api.Features.Artists;
 using FandomScore.Api.Features.Authentication;
 using FandomScore.Api.Features.Scoring;
 using FandomScore.Api.Infrastructure;
+using FandomScore.Storage;
 using FandomScore.Spotify;
 using Microsoft.Extensions.Options;
 using Npgsql;

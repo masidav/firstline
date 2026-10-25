@@ -142,9 +142,15 @@ Details: [Album journal API](services/api/src/features/album-journal/TODO.md) ·
 - [ ] Photo storage for real hosting: the Cloud Storage quarantine bucket (ADR 0002) behind `IFileStore`, with signed
       upload and download URLs from the bucket instead of the API, Workload Identity, and limits on size and count.
       Locally, photos are on disk (`services/api/.local-storage/`).
-- [ ] Clean up stored photos: delete upload slots that expired unused (and their files), files of withdrawn or purged
+- [x] Clean up stored photos: delete upload slots that expired unused (and their files), files of withdrawn or purged
       submissions, and every file of a deleted account when it is purged (30 days, `purge_deleted_user`). Needs a
-      worker job with storage access and tests that no file outlives its rows.
+      worker job with storage access and tests that no file outlives its rows. *Done 2026-10-25: `IFileStore` moved to
+      `packages/storage` (API and worker); migration 0027 queues every removed storage key in `storage_deletions`;
+      hourly worker job `storage.cleanup` removes slots expired unused for a day (not attached, not a featured video),
+      every file of accounts deleted 30+ days ago (so `accounts.purge_deleted` can then purge them), and queued files
+      no live row names. Withdrawing still deletes files at once; a crash or storage error leaves them queued.
+      Rejected submissions keep their files (retention undecided, see Open decisions). Verified 2026-10-25:
+      `dotnet build` 0 warnings, `dotnet test` 253/253 (StorageCleanupJobTests 5, invariants for 0027), worker image builds.*
 - [ ] Redact sensitive barcodes/QR codes before archival.
 - [ ] Enforce archive safety and retention policies.
 
@@ -383,6 +389,10 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
       never (barcodes, personal details). The feed shows everyone's shared photos and public album logs.
 - [x] Concert photos are pinned to the band and the concert (decided 2026-10-21): a listed show, or date, venue, and
       city entered by the fan when the show isn't listed.
+- [ ] How long files of rejected submissions are kept (and of taken-down photos). Today they stay until the
+      submission is withdrawn or the account purged: the storage cleanup (2026-10-25) doesn't touch them. Also: the
+      quarantine bucket's lifecycle rule (`quarantine_retention_days`, Terraform) would delete *every* quarantined
+      file, verified proof included, unless files move to the archive first.
 - [ ] Confirm takedown effects (provisional, 2026-10-24): a taken-down photo leaves the feed for good but stays as
       proof with its points; a taken-down log is hidden from everyone but its author and loses its points.
 - [ ] Choose an email provider for staff notifications (and later fan email), e.g. a transactional email API.

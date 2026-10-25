@@ -14,3 +14,4 @@ infrastructure
 *.md
 *.txt
 .env*
+**/.local-storage

@@ -4,6 +4,7 @@ using System.Text.Json;
 using Dapper;
 using FandomScore.Api.Features.Authentication;
 using FandomScore.Api.Infrastructure;
+using FandomScore.Storage;
 using Npgsql;
 
 namespace FandomScore.Api.Features.Submissions;
@@ -30,9 +31,7 @@ public static class UploadEndpoints
 
     public static IServiceCollection AddUploads(this IServiceCollection services, IConfiguration configuration, IWebHostEnvironment environment)
     {
-        var options = configuration.GetSection(StorageOptions.Section).Get<StorageOptions>() ?? new StorageOptions();
-        var root = Path.IsPathRooted(options.LocalPath) ? options.LocalPath : Path.Combine(environment.ContentRootPath, options.LocalPath);
-        services.AddSingleton<IFileStore>(new LocalFileStore(root));
+        services.AddFileStore(configuration, environment.ContentRootPath);
         services.AddSingleton<SignedUrls>();
         return services;
     }

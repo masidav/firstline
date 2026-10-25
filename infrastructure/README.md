@@ -188,6 +188,10 @@ drift, so update `sql.tf` or import the clone). Rehearse this on beta and record
 
 - Nothing here has been applied to a real project yet: Terraform passes `validate` and the manifests build, but
   the first `apply` and deploy will surface anything the provider rejects at runtime.
+- Stored photos have no cluster storage yet. `Storage__LocalPath` (local disk) is for development; in the cluster the
+  root filesystem is read-only and the API and worker pods share no volume. Both processes must use the **same**
+  storage, because the API writes files and the worker's `storage.cleanup` job deletes them: put any `Storage__*`
+  setting in the shared `app-config` ConfigMap, not one Deployment, until the Cloud Storage `IFileStore` replaces it.
 - The worker has no health probe (it serves no HTTP). A stuck worker is visible through the job queue
   (`jobs` table) and logs, not through Kubernetes.
 - The `SecretProviderClass` lists in each overlay duplicate the `secret_readers` map in Terraform; change both.
