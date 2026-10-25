@@ -118,7 +118,7 @@ steps with `prod` in place of `beta`.
 7. **First deploy.** Push to `main`, or run the Deploy workflow by hand (`beta`). Or from a machine with the tools
    (the first deploy of an empty database needs no backup, and the health check needs DNS and the certificate):
    ```bash
-   gcloud container clusters get-credentials fandomscore-beta --region us-central1 --project firstline
+   gcloud container clusters get-credentials fandomscore-beta --region us-central1 --project project-ef36a8a9-d958-4163-b4c
    gcloud auth configure-docker us-central1-docker.pkg.dev
    for t in api worker migrate; do
      docker build --target $t -t us-central1-docker.pkg.dev/project-ef36a8a9-d958-4163-b4c/fandomscore/$t:$(git rev-parse HEAD) . && docker push "$_"
