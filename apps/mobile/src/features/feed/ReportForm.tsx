@@ -18,7 +18,7 @@ export const REPORT_REASONS = [
 type Reason = (typeof REPORT_REASONS)[number]['reason'];
 
 /** Report a feed post to staff (POST /reports): a reason, optional details. Staff decide whether to take it down. */
-export function ReportForm({ targetType, targetId, onClose }: { targetType: 'photo' | 'log'; targetId: string; onClose: () => void }) {
+export function ReportForm({ targetType, targetId, onClose }: { targetType: 'photo' | 'log' | 'prompt_answer'; targetId: string; onClose: () => void }) {
   const { session } = useSession();
   const [reason, setReason] = useState<Reason | null>(null);
   const [details, setDetails] = useState('');

@@ -219,3 +219,17 @@ test('the bouncer door sits after six items, or at the end of a shorter last pag
   expect(mockApi.GET).toHaveBeenCalledWith('/me/bouncer-door');
   expect(screen.getByRole('button', { name: 'Knock again on the bouncer door' })).toBeTruthy();
 });
+
+test('a prompt answer shows the prompt, the answer, and a way to all answers', async () => {
+  const promptAnswer = {
+    ...base, type: 'prompt_answer', id: 'pa1', at: '2026-10-25T09:00:00Z', user: { handle: 'fan_two', deleted: false, display_name: 'Ben' }, artist: null,
+    prompt_answer: { prompt_id: 'p1', prompt_text: "What's your best hypothetical band name?", day: '2026-10-25', body: 'The Velvet Ropes', visibility: 'public' },
+  };
+  mockApi.GET.mockResolvedValue(ok({ items: [promptAnswer], next_cursor: null, seed: 'abc' }));
+  render(<Feed />);
+  expect(await screen.findByText('“The Velvet Ropes”')).toBeTruthy();
+  expect(screen.getByText("What's your best hypothetical band name?")).toBeTruthy();
+  fireEvent.press(screen.getByRole('button', { name: "See all answers to: What's your best hypothetical band name?" }));
+  expect(jest.requireMock('expo-router').router.push).toHaveBeenCalledWith('/prompts/p1');
+  expect(screen.getByRole('button', { name: "Report Ben's post" })).toBeTruthy();
+});

@@ -1222,6 +1222,122 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/prompts/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Today's music prompt
+         * @description One open question a day (UTC) for everyone, from staff or the built-in library, for example "What's your best
+         *     hypothetical band name?". `following_answers` (up to three answers from people the caller follows) is only
+         *     filled once the caller has answered.
+         */
+        get: operations["getTodaysPrompt"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/prompts/{promptId}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                promptId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Answer today's prompt
+         * @description Writes or rewrites the caller's answer. Only on the prompt's day. Answers show on the feed.
+         */
+        put: operations["answerPrompt"];
+        post?: never;
+        /**
+         * Withdraw your answer
+         * @description Only on the prompt's day. Idempotent.
+         */
+        delete: operations["withdrawPromptAnswer"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/prompts/{promptId}/answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                promptId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Answers to a prompt
+         * @description Answers the caller can see, theirs first, then people they follow, then everyone else's public ones, newest first.
+         */
+        get: operations["listPromptAnswers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/prompts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Prompts around today
+         * @description The last week and the next four weeks that have a prompt (days without one get a library prompt on the day).
+         */
+        get: operations["listPrompts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/prompts/{day}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                day: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set a day's prompt
+         * @description Today or later. Refused once fans have answered that day's prompt.
+         */
+        put: operations["schedulePrompt"];
+        post?: never;
+        /**
+         * Remove a day's prompt
+         * @description Refused once fans have answered it. The day then gets a library prompt.
+         */
+        delete: operations["unschedulePrompt"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/featured": {
         parameters: {
             query?: never;
@@ -2166,7 +2282,7 @@ export interface components {
              * @description Stable machine-readable code.
              * @enum {string}
              */
-            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "reservation_unavailable" | "trivia_answered" | "trivia_expired" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_track_not_found" | "followers_only" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
+            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "reservation_unavailable" | "trivia_answered" | "trivia_expired" | "prompt_closed" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_track_not_found" | "followers_only" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
             errors?: {
                 field?: string;
                 message?: string;
@@ -3078,10 +3194,10 @@ export interface components {
             /** @description The shuffle key this page used; send it back with `cursor`. */
             seed: string;
         };
-        /** @description `type` says which payload is set: `photo`, `log`, `grab_bag`, `concert`, `registration`, or `stat`. */
+        /** @description `type` says which payload is set: `photo`, `log`, `grab_bag`, `concert`, `registration`, `stat`, or `prompt_answer`. */
         FeedItem: {
             /** @enum {string} */
-            type: "photo" | "album_log" | "grab_bag" | "concert" | "registration" | "stat";
+            type: "photo" | "album_log" | "grab_bag" | "concert" | "registration" | "stat" | "prompt_answer";
             /**
              * Format: uuid
              * @description The submission, album log, grab-bag song, show, or registration id; a stable id for a stat.
@@ -3106,6 +3222,17 @@ export interface components {
             registration?: components["schemas"]["RegistrationCard"] | null;
             /** @description A number from a followed fan. */
             stat?: components["schemas"]["FeedStat"] | null;
+            /** @description An answer to a music prompt from the last week (everyone's public ones; followers-only from people the caller follows). */
+            prompt_answer?: {
+                /** Format: uuid */
+                prompt_id: string;
+                prompt_text: string;
+                /** Format: date */
+                day: string;
+                body: string;
+                /** @enum {string} */
+                visibility: "public" | "followers";
+            } | null;
             photo?: {
                 /** @enum {string} */
                 kind: "merch" | "concert_photo";
@@ -3228,6 +3355,41 @@ export interface components {
             following: number;
             /** @description Songs in their grab bags */
             songs: number;
+        };
+        Prompt: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date */
+            day: string;
+            text: string;
+            /** @enum {string} */
+            source: "staff" | "library";
+            /** @description It is the prompt's day */
+            open: boolean;
+            answer_count: number;
+        };
+        PromptAnswer: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            prompt_id: string;
+            user: components["schemas"]["UserRef"];
+            body: string;
+            /** @enum {string} */
+            visibility: "public" | "followers";
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            mine: boolean;
+            /** @description The caller follows its author */
+            following: boolean;
+        };
+        PromptToday: {
+            prompt: components["schemas"]["Prompt"];
+            my_answer: components["schemas"]["PromptAnswer"] | null;
+            /** @description Answers from people the caller follows, once the caller has answered */
+            following_answers: components["schemas"]["PromptAnswer"][];
         };
         /**
          * @description Fans of the same artist share the day's question. `answer_index`, `correct`, `points_earned`, and `results` are
@@ -3420,10 +3582,10 @@ export interface components {
         };
         ReportCreate: {
             /**
-             * @description photo: a shared submission; log: an album log
+             * @description photo: a shared submission; log: an album log; prompt_answer: an answer to a music prompt
              * @enum {string}
              */
-            target_type: "photo" | "log";
+            target_type: "photo" | "log" | "prompt_answer";
             /** Format: uuid */
             target_id: string;
             /** @enum {string} */
@@ -3437,11 +3599,17 @@ export interface components {
         /** @description One reported post with its open reports. */
         ReportedPost: {
             /** @enum {string} */
-            target_type: "photo" | "log";
+            target_type: "photo" | "log" | "prompt_answer";
             /** Format: uuid */
             target_id: string;
             author: components["schemas"]["UserRef"];
-            artist: components["schemas"]["ArtistRef"];
+            /** @description Null for a prompt answer. */
+            artist: components["schemas"]["ArtistRef"] | null;
+            prompt_answer?: {
+                prompt_text: string;
+                body: string;
+                visibility: string;
+            } | null;
             photo?: {
                 kind: components["schemas"]["SubmissionKind"];
                 caption?: string | null;
@@ -3477,7 +3645,7 @@ export interface components {
         };
         ModerationDecision: {
             /** @enum {string} */
-            target_type: "photo" | "log";
+            target_type: "photo" | "log" | "prompt_answer";
             /** Format: uuid */
             target_id: string;
             /** @enum {string} */
@@ -5499,6 +5667,207 @@ export interface operations {
             422: components["responses"]["ValidationFailed"];
         };
     };
+    getTodaysPrompt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The prompt, the caller's answer, and answers from people they follow */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptToday"];
+                };
+            };
+        };
+    };
+    answerPrompt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                promptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    body: string;
+                    /**
+                     * @default public
+                     * @enum {string}
+                     */
+                    visibility?: "public" | "followers";
+                };
+            };
+        };
+        responses: {
+            /** @description The prompt with the caller's answer */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptToday"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Not the prompt's day (`code: prompt_closed`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    withdrawPromptAnswer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                promptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No answer */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Not the prompt's day (`code: prompt_closed`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listPromptAnswers: {
+        parameters: {
+            query?: {
+                limit?: components["parameters"]["Limit"];
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                promptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of answers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["PromptAnswer"][];
+                        next_cursor: string | null;
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    listPrompts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Prompts, latest day first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Prompt"][];
+                    };
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    schedulePrompt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                day: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    text: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The prompt */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Prompt"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    unschedulePrompt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                day: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No prompt that day */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
     getFeaturedArtist: {
         parameters: {
             query?: never;
@@ -6657,7 +7026,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                targetType: "photo" | "log";
+                targetType: "photo" | "log" | "prompt_answer";
                 targetId: string;
             };
             cookie?: never;

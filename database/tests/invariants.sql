@@ -1717,6 +1717,69 @@ BEGIN
   END;
 END $$;
 
+-- ------------------------------------------------------------ music prompts (0025)
+-- One prompt a day (staff or library); one answer per fan, written or changed only on its day; takedowns stay down.
+INSERT INTO users (id, handle, email) VALUES
+  ('4a000000-0000-0000-0000-000000000001', 'prompt_fan', 'prompt_fan@example.test'),
+  ('4a000000-0000-0000-0000-000000000002', 'prompt_two', 'prompt_two@example.test');
+DO $$
+DECLARE fan uuid := '4a000000-0000-0000-0000-000000000001'; today date := (now() AT TIME ZONE 'UTC')::date;
+        p prompts; again prompts; old_p uuid; ans uuid;
+BEGIN
+  p := prompt_for_day(today);
+  again := prompt_for_day(today);
+  ASSERT p.id = again.id AND p.source = 'library', 'the library fills a day without a staff prompt, once';
+  ASSERT (SELECT text FROM prompt_library ORDER BY position OFFSET ((today - date '2026-01-01') % 30 + 30) % 30 LIMIT 1) = p.text,
+         'the library rotates by day';
+  INSERT INTO prompts (day, text, source) VALUES (today + 1, 'Staff prompt', 'staff');
+  ASSERT (prompt_for_day(today + 1)).text = 'Staff prompt', 'a staff prompt wins';
+
+  INSERT INTO prompt_answers (prompt_id, user_id, body) VALUES (p.id, fan, 'The Velvet Ropes') RETURNING id INTO ans;
+  BEGIN
+    INSERT INTO prompt_answers (prompt_id, user_id, body) VALUES (p.id, fan, 'Second answer');
+    RAISE EXCEPTION 'a second answer should fail';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO prompt_answers (prompt_id, user_id, body, visibility) VALUES (p.id, '4a000000-0000-0000-0000-000000000002', 'Secret', 'private');
+    RAISE EXCEPTION 'a private answer should fail';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%prompt_answers_shared%', SQLERRM;
+  END;
+  BEGIN
+    INSERT INTO prompt_answers (prompt_id, user_id, body) VALUES (p.id, '4a000000-0000-0000-0000-000000000002', '   ');
+    RAISE EXCEPTION 'a blank answer should fail';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO prompt_answers (prompt_id, user_id, body) VALUES ((prompt_for_day(today + 1)).id, fan, 'Too early');
+    RAISE EXCEPTION 'answering tomorrow''s prompt should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%only on the prompt''s day%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE prompts SET text = 'Changed' WHERE id = p.id;
+    RAISE EXCEPTION 'changing an answered prompt should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%fans have answered it%', SQLERRM;
+  END;
+  UPDATE prompt_answers SET body = 'The Velvet Ropes (edited)' WHERE id = ans;
+  UPDATE prompt_answers SET removed_at = now() WHERE id = ans;
+  BEGIN
+    UPDATE prompt_answers SET removed_at = NULL WHERE id = ans;
+    RAISE EXCEPTION 'restoring a taken-down answer should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%stays down%', SQLERRM;
+  END;
+  -- Reports and moderation decisions accept answers.
+  INSERT INTO reports (reporter_id, target_type, target_id, reason) VALUES ('4a000000-0000-0000-0000-000000000002', 'prompt_answer', ans, 'spam');
+  INSERT INTO moderation_actions (staff_id, target_type, target_id, action, reports) VALUES (NULL, 'prompt_answer', ans, 'take_down', 1);
+
+  -- Yesterday's answers are fixed.
+  INSERT INTO prompts (day, text, source) VALUES (today - 1, 'Yesterday', 'staff') RETURNING id INTO old_p;
+  BEGIN
+    INSERT INTO prompt_answers (prompt_id, user_id, body) VALUES (old_p, fan, 'Late');
+    RAISE EXCEPTION 'answering yesterday''s prompt should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%only on the prompt''s day%', SQLERRM;
+  END;
+END $$;
+
 -- ------------------------------------------------------------ artist profile (0016)
 -- Links need the artist flag; handles are bare; deletion clears the flag and links and they stay empty.
 INSERT INTO users (id, handle, email, is_artist, band_url, instagram_handle, x_handle) VALUES

@@ -16,7 +16,7 @@ namespace FandomScore.Api.Features.Moderation;
 /// </summary>
 public static class ReportEndpoints
 {
-    public static readonly IReadOnlyList<string> TargetTypes = ["photo", "log"];
+    public static readonly IReadOnlyList<string> TargetTypes = ["photo", "log", "prompt_answer"];
     public static readonly IReadOnlyList<string> Reasons = ["spam", "abuse", "impersonation", "inappropriate", "other"];
     public const int DailyReports = 30;
 
@@ -34,10 +34,13 @@ public static class ReportEndpoints
 
     public sealed record ReportedLog(Guid AlbumId, string AlbumTitle, int? Rating, string? Review, string Visibility);
 
+    public sealed record ReportedPromptAnswer(string PromptText, string Body, string Visibility);
+
+    /// <summary><c>Artist</c> is null for a prompt answer (prompts aren't about one artist).</summary>
     public sealed record ReportedPost(
-        string TargetType, Guid TargetId, SubmissionEndpoints.UserRef Author, ScoringEndpoints.ArtistRef Artist,
+        string TargetType, Guid TargetId, SubmissionEndpoints.UserRef Author, ScoringEndpoints.ArtistRef? Artist,
         ReportedPhoto? Photo, ReportedLog? Log, int ReportCount, IReadOnlyList<ReasonCount> Reasons, IReadOnlyList<string> Details,
-        DateTime FirstReportedAt);
+        DateTime FirstReportedAt, ReportedPromptAnswer? PromptAnswer = null);
 
     public sealed record ReportedPostPage(IReadOnlyList<ReportedPost> Items, string? NextCursor);
 
@@ -53,7 +56,7 @@ public static class ReportEndpoints
         var targetType = Text("target_type");
         if (targetType is null || !TargetTypes.Contains(targetType))
         {
-            errors.Add(new FieldError("target_type", "Use photo or log."));
+            errors.Add(new FieldError("target_type", "Use photo, log, or prompt_answer."));
         }
 
         if (!Guid.TryParse(Text("target_id"), out var targetId))
@@ -85,6 +88,11 @@ public static class ReportEndpoints
         var author = await connection.ExecuteScalarAsync<Guid?>(
             targetType == "photo"
                 ? "SELECT user_id FROM submissions WHERE id = @targetId AND shared_at IS NOT NULL"
+                : targetType == "prompt_answer"
+                ? """
+                  SELECT user_id FROM prompt_answers pa WHERE id = @targetId AND deleted_at IS NULL AND removed_at IS NULL
+                   AND (visibility = 'public' OR EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = @userId AND f.followee_id = pa.user_id))
+                  """
                 : """
                   SELECT user_id FROM album_logs l WHERE id = @targetId AND deleted_at IS NULL AND removed_at IS NULL
                    AND (visibility = 'public' OR (visibility = 'followers'
@@ -194,6 +202,19 @@ public static class ReportEndpoints
                 new ReportedPhoto(photo.Kind, photo.Caption, files), null, count, reasons, details, first);
         }
 
+        if (targetType == "prompt_answer")
+        {
+            var answer = await connection.QuerySingleOrDefaultAsync<(string PromptText, string Body, string Visibility, string? Handle, string? DisplayName, bool Deleted)>(
+                """
+                SELECT p.text, pa.body, pa.visibility::text, u.handle::text, u.display_name, u.deleted_at IS NOT NULL
+                FROM prompt_answers pa JOIN prompts p ON p.id = pa.prompt_id JOIN users u ON u.id = pa.user_id WHERE pa.id = @targetId
+                """,
+                new { targetId });
+            if (answer.PromptText is null) return null;
+            return new ReportedPost(targetType, targetId, Author(answer.Handle, answer.DisplayName, answer.Deleted), null, null, null,
+                count, reasons, details, first, new ReportedPromptAnswer(answer.PromptText, answer.Body, answer.Visibility));
+        }
+
         var log = await connection.QuerySingleOrDefaultAsync<LogRow>(
             """
             SELECT al.id AS AlbumId, al.title AS AlbumTitle, l.rating AS Rating, l.review AS Review, l.visibility::text AS Visibility,
@@ -221,7 +242,7 @@ public static class ReportEndpoints
 
         if (!TargetTypes.Contains(targetType))
         {
-            throw new ApiProblemException(StatusCodes.Status404NotFound, "not_found", "Not found", "Use photo or log.");
+            throw new ApiProblemException(StatusCodes.Status404NotFound, "not_found", "Not found", "Use photo, log, or prompt_answer.");
         }
 
         var action = Text("action");
@@ -259,9 +280,12 @@ public static class ReportEndpoints
         if (action == "take_down")
         {
             await connection.ExecuteAsync(
-                targetType == "photo"
-                    ? "UPDATE submissions SET removed_at = now() WHERE id = @targetId AND removed_at IS NULL"
-                    : "UPDATE album_logs SET removed_at = now() WHERE id = @targetId AND removed_at IS NULL",
+                targetType switch
+                {
+                    "photo" => "UPDATE submissions SET removed_at = now() WHERE id = @targetId AND removed_at IS NULL",
+                    "prompt_answer" => "UPDATE prompt_answers SET removed_at = now() WHERE id = @targetId AND removed_at IS NULL",
+                    _ => "UPDATE album_logs SET removed_at = now() WHERE id = @targetId AND removed_at IS NULL",
+                },
                 new { targetId }, transaction);
         }
 

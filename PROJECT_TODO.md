@@ -111,8 +111,12 @@ Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring wo
 - [x] Featured artist of the week (2026-10-25, migration 0023): staff-picked, with a video (MP4 upload up to 100 MB,
       or a YouTube or TikTok link) and a Spotify song; on top of every fan's home screen for the week. `GET /featured`,
       `/admin/featured/{monday}`. Verified: `dotnet test` (FeaturedApiTests 3, FeaturedLinkTests), app Jest, Chrome.
-- [ ] Music prompts ("What's your best hypothetical band name?") and daily blind album rankings (requested
-      2026-10-25; open questions in `apps/mobile/TODO.md`).
+- [x] Music prompts (2026-10-25, migration 0025): one prompt a day ("What's your best hypothetical band name?") from
+      staff or a built-in library; answers (public or followers-only, one per fan, editable that day) show on the feed,
+      can be reported, and staff can take them down. No points. `GET /prompts/today`, `PUT /prompts/{id}/answer`,
+      `GET /prompts/{id}/answers`, `/admin/prompts/{day}`. Verified: `dotnet test` (PromptApiTests 3, invariants),
+      app Jest (Prompts, Feed, Moderation).
+- [ ] Daily blind album rankings (requested 2026-10-25; open questions in `apps/mobile/TODO.md`).
 
 Details: [Album journal API](services/api/src/features/album-journal/TODO.md) · [Journal UI](apps/mobile/src/features/album-journal/TODO.md) · [Lists API](services/api/src/features/lists/TODO.md) · [Lists UI](apps/mobile/src/features/lists/TODO.md) · [Comments API](services/api/src/features/comments/TODO.md) · [Comments UI](apps/mobile/src/features/comments/TODO.md)
 

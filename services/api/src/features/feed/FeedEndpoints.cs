@@ -58,10 +58,13 @@ public static partial class FeedEndpoints
     /// <c>Type</c> says which of the payloads is set. <c>User</c> is null for a show; <c>Artist</c> is null for a stat
     /// that isn't about one artist. <c>Following</c>: the caller follows the item's user.
     /// </summary>
+    /// <summary>An answer to a music prompt (migration 0025): the prompt it answers and the answer.</summary>
+    public sealed record FeedPromptAnswer(Guid PromptId, string PromptText, DateOnly Day, string Body, string Visibility);
+
     public sealed record FeedItem(
         string Type, Guid Id, DateTime At, SubmissionEndpoints.UserRef? User, ScoringEndpoints.ArtistRef? Artist, bool Following,
         FeedPhoto? Photo, FeedLog? Log, GrabBagEndpoints.GrabBagSong? GrabBag, FeedShow? Concert,
-        AllocationEndpoints.RegistrationCard? Registration, FeedStat? Stat);
+        AllocationEndpoints.RegistrationCard? Registration, FeedStat? Stat, FeedPromptAnswer? PromptAnswer = null);
 
     public sealed record FeedPage(IReadOnlyList<FeedItem> Items, string? NextCursor, string Seed);
 
@@ -123,6 +126,7 @@ public static partial class FeedEndpoints
         var songs = await LoadSongsAsync(connection, Ids(page, "grab_bag"));
         var shows = await LoadShowsAsync(connection, me, Ids(page, "concert"));
         var registrations = await LoadRegistrationsAsync(connection, me, Ids(page, "registration"), configuration);
+        var answers = await LoadPromptAnswersAsync(connection, Ids(page, "prompt_answer"));
 
         var items = new List<FeedItem>(page.Count);
         foreach (var row in page)
@@ -137,6 +141,7 @@ public static partial class FeedEndpoints
                 "grab_bag" when songs.TryGetValue(row.Id, out var song) => Item(row, userRef, artist, userRow) with { GrabBag = song },
                 "concert" when shows.TryGetValue(row.Id, out var show) => Item(row, userRef, artist, userRow) with { Concert = show },
                 "registration" when registrations.TryGetValue(row.Id, out var card) => Item(row, userRef, artist, userRow) with { Registration = card },
+                "prompt_answer" when answers.TryGetValue(row.Id, out var answer) => Item(row, userRef, artist, userRow) with { PromptAnswer = answer },
                 "stat" => Item(row, userRef, artist, userRow) with
                 {
                     Stat = new FeedStat(row.StatKind!, row.StatValue ?? 0, row.StatPercentile, row.StatRank, row.StatFans, row.StatIsEstimated),
@@ -179,6 +184,13 @@ public static partial class FeedEndpoints
               AND (l.visibility = 'public'
                    OR (l.visibility = 'followers' AND (l.user_id = @me OR l.user_id IN (SELECT followee_id FROM my_follows))))
             ORDER BY l.created_at DESC LIMIT @pool)
+          UNION ALL
+          (SELECT 'prompt_answer', pa.id, pa.created_at, pa.user_id, NULL::uuid, NULL, NULL, NULL, NULL, NULL, NULL
+             FROM prompt_answers pa JOIN prompts p ON p.id = pa.prompt_id
+             JOIN users u ON u.id = pa.user_id AND u.deleted_at IS NULL
+            WHERE pa.deleted_at IS NULL AND pa.removed_at IS NULL AND p.day >= (now() AT TIME ZONE 'UTC')::date - 7
+              AND (pa.visibility = 'public' OR pa.user_id = @me OR pa.user_id IN (SELECT followee_id FROM my_follows))
+            ORDER BY pa.created_at DESC LIMIT @pool)
           UNION ALL
           (SELECT 'grab_bag', g.id, g.added_at, g.user_id, g.artist_id, NULL, NULL, NULL, NULL, NULL, NULL
              FROM grab_bag_songs g JOIN users u ON u.id = g.user_id AND u.deleted_at IS NULL
@@ -241,7 +253,8 @@ public static partial class FeedEndpoints
                c.stat_value AS StatValue, c.stat_percentile AS StatPercentile, c.stat_rank AS StatRank, c.stat_fans AS StatFans,
                c.stat_is_estimated AS StatIsEstimated
         FROM hashed c
-        JOIN (VALUES ('photo', 2), ('album_log', 3), ('grab_bag', 2), ('concert', 1), ('registration', 1), ('stat', 2)) w (type, weight)
+        JOIN (VALUES ('photo', 2), ('album_log', 3), ('grab_bag', 2), ('concert', 1), ('registration', 1), ('stat', 2),
+                     ('prompt_answer', 2)) w (type, weight)
           ON w.type = c.type
         ORDER BY (row_number() OVER (PARTITION BY c.type ORDER BY c.h, c.id) - 1 + (c.h & 1023) / 1024.0) / w.weight, c.type, c.id
         LIMIT @take OFFSET @offset
@@ -352,6 +365,23 @@ public static partial class FeedEndpoints
         }
 
         return cards;
+    }
+
+    private static async Task<Dictionary<Guid, FeedPromptAnswer>> LoadPromptAnswersAsync(NpgsqlConnection connection, Guid[] ids)
+    {
+        if (ids.Length == 0)
+        {
+            return [];
+        }
+
+        var rows = await connection.QueryAsync<(Guid Id, Guid PromptId, string PromptText, DateOnly Day, string Body, string Visibility)>(
+            """
+            SELECT pa.id, p.id, p.text, p.day, pa.body, pa.visibility::text
+            FROM prompt_answers pa JOIN prompts p ON p.id = pa.prompt_id
+            WHERE pa.id = ANY(@ids) AND pa.deleted_at IS NULL AND pa.removed_at IS NULL
+            """,
+            new { ids });
+        return rows.ToDictionary(r => r.Id, r => new FeedPromptAnswer(r.PromptId, r.PromptText, r.Day, r.Body, r.Visibility));
     }
 
     private static string? Excerpt(string? review) =>

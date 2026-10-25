@@ -12,6 +12,7 @@ import { CameraIcon } from '../../ui/CameraIcon';
 import { Feed } from '../feed/Feed';
 import { FeaturedArtistCard } from '../featured/FeaturedArtistCard';
 import { AlertsButton } from '../notifications/AlertsButton';
+import { DailyPromptCard } from '../prompts/DailyPromptCard';
 import { DailyTriviaCard } from '../trivia/DailyTriviaCard';
 import { YourArtists } from './YourArtists';
 
@@ -155,6 +156,7 @@ export function HomeScreen() {
           <FeaturedArtistCard />
           <YourArtists />
           <DailyTriviaCard />
+          <DailyPromptCard />
         </>
       )}
       {text !== '' && tracked?.length === 0 && !spotify && !askingSpotify && (

@@ -1504,6 +1504,146 @@ paths:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+  /prompts/today:
+    get:
+      tags: [Social]
+      operationId: getTodaysPrompt
+      summary: Today's music prompt
+      description: |
+        One open question a day (UTC) for everyone, from staff or the built-in library, for example "What's your best
+        hypothetical band name?". `following_answers` (up to three answers from people the caller follows) is only
+        filled once the caller has answered.
+      responses:
+        '200':
+          description: The prompt, the caller's answer, and answers from people they follow
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PromptToday'}
+  /prompts/{promptId}/answer:
+    parameters:
+      - {name: promptId, in: path, required: true, schema: {type: string, format: uuid}}
+    put:
+      tags: [Social]
+      operationId: answerPrompt
+      summary: Answer today's prompt
+      description: Writes or rewrites the caller's answer. Only on the prompt's day. Answers show on the feed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: {type: string, minLength: 1, maxLength: 280}
+                visibility: {type: string, enum: [public, followers], default: public}
+      responses:
+        '200':
+          description: The prompt with the caller's answer
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PromptToday'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: 'Not the prompt''s day (`code: prompt_closed`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+    delete:
+      tags: [Social]
+      operationId: withdrawPromptAnswer
+      summary: Withdraw your answer
+      description: Only on the prompt's day. Idempotent.
+      responses:
+        '204': {description: No answer}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: 'Not the prompt''s day (`code: prompt_closed`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+  /prompts/{promptId}/answers:
+    parameters:
+      - {name: promptId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [Social]
+      operationId: listPromptAnswers
+      summary: Answers to a prompt
+      description: Answers the caller can see, theirs first, then people they follow, then everyone else's public ones, newest first.
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page of answers
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/PromptAnswer'}
+                  next_cursor: {type: [string, 'null']}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /admin/prompts:
+    get:
+      tags: [Admin]
+      operationId: listPrompts
+      summary: Prompts around today
+      description: The last week and the next four weeks that have a prompt (days without one get a library prompt on the day).
+      responses:
+        '200':
+          description: Prompts, latest day first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/Prompt'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/prompts/{day}:
+    parameters:
+      - {name: day, in: path, required: true, schema: {type: string, format: date}}
+    put:
+      tags: [Admin]
+      operationId: schedulePrompt
+      summary: Set a day's prompt
+      description: Today or later. Refused once fans have answered that day's prompt.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: {type: string, minLength: 1, maxLength: 200}
+      responses:
+        '200':
+          description: The prompt
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Prompt'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+    delete:
+      tags: [Admin]
+      operationId: unschedulePrompt
+      summary: Remove a day's prompt
+      description: Refused once fans have answered it. The day then gets a library prompt.
+      responses:
+        '204': {description: No prompt that day}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
   /featured:
     get:
       tags: [Social]
@@ -2382,7 +2522,7 @@ paths:
         removes it from the feed for good (it stays as proof; points unchanged). Taking down a log hides it from
         everyone but its author and reverses its points.
       parameters:
-        - {name: targetType, in: path, required: true, schema: {type: string, enum: [photo, log]}}
+        - {name: targetType, in: path, required: true, schema: {type: string, enum: [photo, log, prompt_answer]}}
         - {name: targetId, in: path, required: true, schema: {type: string, format: uuid}}
       requestBody:
         required: true
@@ -2636,6 +2776,7 @@ components:
             - reservation_unavailable
             - trivia_answered
             - trivia_expired
+            - prompt_closed
             - hub_change_limit
             - artist_not_active
             - spotify_artist_not_found
@@ -3617,10 +3758,10 @@ components:
         seed: {type: string, description: The shuffle key this page used; send it back with `cursor`.}
     FeedItem:
       type: object
-      description: '`type` says which payload is set: `photo`, `log`, `grab_bag`, `concert`, `registration`, or `stat`.'
+      description: '`type` says which payload is set: `photo`, `log`, `grab_bag`, `concert`, `registration`, `stat`, or `prompt_answer`.'
       required: [type, id, at, user, artist, following]
       properties:
-        type: {type: string, enum: [photo, album_log, grab_bag, concert, registration, stat]}
+        type: {type: string, enum: [photo, album_log, grab_bag, concert, registration, stat, prompt_answer]}
         id:
           type: string
           format: uuid
@@ -3645,6 +3786,16 @@ components:
         stat:
           description: A number from a followed fan.
           oneOf: [{$ref: '#/components/schemas/FeedStat'}, {type: 'null'}]
+        prompt_answer:
+          description: An answer to a music prompt from the last week (everyone's public ones; followers-only from people the caller follows).
+          type: [object, 'null']
+          required: [prompt_id, prompt_text, day, body, visibility]
+          properties:
+            prompt_id: {type: string, format: uuid}
+            prompt_text: {type: string}
+            day: {type: string, format: date}
+            body: {type: string}
+            visibility: {type: string, enum: [public, followers]}
         photo:
           type: [object, 'null']
           required: [kind, files]
@@ -3774,6 +3925,41 @@ components:
           oneOf: [{$ref: '#/components/schemas/UserRef'}, {type: 'null'}]
         following: {type: integer, description: Fans the caller follows.}
         songs: {type: integer, description: Songs in their grab bags, all together.}
+    Prompt:
+      type: object
+      required: [id, day, text, source, open, answer_count]
+      properties:
+        id: {type: string, format: uuid}
+        day: {type: string, format: date}
+        text: {type: string}
+        source: {type: string, enum: [staff, library]}
+        open: {type: boolean, description: It is the prompt's day, so answers can be written}
+        answer_count: {type: integer, minimum: 0}
+    PromptAnswer:
+      type: object
+      required: [id, prompt_id, user, body, visibility, created_at, updated_at, mine, following]
+      properties:
+        id: {type: string, format: uuid}
+        prompt_id: {type: string, format: uuid}
+        user: {$ref: '#/components/schemas/UserRef'}
+        body: {type: string}
+        visibility: {type: string, enum: [public, followers]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        mine: {type: boolean}
+        following: {type: boolean, description: The caller follows its author}
+    PromptToday:
+      type: object
+      required: [prompt, my_answer, following_answers]
+      properties:
+        prompt: {$ref: '#/components/schemas/Prompt'}
+        my_answer:
+          oneOf: [{$ref: '#/components/schemas/PromptAnswer'}, {type: 'null'}]
+        following_answers:
+          type: array
+          maxItems: 3
+          description: Answers from people the caller follows, once the caller has answered
+          items: {$ref: '#/components/schemas/PromptAnswer'}
     TriviaQuestion:
       type: object
       description: |
@@ -3974,7 +4160,7 @@ components:
       type: object
       required: [target_type, target_id, reason]
       properties:
-        target_type: {type: string, enum: [photo, log], description: 'photo: a shared submission; log: an album log'}
+        target_type: {type: string, enum: [photo, log, prompt_answer], description: 'photo: a shared submission; log: an album log; prompt_answer: an answer to a music prompt'}
         target_id: {type: string, format: uuid}
         reason: {type: string, enum: [spam, abuse, impersonation, inappropriate, other]}
         details: {type: string, maxLength: 1000}
@@ -3991,10 +4177,19 @@ components:
       description: One reported post with its open reports.
       required: [target_type, target_id, author, artist, report_count, reasons, details, first_reported_at]
       properties:
-        target_type: {type: string, enum: [photo, log]}
+        target_type: {type: string, enum: [photo, log, prompt_answer]}
         target_id: {type: string, format: uuid}
         author: {$ref: '#/components/schemas/UserRef'}
-        artist: {$ref: '#/components/schemas/ArtistRef'}
+        artist:
+          description: Null for a prompt answer.
+          oneOf: [{$ref: '#/components/schemas/ArtistRef'}, {type: 'null'}]
+        prompt_answer:
+          type: [object, 'null']
+          required: [prompt_text, body, visibility]
+          properties:
+            prompt_text: {type: string}
+            body: {type: string}
+            visibility: {type: string}
         photo:
           type: [object, 'null']
           required: [kind, files]
@@ -4035,7 +4230,7 @@ components:
       type: object
       required: [target_type, target_id, action, reports_resolved]
       properties:
-        target_type: {type: string, enum: [photo, log]}
+        target_type: {type: string, enum: [photo, log, prompt_answer]}
         target_id: {type: string, format: uuid}
         action: {type: string, enum: [take_down, dismiss]}
         reports_resolved: {type: integer}

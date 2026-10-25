@@ -35,6 +35,8 @@ export function FeedCard(props: FeedCardProps) {
       return item.registration ? <RegistrationCard {...props} /> : null;
     case 'stat':
       return item.stat ? <StatCard {...props} /> : null;
+    case 'prompt_answer':
+      return item.prompt_answer ? <PromptAnswerCard {...props} /> : null;
     default:
       return null;
   }
@@ -57,7 +59,11 @@ function Report({ item, mine }: { item: FeedItem; mine: boolean }) {
   if (mine) return null;
   const who = fanName(item.user);
   return reporting ? (
-    <ReportForm targetType={item.type === 'photo' ? 'photo' : 'log'} targetId={item.id} onClose={() => setReporting(false)} />
+    <ReportForm
+      targetType={item.type === 'photo' ? 'photo' : item.type === 'prompt_answer' ? 'prompt_answer' : 'log'}
+      targetId={item.id}
+      onClose={() => setReporting(false)}
+    />
   ) : (
     <Pressable accessibilityRole="button" accessibilityLabel={`Report ${who}'s post`} onPress={() => setReporting(true)} hitSlop={8}>
       <Text style={styles.report}>Report</Text>
@@ -219,6 +225,26 @@ function RegistrationCard({ item }: FeedCardProps) {
   );
 }
 
+function PromptAnswerCard(props: FeedCardProps) {
+  const { item, mine } = props;
+  const answer = item.prompt_answer!;
+  return (
+    <View style={[styles.card, styles.promptCard]}>
+      <Byline {...props}>
+        <Text style={styles.strong}>{fanName(item.user)}</Text> answered the prompt
+        {answer.visibility === 'followers' ? ' · followers only' : ''}
+      </Byline>
+      <Text style={styles.muted}>{answer.prompt_text}</Text>
+      <Text style={styles.answer}>“{answer.body}”</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel={`See all answers to: ${answer.prompt_text}`}
+        onPress={() => router.push(`/prompts/${answer.prompt_id}`)} hitSlop={8}>
+        <Text style={styles.link}>See all answers</Text>
+      </Pressable>
+      <Report item={item} mine={mine} />
+    </View>
+  );
+}
+
 function StatCard(props: FeedCardProps) {
   const { item } = props;
   const who = fanName(item.user);
@@ -235,6 +261,8 @@ const styles = StyleSheet.create({
   concert: { borderColor: colors.accent },
   registration: { borderColor: colors.accent, backgroundColor: colors.surface },
   stat: { backgroundColor: colors.surface },
+  promptCard: { borderColor: '#e57373' },
+  answer: { color: colors.text, fontSize: 18, fontWeight: '700', lineHeight: 24 },
   byline: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   grow: { flex: 1 },
   kicker: { color: colors.muted, fontSize: 13, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },

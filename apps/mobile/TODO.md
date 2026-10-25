@@ -40,14 +40,17 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       home screen above the feed. A right answer earns `trivia_correct`, 0.30 points, a tenth of logging an album
       (decided 2026-10-25: "a tenth of other categories"), once a day. Verified: TriviaApiTests, invariants,
       DailyTriviaCard tests, answered in Chrome.*
-- [ ] **Music prompts** (requested 2026-10-25): open questions fans answer for their followers, for example "What's
-      your best hypothetical band name?", shown in the feed with the answers from people the fan follows. Answers are
-      posts, so they need reporting and takedowns like logs and photos. Planned storage: `prompts` (the question and the
-      day it runs) and `prompt_answers` (one per fan per prompt), in the main database.
+- [x] **Music prompts** (requested 2026-10-25): *done 2026-10-25 (migration 0025): one prompt a day for everyone, from
+      staff (Profile, "Daily prompts") or a built-in library of 30 (`prompt_library`), stored in `prompts`; one answer
+      per fan (`prompt_answers`), public or followers-only, editable on the day. Home shows the prompt card; once
+      answered, up to three answers from people the fan follows and "See all answers". No points. Verified:
+      PromptApiTests 3, invariants, Prompts tests, Feed and Moderation tests.*
 - [x] **Trivia results** (decided 2026-10-25): once a fan answers, the card names one or two people they follow who
       got it right and the percent of fans who did. Fans of an artist share the day's question (migration 0024) so
       this works. *Done 2026-10-25. Verified: TriviaApiTests (shared question and results), DailyTriviaCard tests.*
-- [ ] **Share prompt answers on the feed** (requested 2026-10-25), with prompts.
+- [x] **Share prompt answers on the feed** (requested 2026-10-25): *done 2026-10-25: answers from the last week are a
+      feed item (everyone's public ones; followers-only ones to followers), with Follow and Report; staff take them down
+      from the reported-posts queue.*
 - [x] **Featured artist of the week** (requested 2026-10-25): *done 2026-10-25: staff pick it (decided) with a video
       (an uploaded MP4, or a YouTube or TikTok link) and a Spotify song; it shows above the artist list on home. The web
       build plays the video in place; phones open it in YouTube, TikTok, or the browser (in-app playback needs
