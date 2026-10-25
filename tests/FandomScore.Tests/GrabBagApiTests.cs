@@ -128,6 +128,33 @@ public sealed class GrabBagApiTests(PostgresFixture postgres) : IAsyncLifetime, 
     }
 
     [Fact]
+    public async Task Songs_can_be_reordered_across_the_five_slots()
+    {
+        var ana = await SignInAsync("ana");
+        await JsonAsync(await SendAsync(HttpMethod.Put, "/v1/me/grab-bag/1", ana, new { spotify_track_id = Track1 }), HttpStatusCode.OK);
+        var bag = await JsonAsync(await SendAsync(HttpMethod.Put, "/v1/me/grab-bag/3", ana, new { spotify_track_id = Track2 }), HttpStatusCode.OK);
+        var ids = bag.GetProperty("items").EnumerateArray().ToDictionary(s => s.GetProperty("title").GetString()!, s => s.GetProperty("id").GetString());
+
+        var reordered = await JsonAsync(await SendAsync(HttpMethod.Put, "/v1/me/grab-bag/order", ana,
+            new { slots = new[] { ids["2122"], null, null, null, ids["Cowboy Nudes"] } }), HttpStatusCode.OK);
+        Assert.Equal([("2122", 1), ("Cowboy Nudes", 5)], reordered.GetProperty("items").EnumerateArray()
+            .Select(s => (s.GetProperty("title").GetString(), s.GetProperty("position").GetInt32())));
+        Assert.Equal(ids["2122"], reordered.GetProperty("items")[0].GetProperty("id").GetString());   // same song rows
+
+        foreach (var slots in new[]
+                 {
+                     new[] { ids["2122"], null, null, null },                            // four slots
+                     new[] { ids["2122"], null, null, null, null },                      // a song missing
+                     new[] { ids["2122"], ids["2122"], null, null, ids["Cowboy Nudes"] }, // a song twice
+                     new[] { ids["2122"], Guid.NewGuid().ToString(), null, null, ids["Cowboy Nudes"] }, // not hers
+                 })
+        {
+            var refused = await JsonAsync(await SendAsync(HttpMethod.Put, "/v1/me/grab-bag/order", ana, new { slots }), HttpStatusCode.UnprocessableEntity);
+            Assert.Equal("slots", refused.GetProperty("errors")[0].GetProperty("field").GetString());
+        }
+    }
+
+    [Fact]
     public async Task Followers_and_the_owner_see_a_grab_bag_and_nobody_else_does()
     {
         var ana = await SignInAsync("ana");

@@ -632,7 +632,7 @@ END $$;
 -- ------------------------------------------------------------ proof photos and sharing (0012)
 SELECT pg_temp.expect_error(
   $$INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes) VALUES ('00000000-0000-0000-0000-000000000001', 'submission', 'image/gif', 10)$$,
-  'uploads_mime_type_check');
+  'uploads_purpose_kind_check');   -- one combined check since 0023
 SELECT pg_temp.expect_error(
   $$INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes, storage_key) VALUES ('00000000-0000-0000-0000-000000000001', 'submission', 'image/jpeg', 10, 'k')$$,
   'uploads_check');
@@ -1576,6 +1576,111 @@ BEGIN
   ASSERT NOT EXISTS (SELECT 1 FROM notifications WHERE user_id = top), 'a deleted account gets none';
   SELECT count(*) INTO n FROM notifications WHERE user_id = staff;
   ASSERT n = 3, 'staff: draw, report, review';
+END $$;
+
+-- ------------------------------------------------------------ daily trivia (0022)
+-- One question a day; answered once, today only; a right answer earns trivia_correct once (0.30, a tenth of a log).
+INSERT INTO users (id, handle, email) VALUES ('49000000-0000-0000-0000-000000000001', 'quiz_fan', 'quiz_fan@example.test');
+DO $$
+DECLARE fan uuid := '49000000-0000-0000-0000-000000000001'; artist uuid := '40000000-0000-0000-0000-000000000001';
+        q uuid; old_q uuid; was_right boolean;
+BEGIN
+  ASSERT (SELECT points FROM scoring_rules WHERE rule_key = 'trivia_correct') = 0.30, 'a tenth of album_logged';
+  INSERT INTO trivia_questions (user_id, day, artist_id, kind, prompt, options, answer_index)
+  VALUES (fan, (now() AT TIME ZONE 'UTC')::date, artist, 'release_year', 'What year?', ARRAY['2019', '2020', '2021'], 1)
+  RETURNING id INTO q;
+  BEGIN
+    INSERT INTO trivia_questions (user_id, day, artist_id, kind, prompt, options, answer_index)
+    VALUES (fan, (now() AT TIME ZONE 'UTC')::date, artist, 'release_year', 'Again?', ARRAY['a', 'b'], 0);
+    RAISE EXCEPTION 'a second question today should fail';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  BEGIN
+    UPDATE trivia_questions SET chosen_index = 1, correct = true, answered_at = now() WHERE id = q;
+    RAISE EXCEPTION 'answering by hand should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%answered once, through answer_trivia()%', SQLERRM;
+  END;
+  BEGIN
+    PERFORM answer_trivia('49000000-0000-0000-0000-0000000000ff', q, 1);
+    RAISE EXCEPTION 'someone else answering should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'trivia blocked: not_found%', SQLERRM;
+  END;
+  was_right := answer_trivia(fan, q, 1);
+  ASSERT was_right, 'the right option is right';
+  ASSERT (SELECT points FROM score_events WHERE source_type = 'trivia' AND source_id = q AND reversed_at IS NULL) = 0.30, 'points awarded';
+  BEGIN
+    PERFORM answer_trivia(fan, q, 0);
+    RAISE EXCEPTION 'answering twice should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'trivia blocked: answered%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE trivia_questions SET prompt = 'Changed' WHERE id = q;
+    RAISE EXCEPTION 'changing a question should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%a question never changes%', SQLERRM;
+  END;
+  -- Yesterday's question can't be answered any more.
+  INSERT INTO trivia_questions (user_id, day, artist_id, kind, prompt, options, answer_index)
+  VALUES (fan, (now() AT TIME ZONE 'UTC')::date - 1, artist, 'track_album', 'Which album?', ARRAY['A', 'B'], 0)
+  RETURNING id INTO old_q;
+  BEGIN
+    PERFORM answer_trivia(fan, old_q, 0);
+    RAISE EXCEPTION 'answering yesterday''s question should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'trivia blocked: expired%', SQLERRM;
+  END;
+  BEGIN
+    INSERT INTO trivia_questions (user_id, day, artist_id, kind, prompt, options, answer_index)
+    VALUES (fan, (now() AT TIME ZONE 'UTC')::date + 1, artist, 'track_album', 'Out of range', ARRAY['A', 'B'], 2);
+    RAISE EXCEPTION 'an answer outside the options should fail';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+END $$;
+
+-- ------------------------------------------------------------ featured artist of the week (0023)
+DO $$
+DECLARE artist uuid := '40000000-0000-0000-0000-000000000001'; up uuid; monday date := date_trunc('week', now())::date;
+BEGIN
+  INSERT INTO featured_artists (week_start, artist_id, video_kind, video_url, spotify_track_id, track_title)
+  VALUES (monday, artist, 'youtube', 'https://www.youtube.com/watch?v=abc', '1aaaaaaaaaaaaaaaaaaaaa', 'A song');
+  BEGIN
+    INSERT INTO featured_artists (week_start, artist_id, video_kind, video_url, spotify_track_id, track_title)
+    VALUES (monday, artist, 'tiktok', 'https://www.tiktok.com/@x/video/1', '1aaaaaaaaaaaaaaaaaaaaa', 'Same week');
+    RAISE EXCEPTION 'two picks in one week should fail';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO featured_artists (week_start, artist_id, video_kind, video_url, spotify_track_id, track_title)
+    VALUES (monday + 1, artist, 'youtube', 'https://www.youtube.com/watch?v=abc', '1aaaaaaaaaaaaaaaaaaaaa', 'Tuesday');
+    RAISE EXCEPTION 'a week that starts on a Tuesday should fail';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%featured_artists_monday%', SQLERRM;
+  END;
+  BEGIN
+    INSERT INTO featured_artists (week_start, artist_id, video_kind, spotify_track_id, track_title)
+    VALUES (monday + 7, artist, 'youtube', '1aaaaaaaaaaaaaaaaaaaaa', 'No link');
+    RAISE EXCEPTION 'a link video without a link should fail';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%featured_artists_video%', SQLERRM;
+  END;
+  -- An uploaded video must be a finished featured_video upload; photos stay JPEG/PNG up to 15 MB.
+  INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes) VALUES ('00000000-0000-0000-0000-000000000001', 'featured_video', 'video/mp4', 50000000)
+  RETURNING id INTO up;
+  BEGIN
+    INSERT INTO featured_artists (week_start, artist_id, video_kind, video_upload_id, spotify_track_id, track_title)
+    VALUES (monday + 7, artist, 'upload', up, '1aaaaaaaaaaaaaaaaaaaaa', 'Not uploaded yet');
+    RAISE EXCEPTION 'an unfinished upload should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%finished featured_video upload%', SQLERRM;
+  END;
+  UPDATE uploads SET storage_key = 'quarantine/' || up, sha256 = sha256('v'), bytes = 10, uploaded_at = now() WHERE id = up;
+  INSERT INTO featured_artists (week_start, artist_id, video_kind, video_upload_id, spotify_track_id, track_title)
+  VALUES (monday + 7, artist, 'upload', up, '1aaaaaaaaaaaaaaaaaaaaa', 'Uploaded');
+  BEGIN
+    INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes) VALUES ('00000000-0000-0000-0000-000000000001', 'submission', 'video/mp4', 10);
+    RAISE EXCEPTION 'a video as proof should fail';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%uploads_purpose_kind_check%', SQLERRM;
+  END;
+  BEGIN
+    INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes) VALUES ('00000000-0000-0000-0000-000000000001', 'submission', 'image/jpeg', 20000000);
+    RAISE EXCEPTION 'a 20 MB photo should fail';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
 END $$;
 
 -- ------------------------------------------------------------ artist profile (0016)

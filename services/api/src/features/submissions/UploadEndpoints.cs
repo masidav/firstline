@@ -18,6 +18,11 @@ public static class UploadEndpoints
     public const string UploadPurpose = "upload";
     public const string FilePurpose = "file";
     public const int MaxBytes = 15 * 1024 * 1024;
+
+    /// <summary>Staff-uploaded featured-artist videos (migration 0023): MP4 up to 100 MB, stored as uploaded.</summary>
+    public const int MaxVideoBytes = 100 * 1024 * 1024;
+
+    public const string VideoPurpose = "featured_video";
     public const int DailyUploads = 50;
 
     private static readonly TimeSpan UploadLifetime = TimeSpan.FromHours(1);
@@ -50,22 +55,23 @@ public static class UploadEndpoints
     {
         var errors = new List<FieldError>();
         var purpose = StringField(body, "purpose");
-        if (purpose != "submission")
+        var video = purpose == VideoPurpose;
+        if (purpose != "submission" && !video)
         {
             errors.Add(new FieldError("purpose", purpose == "avatar" ? "Avatars aren't supported yet." : "Use submission."));
         }
 
         var mimeType = StringField(body, "mime_type");
-        if (mimeType is not ("image/jpeg" or "image/png"))
+        if (video ? mimeType != "video/mp4" : mimeType is not ("image/jpeg" or "image/png"))
         {
-            errors.Add(new FieldError("mime_type", "Send a JPEG or PNG photo (convert HEIC or WebP first)."));
+            errors.Add(new FieldError("mime_type", video ? "Send an MP4 video." : "Send a JPEG or PNG photo (convert HEIC or WebP first)."));
         }
 
         int bytes = 0;
         if (!(body.ValueKind == JsonValueKind.Object && body.TryGetProperty("bytes", out var b) && b.ValueKind == JsonValueKind.Number
-              && b.TryGetInt32(out bytes) && bytes is >= 1 and <= MaxBytes))
+              && b.TryGetInt32(out bytes) && bytes >= 1 && bytes <= (video ? MaxVideoBytes : MaxBytes)))
         {
-            errors.Add(new FieldError("bytes", "Photos can be up to 15 MB."));
+            errors.Add(new FieldError("bytes", video ? "Videos can be up to 100 MB." : "Photos can be up to 15 MB."));
         }
 
         byte[]? declaredSha = null;
@@ -89,6 +95,12 @@ public static class UploadEndpoints
 
         var userId = user.UserId();
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        if (video && !await connection.ExecuteScalarAsync<bool>(
+                "SELECT EXISTS (SELECT 1 FROM users WHERE id = @userId AND is_staff AND deleted_at IS NULL)", new { userId }))
+        {
+            throw new ApiProblemException(StatusCodes.Status403Forbidden, "forbidden", "Staff only", "Only staff upload featured-artist videos.");
+        }
+
         var today = await connection.ExecuteScalarAsync<int>(
             "SELECT count(*) FROM uploads WHERE user_id = @userId AND created_at >= now() - interval '1 day'", new { userId });
         if (today >= DailyUploads)
@@ -100,9 +112,9 @@ public static class UploadEndpoints
         var (uploadId, expiresAt) = await connection.QuerySingleAsync<(Guid, DateTime)>(
             """
             INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes, declared_sha256, expires_at)
-            VALUES (@userId, 'submission', @mimeType, @bytes, @declaredSha, now() + @lifetime) RETURNING id, expires_at
+            VALUES (@userId, @purpose, @mimeType, @bytes, @declaredSha, now() + @lifetime) RETURNING id, expires_at
             """,
-            new { userId, mimeType, bytes, declaredSha, lifetime = UploadLifetime });
+            new { userId, purpose, mimeType, bytes, declaredSha, lifetime = UploadLifetime });
         // The link outlives the slot a little, so a late upload hears "expired" (409) rather than "invalid link".
         var (query, _) = urls.Sign(UploadPurpose, uploadId, UploadLifetime + TimeSpan.FromMinutes(10));
         return Results.Created((string?)null, new UploadIntent(uploadId, "PUT",
@@ -136,6 +148,12 @@ public static class UploadEndpoints
                 upload.Expired ? "This upload has expired. Start again." : "This upload already has its file.");
         }
 
+        if (upload.MimeType == "video/mp4"
+            && request.HttpContext.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit)
+        {
+            limit.MaxRequestBodySize = MaxVideoBytes + 1L;   // Kestrel's default is 30 MB
+        }
+
         // Read at most the declared size (plus one byte to notice a bigger body).
         using var buffer = new MemoryStream();
         var chunk = new byte[81920];
@@ -160,8 +178,14 @@ public static class UploadEndpoints
             throw ApiProblemException.Validation(new FieldError("body", "The file doesn't match the declared SHA-256."));
         }
 
-        var stripped = ImageMetadata.Strip(original, upload.MimeType)
-                       ?? throw ApiProblemException.Validation(new FieldError("body", $"This isn't a valid {(upload.MimeType == "image/png" ? "PNG" : "JPEG")} image."));
+        // Videos are stored as uploaded (staff-made promo clips; photo metadata stripping doesn't apply). An MP4
+        // starts with a box size and the "ftyp" box.
+        var stripped = upload.MimeType == "video/mp4"
+            ? (original.Length > 12 && original.AsSpan(4, 4).SequenceEqual("ftyp"u8)
+                ? original
+                : throw ApiProblemException.Validation(new FieldError("body", "This isn't a valid MP4 video.")))
+            : ImageMetadata.Strip(original, upload.MimeType)
+              ?? throw ApiProblemException.Validation(new FieldError("body", $"This isn't a valid {(upload.MimeType == "image/png" ? "PNG" : "JPEG")} image."));
         var key = $"quarantine/{uploadId}";
         await files.PutAsync(key, stripped, cancellationToken);
         var updated = await connection.ExecuteAsync(

@@ -29,6 +29,7 @@ public static partial class GrabBagEndpoints
         v1.MapGet("/me/grab-bag", GetMineAsync);
         v1.MapPut("/me/grab-bag/{position:int}", PutAsync);
         v1.MapDelete("/me/grab-bag/{position:int}", DeleteAsync);
+        v1.MapPut("/me/grab-bag/order", ReorderAsync);
         v1.MapGet("/users/{handle}/grab-bag", GetForUserAsync);
         v1.MapGet("/me/bouncer-door", BouncerDoorAsync);
         v1.MapGet("/tracks/search", SearchTracksAsync).RequireRateLimiting(ArtistEndpoints.SearchRateLimit);
@@ -42,6 +43,9 @@ public static partial class GrabBagEndpoints
     public sealed record GrabBag(SubmissionEndpoints.UserRef Owner, IReadOnlyList<GrabBagSong> Items, int Slots);
 
     public sealed record PutSongRequest(string? SpotifyTrackId);
+
+    /// <summary>The bag's five slots in their new order: each of the fan's song ids once, null for an empty slot.</summary>
+    public sealed record ReorderRequest(IReadOnlyList<Guid?>? Slots);
 
     public sealed record TrackArtist(string SpotifyArtistId, string Name, Guid? ArtistId);
 
@@ -157,6 +161,42 @@ public static partial class GrabBagEndpoints
                   album_title = EXCLUDED.album_title, cover_url = EXCLUDED.cover_url, added_at = now()
             """,
             new { me, position, spotifyTrackId, title = track.Name, artistId, albumTitle = track.AlbumName, coverUrl = track.CoverUrl },
+            transaction);
+        var bag = await LoadAsync(connection, me, transaction);
+        await transaction.CommitAsync(cancellationToken);
+        return Results.Ok(bag);
+    }
+
+    // Rewrites the slot numbers in one transaction. The rows are re-inserted (positions are unique per fan and only
+    // 1 to 5, so they can't be moved one at a time); ids, songs, and timestamps stay as they were.
+    private static async Task<IResult> ReorderAsync(
+        ClaimsPrincipal user, ReorderRequest? request, NpgsqlDataSource db, CancellationToken cancellationToken)
+    {
+        var me = user.UserId();
+        await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var current = (await connection.QueryAsync<Guid>(
+            "SELECT id FROM grab_bag_songs WHERE user_id = @me FOR UPDATE", new { me }, transaction)).ToHashSet();
+        var slots = request?.Slots;
+        var given = slots?.OfType<Guid>().ToList() ?? [];
+        if (slots is null || slots.Count != Slots || given.Count != given.Distinct().Count() || !current.SetEquals(given))
+        {
+            throw ApiProblemException.Validation(new FieldError("slots",
+                $"Send {Slots} slots in order: each of your songs' ids once, and null for an empty slot."));
+        }
+
+        // Slot numbers for each song id (position = index + 1).
+        var positions = slots.Select((id, index) => (id, position: index + 1)).Where(x => x.id is not null).ToList();
+        await connection.ExecuteAsync(
+            """
+            WITH old AS (DELETE FROM grab_bag_songs WHERE user_id = @me RETURNING *),
+                 slot AS (SELECT * FROM unnest(@ids::uuid[], @positions::int[]) AS u (id, position))
+            INSERT INTO grab_bag_songs (id, user_id, position, spotify_track_id, title, artist_id, album_title, cover_url, added_at, refreshed_at)
+            SELECT old.id, old.user_id, slot.position, old.spotify_track_id, old.title, old.artist_id, old.album_title, old.cover_url,
+                   old.added_at, old.refreshed_at
+            FROM old JOIN slot ON slot.id = old.id
+            """,
+            new { me, ids = positions.Select(x => x.id!.Value).ToArray(), positions = positions.Select(x => x.position).ToArray() },
             transaction);
         var bag = await LoadAsync(connection, me, transaction);
         await transaction.CommitAsync(cancellationToken);

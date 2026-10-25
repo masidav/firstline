@@ -10,7 +10,9 @@ import { colors, space } from '../../ui/theme';
 import { ArtistRow } from './ArtistRow';
 import { CameraIcon } from '../../ui/CameraIcon';
 import { Feed } from '../feed/Feed';
+import { FeaturedArtistCard } from '../featured/FeaturedArtistCard';
 import { AlertsButton } from '../notifications/AlertsButton';
+import { DailyTriviaCard } from '../trivia/DailyTriviaCard';
 import { YourArtists } from './YourArtists';
 
 const DEBOUNCE_MS = 300;
@@ -150,7 +152,9 @@ export function HomeScreen() {
 
       {!text && (
         <>
+          <FeaturedArtistCard />
           <YourArtists />
+          <DailyTriviaCard />
         </>
       )}
       {text !== '' && tracked?.length === 0 && !spotify && !askingSpotify && (

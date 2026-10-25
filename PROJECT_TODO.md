@@ -103,8 +103,14 @@ Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring wo
       logs show to followers since 2026-10-25 (follows, migration 0018); offline sync is the app's queue, still to build.)
 - [ ] Implement ordered album lists.
 - [ ] Implement comments, replies, anti-abuse rules, and reward reversals.
-- [ ] Music trivia, music prompts ("What's your best hypothetical band name?"), and a featured artist of the week in
-      the feed (requested 2026-10-25; open questions in `apps/mobile/TODO.md`).
+- [x] Daily music trivia (2026-10-25, migration 0022): one question a day from the fan's artists' catalog; a right
+      answer earns `trivia_correct` (0.30, a tenth of `album_logged`; decided 2026-10-25), once a day. `GET /me/trivia`,
+      `POST /me/trivia/{id}/answer`. Verified: `dotnet test` (TriviaApiTests 2, invariants), app Jest, Chrome.
+- [x] Featured artist of the week (2026-10-25, migration 0023): staff-picked, with a video (MP4 upload up to 100 MB,
+      or a YouTube or TikTok link) and a Spotify song; on top of every fan's home screen for the week. `GET /featured`,
+      `/admin/featured/{monday}`. Verified: `dotnet test` (FeaturedApiTests 3, FeaturedLinkTests), app Jest, Chrome.
+- [ ] Music prompts ("What's your best hypothetical band name?") and daily blind album rankings (requested
+      2026-10-25; open questions in `apps/mobile/TODO.md`).
 
 Details: [Album journal API](services/api/src/features/album-journal/TODO.md) · [Journal UI](apps/mobile/src/features/album-journal/TODO.md) · [Lists API](services/api/src/features/lists/TODO.md) · [Lists UI](apps/mobile/src/features/lists/TODO.md) · [Comments API](services/api/src/features/comments/TODO.md) · [Comments UI](apps/mobile/src/features/comments/TODO.md)
 

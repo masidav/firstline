@@ -260,6 +260,9 @@ export interface paths {
          *     `headers`; the link is signed and short-lived, so it needs no sign-in. Files land in quarantine storage
          *     with their metadata (EXIF location, camera details, comments) stripped. JPEG and PNG only: convert HEIC
          *     or WebP on the device first. 50 uploads per day per user.
+         *
+         *     Staff also upload featured-artist videos here (`purpose: featured_video`): MP4 up to 100 MB, stored as
+         *     uploaded; others get 403.
          */
         post: operations["createUpload"];
         delete?: never;
@@ -1153,6 +1156,163 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/grab-bag/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reorder the grab bag
+         * @description The five slots in their new order. Each of the caller's songs appears once; null leaves a slot empty.
+         */
+        put: operations["reorderGrabBag"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/trivia": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Today's music trivia
+         * @description One question a day (UTC) about one of the fan's scored artists, made from the album catalog the first time it
+         *     is asked for. `question` is null when none of the fan's artists has enough catalog yet. The right answer is
+         *     only included once the fan has answered. A right answer earns `trivia_correct` ledger points (0.30, a tenth
+         *     of logging an album; decided 2026-10-25).
+         */
+        get: operations["getTodaysTrivia"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/trivia/{questionId}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                questionId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer today's question
+         * @description Once, and only on its day.
+         */
+        post: operations["answerTrivia"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/featured": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * This week's featured artist
+         * @description The staff pick for the current week (Monday to Sunday, UTC): the artist, a video (an uploaded MP4 through a
+         *     signed link, or a YouTube or TikTok link with an embeddable URL), and a song on Spotify. Null when no pick.
+         */
+        get: operations["getFeaturedArtist"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/featured/videos/{uploadId}": {
+        parameters: {
+            query: {
+                exp: number;
+                sig: string;
+            };
+            header?: never;
+            path: {
+                uploadId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * An uploaded featured video
+         * @description Signed, short-lived link from `FeaturedArtist.video.url`; needs no sign-in. Supports range requests.
+         */
+        get: operations["getFeaturedVideo"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/featured": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Featured picks
+         * @description The last four weeks and everything scheduled, newest first.
+         */
+        get: operations["listFeaturedArtists"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/featured/{weekStart}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The Monday the week starts on */
+                weekStart: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Pick the featured artist for a week
+         * @description Creates or replaces the week's pick. Send `video_url` (a YouTube or TikTok link) or `video_upload_id` (a
+         *     finished `featured_video` upload), not both. `spotify_track` is an open.spotify.com/track link or a track id;
+         *     the title and cover come from Spotify.
+         */
+        put: operations["putFeaturedArtist"];
+        post?: never;
+        /** Remove a week's pick */
+        delete: operations["deleteFeaturedArtist"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/{handle}/grab-bag": {
         parameters: {
             query?: never;
@@ -2005,7 +2165,7 @@ export interface components {
              * @description Stable machine-readable code.
              * @enum {string}
              */
-            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "reservation_unavailable" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_track_not_found" | "followers_only" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
+            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "reservation_unavailable" | "trivia_answered" | "trivia_expired" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_track_not_found" | "followers_only" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
             errors?: {
                 field?: string;
                 message?: string;
@@ -2162,9 +2322,13 @@ export interface components {
         };
         UploadIntentRequest: {
             /** @enum {string} */
-            purpose: "submission";
-            /** @enum {string} */
-            mime_type: "image/jpeg" | "image/png";
+            purpose: "submission" | "featured_video";
+            /**
+             * @description video/mp4 only for featured_video
+             * @enum {string}
+             */
+            mime_type: "image/jpeg" | "image/png" | "video/mp4";
+            /** @description Photos up to 15 MB, videos up to 100 MB */
             bytes: number;
             sha256?: string;
         };
@@ -3063,6 +3227,60 @@ export interface components {
             following: number;
             /** @description Songs in their grab bags */
             songs: number;
+        };
+        TriviaQuestion: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date */
+            day: string;
+            artist: components["schemas"]["ArtistRef"];
+            /** @enum {string} */
+            kind: "track_album" | "release_year";
+            prompt: string;
+            options: string[];
+            answered: boolean;
+            chosen_index: number | null;
+            /** @description Only once answered */
+            answer_index: number | null;
+            correct: boolean | null;
+            points_for_right: number;
+            /** @description Once answered: 0, or the points a right answer earned */
+            points_earned: number | null;
+        };
+        FeaturedArtist: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date */
+            week_start: string;
+            /** Format: date */
+            week_end: string;
+            artist: components["schemas"]["ArtistRef"];
+            headline: string | null;
+            video: {
+                /** @enum {string} */
+                kind: "upload" | "youtube" | "tiktok";
+                /**
+                 * Format: uri
+                 * @description The link to open (a signed link for an upload)
+                 */
+                url: string;
+                /**
+                 * Format: uri
+                 * @description Plays inside a page (iframe or video element)
+                 */
+                embed_url: string | null;
+                /** Format: uri */
+                thumbnail_url: string | null;
+            };
+            song: {
+                spotify_track_id: string;
+                title: string;
+                album_title: string | null;
+                /** Format: uri */
+                cover_url: string | null;
+                /** Format: uri */
+                spotify_url: string;
+            };
         };
         GrabBagPut: {
             spotify_track_id: string;
@@ -5176,6 +5394,238 @@ export interface operations {
                     "application/json": components["schemas"]["BouncerDoor"];
                 };
             };
+        };
+    };
+    reorderGrabBag: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    slots: (string | null)[];
+                };
+            };
+        };
+        responses: {
+            /** @description The grab bag in its new order */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrabBag"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getTodaysTrivia: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Today's question, or none */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        question: components["schemas"]["TriviaQuestion"] | null;
+                    };
+                };
+            };
+        };
+    };
+    answerTrivia: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                questionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Index of the picked option */
+                    choice: number;
+                };
+            };
+        };
+        responses: {
+            /** @description The answered question with the right answer and the points earned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriviaQuestion"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Already answered (`code: trivia_answered`), or another day's question (`code: trivia_expired`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getFeaturedArtist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The pick, or none */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        featured: components["schemas"]["FeaturedArtist"] | null;
+                    };
+                };
+            };
+        };
+    };
+    getFeaturedVideo: {
+        parameters: {
+            query: {
+                exp: number;
+                sig: string;
+            };
+            header?: never;
+            path: {
+                uploadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The MP4 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "video/mp4": string;
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listFeaturedArtists: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Picks */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["FeaturedArtist"][];
+                    };
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    putFeaturedArtist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The Monday the week starts on */
+                weekStart: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    artist_id: string;
+                    headline?: string | null;
+                    /** Format: uri */
+                    video_url?: string;
+                    /** Format: uuid */
+                    video_upload_id?: string;
+                    spotify_track: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The pick */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeaturedArtist"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            /** @description Spotify does not know this track (`code: spotify_track_not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["SpotifyUnavailable"];
+        };
+    };
+    deleteFeaturedArtist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The Monday the week starts on */
+                weekStart: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No pick that week */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
         };
     };
     getUserGrabBag: {

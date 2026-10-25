@@ -25,8 +25,9 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       of someone the fan follows, with that fan's name and a link to the song on Spotify. *Done 2026-10-25: the door is
       a card in the feed after the sixth item (or at the end of a shorter feed); "Knock" draws a song inline
       (`BouncerDoorCard`). Verified: Feed tests, clicked through in Chrome at phone size.*
-- [ ] **Grab bag** screen: pick up to 5 favorite songs (any artist), reorder or remove them. Shared with
-      followers; sharing can't be turned off. *Built 2026-10-25 (`/grab-bag`) except reordering.*
+- [x] **Grab bag** screen: pick up to 5 favorite songs (any artist), reorder or remove them. Shared with
+      followers; sharing can't be turned off. *Built 2026-10-25 (`/grab-bag`); reordering with up and down arrows that
+      swap a song with the slot above or below (`PUT /me/grab-bag/order`). Verified: GrabBagApiTests, GrabBagScreen tests.*
 - [x] **Change "Post a photo" to something better** (requested 2026-10-25): *done 2026-10-25 as a round camera button
       floating over the feed (drawn with views; no icon font), hidden while searching. Verified: HomeScreen tests, Chrome.*
 - [x] **Use real artists and albums for dev testing** (requested 2026-10-25): *done 2026-10-25: with Spotify credentials
@@ -34,15 +35,27 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       token; grab bags use real track ids. Without credentials (CI, or `--fake`) it falls back to made-up artists.
       Verified with a faked Spotify (`tools/ci/test_seed_catalog.py`) and both variants applied to a fresh database;
       not yet run against real Spotify (no credentials in the build environment).*
-- [ ] **Music trivia** (requested 2026-10-25): quick questions about the fan's artists in the feed (for example which
-      album a song is on, or the release year), answered in a tap. Open: where questions come from (the stored
-      catalog can generate many), whether answers earn points (they are an attack surface if they do), and how often.
+- [x] **Music trivia** (requested 2026-10-25): *done 2026-10-25 as daily trivia: one question a day per fan, made from
+      the stored catalog of one of their scored artists (which album a song is on, or an album's release year), on the
+      home screen above the feed. A right answer earns `trivia_correct`, 0.30 points, a tenth of logging an album
+      (decided 2026-10-25: "a tenth of other categories"), once a day. Verified: TriviaApiTests, invariants,
+      DailyTriviaCard tests, answered in Chrome.*
 - [ ] **Music prompts** (requested 2026-10-25): open questions fans answer for their followers, for example "What's
       your best hypothetical band name?", shown in the feed with the answers from people the fan follows. Answers are
-      posts, so they need reporting and takedowns like logs and photos.
-- [ ] **Featured artist of the week** (requested 2026-10-25): one artist highlighted at the top of the feed for a
-      week. Open: who picks (staff, the most-followed artists, or a promoter placement, which would need disclosure),
-      and what the feature shows (top fans, upcoming fan-ticket shows, a grab-bag song).
+      posts, so they need reporting and takedowns like logs and photos. Planned storage: `prompts` (the question and the
+      day it runs) and `prompt_answers` (one per fan per prompt), in the main database.
+- [ ] **Share answers on the feed** (requested 2026-10-25): prompt answers and trivia results show on followers'
+      feeds. Open: trivia questions can repeat between fans on the same day, so sharing the picked answer would give it
+      away; share the result only ("got today's Geese trivia right"), or the full answer once the day is over.
+- [x] **Featured artist of the week** (requested 2026-10-25): *done 2026-10-25: staff pick it (decided) with a video
+      (an uploaded MP4, or a YouTube or TikTok link) and a Spotify song; it shows above the artist list on home. The web
+      build plays the video in place; phones open it in YouTube, TikTok, or the browser (in-app playback needs
+      `expo-video`, not installed yet). Staff screen: Profile, "Featured artist". Verified: FeaturedApiTests (link,
+      upload, validation), Featured tests, Chrome.*
+- [ ] **Daily blind album rankings** (requested 2026-10-25): a daily game where fans rank albums without seeing which
+      artist or title they are (for example by cover art or a short clip), then see the reveal and how their ranking
+      compares. Open: what is shown blind (covers alone would give it away for big albums; 30-second previews are no
+      longer available to new Spotify apps), whether it earns points, and which albums (the fan's artists or anyone's).
 - [x] Sign-up: choose a primary hub city (required), plus up to two backups.
 - [x] Changing hub cities: allowed once a week; warn before saving (next change possible in 7 days, and hub
       cities decide which allocations the fan qualifies for).

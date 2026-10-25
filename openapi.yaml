@@ -401,6 +401,9 @@ paths:
         `headers`; the link is signed and short-lived, so it needs no sign-in. Files land in quarantine storage
         with their metadata (EXIF location, camera details, comments) stripped. JPEG and PNG only: convert HEIC
         or WebP on the device first. 50 uploads per day per user.
+
+        Staff also upload featured-artist videos here (`purpose: featured_video`): MP4 up to 100 MB, stored as
+        uploaded; others get 403.
       requestBody:
         required: true
         content:
@@ -1423,6 +1426,186 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/BouncerDoor'}
+  /me/grab-bag/order:
+    put:
+      tags: [Social]
+      operationId: reorderGrabBag
+      summary: Reorder the grab bag
+      description: The five slots in their new order. Each of the caller's songs appears once; null leaves a slot empty.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slots]
+              properties:
+                slots:
+                  type: array
+                  minItems: 5
+                  maxItems: 5
+                  items: {type: [string, 'null'], format: uuid}
+      responses:
+        '200':
+          description: The grab bag in its new order
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GrabBag'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /me/trivia:
+    get:
+      tags: [Social]
+      operationId: getTodaysTrivia
+      summary: Today's music trivia
+      description: |
+        One question a day (UTC) about one of the fan's scored artists, made from the album catalog the first time it
+        is asked for. `question` is null when none of the fan's artists has enough catalog yet. The right answer is
+        only included once the fan has answered. A right answer earns `trivia_correct` ledger points (0.30, a tenth
+        of logging an album; decided 2026-10-25).
+      responses:
+        '200':
+          description: Today's question, or none
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [question]
+                properties:
+                  question:
+                    oneOf: [{$ref: '#/components/schemas/TriviaQuestion'}, {type: 'null'}]
+  /me/trivia/{questionId}/answer:
+    parameters:
+      - {name: questionId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      tags: [Social]
+      operationId: answerTrivia
+      summary: Answer today's question
+      description: Once, and only on its day.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [choice]
+              properties:
+                choice: {type: integer, minimum: 0, description: Index of the picked option}
+      responses:
+        '200':
+          description: The answered question with the right answer and the points earned
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TriviaQuestion'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: 'Already answered (`code: trivia_answered`), or another day''s question (`code: trivia_expired`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /featured:
+    get:
+      tags: [Social]
+      operationId: getFeaturedArtist
+      summary: This week's featured artist
+      description: |
+        The staff pick for the current week (Monday to Sunday, UTC): the artist, a video (an uploaded MP4 through a
+        signed link, or a YouTube or TikTok link with an embeddable URL), and a song on Spotify. Null when no pick.
+      responses:
+        '200':
+          description: The pick, or none
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [featured]
+                properties:
+                  featured:
+                    oneOf: [{$ref: '#/components/schemas/FeaturedArtist'}, {type: 'null'}]
+  /featured/videos/{uploadId}:
+    parameters:
+      - {name: uploadId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: exp, in: query, required: true, schema: {type: integer}}
+      - {name: sig, in: query, required: true, schema: {type: string}}
+    get:
+      tags: [Social]
+      operationId: getFeaturedVideo
+      summary: An uploaded featured video
+      description: Signed, short-lived link from `FeaturedArtist.video.url`; needs no sign-in. Supports range requests.
+      security: []
+      responses:
+        '200':
+          description: The MP4
+          content:
+            video/mp4:
+              schema: {type: string, format: binary}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/featured:
+    get:
+      tags: [Admin]
+      operationId: listFeaturedArtists
+      summary: Featured picks
+      description: The last four weeks and everything scheduled, newest first.
+      responses:
+        '200':
+          description: Picks
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/FeaturedArtist'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/featured/{weekStart}:
+    parameters:
+      - {name: weekStart, in: path, required: true, description: The Monday the week starts on, schema: {type: string, format: date}}
+    put:
+      tags: [Admin]
+      operationId: putFeaturedArtist
+      summary: Pick the featured artist for a week
+      description: |
+        Creates or replaces the week's pick. Send `video_url` (a YouTube or TikTok link) or `video_upload_id` (a
+        finished `featured_video` upload), not both. `spotify_track` is an open.spotify.com/track link or a track id;
+        the title and cover come from Spotify.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [artist_id, spotify_track]
+              properties:
+                artist_id: {type: string, format: uuid}
+                headline: {type: [string, 'null'], maxLength: 200}
+                video_url: {type: string, format: uri}
+                video_upload_id: {type: string, format: uuid}
+                spotify_track: {type: string}
+      responses:
+        '200':
+          description: The pick
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FeaturedArtist'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: 'Spotify does not know this track (`code: spotify_track_not_found`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '503': {$ref: '#/components/responses/SpotifyUnavailable'}
+    delete:
+      tags: [Admin]
+      operationId: deleteFeaturedArtist
+      summary: Remove a week's pick
+      responses:
+        '204': {description: No pick that week}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
   /users/{handle}/grab-bag:
     parameters:
       - {$ref: '#/components/parameters/Handle'}
@@ -2450,6 +2633,8 @@ components:
             - guest_unavailable
             - selection_not_ready
             - reservation_unavailable
+            - trivia_answered
+            - trivia_expired
             - hub_change_limit
             - artist_not_active
             - spotify_artist_not_found
@@ -2644,9 +2829,9 @@ components:
       type: object
       required: [purpose, mime_type, bytes]
       properties:
-        purpose: {type: string, enum: [submission]}
-        mime_type: {type: string, enum: [image/jpeg, image/png]}
-        bytes: {type: integer, minimum: 1, maximum: 15728640}
+        purpose: {type: string, enum: [submission, featured_video]}
+        mime_type: {type: string, enum: [image/jpeg, image/png, video/mp4], description: 'video/mp4 only for featured_video'}
+        bytes: {type: integer, minimum: 1, maximum: 104857600, description: 'Photos up to 15 MB, videos up to 100 MB'}
         sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
     UploadIntent:
       type: object
@@ -3588,6 +3773,52 @@ components:
           oneOf: [{$ref: '#/components/schemas/UserRef'}, {type: 'null'}]
         following: {type: integer, description: Fans the caller follows.}
         songs: {type: integer, description: Songs in their grab bags, all together.}
+    TriviaQuestion:
+      type: object
+      required: [id, day, artist, kind, prompt, options, answered, chosen_index, answer_index, correct, points_for_right, points_earned]
+      properties:
+        id: {type: string, format: uuid}
+        day: {type: string, format: date}
+        artist: {$ref: '#/components/schemas/ArtistRef'}
+        kind: {type: string, enum: [track_album, release_year]}
+        prompt: {type: string}
+        options:
+          type: array
+          minItems: 2
+          maxItems: 4
+          items: {type: string}
+        answered: {type: boolean}
+        chosen_index: {type: [integer, 'null']}
+        answer_index: {type: [integer, 'null'], description: Only once answered}
+        correct: {type: [boolean, 'null']}
+        points_for_right: {type: number}
+        points_earned: {type: [number, 'null'], description: 'Once answered: 0, or the points a right answer earned'}
+    FeaturedArtist:
+      type: object
+      required: [id, week_start, week_end, artist, headline, video, song]
+      properties:
+        id: {type: string, format: uuid}
+        week_start: {type: string, format: date}
+        week_end: {type: string, format: date}
+        artist: {$ref: '#/components/schemas/ArtistRef'}
+        headline: {type: [string, 'null']}
+        video:
+          type: object
+          required: [kind, url, embed_url, thumbnail_url]
+          properties:
+            kind: {type: string, enum: [upload, youtube, tiktok]}
+            url: {type: string, format: uri, description: The link to open (a signed link for an upload)}
+            embed_url: {type: [string, 'null'], format: uri, description: Plays inside a page (iframe or video element)}
+            thumbnail_url: {type: [string, 'null'], format: uri}
+        song:
+          type: object
+          required: [spotify_track_id, title, album_title, cover_url, spotify_url]
+          properties:
+            spotify_track_id: {type: string}
+            title: {type: string}
+            album_title: {type: [string, 'null']}
+            cover_url: {type: [string, 'null'], format: uri}
+            spotify_url: {type: string, format: uri}
     GrabBagPut:
       type: object
       required: [spotify_track_id]

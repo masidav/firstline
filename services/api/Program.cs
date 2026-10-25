@@ -3,6 +3,7 @@ using FandomScore.Api.Features.AlbumJournal;
 using FandomScore.Api.Features.Allocations;
 using FandomScore.Api.Features.Artists;
 using FandomScore.Api.Features.Authentication;
+using FandomScore.Api.Features.Featured;
 using FandomScore.Api.Features.Feed;
 using FandomScore.Api.Features.Follows;
 using FandomScore.Api.Features.GrabBag;
@@ -12,6 +13,7 @@ using FandomScore.Api.Features.Scoring;
 using FandomScore.Api.Features.SpotifySync;
 using FandomScore.Api.Features.Stats;
 using FandomScore.Api.Features.Submissions;
+using FandomScore.Api.Features.Trivia;
 using FandomScore.Api.Features.Users;
 using FandomScore.Api.Infrastructure;
 using FandomScore.Spotify;
@@ -72,6 +74,8 @@ v1.MapFollows();
 v1.MapGrabBag();
 v1.MapReports();
 v1.MapNotifications();
+v1.MapTrivia();
+v1.MapFeatured();
 
 app.Run();
 
