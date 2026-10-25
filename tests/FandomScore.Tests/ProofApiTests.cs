@@ -230,6 +230,11 @@ public sealed class ProofApiTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NoContent, (await SendAsync(HttpMethod.Delete, $"/v1/submissions/{id}", fan)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await _client.GetAsync(url)).StatusCode);
         Assert.Empty(Directory.EnumerateFiles(_storage, "*", SearchOption.AllDirectories));
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            // Deleted inline, so nothing is left queued for the worker's storage cleanup (migration 0027).
+            Assert.Equal(0, await connection.ExecuteScalarAsync<int>("SELECT count(*) FROM storage_deletions"));
+        }
 
         var verified = await SubmitAsync(fan, "merch", Jpeg("cap"));
         await DecideAsync(staff, verified, "approve");
