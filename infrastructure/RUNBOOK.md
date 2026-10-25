@@ -8,7 +8,7 @@ short path from a symptom to an action. Every alert below emails `alert_email` (
 
 | | beta | prod |
 | --- | --- | --- |
-| GCP project | `fandomscore-beta` | `fandomscore-prod` |
+| GCP project | `firstline` | `fandomscore-prod` |
 | GKE cluster (regional, `us-central1`) | `fandomscore-beta` | `fandomscore-prod` |
 | Namespace | `fandomscore` | `fandomscore` |
 | Cloud SQL instance | `fandomscore-beta` | `fandomscore-prod` |

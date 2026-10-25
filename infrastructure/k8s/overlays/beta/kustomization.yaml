@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# beta: GCP project fandomscore-beta in us-central1. Values here must match infrastructure/terraform/envs/beta.
+# beta: GCP project firstline (number 494880048811) in us-central1. Values here must match infrastructure/terraform/envs/beta.
 namespace: fandomscore
 
 labels:
@@ -16,13 +16,13 @@ resources:
 # deploy.sh sets newTag to the git commit being deployed.
 images:
   - name: api
-    newName: us-central1-docker.pkg.dev/fandomscore-beta/fandomscore/api
+    newName: us-central1-docker.pkg.dev/firstline/fandomscore/api
     newTag: latest
   - name: worker
-    newName: us-central1-docker.pkg.dev/fandomscore-beta/fandomscore/worker
+    newName: us-central1-docker.pkg.dev/firstline/fandomscore/worker
     newTag: latest
   - name: migrate
-    newName: us-central1-docker.pkg.dev/fandomscore-beta/fandomscore/migrate
+    newName: us-central1-docker.pkg.dev/firstline/fandomscore/migrate
     newTag: latest
 
 configMapGenerator:
@@ -35,7 +35,7 @@ configMapGenerator:
       - ForwardedHeaders__KnownProxies=
       # Non-secret provider settings (.env.example). Secrets are in Secret Manager (secrets.yaml).
       - Auth__Apple__ClientIds=
-      - Auth__Google__ClientIds=
+      - Auth__Google__ClientIds=494880048811-14ch6rdq1p4vuatcebg2qq187dkgm4iv.apps.googleusercontent.com
       - Spotify__ClientId=
       - Spotify__RedirectUris=
       - Cors__AllowedOrigins=

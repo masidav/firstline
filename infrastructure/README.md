@@ -5,7 +5,7 @@ Three environments (ADR 0002, amended 2026-10-24):
 | Environment | Where | Data | How it changes |
 | --- | --- | --- | --- |
 | **dev** | Your machine, `127.0.0.1`: docker-compose PostgreSQL, `dotnet run` for the API and worker, the fan app in the browser. | Fake, from `tools/dev/seed.py` (fans, artists, shows, allocations, registrations). Wipe and re-seed any time. | You, locally. `docs/DEVELOPMENT.md`. |
-| **beta** | GCP project `fandomscore-beta`: GKE Autopilot, Cloud SQL, Secret Manager, Cloud Storage, external load balancer with Cloud Armor. | Real beta testers. Never seeded, never wiped. | Every push to `main` that passes CI deploys here, with a Cloud SQL backup before migrations. |
+| **beta** | GCP project `firstline` (the cluster, database, and registry are still named `fandomscore-beta`): GKE Autopilot, Cloud SQL, Secret Manager, Cloud Storage, external load balancer with Cloud Armor. | Real beta testers. Never seeded, never wiped. | Every push to `main` that passes CI deploys here, with a Cloud SQL backup before migrations. |
 | **prod** | GCP project `fandomscore-prod`, same shape, bigger (HA database, more replicas, longer backups). | Real users. | The images that ran on beta are promoted after a manual approval. |
 
 Terraform creates the cloud resources (one root module per cloud environment, one shared module); Kustomize
@@ -78,14 +78,14 @@ Needs `gcloud`, `terraform` (>= 1.9), `kubectl`, `kustomize`, Owner on the proje
 Administrator (or Costs Manager) on the billing account for the budget alert. Do beta first; prod is the same
 steps with `prod` in place of `beta`.
 
-1. **Project.** `gcloud projects create fandomscore-beta` (or whatever `project_id` you choose), then
-   `infrastructure/terraform/bootstrap.sh fandomscore-beta XXXXXX-XXXXXX-XXXXXX us-central1`. It links billing,
+1. **Project.** Beta is the existing project `firstline`; prod is `gcloud projects create fandomscore-prod` (or
+   whatever `project_id` you choose). Then `infrastructure/terraform/bootstrap.sh firstline XXXXXX-XXXXXX-XXXXXX us-central1`. It links billing,
    enables the APIs Terraform needs to start, and creates the state bucket `<project>-tfstate`.
 2. **Terraform.**
    ```bash
    cd infrastructure/terraform/envs/beta
    cp terraform.tfvars.example terraform.tfvars    # project, region, api_domain, billing account, alert email
-   terraform init -backend-config="bucket=fandomscore-beta-tfstate"
+   terraform init -backend-config="bucket=firstline-tfstate"
    terraform apply
    ```
    The first apply takes about 20 minutes (cluster and database). It prints the outputs the next steps need.
@@ -96,10 +96,10 @@ steps with `prod` in place of `beta`.
    within an hour of the CNAME resolving.
 4. **Secrets.** Add a version to each secret Terraform created (values as in `.env.example`):
    ```bash
-   openssl rand -base64 32 | tr -d '\n' | gcloud secrets versions add Auth__SigningKey --project fandomscore-beta --data-file=-
-   openssl rand -base64 32 | tr -d '\n' | gcloud secrets versions add Spotify__TokenKey --project fandomscore-beta --data-file=-
-   printf '%s' "$SPOTIFY_CLIENT_SECRET" | gcloud secrets versions add Spotify__ClientSecret --project fandomscore-beta --data-file=-
-   gcloud secrets versions add Auth__Apple__PrivateKey --project fandomscore-beta --data-file=AuthKey_XXXX.p8
+   openssl rand -base64 32 | tr -d '\n' | gcloud secrets versions add Auth__SigningKey --project firstline --data-file=-
+   openssl rand -base64 32 | tr -d '\n' | gcloud secrets versions add Spotify__TokenKey --project firstline --data-file=-
+   printf '%s' "$SPOTIFY_CLIENT_SECRET" | gcloud secrets versions add Spotify__ClientSecret --project firstline --data-file=-
+   gcloud secrets versions add Auth__Apple__PrivateKey --project firstline --data-file=AuthKey_XXXX.p8
    ```
    Every secret listed in `k8s/overlays/<env>/secrets.yaml` needs a version, or the pods cannot start
    (`ConnectionStrings__Database` and `Database__ServerCa` already have one, written by Terraform).
@@ -118,10 +118,10 @@ steps with `prod` in place of `beta`.
 7. **First deploy.** Push to `main`, or run the Deploy workflow by hand (`beta`). Or from a machine with the tools
    (the first deploy of an empty database needs no backup, and the health check needs DNS and the certificate):
    ```bash
-   gcloud container clusters get-credentials fandomscore-beta --region us-central1 --project fandomscore-beta
+   gcloud container clusters get-credentials fandomscore-beta --region us-central1 --project firstline
    gcloud auth configure-docker us-central1-docker.pkg.dev
    for t in api worker migrate; do
-     docker build --target $t -t us-central1-docker.pkg.dev/fandomscore-beta/fandomscore/$t:$(git rev-parse HEAD) . && docker push "$_"
+     docker build --target $t -t us-central1-docker.pkg.dev/firstline/fandomscore/$t:$(git rev-parse HEAD) . && docker push "$_"
    done
    SKIP_BACKUP=1 SKIP_HEALTH_CHECK=1 infrastructure/k8s/deploy.sh beta $(git rev-parse HEAD)
    ```
