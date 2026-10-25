@@ -1,0 +1,54 @@
+# Handoff: home feed, follows, grab bags (paused 2026-10-25)
+
+Reread this before continuing. Work was paused cleanly so the next session can run with more permissions.
+
+## State when paused
+- Everything is committed and pushed to `main`: commit `38ca7ac` ("Home feed as one vertical scroll: follows, grab
+  bags, shows, registrations, stats"). Working tree clean; no stray processes or containers from this work.
+- What it added: migration `0018_follows_grab_bags.sql` (follows, grab_bag_songs, `artists.added_via`, a new
+  `track_artist(..., p_via)`), API features `follows`, `grab-bag`, a rewritten `feed` (seeded, type-weighted random
+  mix), Spotify track search/lookup in `packages/spotify`, contract changes in `openapi.yaml`, and the fan app's
+  FlatList home feed with new cards, `/grab-bag` and `/people` screens. Details: `services/api/src/features/feed/README.md`,
+  `services/api/src/features/follows/README.md`, `services/api/src/features/grab-bag/README.md`, and the matching
+  `apps/mobile/src/features/*/README.md`. Roadmap entries updated in `PROJECT_TODO.md` (Phase 6, 7, 8, 15).
+
+## Verification done, and the one gap
+- Backend: full `dotnet test` ran once at 215/216; the failure was the old "newest first" feed assertion in
+  `ProofApiTests`, updated for the shuffled mix. After the final change to the feed's ordering (type weights), the
+  Feed, Proof, Report, Follow, GrabBag, and database invariant test classes were rerun green. **A last full-suite
+  run was not done** (declined at pause time). First thing on resume: `dotnet build FandomScore.slnx` and
+  `dotnet test FandomScore.slnx`, and check the CI run for commit `38ca7ac` on GitHub (`.github/workflows/ci.yml`;
+  this session had no GitHub API access to confirm it).
+- App: `npm run typecheck` clean, `npm test` 108/108, `npm run generate:api` produces no diff.
+- Browser: clicked through in Chrome at phone size against a seeded throwaway database (sign-in, scroll paging with
+  one seed, Shuffle, Follow, People, grab bag). The throwaway database was removed afterwards.
+
+## To finish the feature
+1. Confirm CI is green for `38ca7ac`; if a job failed, fix forward on `main` (direct commits, no PRs; see CLAUDE.md).
+2. `tools/dev/seed.py`: seed follows and grab-bag songs so a fresh dev database shows a lively feed (listed in
+   `services/api/src/features/grab-bag/TODO.md`). Without it, a seeded fan's feed is logs, photos, shows, and their
+   own registrations only.
+3. Bouncer door: draw a song from followed fans' grab bags and show whose it is (decided 2026-10-20, not built).
+4. A refresh job for stored grab-bag song titles/covers (weekly, like the catalog refresh).
+5. Optional polish seen in the browser run: a shared photo card with no stored file shows no image area at all; the
+   seed's submissions have no files, so this is a seed gap rather than a bug.
+
+## How the feed order works (so changes stay consistent)
+`FeedEndpoints.CandidatesSql`: each source contributes its newest 100 items; a seeded hash orders items within a type;
+across types each type is dealt out by weight (album_log 3, photo/grab_bag/stat 2, concert/registration 1) with a
+seeded jitter, so every page mixes types. The cursor is an offset over that order; the app keeps `seed` while paging
+and picks a new one on Shuffle or pull-to-refresh. `FeedApiTests` checks that one seed pages consistently and
+another reshuffles; keep that property if the ordering changes.
+
+## Working notes for this repo
+- The pre-tool hook blocks any Bash command that mentions an applied migration path together with something that
+  looks like a modifying command (even `sed -n` in a pipeline). Use the Read tool for applied migrations.
+- The hook also blocks commands mentioning `.env*` files (including `apps/mobile/.env.local`); pass settings as
+  environment variables on the command line instead.
+- `pkill -f <pattern>` inside a Bash call kills the call's own shell when the pattern appears in the command text
+  (exit 144); use `pkill -x <process name>`.
+- For a browser check: `docker run` a `postgres:16` on another port, `dotnet run --project database` with
+  `ConnectionStrings__Database`, pipe `python3 tools/dev/seed.py --sql` into `psql`, run the API with
+  `ASPNETCORE_ENVIRONMENT=Development Auth__DevSignIn=true Cors__AllowedOrigins=http://localhost:8081`, and the app
+  with `CI=1 EXPO_PUBLIC_DEV_SIGN_IN=true npx expo start --web`. Expo rewrites `apps/mobile/tsconfig.json` on start;
+  `git checkout` it before committing. `playwright-core` with `/usr/bin/google-chrome` works for screenshots.
