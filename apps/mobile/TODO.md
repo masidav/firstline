@@ -63,6 +63,8 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [x] Sign-up: choose a primary hub city (required), plus up to two backups.
 - [x] Changing hub cities: allowed once a week; warn before saving (next change possible in 7 days, and hub
       cities decide which allocations the fan qualifies for).
+- [x] Fan pages (2026-10-25): `/fans/{handle}` from any fan's name; Follow, band links, fandom stats and grab bag for
+      followers, recent logs and prompt answers. Verified: FanProfileScreen tests, Chrome.
 - [ ] Profile: followers and following lists, remove a follower, block someone. *Lists and remove built 2026-10-25
       (`/people`); blocking not wanted for now (decided 2026-10-24).*
 - [ ] Respect reduced-motion settings: the bounce and horizontal scroll need a calmer fallback, and the feed

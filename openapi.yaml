@@ -661,8 +661,8 @@ paths:
       description: |
         The signed-in fan's numbers, read from stored state and the ledger (never from Spotify at request time).
         Deleted logs and comments and reversed awards don't count. Listening totals cover active tracked artists
-        only. `ledger_points` is the sum of unreversed awards (journal, proof of fandom). Other fans' stats will
-        follow their profile visibility once follows and blocks exist (Phase 8).
+        only. `ledger_points` is the sum of unreversed awards (journal, proof of fandom). Other fans' stats:
+        `GET /users/{handle}/stats`.
       responses:
         '200':
           description: Stats
@@ -1747,6 +1747,56 @@ paths:
         '204': {description: No pick that week}
         '403': {$ref: '#/components/responses/Forbidden'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+  /users/{handle}/stats:
+    parameters:
+      - {$ref: '#/components/parameters/Handle'}
+    get:
+      tags: [Social]
+      operationId: getUserStats
+      summary: A fan's fandom stats
+      description: |
+        For the fan and their followers (decided 2026-10-20: followers see top fandom stats): artists with percentile
+        and rank, journal and proof counts, ledger points. Listening counts stay private. Which stats could be public by
+        default is still open (Phase 15), so others get 403.
+      responses:
+        '200':
+          description: Stats
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProfileStats'}
+        '403':
+          description: 'The caller does not follow this fan (`code: followers_only`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /users/{handle}/answers:
+    parameters:
+      - {$ref: '#/components/parameters/Handle'}
+    get:
+      tags: [Social]
+      operationId: listUserPromptAnswers
+      summary: A fan's prompt answers
+      description: The last 20 the caller may see (public ones, followers-only ones for followers), newest first, with their prompts.
+      responses:
+        '200':
+          description: Answers
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [answer, prompt_text, day]
+                      properties:
+                        answer: {$ref: '#/components/schemas/PromptAnswer'}
+                        prompt_text: {type: string}
+                        day: {type: string, format: date}
+        '404': {$ref: '#/components/responses/NotFound'}
   /users/{handle}/grab-bag:
     parameters:
       - {$ref: '#/components/parameters/Handle'}
@@ -2818,7 +2868,7 @@ components:
         - $ref: '#/components/schemas/UserRef'
         - type: object
           required: [created_at, log_count, list_count, followed_by_me, follows_me, follower_count, following_count, is_artist,
-                     grab_bag_count]
+                     grab_bag_count, is_me, can_see_follower_content, band_url, instagram_handle, x_handle, answer_count]
           properties:
             created_at: {type: string, format: date-time}
             log_count: {type: integer, description: Logs the caller can see.}
@@ -2829,6 +2879,14 @@ components:
             following_count: {type: integer}
             is_artist: {type: boolean}
             grab_bag_count: {type: integer, description: Songs in their grab bag (visible to followers).}
+            is_me: {type: boolean}
+            can_see_follower_content:
+              type: boolean
+              description: The caller is the fan or follows them, so the grab bag, fandom stats, and followers-only posts are visible
+            band_url: {type: [string, 'null'], format: uri, description: Set when is_artist}
+            instagram_handle: {type: [string, 'null']}
+            x_handle: {type: [string, 'null']}
+            answer_count: {type: integer, description: Prompt answers the caller can see}
 
     SessionRequest:
       type: object
@@ -3372,6 +3430,45 @@ components:
             top_tracks: {type: integer, description: Tracked artists' tracks among the fan's Spotify top tracks}
             followed_artists: {type: integer, description: Tracked artists the fan follows on Spotify}
             plays_last_quarter: {type: integer, description: 'Plays of tracked artists in the last 90 days (play ledger, polled hourly)'}
+        journal:
+          type: object
+          required: [logs, albums_logged, relistens, reviews, ratings, lists, comments]
+          properties:
+            logs: {type: integer}
+            albums_logged: {type: integer, description: Distinct albums}
+            relistens: {type: integer}
+            reviews: {type: integer}
+            ratings: {type: integer}
+            lists: {type: integer}
+            comments: {type: integer}
+        proof:
+          type: object
+          required: [tickets, merch, screenshots]
+          description: Verified submissions only.
+          properties:
+            tickets: {type: integer}
+            merch: {type: integer}
+            screenshots: {type: integer}
+        ledger_points: {type: number}
+    ProfileStats:
+      type: object
+      description: A fan's fandom stats as their followers see them. Listening counts stay private.
+      required: [artists, journal, proof, ledger_points]
+      properties:
+        artists:
+          type: array
+          description: Best percentile first.
+          items:
+            type: object
+            required: [artist, raw_score, percentile, rank, fans, is_estimated, computed_at]
+            properties:
+              artist: {$ref: '#/components/schemas/ArtistRef'}
+              raw_score: {type: number}
+              percentile: {type: number, minimum: 0, maximum: 100}
+              rank: {type: integer, minimum: 1, description: 'Among the artist''s scored fans; ties share the better rank'}
+              fans: {type: integer, minimum: 1, description: Scored fans of the artist}
+              is_estimated: {type: boolean}
+              computed_at: {type: string, format: date-time}
         journal:
           type: object
           required: [logs, albums_logged, relistens, reviews, ratings, lists, comments]

@@ -30,9 +30,14 @@ public static class FollowEndpoints
 
     /// <summary>openapi UserPublic: a fan's public page.</summary>
     // Dapper maps records by constructor: the parameters are in the order the query selects the columns.
+    /// <summary>
+    /// <c>IsMe</c>: the caller's own page. <c>CanSeeFollowerContent</c>: the caller is the fan or follows them, so the
+    /// grab bag, fandom stats, and followers-only posts are theirs to see. Band links only when <c>IsArtist</c>.
+    /// </summary>
     public sealed record UserPublic(
         string Handle, bool Deleted, string? DisplayName, string? AvatarUrl, bool FollowedByMe, bool FollowsMe, DateTime CreatedAt,
-        int LogCount, int ListCount, int FollowerCount, int FollowingCount, bool IsArtist, int GrabBagCount);
+        int LogCount, int ListCount, int FollowerCount, int FollowingCount, bool IsArtist, int GrabBagCount, bool IsMe,
+        bool CanSeeFollowerContent, string? BandUrl, string? InstagramHandle, string? XHandle, int AnswerCount);
 
     public sealed record UserPage(IReadOnlyList<UserSummary> Items, string? NextCursor);
 
@@ -89,7 +94,13 @@ public static class FollowEndpoints
                     (SELECT count(*) FROM follows f WHERE f.followee_id = u.id)::int AS FollowerCount,
                     (SELECT count(*) FROM follows f WHERE f.follower_id = u.id)::int AS FollowingCount,
                     u.is_artist AS IsArtist,
-                    (SELECT count(*) FROM grab_bag_songs g WHERE g.user_id = u.id)::int AS GrabBagCount
+                    (SELECT count(*) FROM grab_bag_songs g WHERE g.user_id = u.id)::int AS GrabBagCount,
+                    u.id = @me AS IsMe,
+                    (u.id = @me OR EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = @me AND f.followee_id = u.id)) AS CanSeeFollowerContent,
+                    u.band_url AS BandUrl, u.instagram_handle AS InstagramHandle, u.x_handle AS XHandle,
+                    (SELECT count(*) FROM prompt_answers pa WHERE pa.user_id = u.id AND pa.deleted_at IS NULL AND pa.removed_at IS NULL
+                       AND (pa.visibility = 'public' OR u.id = @me
+                            OR EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = @me AND f.followee_id = u.id)))::int AS AnswerCount
              FROM users u WHERE u.handle = @handle AND u.deleted_at IS NULL
              """,
             new { me, handle = CleanHandle(handle) }) ?? throw NotFound();

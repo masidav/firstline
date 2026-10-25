@@ -294,9 +294,13 @@ at request time.
       verified photos/merch, and points as `stat` cards on the home feed.* counts exclude soft-deleted content and
       reversed awards.
 - [ ] Visibility: own stats in full; other fans' stats follow their profile visibility, followers-only stats for
-      followers, nothing for blocked fans.
-- [ ] Stats screen in the fan app (own profile and other fans' profiles), with estimated scores labelled.
-      *Own stats screen done 2026-10-21 (`/stats`).*
+      followers, nothing for blocked fans. *Since 2026-10-25: own in full, followers see fandom stats, everyone else
+      none. Still open: which stats (if any) are public by default.*
+- [x] Stats screen in the fan app (own profile and other fans' profiles), with estimated scores labelled.
+      *Own stats screen done 2026-10-21 (`/stats`); fan pages done 2026-10-25 (`/fans/{handle}`, opened from any fan's
+      name in the feed, People, and prompt answers): basics, band links, public logs and prompt answers for everyone;
+      fandom stats (`GET /users/{handle}/stats`, listening counts excluded) and the grab bag for followers and the fan.
+      Verified: ProfileApiTests, FanProfileScreen tests, Chrome.*
 - [ ] Tests for counts after reversals and deletions, visibility, and blocked fans.
 
 Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps/mobile/src/features/stats/TODO.md)

@@ -47,7 +47,14 @@ function Byline({ item, mine, following, onFollow, children }: FeedCardProps & {
   const handle = item.user?.handle;
   return (
     <View style={styles.byline}>
-      <Text style={[styles.line, styles.grow]}>{children}</Text>
+      {handle ? (
+        <Pressable accessibilityRole="link" accessibilityLabel={`Open ${fanName(item.user)}'s page`} onPress={() => router.push(`/fans/${handle}`)}
+          style={styles.grow}>
+          <Text style={styles.line}>{children}</Text>
+        </Pressable>
+      ) : (
+        <Text style={[styles.line, styles.grow]}>{children}</Text>
+      )}
       {!mine && handle ? <FollowButton handle={handle} following={following} onToggle={onFollow} /> : null}
     </View>
   );

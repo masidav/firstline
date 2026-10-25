@@ -24,6 +24,7 @@ public static class PromptEndpoints
         v1.MapPut("/prompts/{promptId:guid}/answer", AnswerAsync);
         v1.MapDelete("/prompts/{promptId:guid}/answer", WithdrawAsync);
         v1.MapGet("/prompts/{promptId:guid}/answers", ListAnswersAsync);
+        v1.MapGet("/users/{handle}/answers", ListForUserAsync);
         var admin = v1.MapGroup("/admin").RequireAuthorization(AuthSetup.StaffPolicy);
         admin.MapGet("/prompts", ListForStaffAsync);
         admin.MapPut("/prompts/{day}", ScheduleAsync);
@@ -43,6 +44,11 @@ public static class PromptEndpoints
     public sealed record AnswerPage(IReadOnlyList<PromptAnswer> Items, string? NextCursor);
 
     public sealed record AnswerRequest(string? Body, string? Visibility);
+
+    /// <summary>An answer with its prompt, for a fan's page.</summary>
+    public sealed record AnswerWithPrompt(PromptAnswer Answer, string PromptText, DateOnly Day);
+
+    public sealed record AnswersWithPrompts(IReadOnlyList<AnswerWithPrompt> Items);
 
     public sealed record ScheduleRequest(string? Text);
 
@@ -148,6 +154,25 @@ public static class PromptEndpoints
              """,
             new { promptId, me, take = take + 1, offset })).ToList();
         return Results.Ok(new AnswerPage([.. rows.Take(take).Select(ToAnswer)], rows.Count > take ? PageCursor.Write(offset + take) : null));
+    }
+
+    // A fan's last 20 answers the caller may see, newest first.
+    private static async Task<IResult> ListForUserAsync(ClaimsPrincipal user, string handle, NpgsqlDataSource db, CancellationToken cancellationToken)
+    {
+        var me = user.UserId();
+        await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        var owner = await Follows.FollowEndpoints.LiveUserAsync(connection, handle);
+        var rows = await connection.QueryAsync<AnswerRow>(
+            $"""
+             {AnswerSelect}
+             WHERE pa.user_id = @owner AND {Visible} AND (pa.removed_at IS NULL)
+             ORDER BY pa.created_at DESC, pa.id LIMIT 20
+             """,
+            new { owner, me });
+        var prompts = (await connection.QueryAsync<(Guid Id, string Text, DateOnly Day)>(
+                "SELECT id, text, day FROM prompts WHERE id = ANY(@ids)", new { ids = rows.Select(r => r.PromptId).Distinct().ToArray() }))
+            .ToDictionary(p => p.Id);
+        return Results.Ok(new AnswersWithPrompts([.. rows.Select(r => new AnswerWithPrompt(ToAnswer(r), prompts[r.PromptId].Text, prompts[r.PromptId].Day))]));
     }
 
     // Staff: the last week and the next four, each day's prompt or none yet (a library prompt is chosen on the day).

@@ -47,7 +47,7 @@ export function PromptAnswersScreen({ promptId }: { promptId: string }) {
       {items?.length === 0 && <Body muted>No answers yet.</Body>}
       {items?.map((answer) => (
         <View key={answer.id} style={[styles.row, answer.mine && styles.mine]}>
-          <Text style={styles.who}>
+          <Text style={styles.who} onPress={answer.user.handle ? () => router.push(`/fans/${answer.user.handle}`) : undefined}>
             {answer.mine ? 'You' : fanName(answer.user)}
             {answer.following && !answer.mine ? ' · you follow' : ''}
             {answer.visibility === 'followers' ? ' · followers only' : ''}

@@ -462,8 +462,8 @@ export interface paths {
          * My stats in one list
          * @description The signed-in fan's numbers, read from stored state and the ledger (never from Spotify at request time).
          *     Deleted logs and comments and reversed awards don't count. Listening totals cover active tracked artists
-         *     only. `ledger_points` is the sum of unreversed awards (journal, proof of fandom). Other fans' stats will
-         *     follow their profile visibility once follows and blocks exist (Phase 8).
+         *     only. `ledger_points` is the sum of unreversed awards (journal, proof of fandom). Other fans' stats:
+         *     `GET /users/{handle}/stats`.
          */
         get: operations["getMyStats"];
         put?: never;
@@ -1430,6 +1430,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{handle}/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: components["parameters"]["Handle"];
+            };
+            cookie?: never;
+        };
+        /**
+         * A fan's fandom stats
+         * @description For the fan and their followers (decided 2026-10-20: followers see top fandom stats): artists with percentile
+         *     and rank, journal and proof counts, ledger points. Listening counts stay private. Which stats could be public by
+         *     default is still open (Phase 15), so others get 403.
+         */
+        get: operations["getUserStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{handle}/answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: components["parameters"]["Handle"];
+            };
+            cookie?: never;
+        };
+        /**
+         * A fan's prompt answers
+         * @description The last 20 the caller may see (public ones, followers-only ones for followers), newest first, with their prompts.
+         */
+        get: operations["listUserPromptAnswers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/{handle}/grab-bag": {
         parameters: {
             query?: never;
@@ -2314,6 +2360,18 @@ export interface components {
             is_artist: boolean;
             /** @description Songs in their grab bag (visible to followers). */
             grab_bag_count: number;
+            is_me: boolean;
+            /** @description The caller is the fan or follows them, so the grab bag, fandom stats, and followers-only posts are visible */
+            can_see_follower_content: boolean;
+            /**
+             * Format: uri
+             * @description Set when is_artist
+             */
+            band_url: string | null;
+            instagram_handle: string | null;
+            x_handle: string | null;
+            /** @description Prompt answers the caller can see */
+            answer_count: number;
         };
         SessionRequest: {
             /** @enum {string} */
@@ -2846,6 +2904,39 @@ export interface components {
                 /** @description Plays of tracked artists in the last 90 days (play ledger, polled hourly) */
                 plays_last_quarter: number;
             };
+            journal: {
+                logs: number;
+                /** @description Distinct albums */
+                albums_logged: number;
+                relistens: number;
+                reviews: number;
+                ratings: number;
+                lists: number;
+                comments: number;
+            };
+            /** @description Verified submissions only. */
+            proof: {
+                tickets: number;
+                merch: number;
+                screenshots: number;
+            };
+            ledger_points: number;
+        };
+        /** @description A fan's fandom stats as their followers see them. Listening counts stay private. */
+        ProfileStats: {
+            /** @description Best percentile first. */
+            artists: {
+                artist: components["schemas"]["ArtistRef"];
+                raw_score: number;
+                percentile: number;
+                /** @description Among the artist's scored fans; ties share the better rank */
+                rank: number;
+                /** @description Scored fans of the artist */
+                fans: number;
+                is_estimated: boolean;
+                /** Format: date-time */
+                computed_at: string;
+            }[];
             journal: {
                 logs: number;
                 /** @description Distinct albums */
@@ -6009,6 +6100,68 @@ export interface operations {
             };
             403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getUserStats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: components["parameters"]["Handle"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Stats */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileStats"];
+                };
+            };
+            /** @description The caller does not follow this fan (`code: followers_only`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listUserPromptAnswers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: components["parameters"]["Handle"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Answers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            answer: components["schemas"]["PromptAnswer"];
+                            prompt_text: string;
+                            /** Format: date */
+                            day: string;
+                        }[];
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
         };
     };
     getUserGrabBag: {

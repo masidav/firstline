@@ -13,7 +13,17 @@ namespace FandomScore.Api.Features.Stats;
 /// </summary>
 public static class StatsEndpoints
 {
-    public static void MapStats(this RouteGroupBuilder v1) => v1.MapGet("/me/stats", GetMineAsync);
+    public static void MapStats(this RouteGroupBuilder v1)
+    {
+        v1.MapGet("/me/stats", GetMineAsync);
+        v1.MapGet("/users/{handle}/stats", GetForUserAsync);
+    }
+
+    /// <summary>
+    /// openapi ProfileStats: another fan's fandom stats as their followers see them (decided 2026-10-20: followers see
+    /// top fandom stats). Listening counts stay private to the fan.
+    /// </summary>
+    public sealed record ProfileStats(IReadOnlyList<ArtistStat> Artists, JournalStats Journal, ProofStats Proof, decimal LedgerPoints);
 
     public sealed record ArtistStat(
         ScoringEndpoints.ArtistRef Artist, decimal RawScore, decimal Percentile, int Rank, int Fans, bool IsEstimated,
@@ -32,8 +42,30 @@ public static class StatsEndpoints
 
     private static async Task<IResult> GetMineAsync(ClaimsPrincipal user, NpgsqlDataSource db, CancellationToken cancellationToken)
     {
-        var userId = user.UserId();
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        return Results.Ok(await LoadAsync(connection, user.UserId()));
+    }
+
+    // The fan themself and their followers; anyone else gets 403 followers_only. Which stats could be public by
+    // default is still an open decision (PROJECT_TODO.md, Phase 15), so for now nothing here is.
+    private static async Task<IResult> GetForUserAsync(ClaimsPrincipal user, string handle, NpgsqlDataSource db, CancellationToken cancellationToken)
+    {
+        var me = user.UserId();
+        await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        var owner = await Follows.FollowEndpoints.LiveUserAsync(connection, handle);
+        if (owner != me && !await Follows.FollowEndpoints.IsFollowingAsync(connection, me, owner))
+        {
+            throw new Infrastructure.ApiProblemException(StatusCodes.Status403Forbidden, "followers_only", "Followers only",
+                "Fandom stats are shared with followers. Follow this fan to see theirs.");
+        }
+
+        var stats = await LoadAsync(connection, owner);
+        return Results.Ok(new ProfileStats(stats.Artists, stats.Journal, stats.Proof, stats.LedgerPoints));
+    }
+
+    /// <summary>One fan's numbers, read from stored state and the ledger.</summary>
+    public static async Task<UserStats> LoadAsync(NpgsqlConnection connection, Guid userId)
+    {
         using var results = await connection.QueryMultipleAsync(
             """
             -- Per artist: my score, and my rank among the artist's scored fans (ties share the better rank).
@@ -81,7 +113,7 @@ public static class StatsEndpoints
         var journal = await results.ReadSingleAsync<JournalStats>();
         var proof = await results.ReadSingleAsync<ProofStats>();
         var points = await results.ReadSingleAsync<decimal>();
-        return Results.Ok(new UserStats(artists, listening, journal, proof, points));
+        return new UserStats(artists, listening, journal, proof, points);
     }
 
     private sealed record ArtistRow(

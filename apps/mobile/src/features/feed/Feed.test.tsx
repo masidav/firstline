@@ -233,3 +233,10 @@ test('a prompt answer shows the prompt, the answer, and a way to all answers', a
   expect(jest.requireMock('expo-router').router.push).toHaveBeenCalledWith('/prompts/p1');
   expect(screen.getByRole('button', { name: "Report Ben's post" })).toBeTruthy();
 });
+
+test("tapping a fan's name opens their page", async () => {
+  mockApi.GET.mockResolvedValue(ok({ items: [photo], next_cursor: null, seed: 'abc' }));
+  render(<Feed />);
+  fireEvent.press(await screen.findByRole('link', { name: "Open @fan_two's page" }));
+  expect(jest.requireMock('expo-router').router.push).toHaveBeenCalledWith('/fans/fan_two');
+});
