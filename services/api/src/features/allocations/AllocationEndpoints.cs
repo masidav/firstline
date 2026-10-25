@@ -293,7 +293,7 @@ public static partial class AllocationEndpoints
 
     // ------------------------------------------------------------------ loading
 
-    private const string EventColumns =
+    internal const string EventColumns =
         """
         e.id AS Id, e.artist_id AS ArtistId, e.name AS Name, e.venue AS Venue, e.city_id AS CityId,
         COALESCE(c.name, e.city) AS City, c.region AS Region, COALESCE(c.country, e.country) AS Country,
@@ -302,7 +302,7 @@ public static partial class AllocationEndpoints
                   AND a.cancelled_at IS NULL AND a.registration_closes_at > now()) AS TicketsAvailable
         """;
 
-    private const string AllocationColumns =
+    internal const string AllocationColumns =
         """
         a.id AS Id, a.event_id AS EventId, a.name AS Name, a.tickets AS Tickets, a.face_value_cents AS FaceValueCents,
         a.currency AS Currency, a.min_raw_score AS MinRawScore, a.registration_opens_at AS RegistrationOpensAt,
@@ -317,7 +317,7 @@ public static partial class AllocationEndpoints
         (SELECT sel.tickets - sel.seats_assigned FROM allocation_selections sel WHERE sel.allocation_id = a.id) AS SeatsLeft
         """;
 
-    private static async Task<EventDetail> LoadEventAsync(NpgsqlConnection connection, Guid eventId, bool includeDrafts)
+    internal static async Task<EventDetail> LoadEventAsync(NpgsqlConnection connection, Guid eventId, bool includeDrafts)
     {
         var show = await connection.QuerySingleOrDefaultAsync<Show>(
             $"""

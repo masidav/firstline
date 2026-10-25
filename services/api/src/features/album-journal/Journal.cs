@@ -53,8 +53,13 @@ public static class Journal
     /// Which logs the viewer may see: their own, and public ones. Followers-only logs are visible to their owner
     /// alone until follows exist (Phase 8); private logs are 404 to everyone else.
     /// </summary>
-    // Taken-down logs (moderation) stay visible to their author only.
-    public const string VisibleToViewer = "(l.user_id = @viewer OR (l.visibility = 'public' AND l.removed_at IS NULL))";
+    // Taken-down logs (moderation) stay visible to their author only. Followers-only logs show to the author's
+    // followers (migration 0018).
+    public const string VisibleToViewer =
+        """
+        (l.user_id = @viewer OR (l.removed_at IS NULL AND (l.visibility = 'public'
+           OR (l.visibility = 'followers' AND EXISTS (SELECT 1 FROM follows fv WHERE fv.follower_id = @viewer AND fv.followee_id = l.user_id)))))
+        """;
 
     /// <summary>Album columns with community stats (needs alias <c>a</c> for albums and <c>ar</c> for artists).</summary>
     public const string AlbumSelect =

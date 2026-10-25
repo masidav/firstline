@@ -37,6 +37,8 @@ function serve(tracked: unknown[], onSpotify: unknown[] = [], scores: unknown[] 
         return ok({ items: options?.params?.query?.added_by_me ? onboarding : tracked, next_cursor: null });
       case '/me/scores':
         return ok({ items: scores, next_cursor: null });
+      case '/feed':
+        return ok({ items: [], next_cursor: null, seed: 'test' });
       default:
         return ok({ items: onSpotify });
     }

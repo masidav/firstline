@@ -79,6 +79,28 @@ public sealed class FakeSpotify : HttpMessageHandler
         };
     }
 
+    /// <summary>Spotify's track catalog, for <c>search?type=track</c> (name contains the query) and <c>tracks/{id}</c>.</summary>
+    public List<TrackDetail> Tracks { get; } = [];
+
+    public sealed record TrackDetail(string Id, string Name, string AlbumId, string AlbumName, params (string Id, string Name)[] Artists)
+    {
+        public object Json => new
+        {
+            id = Id,
+            name = Name,
+            type = "track",
+            is_local = false,
+            external_urls = new { spotify = $"https://open.spotify.com/track/{Id}" },
+            album = new
+            {
+                id = AlbumId,
+                name = AlbumName,
+                images = new[] { new { url = $"https://i.scdn.co/{AlbumId}-640", width = 640, height = 640 } },
+            },
+            artists = Artists.Select(a => new { id = a.Id, name = a.Name }).ToArray(),
+        };
+    }
+
     /// <summary>Each artist's releases, as <c>artists/{id}/albums</c> lists them (filtered by include_groups).</summary>
     public Dictionary<string, List<Album>> ArtistAlbums { get; } = [];
 
@@ -225,11 +247,19 @@ public sealed class FakeSpotify : HttpMessageHandler
                 next = (string?)null,
             },
             "me/playlists" => Page(Playlists, limit, offset),
+            "search" when query["type"] == "track" => new
+            {
+                tracks = Page([.. Tracks.Where(t => t.Name.Contains(query["q"]!, StringComparison.OrdinalIgnoreCase)).Select(t => t.Json)],
+                    limit, offset),
+            },
             "search" => new
             {
                 artists = Page([.. Artists.Where(a => a.Name.Contains(query["q"]!, StringComparison.OrdinalIgnoreCase)).Select(a => a.Json)],
                     limit, offset),
             },
+            _ when path.StartsWith("tracks/", StringComparison.Ordinal) =>
+                Tracks.FirstOrDefault(t => t.Id == path["tracks/".Length..])?.Json
+                ?? new { error = new { status = 404, message = "Resource not found" } },
             _ when path.StartsWith("artists/", StringComparison.Ordinal) && path.EndsWith("/albums", StringComparison.Ordinal) =>
                 ArtistAlbums.TryGetValue(path["artists/".Length..^"/albums".Length], out var releases)
                     ? Page([.. releases.Where(r => (query["include_groups"] ?? "album,single,appears_on,compilation")
@@ -254,6 +284,8 @@ public sealed class FakeSpotify : HttpMessageHandler
                 Artists.Any(a => a.Id == path["artists/".Length..]) ? HttpStatusCode.OK : HttpStatusCode.NotFound,
             _ when path.StartsWith("albums/", StringComparison.Ordinal) =>
                 AlbumTracks.ContainsKey(path["albums/".Length..^"/tracks".Length]) ? HttpStatusCode.OK : HttpStatusCode.NotFound,
+            _ when path.StartsWith("tracks/", StringComparison.Ordinal) =>
+                Tracks.Any(t => t.Id == path["tracks/".Length..]) ? HttpStatusCode.OK : HttpStatusCode.NotFound,
             _ => HttpStatusCode.OK,
         };
         return new HttpResponseMessage(status) { Content = JsonContent.Create(body) };

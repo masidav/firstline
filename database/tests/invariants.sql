@@ -1404,4 +1404,75 @@ SELECT pg_temp.expect_error(
   $$UPDATE users SET is_artist = true WHERE id = '00000000-0000-0000-0000-000000000013'$$, 'personal fields stay empty');
 DELETE FROM users WHERE id = '00000000-0000-0000-0000-000000000013';
 
+-- ------------------------------------------------------------ follows and grab bags (0018)
+INSERT INTO users (id, handle, email) VALUES
+  ('00000000-0000-0000-0000-000000000014', 'hana', 'hana@example.test'),
+  ('00000000-0000-0000-0000-000000000015', 'ivan', 'ivan@example.test'),
+  ('00000000-0000-0000-0000-000000000016', 'jojo', 'jojo@example.test'),
+  ('00000000-0000-0000-0000-000000000017', 'kim_gone', 'kim@example.test');
+UPDATE users SET deleted_at = now() WHERE id = '00000000-0000-0000-0000-000000000017';
+-- Following needs no approval and no self-follows; a deleted account can't follow or be followed.
+INSERT INTO follows (follower_id, followee_id) VALUES
+  ('00000000-0000-0000-0000-000000000014', '00000000-0000-0000-0000-000000000015'),
+  ('00000000-0000-0000-0000-000000000015', '00000000-0000-0000-0000-000000000014'),
+  ('00000000-0000-0000-0000-000000000016', '00000000-0000-0000-0000-000000000014');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO follows (follower_id, followee_id) VALUES ('00000000-0000-0000-0000-000000000014', '00000000-0000-0000-0000-000000000014')$$,
+  'follows_not_self');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO follows (follower_id, followee_id) VALUES ('00000000-0000-0000-0000-000000000014', '00000000-0000-0000-0000-000000000017')$$,
+  'deleted accounts cannot follow');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO follows (follower_id, followee_id) VALUES ('00000000-0000-0000-0000-000000000017', '00000000-0000-0000-0000-000000000014')$$,
+  'deleted accounts cannot follow');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO follows (follower_id, followee_id) VALUES ('00000000-0000-0000-0000-000000000014', '00000000-0000-0000-0000-000000000015')$$,
+  'follows_pkey');
+
+-- Grab bag: five numbered slots, one row per song; alice is at today's artist limit (above) and can still track an
+-- artist through her grab bag, which doesn't count toward the limit.
+DO $$
+DECLARE v_created boolean; v_id uuid; v_via text;
+BEGIN
+  SELECT o_artist_id, o_created INTO v_id, v_created
+    FROM track_artist('00000000-0000-0000-0000-000000000001', 'sp-grab-bag-artist', 'Grab Bag Artist', 50, 'grab_bag');
+  ASSERT v_created, 'a grab-bag add tracks a new artist even at the daily limit';
+  SELECT added_via INTO v_via FROM artists WHERE id = v_id;
+  ASSERT v_via = 'grab_bag', 'the add is recorded as grab_bag';
+  INSERT INTO grab_bag_songs (user_id, position, spotify_track_id, title, artist_id)
+    VALUES ('00000000-0000-0000-0000-000000000001', 1, '0aaaaaaaaaaaaaaaaaaaa1', 'Song One', v_id),
+           ('00000000-0000-0000-0000-000000000014', 5, '0aaaaaaaaaaaaaaaaaaaa2', 'Song Two', v_id);
+END $$;
+SELECT pg_temp.expect_error(
+  $$SELECT track_artist('00000000-0000-0000-0000-000000000001', 'sp-bulk-52', 'Bulk 52')$$,
+  'daily artist add limit reached');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO grab_bag_songs (user_id, position, spotify_track_id, title, artist_id)
+    SELECT '00000000-0000-0000-0000-000000000014', 6, '0aaaaaaaaaaaaaaaaaaaa3', 'Six', id FROM artists WHERE spotify_artist_id = 'sp-grab-bag-artist'$$,
+  'grab_bag_songs_position_check');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO grab_bag_songs (user_id, position, spotify_track_id, title, artist_id)
+    SELECT '00000000-0000-0000-0000-000000000014', 5, '0aaaaaaaaaaaaaaaaaaaa3', 'Taken slot', id FROM artists WHERE spotify_artist_id = 'sp-grab-bag-artist'$$,
+  'grab_bag_songs_user_id_position_key');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO grab_bag_songs (user_id, position, spotify_track_id, title, artist_id)
+    SELECT '00000000-0000-0000-0000-000000000014', 4, '0aaaaaaaaaaaaaaaaaaaa2', 'Same song twice', id FROM artists WHERE spotify_artist_id = 'sp-grab-bag-artist'$$,
+  'grab_bag_songs_user_id_spotify_track_id_key');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO grab_bag_songs (user_id, position, spotify_track_id, title, artist_id)
+    SELECT '00000000-0000-0000-0000-000000000014', 3, 'not-a-spotify-id', 'Bad id', id FROM artists WHERE spotify_artist_id = 'sp-grab-bag-artist'$$,
+  'grab_bag_songs_spotify_track_id_check');
+
+-- Deleting an account removes its follows both ways and its grab bag.
+UPDATE users SET deleted_at = now() WHERE id = '00000000-0000-0000-0000-000000000014';
+DO $$ BEGIN
+  ASSERT NOT EXISTS (SELECT 1 FROM follows WHERE follower_id = '00000000-0000-0000-0000-000000000014'
+                                               OR followee_id = '00000000-0000-0000-0000-000000000014'),
+         'deletion removes follows both ways';
+  ASSERT NOT EXISTS (SELECT 1 FROM follows WHERE follower_id = '00000000-0000-0000-0000-000000000016'),
+         'jojo''s follow of the deleted account is gone too';
+  ASSERT NOT EXISTS (SELECT 1 FROM grab_bag_songs WHERE user_id = '00000000-0000-0000-0000-000000000014'), 'deletion empties the grab bag';
+  ASSERT EXISTS (SELECT 1 FROM grab_bag_songs WHERE user_id = '00000000-0000-0000-0000-000000000001'), 'other grab bags stay';
+END $$;
+
 \echo ALL INVARIANT TESTS PASSED

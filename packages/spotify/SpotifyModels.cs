@@ -60,3 +60,13 @@ public sealed record SpotifyAlbum(
 
 /// <summary>A track as listed on its album.</summary>
 public sealed record SpotifyAlbumTrack(string Id, string Name, int DiscNumber, int TrackNumber);
+
+public sealed record SpotifyTrackArtist(string Id, string Name);
+
+/// <summary>
+/// A track from search or lookup (grab bags). <see cref="Artists"/> are in credit order; the first is the primary
+/// artist. <see cref="CoverUrl"/> is the album's largest cover image; <see cref="SpotifyUrl"/> opens the track on Spotify.
+/// </summary>
+public sealed record SpotifyTrackDetail(
+    string Id, string Name, IReadOnlyList<SpotifyTrackArtist> Artists, string? AlbumId, string? AlbumName, string? CoverUrl,
+    string SpotifyUrl);

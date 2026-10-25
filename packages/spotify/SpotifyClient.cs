@@ -186,6 +186,32 @@ public sealed partial class SpotifyClient(
         return [.. (result.Artists?.Items ?? []).Select(ToArtist).OfType<SpotifyArtist>()];
     }
 
+    /// <summary>
+    /// Tracks matching <paramref name="query"/>, best match first, at most <see cref="MaxSearchLimit"/> (grab bags).
+    /// Needs <see cref="SpotifyOptions.ClientSecret"/>.
+    /// </summary>
+    public async Task<IReadOnlyList<SpotifyTrackDetail>> SearchTracksAsync(string query, int limit, CancellationToken cancellationToken)
+    {
+        var result = await AppGetAsync<SearchDto>(
+            $"search?type=track&limit={Math.Clamp(limit, 1, MaxSearchLimit)}&q={Uri.EscapeDataString(query)}",
+            "track search", cancellationToken);
+        return [.. (result.Tracks?.Items ?? []).Select(ToTrackDetail).OfType<SpotifyTrackDetail>()];
+    }
+
+    /// <summary>One track, or null when Spotify has none with this id. Needs <see cref="SpotifyOptions.ClientSecret"/>.</summary>
+    public async Task<SpotifyTrackDetail?> GetTrackAsync(string spotifyTrackId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return ToTrackDetail(await AppGetAsync<TrackDto>(
+                $"tracks/{Uri.EscapeDataString(spotifyTrackId)}", "track", cancellationToken));
+        }
+        catch (SpotifyRequestException e) when (e.Status is 400 or 404)
+        {
+            return null;
+        }
+    }
+
     /// <summary>One artist, or null when Spotify has none with this id. Needs <see cref="SpotifyOptions.ClientSecret"/>.</summary>
     public async Task<SpotifyArtist?> GetArtistAsync(string spotifyArtistId, CancellationToken cancellationToken)
     {
@@ -470,6 +496,28 @@ public sealed partial class SpotifyClient(
             ? new SpotifyAlbumTrack(id, name, track.DiscNumber ?? 1, track.TrackNumber ?? 0)
             : null;
 
+    // A track needs at least one credited artist with an id and a name: that's who gets tracked.
+    private static SpotifyTrackDetail? ToTrackDetail(TrackDto? track)
+    {
+        if (track is not { Id: { } id, Name: { } name } || track.Type is not (null or "track") || track.IsLocal == true)
+        {
+            return null;
+        }
+
+        var artists = (track.Artists ?? [])
+            .Where(a => a is { Id: { } , Name: { } })
+            .Select(a => new SpotifyTrackArtist(a.Id!, a.Name!))
+            .ToList();
+        if (artists.Count == 0)
+        {
+            return null;
+        }
+
+        return new SpotifyTrackDetail(id, name, artists, track.Album?.Id, track.Album?.Name,
+            track.Album?.Images?.Where(i => i.Url is not null).OrderByDescending(i => i.Width ?? 0).FirstOrDefault()?.Url,
+            track.ExternalUrls?.Spotify ?? $"https://open.spotify.com/track/{id}");
+    }
+
     private static SpotifyArtist? ToArtist(ArtistDto? artist) =>
         artist is { Id: { } id, Name: { } name }
             ? new SpotifyArtist(id, name, PickImage(artist.Images), artist.Genres ?? [])
@@ -497,7 +545,9 @@ public sealed partial class SpotifyClient(
 
     private sealed record ArtistDto(string? Id, string? Name, IReadOnlyList<ImageDto>? Images, IReadOnlyList<string>? Genres);
 
-    private sealed record SearchDto(Page<ArtistDto>? Artists);
+    private sealed record SearchDto(Page<ArtistDto>? Artists, Page<TrackDto>? Tracks);
+
+    private sealed record ExternalUrlsDto(string? Spotify);
 
     private sealed record AlbumDto(
         string? Id, string? Name, string? AlbumType, string? ReleaseDate, string? ReleaseDatePrecision,
@@ -505,7 +555,7 @@ public sealed partial class SpotifyClient(
 
     private sealed record TrackDto(
         string? Id, string? Name, string? Type, bool? IsLocal, int? DiscNumber, int? TrackNumber, AlbumDto? Album,
-        IReadOnlyList<ArtistDto>? Artists);
+        IReadOnlyList<ArtistDto>? Artists, ExternalUrlsDto? ExternalUrls = null);
 
     private sealed record SavedTrackDto(DateTimeOffset? AddedAt, TrackDto? Track);
 

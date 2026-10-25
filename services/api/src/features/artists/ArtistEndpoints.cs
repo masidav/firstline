@@ -299,7 +299,7 @@ public static partial class ArtistEndpoints
                     row.Percentile!.Value, row.RawScore!.Value, row.IsEstimated!.Value, computedAt)
                 : null);
 
-    private static void RequireCatalog(SpotifyOptions options, string detail)
+    internal static void RequireCatalog(SpotifyOptions options, string detail)
     {
         if (!options.IsCatalogEnabled)
         {
@@ -307,7 +307,7 @@ public static partial class ArtistEndpoints
         }
     }
 
-    private static async Task<T> CallSpotifyAsync<T>(Func<Task<T>> call, ILoggerFactory loggers)
+    internal static async Task<T> CallSpotifyAsync<T>(Func<Task<T>> call, ILoggerFactory loggers)
     {
         try
         {

@@ -1185,12 +1185,22 @@ paths:
       operationId: getFeed
       summary: Home feed
       description: |
-        Shared photos (verified merch and concert photos) and public album logs from every fan, newest first.
-        Deleted accounts, deleted logs, and inactive artists are left out; followers-only logs stay out until
-        follows exist (Phase 8).
+        One vertical scroll mixing, at random: shared photos (verified merch and concert photos) and public album
+        logs from every fan; from the fans the caller follows, their followers-only logs, grab-bag songs, and top
+        fandom stats; upcoming shows (within 120 days) of artists the caller has a score for or in their hub cities,
+        with the fan allocation to register for; and the caller's own live registrations with their standing.
+
+        Each source contributes its newest items (up to 100); the pools are shuffled together by `seed`, so one seed
+        gives one stable order to page through with `cursor`. Send a new seed to get a new mix (the app picks one
+        per refresh); without one the mix is stable for the UTC day. Deleted accounts, deleted or taken-down logs,
+        and inactive artists are left out.
       parameters:
         - {$ref: '#/components/parameters/Limit'}
         - {$ref: '#/components/parameters/Cursor'}
+        - name: seed
+          in: query
+          description: Shuffle key, 1 to 64 letters, digits, dashes, or underscores. Keep it while paging.
+          schema: {type: string, pattern: '^[A-Za-z0-9_-]{1,64}$'}
       responses:
         '200':
           description: Page of feed items
@@ -1292,6 +1302,160 @@ paths:
         '422': {$ref: '#/components/responses/ValidationFailed'}
 
   # ------------------------------------------------------------------ Social
+  /users:
+    get:
+      tags: [Social]
+      operationId: searchUsers
+      summary: Find fans to follow
+      description: Fans whose handle or display name starts with `q` (a leading @ is ignored), the caller left out.
+      parameters:
+        - {name: q, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 60}}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Matching fans
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UserPage'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /me/following:
+    get:
+      tags: [Social]
+      operationId: listFollowing
+      summary: Fans the caller follows
+      description: Newest follow first.
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page of fans
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UserPage'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /me/followers:
+    get:
+      tags: [Social]
+      operationId: listFollowers
+      summary: The caller's followers
+      description: Newest follower first.
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page of fans
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UserPage'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /me/followers/{handle}:
+    parameters:
+      - {$ref: '#/components/parameters/Handle'}
+    delete:
+      tags: [Social]
+      operationId: removeFollower
+      summary: Remove a follower
+      description: They stop seeing the caller's followers-only logs, grab bag, and stats. Idempotent.
+      responses:
+        '204': {description: Not a follower}
+  /me/grab-bag:
+    get:
+      tags: [Social]
+      operationId: getMyGrabBag
+      summary: The caller's grab bag
+      description: Up to five favourite songs in numbered slots, shared with followers (decided 2026-10-20; can't be turned off).
+      responses:
+        '200':
+          description: The grab bag
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GrabBag'}
+  /me/grab-bag/{position}:
+    parameters:
+      - {name: position, in: path, required: true, schema: {type: integer, minimum: 1, maximum: 5}}
+    put:
+      tags: [Social]
+      operationId: putGrabBagSong
+      summary: Put a song in a slot
+      description: |
+        Replaces whatever was in the slot; a song already in another slot moves to this one. The song is looked up on
+        Spotify (app token). Its primary artist is tracked if nobody tracks it yet (it starts `onboarding`), without
+        counting toward the daily artist limit (decided 2026-10-20).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/GrabBagPut'}
+      responses:
+        '200':
+          description: The whole grab bag after the change
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GrabBag'}
+        '404':
+          description: 'Spotify does not know this track (`code: spotify_track_not_found`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '503': {$ref: '#/components/responses/SpotifyUnavailable'}
+    delete:
+      tags: [Social]
+      operationId: deleteGrabBagSong
+      summary: Empty a slot
+      responses:
+        '204': {description: Slot empty}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /users/{handle}/grab-bag:
+    parameters:
+      - {$ref: '#/components/parameters/Handle'}
+    get:
+      tags: [Social]
+      operationId: getUserGrabBag
+      summary: A fan's grab bag
+      description: Followers (and the owner) only.
+      responses:
+        '200':
+          description: The grab bag
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GrabBag'}
+        '403':
+          description: 'The caller does not follow this fan (`code: followers_only`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /tracks/search:
+    get:
+      tags: [Social]
+      operationId: searchTracks
+      summary: Search Spotify for songs
+      description: |
+        For the grab bag. Searches Spotify with the app token (at most 10 results per search for development-mode
+        apps; 30 searches per minute per user, shared with artist search) and marks each credited artist that is
+        already tracked. Does not need the user to have connected Spotify.
+      parameters:
+        - {name: q, in: query, required: true, schema: {type: string, minLength: 2, maxLength: 100}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 10, default: 10}}
+      responses:
+        '200':
+          description: Results
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/TrackSearchResult'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/SpotifyUnavailable'}
   /users/{handle}:
     parameters:
       - {$ref: '#/components/parameters/Handle'}
@@ -1299,7 +1463,9 @@ paths:
       tags: [Social]
       operationId: getUser
       summary: Public profile
-      description: 'Scores are not part of the public profile (open question: whether to allow opt-in public scores).'
+      description: |
+        Counts and how the fan and the caller relate. Scores are not part of the public profile (open question:
+        whether to allow opt-in public scores); followers see top fandom stats on the home feed instead.
       responses:
         '200':
           description: Profile
@@ -1347,17 +1513,19 @@ paths:
     put:
       tags: [Social]
       operationId: followUser
-      summary: Follow a user
-      description: Needed for the `followers` visibility level, which has no follow graph in the schema yet.
-      x-requires-schema: [follows]
+      summary: Follow a fan
+      description: |
+        No approval needed (decided 2026-10-20). Followers see the fan's followers-only logs, grab bag, and top
+        fandom stats on the home feed. Idempotent.
       responses:
         '204': {description: Following}
         '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
     delete:
       tags: [Social]
       operationId: unfollowUser
-      summary: Unfollow a user
-      x-requires-schema: [follows]
+      summary: Unfollow a fan
+      description: Idempotent.
       responses:
         '204': {description: Not following}
   /reports:
@@ -2138,6 +2306,8 @@ components:
             - hub_change_limit
             - artist_not_active
             - spotify_artist_not_found
+            - spotify_track_not_found
+            - followers_only
             - spotify_not_connected
             - spotify_reauth_required
             - spotify_in_use
@@ -2173,11 +2343,18 @@ components:
       allOf:
         - $ref: '#/components/schemas/UserRef'
         - type: object
+          required: [created_at, log_count, list_count, followed_by_me, follows_me, follower_count, following_count, is_artist,
+                     grab_bag_count]
           properties:
             created_at: {type: string, format: date-time}
-            log_count: {type: integer}
+            log_count: {type: integer, description: Logs the caller can see.}
             list_count: {type: integer}
             followed_by_me: {type: boolean}
+            follows_me: {type: boolean}
+            follower_count: {type: integer}
+            following_count: {type: integer}
+            is_artist: {type: boolean}
+            grab_bag_count: {type: integer, description: Songs in their grab bag (visible to followers).}
 
     SessionRequest:
       type: object
@@ -3020,21 +3197,43 @@ components:
         starts_at: {type: string, format: date-time}
     FeedPage:
       type: object
-      required: [items, next_cursor]
+      required: [items, next_cursor, seed]
       properties:
         items:
           type: array
           items: {$ref: '#/components/schemas/FeedItem'}
         next_cursor: {type: [string, 'null']}
+        seed: {type: string, description: The shuffle key this page used; send it back with `cursor`.}
     FeedItem:
       type: object
-      required: [type, id, at, user, artist]
+      description: '`type` says which payload is set: `photo`, `log`, `grab_bag`, `concert`, `registration`, or `stat`.'
+      required: [type, id, at, user, artist, following]
       properties:
-        type: {type: string, enum: [photo, album_log]}
-        id: {type: string, format: uuid, description: The submission or album log id.}
-        at: {type: string, format: date-time, description: When it was shared or logged.}
-        user: {$ref: '#/components/schemas/UserRef'}
-        artist: {$ref: '#/components/schemas/ArtistRef'}
+        type: {type: string, enum: [photo, album_log, grab_bag, concert, registration, stat]}
+        id:
+          type: string
+          format: uuid
+          description: The submission, album log, grab-bag song, show, or registration id; a stable id for a stat.
+        at: {type: string, format: date-time, description: 'When it happened: shared, logged, added, registered; a show''s start.'}
+        user:
+          description: Whose item it is; null for a show.
+          oneOf: [{$ref: '#/components/schemas/UserRef'}, {type: 'null'}]
+        artist:
+          description: The artist it is about; null for a stat that spans artists.
+          oneOf: [{$ref: '#/components/schemas/ArtistRef'}, {type: 'null'}]
+        following: {type: boolean, description: The caller follows `user`.}
+        grab_bag:
+          description: A song from a followed fan's grab bag.
+          oneOf: [{$ref: '#/components/schemas/GrabBagSong'}, {type: 'null'}]
+        concert:
+          description: An upcoming show, with the fan allocation to register for if there is one.
+          oneOf: [{$ref: '#/components/schemas/FeedShow'}, {type: 'null'}]
+        registration:
+          description: The caller's own live registration and standing.
+          oneOf: [{$ref: '#/components/schemas/RegistrationCard'}, {type: 'null'}]
+        stat:
+          description: A number from a followed fan.
+          oneOf: [{$ref: '#/components/schemas/FeedStat'}, {type: 'null'}]
         photo:
           type: [object, 'null']
           required: [kind, files]
@@ -3076,6 +3275,106 @@ components:
             review_truncated: {type: boolean}
             is_relisten: {type: boolean}
             listened_on: {type: string, format: date}
+            visibility: {$ref: '#/components/schemas/Visibility'}
+    FeedShow:
+      type: object
+      required: [event, allocation, registered]
+      properties:
+        event: {$ref: '#/components/schemas/Event'}
+        allocation:
+          description: 'The allocation fans can register for, or will be able to: published, not cancelled, not closed.'
+          oneOf: [{$ref: '#/components/schemas/Allocation'}, {type: 'null'}]
+        registered: {type: boolean, description: The caller holds a live registration for this show.}
+    RegistrationCard:
+      type: object
+      required: [registration, allocation, event, standing]
+      properties:
+        registration: {$ref: '#/components/schemas/Registration'}
+        allocation: {$ref: '#/components/schemas/Allocation'}
+        event: {$ref: '#/components/schemas/Event'}
+        standing:
+          description: Set while registration is upcoming or open.
+          oneOf: [{$ref: '#/components/schemas/Standing'}, {type: 'null'}]
+    FeedStat:
+      type: object
+      description: |
+        `top_fan`: the fan's place among the artist's fans here (`rank` of `fans`, `percentile`, `value` is their raw
+        score). `albums_logged`, `concert_photos`, `merch`: a count in `value`. `points`: ledger points in `value`.
+      required: [kind, value]
+      properties:
+        kind: {type: string, enum: [top_fan, albums_logged, concert_photos, merch, points]}
+        value: {type: number}
+        percentile: {type: [number, 'null']}
+        rank: {type: [integer, 'null'], minimum: 1}
+        fans: {type: [integer, 'null'], minimum: 1}
+        is_estimated: {type: [boolean, 'null']}
+    UserSummary:
+      type: object
+      description: Another fan in a list, and how they and the caller relate.
+      required: [handle, deleted, display_name, avatar_url, followed_by_me, follows_me]
+      properties:
+        handle: {type: string}
+        deleted: {type: boolean}
+        display_name: {type: [string, 'null']}
+        avatar_url: {type: [string, 'null'], format: uri}
+        followed_by_me: {type: boolean}
+        follows_me: {type: boolean}
+    UserPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/UserSummary'}
+        next_cursor: {type: [string, 'null']}
+    GrabBagSong:
+      type: object
+      required: [id, position, spotify_track_id, title, artist, artist_status, album_title, cover_url, spotify_url, added_at]
+      properties:
+        id: {type: string, format: uuid}
+        position: {type: integer, minimum: 1, maximum: 5, description: The slot.}
+        spotify_track_id: {type: string}
+        title: {type: string}
+        artist: {$ref: '#/components/schemas/ArtistRef'}
+        artist_status: {$ref: '#/components/schemas/ArtistStatus'}
+        album_title: {type: [string, 'null']}
+        cover_url: {type: [string, 'null'], format: uri, description: Spotify album art, shown unaltered.}
+        spotify_url: {type: string, format: uri, description: Opens the song on Spotify.}
+        added_at: {type: string, format: date-time}
+    GrabBag:
+      type: object
+      required: [owner, items, slots]
+      properties:
+        owner: {$ref: '#/components/schemas/UserRef'}
+        items:
+          type: array
+          description: Filled slots, in slot order.
+          items: {$ref: '#/components/schemas/GrabBagSong'}
+        slots: {type: integer, description: How many slots a grab bag has (5).}
+    GrabBagPut:
+      type: object
+      required: [spotify_track_id]
+      properties:
+        spotify_track_id: {type: string, pattern: '^[0-9A-Za-z]{22}$'}
+    TrackSearchResult:
+      type: object
+      required: [spotify_track_id, title, artists, album_title, cover_url, spotify_url]
+      properties:
+        spotify_track_id: {type: string}
+        title: {type: string}
+        artists:
+          type: array
+          description: In credit order; the first is the primary artist, the one tracked when the song is added.
+          items:
+            type: object
+            required: [spotify_artist_id, name, artist_id]
+            properties:
+              spotify_artist_id: {type: string}
+              name: {type: string}
+              artist_id: {type: [string, 'null'], format: uuid, description: Set when the artist is already tracked.}
+        album_title: {type: [string, 'null']}
+        cover_url: {type: [string, 'null'], format: uri}
+        spotify_url: {type: string, format: uri}
     SubmissionPage:
       type: object
       required: [items, next_cursor]

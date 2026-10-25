@@ -100,7 +100,7 @@ Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring wo
 - [x] Implement album metadata cache and album logs. Provider, caching, artwork, and attribution rules: [ADR 0006](docs/adr/0006-album-catalog.md).
       Albums and Journal endpoints with `Idempotency-Key` replay (migration 0009). Verified 2026-10-21: `dotnet test` (JournalApiTests 11, invariants).
 - [ ] Implement ratings, reviews, relistens, visibility, and offline sync. (API side done 2026-10-21 with the logs above; followers-only
-      waits for Phase 8 follows; offline sync is the app's queue, still to build.)
+      logs show to followers since 2026-10-25 (follows, migration 0018); offline sync is the app's queue, still to build.)
 - [ ] Implement ordered album lists.
 - [ ] Implement comments, replies, anti-abuse rules, and reward reversals.
 
@@ -127,7 +127,9 @@ Details: [Album journal API](services/api/src/features/album-journal/TODO.md) ·
 Details: [Submissions API](services/api/src/features/submissions/TODO.md) · [Submission UI](apps/mobile/src/features/submissions/TODO.md) · [Verification](services/api/src/features/verification/TODO.md) · [Verification worker](workers/submission-verification/TODO.md) · [Redaction worker](workers/image-redaction/TODO.md)
 
 Fans can share verified merch and concert photos to the home feed (`PUT /submissions/{id}/share`); tickets and
-screenshots are never shared. The home feed (`GET /feed`) shows shared photos and public album logs from every fan.
+screenshots are never shared. The home feed (`GET /feed`) is one vertical scroll mixing, at random, shared photos
+and album logs from every fan, grab-bag songs, followers-only logs, and fandom stats from the fans you follow,
+upcoming shows of your artists, and your own fan-ticket registrations (2026-10-25; `services/api/src/features/feed/README.md`).
 
 ## Phase 8 — Sharing and commerce
 Lower priority under the new direction: ticket purchases now flow through allocations (Phase 11), not outbound links.
@@ -140,10 +142,19 @@ Lower priority under the new direction: ticket purchases now flow through alloca
 - [x] Fan location preference: a primary hub city plus two backups, used to pick which shows to show. From a
       curated list of US and Canadian metros (migration 0010; `GET /v1/cities`, `PUT /v1/me/hub-cities`). Verified
       2026-10-21: `dotnet test` 157/157 (HubCityApiTests 13, invariants), app `npm test` 62/62, clicked through in Chrome.
-- [ ] Follow/follower relationships between fans (decided 2026-10-20): follow without approval, remove a
-      follower, block; followers see posts and top fandom stats. Feeds the home-screen reviews and the bouncer door.
-- [ ] Grab bag: up to 5 favorite songs per fan, shared with followers by default, each linking to Spotify.
-      Adding a song by an untracked artist tracks that artist (through `track_artist()`).
+- [x] Follow/follower relationships between fans (decided 2026-10-20): follow without approval, remove a
+      follower; followers see followers-only logs, grab bags, and top fandom stats on the home feed (blocking not
+      wanted for now, 2026-10-24). Migration 0018; `PUT/DELETE /users/{handle}/follow`, `GET /users?q=`,
+      `/me/following`, `/me/followers`; app screen `/people` and Follow buttons on feed cards. Verified 2026-10-25:
+      `dotnet test` (FollowApiTests 3, invariants), app Jest (PeopleScreen, Feed), clicked through in Chrome.
+- [x] Grab bag: up to 5 favorite songs per fan, shared with followers by default, each linking to Spotify.
+      Adding a song by an untracked artist tracks that artist (through `track_artist(..., 'grab_bag')`, outside the
+      daily limit). Migration 0018; `/me/grab-bag/{position}`, `GET /tracks/search`; app screen `/grab-bag`.
+      Verified 2026-10-25: `dotnet test` (GrabBagApiTests 3 with a faked Spotify, invariants), app Jest (GrabBagScreen).
+      Not done: the bouncer door (a song drawn from followed fans' grab bags) still needs its own screen.
+- [x] Home feed as one vertical scroll (2026-10-25): a seeded random mix of photos, album logs, followed fans' grab-bag
+      songs and stats, upcoming shows, and the fan's registrations, dealt out by type so every page mixes them; infinite
+      scroll, pull/Shuffle for a new mix. Verified: `dotnet test` (FeedApiTests 2), app Jest (Feed 7), Chrome at phone size.
 - [x] Sign-up asks for a primary hub city (plus optional backups). Changes allowed once a week, with a warning.
       The app sends signed-in fans without a hub city to `/hub-cities` before anything else; the first choice can
       be changed once right away, then once a week.
@@ -250,7 +261,8 @@ at request time.
       playlist tracks, distinct albums, recent plays; Phase 4), points total from the ledger, followers and
       following (Phase 8).
 - [ ] `GET /me/stats` and `GET /users/{userId}/stats` in `openapi.yaml`; *`GET /me/stats` done 2026-10-21 (StatsApiTests 3/3);
-      other fans' stats wait on follows, blocks, and profile visibility (Phase 8).* counts exclude soft-deleted content and
+      other fans' stats wait on profile visibility; since 2026-10-25 followers get a fan's top scores, albums logged,
+      verified photos/merch, and points as `stat` cards on the home feed.* counts exclude soft-deleted content and
       reversed awards.
 - [ ] Visibility: own stats in full; other fans' stats follow their profile visibility, followers-only stats for
       followers, nothing for blocked fans.

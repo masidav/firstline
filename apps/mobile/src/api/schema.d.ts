@@ -902,9 +902,15 @@ export interface paths {
         };
         /**
          * Home feed
-         * @description Shared photos (verified merch and concert photos) and public album logs from every fan, newest first.
-         *     Deleted accounts, deleted logs, and inactive artists are left out; followers-only logs stay out until
-         *     follows exist (Phase 8).
+         * @description One vertical scroll mixing, at random: shared photos (verified merch and concert photos) and public album
+         *     logs from every fan; from the fans the caller follows, their followers-only logs, grab-bag songs, and top
+         *     fandom stats; upcoming shows (within 120 days) of artists the caller has a score for or in their hub cities,
+         *     with the fan allocation to register for; and the caller's own live registrations with their standing.
+         *
+         *     Each source contributes its newest items (up to 100); the pools are shuffled together by `seed`, so one seed
+         *     gives one stable order to page through with `cursor`. Send a new seed to get a new mix (the app picks one
+         *     per refresh); without one the mix is stable for the UTC day. Deleted accounts, deleted or taken-down logs,
+         *     and inactive artists are left out.
          */
         get: operations["getFeed"];
         put?: never;
@@ -999,6 +1005,177 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find fans to follow
+         * @description Fans whose handle or display name starts with `q` (a leading @ is ignored), the caller left out.
+         */
+        get: operations["searchUsers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/following": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fans the caller follows
+         * @description Newest follow first.
+         */
+        get: operations["listFollowing"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/followers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's followers
+         * @description Newest follower first.
+         */
+        get: operations["listFollowers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/followers/{handle}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: components["parameters"]["Handle"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a follower
+         * @description They stop seeing the caller's followers-only logs, grab bag, and stats. Idempotent.
+         */
+        delete: operations["removeFollower"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/grab-bag": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's grab bag
+         * @description Up to five favourite songs in numbered slots, shared with followers (decided 2026-10-20; can't be turned off).
+         */
+        get: operations["getMyGrabBag"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/grab-bag/{position}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                position: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put a song in a slot
+         * @description Replaces whatever was in the slot; a song already in another slot moves to this one. The song is looked up on
+         *     Spotify (app token). Its primary artist is tracked if nobody tracks it yet (it starts `onboarding`), without
+         *     counting toward the daily artist limit (decided 2026-10-20).
+         */
+        put: operations["putGrabBagSong"];
+        post?: never;
+        /** Empty a slot */
+        delete: operations["deleteGrabBagSong"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{handle}/grab-bag": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: components["parameters"]["Handle"];
+            };
+            cookie?: never;
+        };
+        /**
+         * A fan's grab bag
+         * @description Followers (and the owner) only.
+         */
+        get: operations["getUserGrabBag"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tracks/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Spotify for songs
+         * @description For the grab bag. Searches Spotify with the app token (at most 10 results per search for development-mode
+         *     apps; 30 searches per minute per user, shared with artist search) and marks each credited artist that is
+         *     already tracked. Does not need the user to have connected Spotify.
+         */
+        get: operations["searchTracks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/{handle}": {
         parameters: {
             query?: never;
@@ -1010,7 +1187,8 @@ export interface paths {
         };
         /**
          * Public profile
-         * @description Scores are not part of the public profile (open question: whether to allow opt-in public scores).
+         * @description Counts and how the fan and the caller relate. Scores are not part of the public profile (open question:
+         *     whether to allow opt-in public scores); followers see top fandom stats on the home feed instead.
          */
         get: operations["getUser"];
         put?: never;
@@ -1070,12 +1248,16 @@ export interface paths {
         };
         get?: never;
         /**
-         * Follow a user
-         * @description Needed for the `followers` visibility level, which has no follow graph in the schema yet.
+         * Follow a fan
+         * @description No approval needed (decided 2026-10-20). Followers see the fan's followers-only logs, grab bag, and top
+         *     fandom stats on the home feed. Idempotent.
          */
         put: operations["followUser"];
         post?: never;
-        /** Unfollow a user */
+        /**
+         * Unfollow a fan
+         * @description Idempotent.
+         */
         delete: operations["unfollowUser"];
         options?: never;
         head?: never;
@@ -1670,7 +1852,7 @@ export interface components {
              * @description Stable machine-readable code.
              * @enum {string}
              */
-            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
+            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_track_not_found" | "followers_only" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
             errors?: {
                 field?: string;
                 message?: string;
@@ -1691,10 +1873,17 @@ export interface components {
         };
         UserPublic: components["schemas"]["UserRef"] & {
             /** Format: date-time */
-            created_at?: string;
-            log_count?: number;
-            list_count?: number;
-            followed_by_me?: boolean;
+            created_at: string;
+            /** @description Logs the caller can see. */
+            log_count: number;
+            list_count: number;
+            followed_by_me: boolean;
+            follows_me: boolean;
+            follower_count: number;
+            following_count: number;
+            is_artist: boolean;
+            /** @description Songs in their grab bag (visible to followers). */
+            grab_bag_count: number;
         };
         SessionRequest: {
             /** @enum {string} */
@@ -2486,22 +2675,37 @@ export interface components {
         FeedPage: {
             items: components["schemas"]["FeedItem"][];
             next_cursor: string | null;
+            /** @description The shuffle key this page used; send it back with `cursor`. */
+            seed: string;
         };
+        /** @description `type` says which payload is set: `photo`, `log`, `grab_bag`, `concert`, `registration`, or `stat`. */
         FeedItem: {
             /** @enum {string} */
-            type: "photo" | "album_log";
+            type: "photo" | "album_log" | "grab_bag" | "concert" | "registration" | "stat";
             /**
              * Format: uuid
-             * @description The submission or album log id.
+             * @description The submission, album log, grab-bag song, show, or registration id; a stable id for a stat.
              */
             id: string;
             /**
              * Format: date-time
-             * @description When it was shared or logged.
+             * @description When it happened: shared, logged, added, registered; a show's start.
              */
             at: string;
-            user: components["schemas"]["UserRef"];
-            artist: components["schemas"]["ArtistRef"];
+            /** @description Whose item it is; null for a show. */
+            user: components["schemas"]["UserRef"] | null;
+            /** @description The artist it is about; null for a stat that spans artists. */
+            artist: components["schemas"]["ArtistRef"] | null;
+            /** @description The caller follows `user`. */
+            following: boolean;
+            /** @description A song from a followed fan's grab bag. */
+            grab_bag?: components["schemas"]["GrabBagSong"] | null;
+            /** @description An upcoming show, with the fan allocation to register for if there is one. */
+            concert?: components["schemas"]["FeedShow"] | null;
+            /** @description The caller's own live registration and standing. */
+            registration?: components["schemas"]["RegistrationCard"] | null;
+            /** @description A number from a followed fan. */
+            stat?: components["schemas"]["FeedStat"] | null;
             photo?: {
                 /** @enum {string} */
                 kind: "merch" | "concert_photo";
@@ -2541,7 +2745,101 @@ export interface components {
                 is_relisten: boolean;
                 /** Format: date */
                 listened_on: string;
+                visibility?: components["schemas"]["Visibility"];
             } | null;
+        };
+        FeedShow: {
+            event: components["schemas"]["Event"];
+            /** @description The allocation fans can register for, or will be able to: published, not cancelled, not closed. */
+            allocation: components["schemas"]["Allocation"] | null;
+            /** @description The caller holds a live registration for this show. */
+            registered: boolean;
+        };
+        RegistrationCard: {
+            registration: components["schemas"]["Registration"];
+            allocation: components["schemas"]["Allocation"];
+            event: components["schemas"]["Event"];
+            /** @description Set while registration is upcoming or open. */
+            standing: components["schemas"]["Standing"] | null;
+        };
+        /**
+         * @description `top_fan`: the fan's place among the artist's fans here (`rank` of `fans`, `percentile`, `value` is their raw
+         *     score). `albums_logged`, `concert_photos`, `merch`: a count in `value`. `points`: ledger points in `value`.
+         */
+        FeedStat: {
+            /** @enum {string} */
+            kind: "top_fan" | "albums_logged" | "concert_photos" | "merch" | "points";
+            value: number;
+            percentile?: number | null;
+            rank?: number | null;
+            fans?: number | null;
+            is_estimated?: boolean | null;
+        };
+        /** @description Another fan in a list, and how they and the caller relate. */
+        UserSummary: {
+            handle: string;
+            deleted: boolean;
+            display_name: string | null;
+            /** Format: uri */
+            avatar_url: string | null;
+            followed_by_me: boolean;
+            follows_me: boolean;
+        };
+        UserPage: {
+            items: components["schemas"]["UserSummary"][];
+            next_cursor: string | null;
+        };
+        GrabBagSong: {
+            /** Format: uuid */
+            id: string;
+            /** @description The slot. */
+            position: number;
+            spotify_track_id: string;
+            title: string;
+            artist: components["schemas"]["ArtistRef"];
+            artist_status: components["schemas"]["ArtistStatus"];
+            album_title: string | null;
+            /**
+             * Format: uri
+             * @description Spotify album art
+             */
+            cover_url: string | null;
+            /**
+             * Format: uri
+             * @description Opens the song on Spotify.
+             */
+            spotify_url: string;
+            /** Format: date-time */
+            added_at: string;
+        };
+        GrabBag: {
+            owner: components["schemas"]["UserRef"];
+            /** @description Filled slots, in slot order. */
+            items: components["schemas"]["GrabBagSong"][];
+            /** @description How many slots a grab bag has (5). */
+            slots: number;
+        };
+        GrabBagPut: {
+            spotify_track_id: string;
+        };
+        TrackSearchResult: {
+            spotify_track_id: string;
+            title: string;
+            /** @description In credit order; the first is the primary artist, the one tracked when the song is added. */
+            artists: {
+                spotify_artist_id: string;
+                name: string;
+                /**
+                 * Format: uuid
+                 * @description Set when the artist is already tracked.
+                 */
+                artist_id: string | null;
+            }[];
+            album_title: string | null;
+            /** Format: uri */
+            cover_url: string | null;
+            /** Format: uri */
+            spotify_url: string;
         };
         SubmissionPage: {
             items: components["schemas"]["Submission"][];
@@ -4301,6 +4599,8 @@ export interface operations {
             query?: {
                 limit?: components["parameters"]["Limit"];
                 cursor?: components["parameters"]["Cursor"];
+                /** @description Shuffle key, 1 to 64 letters, digits, dashes, or underscores. Keep it while paging. */
+                seed?: string;
             };
             header?: never;
             path?: never;
@@ -4442,6 +4742,237 @@ export interface operations {
             422: components["responses"]["ValidationFailed"];
         };
     };
+    searchUsers: {
+        parameters: {
+            query: {
+                q: string;
+                limit?: components["parameters"]["Limit"];
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Matching fans */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPage"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    listFollowing: {
+        parameters: {
+            query?: {
+                limit?: components["parameters"]["Limit"];
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of fans */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPage"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    listFollowers: {
+        parameters: {
+            query?: {
+                limit?: components["parameters"]["Limit"];
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of fans */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPage"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    removeFollower: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: components["parameters"]["Handle"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Not a follower */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getMyGrabBag: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The grab bag */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrabBag"];
+                };
+            };
+        };
+    };
+    putGrabBagSong: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                position: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrabBagPut"];
+            };
+        };
+        responses: {
+            /** @description The whole grab bag after the change */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrabBag"];
+                };
+            };
+            /** @description Spotify does not know this track (`code: spotify_track_not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["SpotifyUnavailable"];
+        };
+    };
+    deleteGrabBagSong: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                position: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Slot empty */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getUserGrabBag: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: components["parameters"]["Handle"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The grab bag */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrabBag"];
+                };
+            };
+            /** @description The caller does not follow this fan (`code: followers_only`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    searchTracks: {
+        parameters: {
+            query: {
+                q: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Results */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["TrackSearchResult"][];
+                    };
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["SpotifyUnavailable"];
+        };
+    };
     getUser: {
         parameters: {
             query?: never;
@@ -4536,6 +5067,7 @@ export interface operations {
                 content?: never;
             };
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
         };
     };
     unfollowUser: {

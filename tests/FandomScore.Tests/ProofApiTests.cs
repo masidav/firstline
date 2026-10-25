@@ -113,7 +113,7 @@ public sealed class ProofApiTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task The_feed_mixes_shared_photos_and_public_album_logs_newest_first()
+    public async Task The_feed_mixes_shared_photos_and_public_album_logs()
     {
         var fan = await SignInAsync("fan_one");
         var other = await SignInAsync("fan_two");
@@ -135,13 +135,14 @@ public sealed class ProofApiTests(PostgresFixture postgres) : IAsyncLifetime
                 new { _artistId });
         }
 
+        // The feed is a shuffled mix (FeedApiTests covers the order), so look items up by type.
         var feed = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/feed", fan), HttpStatusCode.OK);
         var items = feed.GetProperty("items").EnumerateArray().ToList();
-        Assert.Equal(["album_log", "photo"], items.Select(i => i.GetProperty("type").GetString()));
-        var log = items[0].GetProperty("log");
+        Assert.Equal(["album_log", "photo"], items.Select(i => i.GetProperty("type").GetString()).Order());
+        var log = items.Single(i => i.GetProperty("type").GetString() == "album_log").GetProperty("log");
         Assert.Equal(9, log.GetProperty("rating").GetInt32());
         Assert.True(log.GetProperty("review_truncated").GetBoolean());
-        Assert.Equal("merch", items[1].GetProperty("photo").GetProperty("kind").GetString());
+        Assert.Equal("merch", items.Single(i => i.GetProperty("type").GetString() == "photo").GetProperty("photo").GetProperty("kind").GetString());
 
         // Deleted accounts drop out.
         await using (var connection = await _db.OpenConnectionAsync())

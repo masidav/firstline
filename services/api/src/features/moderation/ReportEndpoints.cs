@@ -80,12 +80,17 @@ public static class ReportEndpoints
 
         var userId = user.UserId();
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
-        // Only what the reporter can see on the feed can be reported: a shared photo or a public, live log.
+        // Only what the reporter can see on the feed can be reported: a shared photo, or a live log that is public
+        // or followers-only by someone the reporter follows.
         var author = await connection.ExecuteScalarAsync<Guid?>(
             targetType == "photo"
                 ? "SELECT user_id FROM submissions WHERE id = @targetId AND shared_at IS NOT NULL"
-                : "SELECT user_id FROM album_logs WHERE id = @targetId AND deleted_at IS NULL AND removed_at IS NULL AND visibility = 'public'",
-            new { targetId });
+                : """
+                  SELECT user_id FROM album_logs l WHERE id = @targetId AND deleted_at IS NULL AND removed_at IS NULL
+                   AND (visibility = 'public' OR (visibility = 'followers'
+                        AND EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = @userId AND f.followee_id = l.user_id)))
+                  """,
+            new { targetId, userId });
         if (author is null)
         {
             throw new ApiProblemException(StatusCodes.Status404NotFound, "not_found", "Post not found", "This post isn't available to report.");

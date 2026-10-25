@@ -61,6 +61,28 @@ public static partial class AllocationEndpoints
 
     public sealed record MyRegistrations(IReadOnlyList<MyRegistration> Items);
 
+    /// <summary>openapi RegistrationCard: a live registration with its standing, as the home feed shows it.</summary>
+    public sealed record RegistrationCard(Registration Registration, Allocation Allocation, Show Event, Standing? Standing);
+
+    /// <summary>The fan's live registration for an allocation with its show and standing, or null if there is none.</summary>
+    internal static async Task<RegistrationCard?> LoadRegistrationCardAsync(
+        NpgsqlConnection connection, Guid userId, Guid allocationId, IConfiguration configuration)
+    {
+        var registration = await LoadRegistrationAsync(connection, userId, allocationId);
+        if (registration is null)
+        {
+            return null;
+        }
+
+        var detail = await LoadEventAsync(connection, registration.EventId, includeDrafts: true);
+        var allocation = detail.Allocations.Single(a => a.Id == allocationId);
+        var standing = allocation.Status is "upcoming" or "open"
+            ? await LoadStandingAsync(connection, userId, allocation, false,
+                configuration.GetValue("Allocations:LikelyMarginSeats", DefaultLikelyMarginSeats))
+            : null;
+        return new RegistrationCard(registration, allocation, detail.Event, standing);
+    }
+
     // plus_one: for a fan who hasn't registered yet, whether to count a +1 in the standing.
     private static async Task<IResult> GetEligibilityAsync(
         ClaimsPrincipal user, Guid allocationId, [Microsoft.AspNetCore.Mvc.FromQuery(Name = "plus_one")] bool? plusOne,
