@@ -46,8 +46,8 @@ public static class StatsEndpoints
         return Results.Ok(await LoadAsync(connection, user.UserId()));
     }
 
-    // The fan themself and their followers; anyone else gets 403 followers_only. Which stats could be public by
-    // default is still an open decision (PROJECT_TODO.md, Phase 15), so for now nothing here is.
+    // The fan themself and their followers; anyone else gets 403 followers_only. Stats are followers-only, none public
+    // by default (decided 2026-10-25).
     private static async Task<IResult> GetForUserAsync(ClaimsPrincipal user, string handle, NpgsqlDataSource db, CancellationToken cancellationToken)
     {
         var me = user.UserId();

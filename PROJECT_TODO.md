@@ -293,9 +293,9 @@ at request time.
       other fans' stats wait on profile visibility; since 2026-10-25 followers get a fan's top scores, albums logged,
       verified photos/merch, and points as `stat` cards on the home feed.* counts exclude soft-deleted content and
       reversed awards.
-- [ ] Visibility: own stats in full; other fans' stats follow their profile visibility, followers-only stats for
-      followers, nothing for blocked fans. *Since 2026-10-25: own in full, followers see fandom stats, everyone else
-      none. Still open: which stats (if any) are public by default.*
+- [x] Visibility: own stats in full; followers see fandom stats; everyone else none (decided 2026-10-25: stats are
+      followers-only, none public by default). Blocking isn't wanted for now (decided 2026-10-24). Verified 2026-10-25:
+      ProfileApiTests (stranger 403, follower and self 200).
 - [x] Stats screen in the fan app (own profile and other fans' profiles), with estimated scores labelled.
       *Own stats screen done 2026-10-21 (`/stats`); fan pages done 2026-10-25 (`/fans/{handle}`, opened from any fan's
       name in the feed, People, and prompt answers): basics, band links, public logs and prompt answers for everyone;
@@ -340,7 +340,7 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
       (`SpotifySignals.Reduce`).
 - [ ] Decide how to handle co-credited albums and collaborations.
 - [ ] Confirm the product and company name (summary proposes TrueFan Access or VerifyTicket; repo uses Fandom Score).
-- [ ] Decide which user stats are public by default and which are followers-only (Phase 15).
+- [x] User stats are followers-only; none are public by default (decided 2026-10-25, Phase 15).
 - [ ] Choose the primary ticketing model: white-labeled checkout through ticketer APIs, or direct allocation links.
 - [ ] Confirm which primary ticketers will grant API access for reserved inventory, and on what terms.
 - [ ] Confirm Spotify's developer terms allow using listening data to decide ticket eligibility, and that the

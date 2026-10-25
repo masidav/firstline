@@ -41,7 +41,7 @@ export function standingLine(stat: ProfileStats['artists'][number]): string {
 /**
  * A fan's page (/fans/{handle}): who they are, follow, and what they share. Everyone sees the basics, public album logs,
  * and public prompt answers; followers (and the fan) also see fandom stats, the grab bag, and followers-only posts
- * (decided 2026-10-20). Which stats could be public by default is still open, so strangers see none.
+ * (decided 2026-10-20). Stats are followers-only, none public by default (decided 2026-10-25), so strangers see none.
  */
 export function FanProfileScreen({ handle }: { handle: string }) {
   const { session } = useSession();

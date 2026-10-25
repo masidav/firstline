@@ -1756,8 +1756,8 @@ paths:
       summary: A fan's fandom stats
       description: |
         For the fan and their followers (decided 2026-10-20: followers see top fandom stats): artists with percentile
-        and rank, journal and proof counts, ledger points. Listening counts stay private. Which stats could be public by
-        default is still open (Phase 15), so others get 403.
+        and rank, journal and proof counts, ledger points. Listening counts stay private. Stats are followers-only
+        (decided 2026-10-25: none are public by default), so others get 403.
       responses:
         '200':
           description: Stats
