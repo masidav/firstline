@@ -1767,6 +1767,92 @@ paths:
                   items:
                     type: array
                     items: {$ref: '#/components/schemas/MyRegistration'}
+  /me/reservations:
+    get:
+      tags: [Allocations]
+      operationId: listMyReservations
+      summary: My reservations
+      description: |
+        The seats the fan holds from the draws (and the ones they are the named +1 of), newest first, at most 100.
+        A reservation is non-transferable: the ticket token is shown only to its holder, and only once delivered
+        (`delivery_hours_before_show` hours before the show). Until then `status` is `held` and `deliver_at` says when.
+      responses:
+        '200':
+          description: Reservations
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/Reservation'}
+  /reservations/{reservationId}:
+    parameters:
+      - {name: reservationId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [Allocations]
+      operationId: getReservation
+      summary: One reservation
+      description: For its holder or named guest; anyone else gets 404.
+      responses:
+        '200':
+          description: The reservation
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Reservation'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /reservations/{reservationId}/return:
+    parameters:
+      - {name: reservationId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      tags: [Allocations]
+      operationId: returnReservation
+      summary: Give the reservation back
+      description: |
+        Face-value exchange for a fan who can't attend: allowed until the show starts, by the holder only. The seats go,
+        at the same face value, to the next fans down the draw's ranking who weren't selected, in the same transaction.
+        Returning twice returns the same reservation.
+      responses:
+        '200':
+          description: The returned reservation
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Reservation'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: 'Cancelled, or the show has started (`code: reservation_unavailable`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+  /admin/allocations/{allocationId}/reservations:
+    parameters:
+      - {name: allocationId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [Admin]
+      operationId: listAllocationReservations
+      summary: Who holds seats for an allocation
+      description: Staff view in ranking order; tokens are never included.
+      responses:
+        '200':
+          description: Reservations with their holders
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [handle, reservation]
+                      properties:
+                        handle: {type: string}
+                        reservation: {$ref: '#/components/schemas/Reservation'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /admin/events:
     post:
       tags: [Admin, Allocations]
@@ -2317,6 +2403,7 @@ components:
             - plus_one_unavailable
             - guest_unavailable
             - selection_not_ready
+            - reservation_unavailable
             - hub_change_limit
             - artist_not_active
             - spotify_artist_not_found
@@ -2643,7 +2730,7 @@ components:
         Face-value tickets set aside for top fans of the show's artist: one seat per selected fan, two with a +1.
         Fans whose raw score for the artist is at least `min_raw_score` can register while registration is open.
       required: [id, event_id, name, tickets, face_value_cents, currency, min_raw_score, registration_opens_at,
-                 registration_closes_at, status]
+                 registration_closes_at, status, delivery_hours_before_show]
       properties:
         id: {type: string, format: uuid}
         event_id: {type: string, format: uuid}
@@ -2669,11 +2756,15 @@ components:
         cancelled_at: {type: [string, 'null'], format: date-time}
         selected_at: {type: [string, 'null'], format: date-time}
         seats_left: {type: [integer, 'null'], minimum: 0, description: 'After the draw: seats a selected fan''s +1 can still take'}
+        delivery_hours_before_show:
+          type: integer
+          minimum: 0
+          description: Tickets are delivered this many hours before the show (24 by default). Locks with the other rules.
     Registration:
       type: object
       description: A fan's registration, with the snapshot taken when they registered.
       required: [id, allocation_id, event_id, hub_city_ids, local, percentile, raw_score, is_estimated, registered_at, status,
-                 plus_one]
+                 plus_one, reservation_id, reservation_status]
       properties:
         id: {type: string, format: uuid}
         allocation_id: {type: string, format: uuid}
@@ -2695,8 +2786,8 @@ components:
         withdrawn_at: {type: [string, 'null'], format: date-time}
         status:
           type: string
-          enum: [registered, withdrawn, selected, not_selected]
-          description: '`selected` and `not_selected` come from the draw'
+          enum: [registered, withdrawn, selected, not_selected, returned]
+          description: '`selected` and `not_selected` come from the draw; `returned`: the fan gave their reservation back'
         plus_one: {type: boolean, description: The fan asked for a +1}
         guest:
           description: The +1's account, once named
@@ -2709,6 +2800,10 @@ components:
             - {type: 'null'}
         selection_rank: {type: [integer, 'null'], minimum: 1, description: Place in the draw's ranking}
         seats: {type: [integer, 'null'], enum: [1, 2, null], description: 'Seats the draw gave: 1, or 2 with the +1'}
+        reservation_id: {type: [string, 'null'], format: uuid, description: Set once selected (see Reservation).}
+        reservation_status:
+          type: [string, 'null']
+          enum: [held, delivered, returned, cancelled, null]
     Eligibility:
       type: object
       required: [allocation_id, eligible, min_raw_score]
@@ -2748,6 +2843,46 @@ components:
         registration: {$ref: '#/components/schemas/Registration'}
         allocation: {$ref: '#/components/schemas/Allocation'}
         event: {$ref: '#/components/schemas/Event'}
+    Reservation:
+      type: object
+      description: |
+        A selected fan's seats at face value (migration 0020). `status`: `held` (a seat is theirs; the ticket arrives
+        at `deliver_at`), `delivered`, `returned`, or `cancelled`. `role`: `holder`, or `guest` (the named +1).
+        `ticket` is set for the holder once delivered; `can_return` while the holder can still give it back.
+      required: [id, allocation_id, event_id, registration_id, status, role, seats, face_value_cents, currency, deliver_at,
+                 created_at, returned_at, cancelled_at, cancelled_reason, holder_handle, guest_handle, can_return, ticket, event,
+                 artist, allocation_name]
+      properties:
+        id: {type: string, format: uuid}
+        allocation_id: {type: string, format: uuid}
+        event_id: {type: string, format: uuid}
+        registration_id: {type: string, format: uuid}
+        status: {type: string, enum: [held, delivered, returned, cancelled]}
+        role: {type: string, enum: [holder, guest]}
+        seats: {type: integer, enum: [1, 2]}
+        face_value_cents: {type: integer, minimum: 0}
+        currency: {type: string, pattern: '^[A-Z]{3}$'}
+        deliver_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        returned_at: {type: [string, 'null'], format: date-time}
+        cancelled_at: {type: [string, 'null'], format: date-time}
+        cancelled_reason: {type: [string, 'null'], enum: [account_deleted, show_cancelled, null]}
+        holder_handle: {type: string}
+        guest_handle: {type: [string, 'null'], description: The named +1, when they still have an account.}
+        can_return: {type: boolean}
+        ticket:
+          oneOf:
+            - type: object
+              description: Shown at the door. Never transferable; the API gives it to the holder only.
+              required: [token, holder_handle, guest_handle]
+              properties:
+                token: {type: string, pattern: '^[0-9a-f]{64}$'}
+                holder_handle: {type: string}
+                guest_handle: {type: [string, 'null']}
+            - {type: 'null'}
+        event: {$ref: '#/components/schemas/Event'}
+        artist: {$ref: '#/components/schemas/ArtistRef'}
+        allocation_name: {type: string}
     AllocationCreate:
       type: object
       required: [tickets, face_value_cents, registration_opens_at, registration_closes_at]
@@ -2762,6 +2897,12 @@ components:
           description: Omit to get the two-saved-albums default when the allocation is published
         registration_opens_at: {type: string, format: date-time}
         registration_closes_at: {type: string, format: date-time, description: Before the show starts}
+        delivery_hours_before_show:
+          type: integer
+          minimum: 0
+          maximum: 720
+          default: 24
+          description: Tickets are delivered this many hours before the show
     AllocationUpdate:
       type: object
       properties:
@@ -2772,6 +2913,7 @@ components:
         min_raw_score: {type: number, minimum: 0}
         registration_opens_at: {type: string, format: date-time}
         registration_closes_at: {type: string, format: date-time}
+        delivery_hours_before_show: {type: integer, minimum: 0, maximum: 720}
     Selection:
       type: object
       description: A recorded draw. With the registrations' snapshots, `seed` is enough to repeat it.

@@ -50,12 +50,30 @@ margin, `Allocations:LikelyMarginSeats` (25 to start, decided 2026-10-24), which
 later with higher scores. `?plus_one=true` projects a +1 for a fan who hasn't registered yet. The app shows it on the
 show screen above the Register button.
 
+## Reservations (migration 0020)
+A registration that becomes selected gets a **reservation** (`reservations`, written by a trigger): the fan's seats
+at the allocation's face value, with a 64-hex **token**.
+- **Non-transferable**: the holder never changes; the API shows the token only to the holder (`GET /me/reservations`,
+  `GET /reservations/{id}`), the named +1 sees the reservation without it, staff lists never include it.
+- **Delayed delivery**: the token is withheld until `delivery_hours_before_show` before the show (24 by default; a
+  rule like the others, so it locks once registration opens). Until then `status` is `held` with `deliver_at`.
+- **Face-value exchange**: `POST /reservations/{id}/return` (`return_reservation()`) until the show starts, idempotent.
+  The seats go, at the same price, to the next not-selected fans down the draw's ranking (`backfill_allocation()`,
+  same +1 rule as the draw); the fan's registration then reads `returned`. Account deletion cancels the account's
+  reservations and hands the seats on the same way (`cancel_user_reservations()`). `seats_assigned` on the recorded
+  draw moves accordingly; the draw's own counts and seed don't.
+- Money doesn't move yet: checkout through a primary ticketer is the next Phase 11 item.
+`trg_reservation_guard` keeps all of this: no hand-made rows, no change of holder, price, token, or delivery time,
+returns and cancellations only through their functions, never deleted or truncated.
+
 ## Endpoints
 - Fans: `GET /v1/artists/{id}/events` (upcoming shows, `tickets_available`), `GET /v1/events/{id}` (a show and
   its published allocations), `GET /v1/allocations/{id}/eligibility`, `PUT`/`DELETE /v1/allocations/{id}/registration`,
-  `PUT /v1/allocations/{id}/registration/guest`, `GET /v1/me/registrations`.
+  `PUT /v1/allocations/{id}/registration/guest`, `GET /v1/me/registrations`, `GET /v1/me/reservations`,
+  `GET /v1/reservations/{id}`, `POST /v1/reservations/{id}/return`.
 - Staff (`/v1/admin`, staff policy, until promoter organizations exist): create and edit shows, create and edit
-  allocations, publish, cancel, delete drafts, run the draw, and list registrations in ranking order.
+  allocations (including `delivery_hours_before_show`), publish, cancel, delete drafts, run the draw, list
+  registrations in ranking order, and list who holds seats (`GET /admin/allocations/{id}/reservations`).
 
 Locally, `tools/dev/allocations.py` creates a show with a published allocation as a dev staff user, and can close
 registration (`close`) and run the draw (`draw`).

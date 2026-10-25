@@ -146,11 +146,20 @@ function AllocationCard({ allocation }: { allocation: Allocation }) {
       )}
 
       {registration?.status === 'selected' && (
-        <Text style={styles.good}>
-          {registration.seats === 2 ? 'You got tickets for you and your +1!' : 'You got a ticket!'}
-          {registration.plus_one && registration.seats === 1 ? " There wasn't a seat left for your +1." : ''}
-        </Text>
+        <>
+          <Text style={styles.good}>
+            {registration.seats === 2 ? 'You got tickets for you and your +1!' : 'You got a ticket!'}
+            {registration.plus_one && registration.seats === 1 ? " There wasn't a seat left for your +1." : ''}
+          </Text>
+          <Body muted>
+            {registration.reservation_status === 'delivered'
+              ? 'Your ticket has been delivered.'
+              : 'Your seat is held; the ticket arrives shortly before the show.'}
+          </Body>
+          <Button label="Your tickets" kind="secondary" onPress={() => router.push('/tickets')} />
+        </>
       )}
+      {registration?.status === 'returned' && <Body>You returned your seat; it went to the next fan in line.</Body>}
       {registration?.status === 'not_selected' && <Body>You weren't selected this time.</Body>}
       {registration?.status === 'registered' && <Text style={styles.good}>You're registered.</Text>}
 

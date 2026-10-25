@@ -21,8 +21,13 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       Migration 0017: hub fans first, then by snapshot raw score, ties by a stored seed; +1 seats; raw-score
       threshold (two saved albums by default). Verified 2026-10-24: invariants, RegistrationApiTests, AllocationApiTests
       (against a local stand-in for 0015's `album_saves_score`).
-- [ ] Issue non-transferable reservation tokens bound to the fan's verified identity, with expiry.
-- [ ] Support delayed ticket delivery and a face-value exchange or return path.
+- [x] Issue non-transferable reservation tokens bound to the fan's account (migration 0020, 2026-10-25): one per
+      selected registration, holder fixed, token shown to the holder only. No expiry: a reservation lives until the show,
+      a return, or account deletion. Identity binding beyond the account waits on Phase 10. Verified: ReservationApiTests 3,
+      invariants (0020 section).
+- [x] Delayed delivery (`delivery_hours_before_show`, 24 by default) and a face-value return path that hands the seats
+      to the next fans in the ranking (`return_reservation()`, `backfill_allocation()`). Verified: ReservationApiTests,
+      invariants. Checkout and refunds through a primary ticketer are still to build.
 - [ ] Notify selected and unselected fans; release unclaimed inventory back to the promoter on schedule.
 - [ ] Make registration and selection idempotent and safe under on-sale traffic spikes.
 - [ ] Test eligibility edges, duplicate registrations, selection reproducibility, token expiry, and transfer attempts.

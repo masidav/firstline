@@ -28,6 +28,7 @@ public static partial class AllocationEndpoints
         MapRegistrations(v1);
 
         var admin = v1.MapGroup("/admin").RequireAuthorization(AuthSetup.StaffPolicy);
+        MapReservations(v1, admin);
         admin.MapPost("/events", CreateEventAsync);
         admin.MapPatch("/events/{eventId:guid}", UpdateEventAsync);
         admin.MapGet("/events/{eventId:guid}", GetEventForStaffAsync);
@@ -52,11 +53,12 @@ public static partial class AllocationEndpoints
     /// <c>closed</c> (registration over, no draw yet), <c>selected</c> (the draw has run), or <c>cancelled</c>.
     /// <c>MinRawScore</c> is null on a draft without one: publishing sets the two-saved-albums default.
     /// <c>SeatsLeft</c> is set once the draw has run (seats a selected fan's +1 can still take).
+    /// <c>DeliveryHoursBeforeShow</c>: tickets are delivered this long before the show (migration 0020).
     /// </summary>
     public sealed record Allocation(
         Guid Id, Guid EventId, string Name, int Tickets, int FaceValueCents, string Currency, decimal? MinRawScore,
         DateTime RegistrationOpensAt, DateTime RegistrationClosesAt, string Status, DateTime? PublishedAt,
-        DateTime? CancelledAt, DateTime? SelectedAt, int? SeatsLeft);
+        DateTime? CancelledAt, DateTime? SelectedAt, int? SeatsLeft, int DeliveryHoursBeforeShow);
 
     // ------------------------------------------------------------------ fans
 
@@ -192,6 +194,7 @@ public static partial class AllocationEndpoints
         var minRawScore = input.Score("min_raw_score");
         var opensAt = input.Time("registration_opens_at", required: true);
         var closesAt = input.Time("registration_closes_at", required: true);
+        var deliveryHours = input.Integer("delivery_hours_before_show", 0, 24 * 30, required: false);
         input.RequireOrder(opensAt, closesAt);
         input.ThrowIfInvalid();
 
@@ -204,12 +207,12 @@ public static partial class AllocationEndpoints
         var allocationId = await GuardAsync(() => connection.ExecuteScalarAsync<Guid>(
             """
             INSERT INTO allocations (event_id, name, tickets, face_value_cents, currency, min_raw_score,
-                                     registration_opens_at, registration_closes_at, created_by)
+                                     registration_opens_at, registration_closes_at, delivery_hours_before_show, created_by)
             VALUES (@eventId, COALESCE(@name, 'Fan allocation'), @tickets, @faceValue, COALESCE(@currency, 'USD'),
-                    @minRawScore, @opensAt, @closesAt, @createdBy)
+                    @minRawScore, @opensAt, @closesAt, COALESCE(@deliveryHours, 24), @createdBy)
             RETURNING id
             """,
-            new { eventId, name, tickets, faceValue, currency, minRawScore, opensAt, closesAt, createdBy = user.UserId() }),
+            new { eventId, name, tickets, faceValue, currency, minRawScore, opensAt, closesAt, deliveryHours, createdBy = user.UserId() }),
             field: "registration_closes_at");
         return Results.Created($"/v1/admin/allocations/{allocationId}", await LoadAllocationAsync(connection, allocationId));
     }
@@ -225,6 +228,7 @@ public static partial class AllocationEndpoints
         var minRawScore = input.Score("min_raw_score");
         var opensAt = input.Time("registration_opens_at", required: false);
         var closesAt = input.Time("registration_closes_at", required: false);
+        var deliveryHours = input.Integer("delivery_hours_before_show", 0, 24 * 30, required: false);
         input.ThrowIfInvalid();
 
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
@@ -235,10 +239,11 @@ public static partial class AllocationEndpoints
                 face_value_cents = COALESCE(@faceValue, face_value_cents), currency = COALESCE(@currency, currency),
                 min_raw_score = COALESCE(@minRawScore, min_raw_score),
                 registration_opens_at = COALESCE(@opensAt, registration_opens_at),
-                registration_closes_at = COALESCE(@closesAt, registration_closes_at)
+                registration_closes_at = COALESCE(@closesAt, registration_closes_at),
+                delivery_hours_before_show = COALESCE(@deliveryHours, delivery_hours_before_show)
             WHERE id = @allocationId
             """,
-            new { allocationId, name, tickets, faceValue, currency, minRawScore, opensAt, closesAt }),
+            new { allocationId, name, tickets, faceValue, currency, minRawScore, opensAt, closesAt, deliveryHours }),
             field: "registration_closes_at");
         if (updated == 0)
         {
@@ -314,7 +319,8 @@ public static partial class AllocationEndpoints
              WHEN now() < a.registration_closes_at THEN 'open'
              ELSE 'closed' END AS Status,
         a.published_at AS PublishedAt, a.cancelled_at AS CancelledAt, a.selected_at AS SelectedAt,
-        (SELECT sel.tickets - sel.seats_assigned FROM allocation_selections sel WHERE sel.allocation_id = a.id) AS SeatsLeft
+        (SELECT sel.tickets - sel.seats_assigned FROM allocation_selections sel WHERE sel.allocation_id = a.id) AS SeatsLeft,
+        a.delivery_hours_before_show AS DeliveryHoursBeforeShow
         """;
 
     internal static async Task<EventDetail> LoadEventAsync(NpgsqlConnection connection, Guid eventId, bool includeDrafts)

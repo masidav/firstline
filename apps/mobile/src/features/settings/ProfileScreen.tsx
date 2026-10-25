@@ -135,6 +135,7 @@ export function ProfileScreen({ me }: { me: Me }) {
           ))}
         </View>
       )}
+      <Button label="Your tickets" kind="secondary" onPress={() => router.push('/tickets')} />
       <Button label="Your stats" kind="secondary" onPress={() => router.push('/stats')} />
       <Button label="My posts" kind="secondary" onPress={() => router.push('/posts')} />
       <Button label="Your grab bag" kind="secondary" onPress={() => router.push('/grab-bag')} />

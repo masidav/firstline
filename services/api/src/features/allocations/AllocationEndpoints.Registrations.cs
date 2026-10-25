@@ -33,12 +33,14 @@ public static partial class AllocationEndpoints
 
     /// <summary>
     /// <c>HubMatch</c>: where the show's city is in the fan's hub cities (1 primary, 2-3 backup), or null.
-    /// <c>Status</c>: registered, withdrawn, selected, or not_selected. <c>Seats</c>: 1, or 2 with the +1, once selected.
+    /// <c>Status</c>: registered, withdrawn, selected, not_selected, or returned (the fan gave their reservation back).
+    /// <c>Seats</c>: 1, or 2 with the +1, once selected. <c>ReservationId</c> and <c>ReservationStatus</c> (held,
+    /// delivered, returned, cancelled) once selected (migration 0020).
     /// </summary>
     public sealed record Registration(
         Guid Id, Guid AllocationId, Guid EventId, IReadOnlyList<string> HubCityIds, short? HubMatch, bool Local,
         decimal Percentile, decimal RawScore, bool IsEstimated, DateTime RegisteredAt, DateTime? WithdrawnAt, string Status,
-        bool PlusOne, Guest? Guest, int? SelectionRank, int? Seats);
+        bool PlusOne, Guest? Guest, int? SelectionRank, int? Seats, Guid? ReservationId, string? ReservationStatus);
 
     /// <summary>
     /// Whether the fan can register now. <c>Reason</c> is null when they can (or already have), else one of
@@ -216,6 +218,11 @@ public static partial class AllocationEndpoints
     private static async Task ChangePlusOneAsync(
         NpgsqlConnection connection, Guid userId, Allocation allocation, Registration existing, bool plusOne)
     {
+        if (existing.Status == "returned")
+        {
+            throw PlusOneUnavailable("You returned your seat, so there's no +1 to change.");
+        }
+
         if (existing.Status == "selected")
         {
             if (!plusOne)
@@ -386,21 +393,23 @@ public static partial class AllocationEndpoints
     }
 
     private const string RegistrationSource =
-        "allocation_registrations r LEFT JOIN users g ON g.id = r.guest_user_id";
+        "allocation_registrations r LEFT JOIN users g ON g.id = r.guest_user_id LEFT JOIN reservations res ON res.registration_id = r.id";
 
     private const string RegistrationColumns =
-        """
+        $"""
         r.id AS Id, r.allocation_id AS AllocationId, r.event_id AS EventId, r.hub_city_ids AS HubCityIds,
         r.hub_match AS HubMatch, r.percentile AS Percentile, r.raw_score AS RawScore, r.is_estimated AS IsEstimated,
         r.registered_at AS RegisteredAt, r.withdrawn_at AS WithdrawnAt, r.plus_one AS PlusOne, r.outcome AS Outcome,
-        r.selection_rank AS SelectionRank, r.seats AS Seats, g.id AS GuestId, g.handle AS GuestHandle
+        r.selection_rank AS SelectionRank, r.seats AS Seats, g.id AS GuestId, g.handle AS GuestHandle,
+        res.id AS ReservationId, CASE WHEN res.id IS NULL THEN NULL ELSE {ReservationStatusSql} END AS ReservationStatus
         """;
 
     private static Registration ToRegistration(RegistrationRow row) =>
         new(row.Id, row.AllocationId, row.EventId, row.HubCityIds, row.HubMatch, row.HubMatch is not null, row.Percentile,
             row.RawScore, row.IsEstimated, row.RegisteredAt, row.WithdrawnAt,
-            row.WithdrawnAt is not null ? "withdrawn" : row.Outcome ?? "registered",
-            row.PlusOne, row.GuestId is { } guestId ? new Guest(guestId, row.GuestHandle!) : null, row.SelectionRank, row.Seats);
+            row.WithdrawnAt is not null ? "withdrawn" : row.ReservationStatus == "returned" ? "returned" : row.Outcome ?? "registered",
+            row.PlusOne, row.GuestId is { } guestId ? new Guest(guestId, row.GuestHandle!) : null, row.SelectionRank, row.Seats,
+            row.ReservationId, row.ReservationStatus);
 
     // A class with setters, not a positional record: Dapper reports text[] as System.Array to constructors.
     private class RegistrationRow
@@ -421,6 +430,8 @@ public static partial class AllocationEndpoints
         public short? Seats { get; set; }
         public Guid? GuestId { get; set; }
         public string? GuestHandle { get; set; }
+        public Guid? ReservationId { get; set; }
+        public string? ReservationStatus { get; set; }
     }
 
     private sealed record CurrentStanding(decimal? RawScore, decimal? Percentile, bool? IsEstimated, short? HubMatch);

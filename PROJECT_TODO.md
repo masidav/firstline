@@ -198,7 +198,13 @@ Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](servi
       *Registration done 2026-10-21; selection done 2026-10-24 (migration 0017, `POST /v1/admin/allocations/{id}/selection`):
       hub fans first, snapshot raw score, seeded tiebreak, +1 seats. The app shows each fan's standing and says "most likely"
       only inside a 25-seat margin (decided 2026-10-24). Reservations and notifications are next.*
-- [ ] Non-transferable reservation tokens, delayed delivery, and face-value exchange for fans who can't attend.
+- [x] Non-transferable reservation tokens, delayed delivery, and face-value exchange for fans who can't attend.
+      *Done 2026-10-25 (migration 0020): the draw (and backfill) gives each selected fan a reservation tied to their
+      account; the ticket token is shown only to its holder and only from `delivery_hours_before_show` before the show
+      (24 by default, locked with the rules); a holder returns it until showtime and the seats go to the next fans in
+      the ranking at face value (`POST /reservations/{id}/return`); account deletion cancels and hands on likewise.
+      App: `/tickets`. Verified: `dotnet test` 222/222 (ReservationApiTests 3, invariants), app Jest 113/113. Money
+      doesn't move yet: checkout through a primary ticketer is the next item.*
 - [ ] Primary ticketing integration (Ticketmaster, AXS, SeatGeek): reserve seats from the pool and hand off checkout.
 - [ ] Promoter web dashboard: set up allocations, monitor registration, export reports.
 - [ ] First-party fan data sharing with artists/promoters, only with explicit fan consent.
@@ -332,6 +338,10 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
 - [ ] +1 rules set provisionally in code (2026-10-24), confirm or change: when only one seat is left for a fan with a
       +1, they **get the seat alone**; a named guest **can't be changed**; a selected fan **can't drop** their +1 after the
       draw; a +1 can be added after the draw **until the show starts**, first come first served while seats are left.
+- [ ] Reservation rules set provisionally in code (2026-10-25), confirm or change: tickets are delivered **24 hours
+      before the show** unless staff set another delay per allocation; a returned reservation's seats go to the **next
+      not-selected fans in the draw's ranking** (a fan with a +1 takes two only if two are free); a return is allowed
+      **until the show starts**; the +1's named guest sees the reservation but **not the token**; no money moves yet.
 - [ ] What pausing an artist (takedown) does to an open allocation (for now it's allowed, and registration and
       selection will refuse).
 - [x] Concert-photo points: `concert_photo_verified` is 5, the same as a screenshot (decided 2026-10-21).

@@ -125,11 +125,12 @@ export function HomeScreen() {
     <>
       <View style={styles.header}>
         <Title>Your artists</Title>
-        <View style={styles.headerButtons}>
-          <Button label="Journal" kind="secondary" onPress={() => router.push('/journal')} />
-          <Button label="People" kind="secondary" onPress={() => router.push('/people')} />
-          <Button label="Profile" kind="secondary" onPress={() => router.push('/profile')} />
-        </View>
+      </View>
+      <View style={styles.headerButtons}>
+        <Button label="Tickets" kind="secondary" onPress={() => router.push('/tickets')} />
+        <Button label="Journal" kind="secondary" onPress={() => router.push('/journal')} />
+        <Button label="People" kind="secondary" onPress={() => router.push('/people')} />
+        <Button label="Profile" kind="secondary" onPress={() => router.push('/profile')} />
       </View>
 
       <Field
@@ -210,7 +211,8 @@ function describeResult(result: ArtistSearchResult): string | undefined {
 
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md },
-  headerButtons: { flexDirection: 'row', gap: space.sm },
+  // Wraps on narrow phones instead of pushing the last button off the screen.
+  headerButtons: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   section: { color: colors.text, fontSize: 18, fontWeight: '700', marginTop: space.md },
   note: { color: colors.muted, fontSize: 14 },
 });

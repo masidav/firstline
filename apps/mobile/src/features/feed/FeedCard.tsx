@@ -203,12 +203,16 @@ function RegistrationCard({ item }: FeedCardProps) {
       ) : (
         <Text style={[styles.strong, status === 'selected' && styles.accent]}>
           {status === 'selected'
-            ? card.registration.seats === 2
-              ? 'You got tickets for you and your +1!'
-              : 'You got a ticket!'
-            : status === 'not_selected'
-              ? "You weren't selected this time."
-              : 'Registration has closed. The draw is next.'}
+            ? card.registration.reservation_status === 'delivered'
+              ? 'Your ticket is ready. Open Tickets to show it at the door.'
+              : card.registration.seats === 2
+                ? 'You got tickets for you and your +1! They arrive shortly before the show.'
+                : 'You got a ticket! It arrives shortly before the show.'
+            : status === 'returned'
+              ? 'You returned your seat.'
+              : status === 'not_selected'
+                ? "You weren't selected this time."
+                : 'Registration has closed. The draw is next.'}
         </Text>
       )}
     </Pressable>

@@ -1478,6 +1478,96 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/reservations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My reservations
+         * @description The seats the fan holds from the draws (and the ones they are the named +1 of), newest first, at most 100.
+         *     A reservation is non-transferable: the ticket token is shown only to its holder, and only once delivered
+         *     (`delivery_hours_before_show` hours before the show). Until then `status` is `held` and `deliver_at` says when.
+         */
+        get: operations["listMyReservations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reservations/{reservationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reservationId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * One reservation
+         * @description For its holder or named guest; anyone else gets 404.
+         */
+        get: operations["getReservation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reservations/{reservationId}/return": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reservationId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Give the reservation back
+         * @description Face-value exchange for a fan who can't attend: allowed until the show starts, by the holder only. The seats go,
+         *     at the same face value, to the next fans down the draw's ranking who weren't selected, in the same transaction.
+         *     Returning twice returns the same reservation.
+         */
+        post: operations["returnReservation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/allocations/{allocationId}/reservations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Who holds seats for an allocation
+         * @description Staff view in ranking order; tokens are never included.
+         */
+        get: operations["listAllocationReservations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/events": {
         parameters: {
             query?: never;
@@ -1873,7 +1963,7 @@ export interface components {
              * @description Stable machine-readable code.
              * @enum {string}
              */
-            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_track_not_found" | "followers_only" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
+            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "reservation_unavailable" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_track_not_found" | "followers_only" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
             errors?: {
                 field?: string;
                 message?: string;
@@ -2182,6 +2272,8 @@ export interface components {
             selected_at?: string | null;
             /** @description After the draw: seats a selected fan's +1 can still take */
             seats_left?: number | null;
+            /** @description Tickets are delivered this many hours before the show (24 by default). Locks with the other rules. */
+            delivery_hours_before_show: number;
         };
         /** @description A fan's registration, with the snapshot taken when they registered. */
         Registration: {
@@ -2205,10 +2297,10 @@ export interface components {
             /** Format: date-time */
             withdrawn_at?: string | null;
             /**
-             * @description `selected` and `not_selected` come from the draw
+             * @description `selected` and `not_selected` come from the draw; `returned`: the fan gave their reservation back
              * @enum {string}
              */
-            status: "registered" | "withdrawn" | "selected" | "not_selected";
+            status: "registered" | "withdrawn" | "selected" | "not_selected" | "returned";
             /** @description The fan asked for a +1 */
             plus_one: boolean;
             /** @description The +1's account, once named */
@@ -2224,6 +2316,13 @@ export interface components {
              * @enum {integer|null}
              */
             seats?: 1 | 2 | null;
+            /**
+             * Format: uuid
+             * @description Set once selected (see Reservation).
+             */
+            reservation_id: string | null;
+            /** @enum {string|null} */
+            reservation_status: "held" | "delivered" | "returned" | "cancelled" | null;
         };
         Eligibility: {
             /** Format: uuid */
@@ -2264,6 +2363,51 @@ export interface components {
             allocation: components["schemas"]["Allocation"];
             event: components["schemas"]["Event"];
         };
+        /**
+         * @description A selected fan's seats at face value (migration 0020). `status`: `held` (a seat is theirs; the ticket arrives
+         *     at `deliver_at`), `delivered`, `returned`, or `cancelled`. `role`: `holder`, or `guest` (the named +1).
+         *     `ticket` is set for the holder once delivered; `can_return` while the holder can still give it back.
+         */
+        Reservation: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            allocation_id: string;
+            /** Format: uuid */
+            event_id: string;
+            /** Format: uuid */
+            registration_id: string;
+            /** @enum {string} */
+            status: "held" | "delivered" | "returned" | "cancelled";
+            /** @enum {string} */
+            role: "holder" | "guest";
+            /** @enum {integer} */
+            seats: 1 | 2;
+            face_value_cents: number;
+            currency: string;
+            /** Format: date-time */
+            deliver_at: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            returned_at: string | null;
+            /** Format: date-time */
+            cancelled_at: string | null;
+            /** @enum {string|null} */
+            cancelled_reason: "account_deleted" | "show_cancelled" | null;
+            holder_handle: string;
+            /** @description The named +1 */
+            guest_handle: string | null;
+            can_return: boolean;
+            ticket: {
+                token: string;
+                holder_handle: string;
+                guest_handle: string | null;
+            } | null;
+            event: components["schemas"]["Event"];
+            artist: components["schemas"]["ArtistRef"];
+            allocation_name: string;
+        };
         AllocationCreate: {
             /** @default Fan allocation */
             name: string;
@@ -2280,6 +2424,11 @@ export interface components {
              * @description Before the show starts
              */
             registration_closes_at: string;
+            /**
+             * @description Tickets are delivered this many hours before the show
+             * @default 24
+             */
+            delivery_hours_before_show: number;
         };
         AllocationUpdate: {
             name?: string;
@@ -2291,6 +2440,7 @@ export interface components {
             registration_opens_at?: string;
             /** Format: date-time */
             registration_closes_at?: string;
+            delivery_hours_before_show?: number;
         };
         /** @description A recorded draw. With the registrations' snapshots, `seed` is enough to repeat it. */
         Selection: {
@@ -5419,6 +5569,112 @@ export interface operations {
                     };
                 };
             };
+        };
+    };
+    listMyReservations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reservations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Reservation"][];
+                    };
+                };
+            };
+        };
+    };
+    getReservation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reservationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The reservation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Reservation"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    returnReservation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reservationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The returned reservation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Reservation"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Cancelled, or the show has started (`code: reservation_unavailable`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listAllocationReservations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reservations with their holders */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            handle: string;
+                            reservation: components["schemas"]["Reservation"];
+                        }[];
+                    };
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     createEvent: {

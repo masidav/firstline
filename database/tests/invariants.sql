@@ -1103,7 +1103,7 @@ BEGIN
   EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%withdrawn, not deleted%', SQLERRM;
   END;
   BEGIN
-    TRUNCATE allocation_registrations;
+    TRUNCATE allocation_registrations CASCADE;   -- CASCADE: reservations (0020) reference registrations
     RAISE EXCEPTION 'truncating registrations should fail';
   EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%withdrawn, not deleted%', SQLERRM;
   END;
@@ -1377,6 +1377,120 @@ BEGIN
   PERFORM name_plus_one_guest(fan, al, guest);
   ASSERT (SELECT guest_user_id = guest AND guest_named_at IS NOT NULL FROM allocation_registrations
            WHERE allocation_id = al AND user_id = fan), 'guest named';
+END $$;
+
+-- ------------------------------------------------------------ reservations (0020)
+-- A draw of 3 seats among four fans: the top fan with a +1 takes two, the next one. Returning hands the seats on
+-- down the ranking; tokens are hidden until delivery; reservations are never made by hand or deleted.
+INSERT INTO users (id, handle, email) VALUES
+  ('47000000-0000-0000-0000-000000000001', 'res_a', 'res_a@example.test'),
+  ('47000000-0000-0000-0000-000000000002', 'res_b', 'res_b@example.test'),
+  ('47000000-0000-0000-0000-000000000003', 'res_c', 'res_c@example.test'),
+  ('47000000-0000-0000-0000-000000000004', 'res_d', 'res_d@example.test');
+SELECT set_hub_cities(id, '{us-il-chicago}'::text[]) FROM users WHERE handle LIKE 'res\_%';
+INSERT INTO user_artist_scores (user_id, artist_id, raw_score, percentile, is_estimated, baseline_weight) VALUES
+  ('47000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 90, 99, false, 0.1),
+  ('47000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000001', 80, 95, false, 0.1),
+  ('47000000-0000-0000-0000-000000000003', '40000000-0000-0000-0000-000000000001', 70, 90, false, 0.1),
+  ('47000000-0000-0000-0000-000000000004', '40000000-0000-0000-0000-000000000001', 60, 85, false, 0.1);
+INSERT INTO events (id, artist_id, name, city_id, starts_at) VALUES
+  ('46000000-0000-0000-0000-000000000004', '40000000-0000-0000-0000-000000000001', 'Return night', 'us-il-chicago',
+   now() + interval '20 days');
+DO $$
+DECLARE al uuid; a uuid := '47000000-0000-0000-0000-000000000001'; b uuid := '47000000-0000-0000-0000-000000000002';
+        c uuid := '47000000-0000-0000-0000-000000000003'; d uuid := '47000000-0000-0000-0000-000000000004';
+        res_a reservations; res_b uuid; res_c uuid;
+BEGIN
+  INSERT INTO allocations (event_id, tickets, face_value_cents, min_raw_score, registration_opens_at, registration_closes_at, published_at,
+                           delivery_hours_before_show)
+  VALUES ('46000000-0000-0000-0000-000000000004', 3, 4500, 0, now() - interval '1 hour', now() + interval '5 days', now(), 48)
+  RETURNING id INTO al;
+  PERFORM register_for_allocation(a, al); PERFORM register_for_allocation(b, al);
+  PERFORM register_for_allocation(c, al); PERFORM register_for_allocation(d, al);
+  UPDATE allocation_registrations SET plus_one = true WHERE allocation_id = al AND user_id = a;
+  -- Delivery is a rule: locked once registration has opened.
+  BEGIN
+    UPDATE allocations SET delivery_hours_before_show = 1 WHERE id = al;
+    RAISE EXCEPTION 'changing delivery after opening should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%rules are locked%', SQLERRM;
+  END;
+  ALTER TABLE allocations DISABLE TRIGGER trg_allocation_check;
+  UPDATE allocations SET registration_opens_at = now() - interval '2 hours', registration_closes_at = now() - interval '1 hour' WHERE id = al;
+  ALTER TABLE allocations ENABLE TRIGGER trg_allocation_check;
+  PERFORM run_allocation_selection(al, NULL);
+
+  -- The draw made a reservation per selected fan, seats and price from the registration and allocation, token hidden
+  -- until 48 hours before the show.
+  SELECT * INTO res_a FROM reservations WHERE user_id = a;
+  ASSERT res_a.seats = 2 AND res_a.face_value_cents = 4500 AND res_a.currency = 'USD', 'reservation copies seats and price';
+  ASSERT res_a.token ~ '^[0-9a-f]{64}$', 'token is 64 hex characters';
+  ASSERT res_a.deliver_at = (SELECT starts_at - interval '48 hours' FROM events WHERE id = '46000000-0000-0000-0000-000000000004'),
+         'delivery time from the allocation rule';
+  ASSERT (SELECT count(*) FROM reservations WHERE allocation_id = al) = 2, 'one reservation per selected fan';
+  ASSERT NOT EXISTS (SELECT 1 FROM reservations WHERE user_id IN (c, d)), 'not-selected fans hold nothing';
+  SELECT id INTO res_b FROM reservations WHERE user_id = b;
+
+  -- Nothing about a reservation changes by hand.
+  BEGIN
+    INSERT INTO reservations (registration_id, allocation_id, event_id, user_id, seats, face_value_cents, currency, token, deliver_at)
+    SELECT r.id, al, r.event_id, c, 1, 4500, 'USD', new_reservation_token(), now() FROM allocation_registrations r WHERE r.user_id = c AND r.allocation_id = al;
+    RAISE EXCEPTION 'a hand-made reservation should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%only a selected registration makes a reservation%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE reservations SET user_id = c WHERE id = res_a.id;
+    RAISE EXCEPTION 'moving a reservation to another account should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%holder, show, price, token, and delivery time are fixed%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE reservations SET returned_at = now() WHERE id = res_a.id;
+    RAISE EXCEPTION 'returning by hand should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%only return_reservation() returns%', SQLERRM;
+  END;
+  BEGIN
+    DELETE FROM reservations WHERE id = res_a.id;
+    RAISE EXCEPTION 'deleting a reservation should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%never deleted%', SQLERRM;
+  END;
+  BEGIN
+    PERFORM return_reservation(b, res_a.id);
+    RAISE EXCEPTION 'returning someone else''s reservation should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'return blocked: not_found%', SQLERRM;
+  END;
+
+  -- A returns both seats: they go to c and d, the next two in the ranking; seats_assigned stays 3.
+  PERFORM return_reservation(a, res_a.id);
+  PERFORM return_reservation(a, res_a.id);   -- idempotent
+  ASSERT (SELECT returned_at IS NOT NULL FROM reservations WHERE id = res_a.id), 'returned';
+  ASSERT (SELECT (outcome, seats) = ('selected', 1::smallint) FROM allocation_registrations WHERE allocation_id = al AND user_id = c), 'c backfilled';
+  ASSERT (SELECT (outcome, seats) = ('selected', 1::smallint) FROM allocation_registrations WHERE allocation_id = al AND user_id = d), 'd backfilled';
+  ASSERT (SELECT count(*) FROM reservations WHERE allocation_id = al AND returned_at IS NULL) = 3, 'b, c, d hold reservations';
+  ASSERT (SELECT seats_assigned FROM allocation_selections WHERE allocation_id = al) = 3, 'all seats assigned again';
+  ASSERT (SELECT selected_fans FROM allocation_selections WHERE allocation_id = al) = 2, 'the draw''s own count is unchanged';
+  SELECT id INTO res_c FROM reservations WHERE user_id = c;
+  BEGIN
+    PERFORM add_plus_one(a, al);
+    RAISE EXCEPTION 'a +1 on a returned reservation should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'plus one blocked: returned%', SQLERRM;
+  END;
+
+  -- b deletes their account: the reservation is cancelled and the seat freed (nobody is left to take it).
+  UPDATE users SET deleted_at = now() WHERE id = b;
+  ASSERT (SELECT (cancelled_at IS NOT NULL, cancelled_reason) = (true, 'account_deleted') FROM reservations WHERE id = res_b), 'cancelled on deletion';
+  ASSERT (SELECT seats_assigned FROM allocation_selections WHERE allocation_id = al) = 2, 'seat freed';
+
+  -- Once the show has started nothing can be returned.
+  ALTER TABLE events DISABLE TRIGGER trg_event_lock;
+  UPDATE events SET starts_at = now() - interval '1 minute' WHERE id = '46000000-0000-0000-0000-000000000004';
+  ALTER TABLE events ENABLE TRIGGER trg_event_lock;
+  BEGIN
+    PERFORM return_reservation(c, res_c);
+    RAISE EXCEPTION 'returning after the show started should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'return blocked: show_started%', SQLERRM;
+  END;
+  ALTER TABLE events DISABLE TRIGGER trg_event_lock;
+  UPDATE events SET starts_at = now() + interval '20 days' WHERE id = '46000000-0000-0000-0000-000000000004';
+  ALTER TABLE events ENABLE TRIGGER trg_event_lock;
 END $$;
 
 -- ------------------------------------------------------------ artist profile (0016)
