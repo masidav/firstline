@@ -1409,6 +1409,20 @@ paths:
       responses:
         '204': {description: Slot empty}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+  /me/bouncer-door:
+    get:
+      tags: [Social]
+      operationId: bouncerDoor
+      summary: The bouncer door
+      description: |
+        A song drawn at random from the grab bags of the fans the caller follows, with whose it is (decided
+        2026-10-20: a recommended real track, based on the taste of someone the fan follows). A fresh draw every call.
+      responses:
+        '200':
+          description: The draw, or why there is none
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BouncerDoor'}
   /users/{handle}/grab-bag:
     parameters:
       - {$ref: '#/components/parameters/Handle'}
@@ -3351,6 +3365,18 @@ components:
           description: Filled slots, in slot order.
           items: {$ref: '#/components/schemas/GrabBagSong'}
         slots: {type: integer, description: How many slots a grab bag has (5).}
+    BouncerDoor:
+      type: object
+      required: [song, owner, following, songs]
+      properties:
+        song:
+          description: Null when the caller follows nobody, or nobody they follow has songs.
+          oneOf: [{$ref: '#/components/schemas/GrabBagSong'}, {type: 'null'}]
+        owner:
+          description: Whose grab bag the song came from.
+          oneOf: [{$ref: '#/components/schemas/UserRef'}, {type: 'null'}]
+        following: {type: integer, description: Fans the caller follows.}
+        songs: {type: integer, description: Songs in their grab bags, all together.}
     GrabBagPut:
       type: object
       required: [spotify_track_id]

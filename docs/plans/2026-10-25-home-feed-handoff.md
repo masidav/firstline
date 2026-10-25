@@ -1,6 +1,10 @@
-# Handoff: home feed, follows, grab bags (paused 2026-10-25)
+# Handoff: home feed, follows, grab bags (paused 2026-10-25, completed later the same day)
 
-Reread this before continuing. Work was paused cleanly so the next session can run with more permissions.
+**Status: done.** Everything under "To finish the feature" was completed on 2026-10-25: CI for `38ca7ac` was green
+(six jobs), the full suite passed (216/216 before, and again after the additions), `tools/dev/seed.py` seeds follows
+and grab bags, the bouncer door exists (`GET /me/bouncer-door`, app `/bouncer-door`), and the worker refreshes
+song titles and covers daily (`grab_bag.refresh_songs`, migration 0019). The rest of this file is the record of the
+pause and still describes how the feed order works and the repo's working notes.
 
 ## State when paused
 - Everything is committed and pushed to `main`: commit `38ca7ac` ("Home feed as one vertical scroll: follows, grab

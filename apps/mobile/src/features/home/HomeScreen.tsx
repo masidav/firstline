@@ -148,6 +148,7 @@ export function HomeScreen() {
         <>
           <YourArtists />
           <Button label="Post a photo" onPress={() => router.push('/post')} />
+          <Button label="Bouncer door: a song from someone you follow" kind="secondary" onPress={() => router.push('/bouncer-door')} />
         </>
       )}
       {text !== '' && tracked?.length === 0 && !spotify && !askingSpotify && (

@@ -146,6 +146,34 @@ public sealed class GrabBagApiTests(PostgresFixture postgres) : IAsyncLifetime, 
     }
 
     [Fact]
+    public async Task The_bouncer_door_draws_a_song_from_followed_fans_grab_bags()
+    {
+        var ana = await SignInAsync("ana");
+        var ben = await SignInAsync("ben");
+        await JsonAsync(await SendAsync(HttpMethod.Put, "/v1/me/grab-bag/1", ana, new { spotify_track_id = Track1 }), HttpStatusCode.OK);
+        await JsonAsync(await SendAsync(HttpMethod.Put, "/v1/me/grab-bag/2", ana, new { spotify_track_id = Track2 }), HttpStatusCode.OK);
+
+        var nobody = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/bouncer-door", ben), HttpStatusCode.OK);
+        Assert.Equal((JsonValueKind.Null, 0, 0), (nobody.GetProperty("song").ValueKind, nobody.GetProperty("following").GetInt32(),
+            nobody.GetProperty("songs").GetInt32()));
+
+        await SendAsync(HttpMethod.Put, "/v1/users/ana/follow", ben);
+        var titles = new HashSet<string>();
+        for (var i = 0; i < 12; i++)
+        {
+            var draw = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/bouncer-door", ben), HttpStatusCode.OK);
+            Assert.Equal(("ana", 1, 2), (draw.GetProperty("owner").GetProperty("handle").GetString(), draw.GetProperty("following").GetInt32(),
+                draw.GetProperty("songs").GetInt32()));
+            titles.Add(draw.GetProperty("song").GetProperty("title").GetString()!);
+        }
+
+        Assert.Subset(new HashSet<string> { "Cowboy Nudes", "2122" }, titles);
+        // Ana's own bag is not her bouncer door.
+        var own = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/bouncer-door", ana), HttpStatusCode.OK);
+        Assert.Equal(JsonValueKind.Null, own.GetProperty("song").ValueKind);
+    }
+
+    [Fact]
     public async Task Song_search_asks_Spotify_and_marks_tracked_artists()
     {
         var ana = await SignInAsync("ana");

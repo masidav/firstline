@@ -151,7 +151,8 @@ Lower priority under the new direction: ticket purchases now flow through alloca
       Adding a song by an untracked artist tracks that artist (through `track_artist(..., 'grab_bag')`, outside the
       daily limit). Migration 0018; `/me/grab-bag/{position}`, `GET /tracks/search`; app screen `/grab-bag`.
       Verified 2026-10-25: `dotnet test` (GrabBagApiTests 3 with a faked Spotify, invariants), app Jest (GrabBagScreen).
-      Not done: the bouncer door (a song drawn from followed fans' grab bags) still needs its own screen.
+      Bouncer door done 2026-10-25 (`GET /me/bouncer-door`, app `/bouncer-door`), a daily refresh of stored song titles
+      and covers (`grab_bag.refresh_songs`, migration 0019), and seed data for follows and grab bags.
 - [x] Home feed as one vertical scroll (2026-10-25): a seeded random mix of photos, album logs, followed fans' grab-bag
       songs and stats, upcoming shows, and the fan's registrations, dealt out by type so every page mixes them; infinite
       scroll, pull/Shuffle for a new mix. Verified: `dotnet test` (FeedApiTests 2), app Jest (Feed 7), Chrome at phone size.

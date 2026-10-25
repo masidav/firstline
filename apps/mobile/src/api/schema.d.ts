@@ -1132,6 +1132,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/bouncer-door": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The bouncer door
+         * @description A song drawn at random from the grab bags of the fans the caller follows, with whose it is (decided
+         *     2026-10-20: a recommended real track, based on the taste of someone the fan follows). A fresh draw every call.
+         */
+        get: operations["bouncerDoor"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/{handle}/grab-bag": {
         parameters: {
             query?: never;
@@ -2818,6 +2839,16 @@ export interface components {
             items: components["schemas"]["GrabBagSong"][];
             /** @description How many slots a grab bag has (5). */
             slots: number;
+        };
+        BouncerDoor: {
+            /** @description Null when the caller follows nobody, or nobody they follow has songs. */
+            song: components["schemas"]["GrabBagSong"] | null;
+            /** @description Whose grab bag the song came from. */
+            owner: components["schemas"]["UserRef"] | null;
+            /** @description Fans the caller follows. */
+            following: number;
+            /** @description Songs in their grab bags */
+            songs: number;
         };
         GrabBagPut: {
             spotify_track_id: string;
@@ -4911,6 +4942,26 @@ export interface operations {
                 content?: never;
             };
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    bouncerDoor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The draw, or why there is none */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BouncerDoor"];
+                };
+            };
         };
     };
     getUserGrabBag: {

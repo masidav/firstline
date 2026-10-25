@@ -9,7 +9,10 @@ Usage, from the repo root with the compose database running and migrations appli
 
 What you get, all deterministic for a given --seed:
   - fans with hub cities, Spotify-like signals, album journal logs (which award ledger points through the real
-    triggers), a few verified ticket and merch submissions, and a fandom score per followed artist;
+    triggers; some followers-only), a few verified ticket and merch submissions (merch shared to the feed), and a
+    fandom score per followed artist;
+  - follows between fans (2 to 6 each) and grab bags (up to five favourite songs by the artists they listen to,
+    with made-up 22-character Spotify ids, so the Spotify links don't resolve), which fill the home feed;
   - active artists ('seed:...' Spotify ids, so nothing talks to Spotify) with albums and tracks;
   - shows in hub cities, each with a fan allocation in a different state: open, upcoming, open with a high
     raw-score threshold, closed with the selection draw run (selected and not-selected fans, +1 guests), draft,
@@ -213,8 +216,9 @@ def generate(fans, artists, shows, seed):
             for album_id, _ in rng.sample(catalog[artist_id]["albums"], min(logs, len(catalog[artist_id]["albums"]))):
                 listened = now.date() - datetime.timedelta(days=rng.randint(0, 400))
                 review = rng.choice(REVIEWS) if rng.random() < 0.3 else None
+                visibility = "followers" if rng.random() < 0.15 else "public"
                 log_rows.append((new_id(), user_id, album_id, rng.randint(4, 10), review, listened, False,
-                                 datetime.datetime.combine(listened, datetime.time(20, 0), datetime.timezone.utc)))
+                                 datetime.datetime.combine(listened, datetime.time(20, 0), datetime.timezone.utc), visibility))
             if level > 0.85:
                 for kind in rng.sample(["ticket", "merch", "ticket"], rng.randint(1, 2)):
                     submission_rows.append((new_id(), user_id, artist_id, kind,
@@ -222,13 +226,42 @@ def generate(fans, artists, shows, seed):
     sql.append(insert("user_artist_signals", ["user_id", "artist_id", "liked_tracks", "playlist_tracks", "distinct_albums",
                                               "top_artist_rank", "recent_plays", "synced_at"], signal_rows))
     sql.append(insert("user_track_likes", ["user_id", "track_id", "source", "saved_at"], like_rows))
-    sql.append(insert("album_logs", ["id", "user_id", "album_id", "rating", "review", "listened_on", "is_relisten", "created_at"],
-                      log_rows))
+    sql.append(insert("album_logs", ["id", "user_id", "album_id", "rating", "review", "listened_on", "is_relisten", "created_at",
+                                     "visibility"], log_rows))
     if submission_rows:
         sql.append(insert("submissions", ["id", "user_id", "artist_id", "kind", "submitted_at"],
                           [(s[0], s[1], s[2], s[3], s[4]) for s in submission_rows]))
         ids = ", ".join(lit(s[0]) for s in submission_rows)
         sql.append(f"UPDATE submissions SET status = 'verified' WHERE id IN ({ids});")
+        sql.append("-- Verified merch goes on the feed, as PUT /submissions/{id}/share does (no photo files in seed data).\n"
+                   f"UPDATE submissions SET shared_at = submitted_at + interval '2 days' WHERE kind = 'merch' AND id IN ({ids});")
+
+    # --- follows and grab bags (0018) ----------------------------------------------------------------------------
+    sql.append("-- Follows (no approval) and grab bags: five favourite songs by artists the fan listens to, with made-up\n"
+               "-- 22-character Spotify ids (the seed artists aren't on Spotify). Followers see both on the home feed.")
+    follow_rows, song_rows = [], []
+    listened = {}  # user_id -> [artist_id]
+    for artist_id, listeners in follows.items():
+        for user_id in listeners:
+            listened.setdefault(user_id, []).append(artist_id)
+    for user_id in fan_ids:
+        for other in rng.sample([f for f in fan_ids if f != user_id], min(len(fan_ids) - 1, rng.randint(2, 6))):
+            follow_rows.append((user_id, other, now - datetime.timedelta(days=rng.uniform(0, 120))))
+        if rng.random() < 0.6 and listened.get(user_id):
+            picks = []
+            for artist_id in listened[user_id]:
+                for album_id, tracks in catalog[artist_id]["albums"]:
+                    picks.extend((artist_id, album_id, track_id) for track_id in tracks)
+            for position, (artist_id, album_id, track_id) in enumerate(rng.sample(picks, min(len(picks), rng.randint(1, 5))), 1):
+                title = next(t[2] for t in track_rows if t[0] == track_id)
+                album = next(a[2] for a in album_rows if a[0] == album_id)
+                fake_spotify_id = "".join(rng.choice("0123456789ABCDEFGHJKMNPQRSTVWXYZabcdefghjkmnpqrstvwxyz") for _ in range(22))
+                song_rows.append((user_id, position, fake_spotify_id, title, artist_id, album,
+                                  now - datetime.timedelta(days=rng.uniform(0, 60))))
+    sql.append(insert("follows", ["follower_id", "followee_id", "created_at"], follow_rows))
+    if song_rows:
+        sql.append(insert("grab_bag_songs", ["user_id", "position", "spotify_track_id", "title", "artist_id", "album_title", "added_at"],
+                          song_rows))
 
     # --- scores -----------------------------------------------------------------------------------------------------
     sql.append("""-- Provisional scores so registrations work right away: raw score from v_raw_scores, mid-rank percentile
@@ -326,7 +359,10 @@ UNION ALL SELECT 'allocations', count(*) FROM allocations
 UNION ALL SELECT 'registrations (live)', count(*) FROM allocation_registrations WHERE withdrawn_at IS NULL
 UNION ALL SELECT 'registrations (withdrawn)', count(*) FROM allocation_registrations WHERE withdrawn_at IS NOT NULL
 UNION ALL SELECT 'registrations with a +1', count(*) FROM allocation_registrations WHERE plus_one AND withdrawn_at IS NULL
-UNION ALL SELECT 'fans selected by the draw', count(*) FROM allocation_registrations WHERE outcome = 'selected';""")
+UNION ALL SELECT 'fans selected by the draw', count(*) FROM allocation_registrations WHERE outcome = 'selected'
+UNION ALL SELECT 'follows', count(*) FROM follows
+UNION ALL SELECT 'grab-bag songs', count(*) FROM grab_bag_songs
+UNION ALL SELECT 'shared photos', count(*) FROM submissions WHERE shared_at IS NOT NULL;""")
     examples = [u[1] for u in users[1:6]]
     return "\n\n".join(sql) + "\n", examples
 

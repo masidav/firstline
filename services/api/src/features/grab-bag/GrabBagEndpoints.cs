@@ -30,6 +30,7 @@ public static partial class GrabBagEndpoints
         v1.MapPut("/me/grab-bag/{position:int}", PutAsync);
         v1.MapDelete("/me/grab-bag/{position:int}", DeleteAsync);
         v1.MapGet("/users/{handle}/grab-bag", GetForUserAsync);
+        v1.MapGet("/me/bouncer-door", BouncerDoorAsync);
         v1.MapGet("/tracks/search", SearchTracksAsync).RequireRateLimiting(ArtistEndpoints.SearchRateLimit);
     }
 
@@ -50,6 +51,45 @@ public static partial class GrabBagEndpoints
     public sealed record TrackSearchResults(IReadOnlyList<TrackSearchResult> Items);
 
     public static string SpotifyUrl(string spotifyTrackId) => $"https://open.spotify.com/track/{spotifyTrackId}";
+
+    /// <summary>
+    /// openapi BouncerDoor: one song drawn at random from the grab bags of the fans the caller follows, with whose it
+    /// is. <c>Song</c> is null when the caller follows nobody (<c>Following</c> 0) or nobody they follow has filled
+    /// their bag (<c>Songs</c> 0).
+    /// </summary>
+    public sealed record BouncerDoor(GrabBagSong? Song, SubmissionEndpoints.UserRef? Owner, int Following, int Songs);
+
+    // The bouncer door (decided 2026-10-20): a recommended real track from the taste of someone the fan follows. A
+    // fresh draw on every call; the owner's name is shown with the song.
+    private static async Task<IResult> BouncerDoorAsync(ClaimsPrincipal user, NpgsqlDataSource db, CancellationToken cancellationToken)
+    {
+        var me = user.UserId();
+        await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        var counts = await connection.QuerySingleAsync<(int Following, int Songs)>(
+            """
+            SELECT (SELECT count(*) FROM follows f JOIN users u ON u.id = f.followee_id AND u.deleted_at IS NULL WHERE f.follower_id = @me)::int,
+                   (SELECT count(*) FROM grab_bag_songs g JOIN follows f ON f.followee_id = g.user_id AND f.follower_id = @me
+                      JOIN artists a ON a.id = g.artist_id AND a.status IN ('onboarding', 'active'))::int
+            """,
+            new { me });
+        var row = await connection.QuerySingleOrDefaultAsync<SongRow>(
+            $"""
+             SELECT {SongColumns} FROM grab_bag_songs g JOIN artists a ON a.id = g.artist_id AND a.status IN ('onboarding', 'active')
+             JOIN follows f ON f.followee_id = g.user_id AND f.follower_id = @me
+             JOIN users u ON u.id = g.user_id AND u.deleted_at IS NULL
+             ORDER BY random() LIMIT 1
+             """,
+            new { me });
+        if (row is null)
+        {
+            return Results.Ok(new BouncerDoor(null, null, counts.Following, counts.Songs));
+        }
+
+        var owner = await connection.QuerySingleAsync<SubmissionEndpoints.UserRef>(
+            "SELECT u.handle::text AS Handle, false AS Deleted, u.display_name AS DisplayName, u.avatar_url AS AvatarUrl FROM grab_bag_songs g JOIN users u ON u.id = g.user_id WHERE g.id = @id",
+            new { id = row.Id });
+        return Results.Ok(new BouncerDoor(ToSong(row), owner, counts.Following, counts.Songs));
+    }
 
     private static async Task<IResult> GetMineAsync(ClaimsPrincipal user, NpgsqlDataSource db, CancellationToken cancellationToken)
     {

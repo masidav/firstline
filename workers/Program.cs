@@ -1,6 +1,7 @@
 using FandomScore.Worker.AccountRetention;
 using FandomScore.Worker.Hosting;
 using FandomScore.Worker.ArtistOnboarding;
+using FandomScore.Worker.GrabBag;
 using FandomScore.Spotify;
 using FandomScore.Worker.Jobs;
 using FandomScore.Worker.Scoring;
@@ -35,6 +36,7 @@ builder.Services.AddSingleton<IJobHandler, PollPlaysJob>();
 builder.Services.AddSingleton<IJobHandler, ArtistOnboardingJob>();
 builder.Services.AddSingleton<IJobHandler, CatalogRefreshJob>();
 builder.Services.AddSingleton<IJobHandler, ScheduleCatalogRefreshesJob>();
+builder.Services.AddSingleton<IJobHandler, GrabBagRefreshJob>();
 builder.Services.AddSingleton<IJobHandler, ScoreArtistJob>();
 builder.Services.AddSingleton<IJobHandler, RescoreAllJob>();
 
