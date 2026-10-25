@@ -1946,4 +1946,25 @@ END $$;
 SELECT pg_temp.expect_error($$INSERT INTO storage_deletions (storage_key) VALUES ('')$$, 'storage_deletions_storage_key_check');
 DELETE FROM storage_deletions;
 
+-- ------------------------------------------------------------ rejected file retention (0028)
+-- rejected_at is stamped when a submission becomes rejected and cleared when it stops being rejected.
+DO $$
+DECLARE sub uuid := '40000000-0000-0000-0000-0000000000c2'; first_stamp timestamptz;
+BEGIN
+  INSERT INTO submissions (id, user_id, artist_id, kind)
+    SELECT sub, '00000000-0000-0000-0000-000000000001', id, 'merch' FROM artists WHERE spotify_artist_id = 'sp-active';
+  ASSERT (SELECT rejected_at FROM submissions WHERE id = sub) IS NULL, 'a new submission is not rejected';
+  UPDATE submissions SET status = 'rejected', rejection_reason = 'test' WHERE id = sub;
+  SELECT rejected_at INTO first_stamp FROM submissions WHERE id = sub;
+  ASSERT first_stamp IS NOT NULL, 'rejecting stamps rejected_at';
+  UPDATE submissions SET rejected_at = first_stamp - interval '40 days' WHERE id = sub;
+  UPDATE submissions SET status = 'rejected' WHERE id = sub;
+  ASSERT (SELECT rejected_at FROM submissions WHERE id = sub) = first_stamp - interval '40 days',
+         'staying rejected keeps the original stamp';
+  UPDATE submissions SET status = 'needs_review' WHERE id = sub;
+  ASSERT (SELECT rejected_at FROM submissions WHERE id = sub) IS NULL, 'leaving rejected clears the stamp';
+  DELETE FROM submissions WHERE id = sub;
+END $$;
+DELETE FROM storage_deletions;
+
 \echo ALL INVARIANT TESTS PASSED

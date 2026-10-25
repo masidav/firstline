@@ -73,7 +73,7 @@ public sealed class StorageCleanupJobTests(PostgresFixture postgres) : IAsyncLif
             Assert.True(FileExists(kept.Key), $"file {kept.Key} is still in use");
         }
 
-        // Submission files stay, rejected ones included (their retention is undecided).
+        // Submission files stay, a just-rejected one included (it keeps its files for 30 days).
         Assert.Equal(3, await CountAsync("SELECT count(*) FROM submission_files"));
         Assert.Equal(0, await CountAsync("SELECT count(*) FROM storage_deletions"));
 
@@ -130,6 +130,55 @@ public sealed class StorageCleanupJobTests(PostgresFixture postgres) : IAsyncLif
 
         await RunAsync();
         Assert.Equal(new[] { recentFile.Key }, StoredFiles());
+        Assert.Equal(0, await CountAsync("SELECT count(*) FROM storage_deletions"));
+        await AssertEveryFileHasARowAsync();
+    }
+
+    [Fact]
+    public async Task Rejected_and_taken_down_photos_lose_their_files_after_30_days()
+    {
+        var fan = await UserAsync("fan");
+        var oldRejected = await SubmissionAsync(fan, "rejected", slotExpiredFor: TimeSpan.FromDays(40));
+        var newRejected = await SubmissionAsync(fan, "rejected", slotExpiredFor: TimeSpan.FromDays(40));
+        var oldTakenDown = await SubmissionAsync(fan, "verified", slotExpiredFor: TimeSpan.FromDays(40));
+        var newTakenDown = await SubmissionAsync(fan, "verified", slotExpiredFor: TimeSpan.FromDays(40));
+        var reReviewed = await SubmissionAsync(fan, "rejected", slotExpiredFor: TimeSpan.FromDays(40));
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            await connection.ExecuteAsync(
+                """
+                UPDATE submissions SET rejected_at = now() - interval '31 days' WHERE id IN (@oldRejected, @reReviewed);
+                UPDATE submissions SET rejected_at = now() - interval '29 days' WHERE id = @newRejected;
+                UPDATE submissions SET removed_at = now() - interval '31 days' WHERE id = @oldTakenDown;
+                UPDATE submissions SET removed_at = now() - interval '29 days' WHERE id = @newTakenDown;
+                UPDATE submissions SET status = 'needs_review' WHERE id = @reReviewed;
+                """,
+                new
+                {
+                    oldRejected = oldRejected.SubmissionId, newRejected = newRejected.SubmissionId,
+                    oldTakenDown = oldTakenDown.SubmissionId, newTakenDown = newTakenDown.SubmissionId,
+                    reReviewed = reReviewed.SubmissionId,
+                });
+        }
+
+        await RunAsync();
+        foreach (var gone in new[] { oldRejected, oldTakenDown })
+        {
+            Assert.False(FileExists(gone.Key), $"{gone.Key} is past its 30 days");
+            Assert.False(await UploadExistsAsync(gone.Id));
+            Assert.Equal(0, await CountAsync("SELECT count(*) FROM submission_files WHERE submission_id = @id", new { id = gone.SubmissionId }));
+            Assert.Equal(1, await CountAsync("SELECT count(*) FROM submissions WHERE id = @id", new { id = gone.SubmissionId }));
+        }
+
+        foreach (var kept in new[] { newRejected, newTakenDown, reReviewed })
+        {
+            Assert.True(FileExists(kept.Key), $"{kept.Key} is kept");
+            Assert.True(await UploadExistsAsync(kept.Id));
+        }
+
+        // The taken-down photo keeps its verified status (and so its points).
+        Assert.Equal(1, await CountAsync(
+            "SELECT count(*) FROM submissions WHERE id = @id AND status = 'verified'", new { id = oldTakenDown.SubmissionId }));
         Assert.Equal(0, await CountAsync("SELECT count(*) FROM storage_deletions"));
         await AssertEveryFileHasARowAsync();
     }

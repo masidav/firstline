@@ -13,13 +13,15 @@
   2. Upload slots that expired unused: not attached to a submission, not used by `featured_artists`, and
      `SlotGrace` (1 day) past `expires_at`. The conditions are re-checked by the delete itself, so a slot attached
      meanwhile stays.
+  2b. Rejected submissions (`rejected_at`, migration 0028) and taken-down photos (`removed_at`) more than 30 days
+     ago: their `submission_files` rows and attached slots go; the submission row, status, and points stay. A
+     submission moved back to review meanwhile keeps its files.
   3. Queued keys: if a live `uploads` or `submission_files` row still names the key, only the queue row goes (the
      live row's own delete queues it again later). Otherwise the file is deleted from storage, then the queue row.
      A file already missing is fine.
 - Safe to run twice or concurrently: every step re-reads current state, and a crash leaves the key queued.
 
 ## Not done
-- Rejected submissions keep their files (retention is an open decision in `PROJECT_TODO.md`).
 - Orphans from before migration 0027 can't be found: `IFileStore` has no listing.
 - Storage is local disk (`packages/storage`); the worker and the API must share `Storage__LocalPath` until Cloud
   Storage replaces it.

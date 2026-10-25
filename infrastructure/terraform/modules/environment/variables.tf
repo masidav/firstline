@@ -69,7 +69,7 @@ variable "deletion_protection" {
 }
 
 variable "quarantine_retention_days" {
-  description = "Days before an unredacted submission file is deleted from the quarantine bucket."
+  description = "Days before an unredacted submission file is deleted from the quarantine bucket (30, decided 2026-10-25). Verified proof must be archived before then."
   type        = number
   default     = 30
 }

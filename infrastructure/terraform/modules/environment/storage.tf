@@ -1,4 +1,7 @@
 # Submission files. Quarantine holds unredacted uploads briefly; only the redaction workload can read them.
+# Its expiry rule (30 days, decided 2026-10-25) deletes every quarantined file, verified proof included, so the
+# redaction workload must move proof to the archive within that window. Rejected and taken-down files are also kept
+# 30 days in the app (storage.cleanup), so the rule only catches what the app missed.
 # Archive holds redacted files only (schema rule: never archive unredacted files) and keeps versions.
 
 resource "google_storage_bucket" "quarantine" {

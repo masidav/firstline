@@ -149,8 +149,9 @@ Details: [Album journal API](services/api/src/features/album-journal/TODO.md) ·
       hourly worker job `storage.cleanup` removes slots expired unused for a day (not attached, not a featured video),
       every file of accounts deleted 30+ days ago (so `accounts.purge_deleted` can then purge them), and queued files
       no live row names. Withdrawing still deletes files at once; a crash or storage error leaves them queued.
-      Rejected submissions keep their files (retention undecided, see Open decisions). Verified 2026-10-25:
-      `dotnet build` 0 warnings, `dotnet test` 253/253 (StorageCleanupJobTests 5, invariants for 0027), worker image builds.*
+      Files of rejected submissions and taken-down photos go 30 days after the rejection or takedown (migration 0028
+      stamps `rejected_at`; the row, status, and points stay). Verified 2026-10-25: `dotnet build` 0 warnings,
+      `dotnet test` 258/258 (StorageCleanupJobTests 6, invariants for 0027 and 0028), worker image builds.*
 - [ ] Redact sensitive barcodes/QR codes before archival.
 - [ ] Enforce archive safety and retention policies.
 
@@ -389,10 +390,11 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
       never (barcodes, personal details). The feed shows everyone's shared photos and public album logs.
 - [x] Concert photos are pinned to the band and the concert (decided 2026-10-21): a listed show, or date, venue, and
       city entered by the fan when the show isn't listed.
-- [ ] How long files of rejected submissions are kept (and of taken-down photos). Today they stay until the
-      submission is withdrawn or the account purged: the storage cleanup (2026-10-25) doesn't touch them. Also: the
-      quarantine bucket's lifecycle rule (`quarantine_retention_days`, Terraform) would delete *every* quarantined
-      file, verified proof included, unless files move to the archive first.
+- [x] Stored-file retention (decided 2026-10-25): files of rejected submissions and taken-down photos are kept
+      **30 days**, then deleted (`storage.cleanup`). The quarantine bucket keeps its 30-day expiry rule
+      (`quarantine_retention_days`), so verified proof must reach the archive (redacted) within 30 days or it is
+      lost. Unused upload slots are removed **1 day** after they expire. A featured artist video **stays** when the
+      staff account that uploaded it is purged.
 - [ ] Confirm takedown effects (provisional, 2026-10-24): a taken-down photo leaves the feed for good but stays as
       proof with its points; a taken-down log is hidden from everyone but its author and loses its points.
 - [ ] Choose an email provider for staff notifications (and later fan email), e.g. a transactional email API.
