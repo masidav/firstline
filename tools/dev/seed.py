@@ -9,8 +9,9 @@ Usage, from the repo root with the compose database running and migrations appli
 
 What you get, all deterministic for a given --seed:
   - fans with hub cities, Spotify-like signals, album journal logs (which award ledger points through the real
-    triggers; some followers-only), a few verified ticket and merch submissions (merch shared to the feed), and a
-    fandom score per followed artist;
+    triggers; some followers-only), a few verified ticket and merch submissions (merch shared to the feed, with a
+    generated placeholder photo written to the API's local storage so the feed shows an image), and a fandom score
+    per followed artist;
   - follows between fans (2 to 6 each) and grab bags (up to five favourite songs by the artists they listen to,
     with made-up 22-character Spotify ids, so the Spotify links don't resolve), which fill the home feed;
   - active artists ('seed:...' Spotify ids, so nothing talks to Spotify) with albums and tracks;
@@ -22,6 +23,8 @@ What you get, all deterministic for a given --seed:
 
 Sign in from the app with dev sign-in (Auth__DevSignIn=true in .env) as any handle the script prints, e.g. dev_staff.
 Nobody has a Spotify connection (a fake one would make the hourly sync fail), so "connect Spotify" still works.
+Photo files go to --storage (default services/api/.local-storage, the API's Storage__LocalPath); with --sql they are
+not written, so the file links 404.
 The artists' catalogs count as loaded now; after a week the worker's weekly catalog refresh will try Spotify for the
 'seed:' ids and log a failed job per artist. Re-seed (--wipe) or ignore those.
 Refuses to run on a database that already holds seed data: wipe first. Stdlib only.
@@ -31,13 +34,16 @@ LOCAL ONLY. The data is fake and the artists are not on Spotify. Never run this 
 
 import argparse
 import datetime
+import hashlib
 import json
 import math
 import os
 import random
+import struct
 import subprocess
 import sys
 import uuid
+import zlib
 
 sys.path.insert(0, os.path.dirname(__file__))
 from spotify_connect import COMPOSE_FILE  # noqa: E402 (shared dev helpers)
@@ -114,6 +120,29 @@ def slug(name):
     return "".join(ch if ch.isalnum() else "-" for ch in name.lower()).strip("-").replace("--", "-")
 
 
+def placeholder_png(rng, width=640, height=480):
+    """A small valid PNG (stdlib only): a dark background with a lighter striped block, in colours from rng. Stands
+    in for the fan's merch photo; the real upload flow stores JPEG/PNG under the same storage keys."""
+    back = tuple(rng.randint(20, 70) for _ in range(3))
+    block = tuple(min(255, c + rng.randint(90, 160)) for c in back)
+    stripe = tuple(rng.randint(150, 255) for _ in range(3))
+    left, top, right, bottom = width // 5, height // 4, width * 4 // 5, height * 3 // 4
+    rows = bytearray()
+    for y in range(height):
+        rows.append(0)  # PNG filter type: none
+        for x in range(width):
+            if top <= y < bottom and left <= x < right:
+                rows.extend(stripe if (y - top) // 24 % 3 == 1 else block)
+            else:
+                rows.extend(back)
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(bytes(rows), 6)) + chunk(b"IEND", b""))
+
+
 def lognormal_curve(median, sigma):
     """Same shape as workers/artist-onboarding/ProvisionalBaseline.cs: 61 [score, cdf] points over -3σ..+3σ."""
     mu = math.log(median)
@@ -126,6 +155,7 @@ def generate(fans, artists, shows, seed):
     now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
     new_id = lambda: uuid.UUID(int=rng.getrandbits(128), version=4)  # noqa: E731 (deterministic ids)
     city_ids = list(CITIES)
+    files = []  # (storage key, bytes): placeholder photos to write under the API's local storage
     sql = ["\\set ON_ERROR_STOP on", "BEGIN;",
            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM artists WHERE spotify_artist_id LIKE 'seed:%') THEN\n"
            "  RAISE EXCEPTION 'seed data is already present; wipe the local database first "
@@ -233,8 +263,21 @@ def generate(fans, artists, shows, seed):
                           [(s[0], s[1], s[2], s[3], s[4]) for s in submission_rows]))
         ids = ", ".join(lit(s[0]) for s in submission_rows)
         sql.append(f"UPDATE submissions SET status = 'verified' WHERE id IN ({ids});")
-        sql.append("-- Verified merch goes on the feed, as PUT /submissions/{id}/share does (no photo files in seed data).\n"
+        sql.append("-- Verified merch goes on the feed, as PUT /submissions/{id}/share does, with a placeholder photo file.\n"
                    f"UPDATE submissions SET shared_at = submitted_at + interval '2 days' WHERE kind = 'merch' AND id IN ({ids});")
+        file_values = []
+        for submission in submission_rows:
+            if submission[3] != "merch":
+                continue
+            file_id = new_id()
+            png = placeholder_png(rng)
+            key = f"quarantine/seed-{file_id}.png"
+            files.append((key, png))
+            file_values.append(f"({lit(file_id)}, {lit(submission[0])}, {lit(key)}, decode({lit(hashlib.sha256(png).hexdigest())}, 'hex'), "
+                               f"'image/png', {len(png)}, {lit(submission[4])})")
+        if file_values:
+            sql.append("INSERT INTO submission_files (id, submission_id, storage_key, sha256, mime_type, bytes, uploaded_at) VALUES\n  "
+                       + ",\n  ".join(file_values) + ";")
 
     # --- follows and grab bags (0018) ----------------------------------------------------------------------------
     sql.append("-- Follows (no approval) and grab bags: five favourite songs by artists the fan listens to, with made-up\n"
@@ -362,9 +405,10 @@ UNION ALL SELECT 'registrations with a +1', count(*) FROM allocation_registratio
 UNION ALL SELECT 'fans selected by the draw', count(*) FROM allocation_registrations WHERE outcome = 'selected'
 UNION ALL SELECT 'follows', count(*) FROM follows
 UNION ALL SELECT 'grab-bag songs', count(*) FROM grab_bag_songs
-UNION ALL SELECT 'shared photos', count(*) FROM submissions WHERE shared_at IS NOT NULL;""")
+UNION ALL SELECT 'shared photos', count(*) FROM submissions WHERE shared_at IS NOT NULL
+UNION ALL SELECT 'photo files', count(*) FROM submission_files;""")
     examples = [u[1] for u in users[1:6]]
-    return "\n\n".join(sql) + "\n", examples
+    return "\n\n".join(sql) + "\n", examples, files
 
 
 def main():
@@ -375,18 +419,22 @@ def main():
     parser.add_argument("--seed", type=int, default=1, help="random seed; the same seed gives the same data")
     parser.add_argument("--wipe", action="store_true", help="run testScripts/wipeLocalDb.sh first (it asks)")
     parser.add_argument("--sql", action="store_true", help="print the SQL instead of running it")
+    parser.add_argument("--storage", default=None,
+                        help="where to write the placeholder photo files (the API's Storage__LocalPath; "
+                             "default services/api/.local-storage)")
     args = parser.parse_args()
     if not 1 <= args.artists <= len(ARTISTS):
         sys.exit(f"--artists must be between 1 and {len(ARTISTS)}.")
     if args.fans < 1 or args.shows < 1:
         sys.exit("--fans and --shows must be at least 1.")
 
-    sql, examples = generate(args.fans, args.artists, args.shows, args.seed)
+    sql, examples, files = generate(args.fans, args.artists, args.shows, args.seed)
     if args.sql:
         sys.stdout.write(sql)
         return
 
     root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+    storage = args.storage or os.path.join(root, "services", "api", ".local-storage")
     if args.wipe:
         subprocess.run([os.path.join(root, "testScripts", "wipeLocalDb.sh")], check=True)
     # The compose file needs POSTGRES_PASSWORD; take it from .env when the shell hasn't exported it.
@@ -398,8 +446,22 @@ def main():
     if result.returncode != 0:
         sys.exit("Seeding failed; nothing was written (it is one transaction). "
                  "Is the compose database running with migrations applied, and the database empty?")
+    write_photo_files(storage, files)
     print(f"\nSeeded. Sign in from the app with dev sign-in as dev_staff (staff) or a fan: {', '.join(examples)}, ...")
+    print(f"Wrote {len(files)} placeholder photo files under {storage} (the API's Storage__LocalPath).")
     print("Start the worker (dotnet run --project workers) to replace the provisional scores with the real ones.")
+
+
+def write_photo_files(storage, files):
+    """Writes the placeholder photos where the API's LocalFileStore reads them; an earlier seed's files are removed."""
+    quarantine = os.path.join(storage, "quarantine")
+    os.makedirs(quarantine, exist_ok=True)
+    for name in os.listdir(quarantine):
+        if name.startswith("seed-") and name.endswith(".png"):
+            os.remove(os.path.join(quarantine, name))
+    for key, content in files:
+        with open(os.path.join(storage, *key.split("/")), "wb") as handle:
+            handle.write(content)
 
 
 if __name__ == "__main__":

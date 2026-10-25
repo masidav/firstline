@@ -3,7 +3,8 @@
 **Status: done.** Everything under "To finish the feature" was completed on 2026-10-25: CI for `38ca7ac` was green
 (six jobs), the full suite passed (216/216 before, and again after the additions), `tools/dev/seed.py` seeds follows
 and grab bags, the bouncer door exists (`GET /me/bouncer-door`, app `/bouncer-door`), and the worker refreshes
-song titles and covers daily (`grab_bag.refresh_songs`, migration 0019). The rest of this file is the record of the
+song titles and covers daily (`grab_bag.refresh_songs`, migration 0019). The seed also writes placeholder photo
+files for shared merch, so feed photo cards show an image. The rest of this file is the record of the
 pause and still describes how the feed order works and the repo's working notes.
 
 ## State when paused

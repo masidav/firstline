@@ -35,7 +35,8 @@ dotnet run --project workers               # background jobs (separate terminal)
 ## Seed data
 `tools/dev/seed.py` fills the local database with a realistic, deterministic data set: 200 fans (hub cities,
 Spotify-like signals, album journal logs that earn ledger points through the real triggers, a few verified tickets
-and merch with the merch shared to the feed, follows between fans, and grab bags), 8 active artists with albums and tracks, 10 shows with a fan allocation each in a different state (open,
+and merch with the merch shared to the feed and a placeholder photo file written to `services/api/.local-storage/`,
+follows between fans, and grab bags), 8 active artists with albums and tracks, 10 shows with a fan allocation each in a different state (open,
 upcoming, high threshold, closed with the selection draw run, draft, cancelled), registrations made through
 `register_for_allocation()` (some with a +1), plus the staff account `dev_staff`.
 ```bash
