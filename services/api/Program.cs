@@ -7,6 +7,7 @@ using FandomScore.Api.Features.Feed;
 using FandomScore.Api.Features.Follows;
 using FandomScore.Api.Features.GrabBag;
 using FandomScore.Api.Features.Moderation;
+using FandomScore.Api.Features.Notifications;
 using FandomScore.Api.Features.Scoring;
 using FandomScore.Api.Features.SpotifySync;
 using FandomScore.Api.Features.Stats;
@@ -70,6 +71,7 @@ v1.MapFeed();
 v1.MapFollows();
 v1.MapGrabBag();
 v1.MapReports();
+v1.MapNotifications();
 
 app.Run();
 

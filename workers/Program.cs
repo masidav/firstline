@@ -4,6 +4,7 @@ using FandomScore.Worker.ArtistOnboarding;
 using FandomScore.Worker.GrabBag;
 using FandomScore.Spotify;
 using FandomScore.Worker.Jobs;
+using FandomScore.Worker.Notifications;
 using FandomScore.Worker.Scoring;
 using FandomScore.Worker.SpotifySync;
 
@@ -37,6 +38,7 @@ builder.Services.AddSingleton<IJobHandler, ArtistOnboardingJob>();
 builder.Services.AddSingleton<IJobHandler, CatalogRefreshJob>();
 builder.Services.AddSingleton<IJobHandler, ScheduleCatalogRefreshesJob>();
 builder.Services.AddSingleton<IJobHandler, GrabBagRefreshJob>();
+builder.Services.AddSingleton<IJobHandler, TicketDeliveredJob>();
 builder.Services.AddSingleton<IJobHandler, ScoreArtistJob>();
 builder.Services.AddSingleton<IJobHandler, RescoreAllJob>();
 

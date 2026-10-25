@@ -1493,6 +1493,91 @@ BEGIN
   ALTER TABLE events ENABLE TRIGGER trg_event_lock;
 END $$;
 
+-- ------------------------------------------------------------ notifications (0021)
+-- The draw tells each fan their outcome once, a backfill tells the fan who got the seat, staff hear about draws,
+-- first reports, and proof to review; a delivered ticket is announced once by notify_delivered_tickets().
+INSERT INTO users (id, handle, email, is_staff) VALUES
+  ('48000000-0000-0000-0000-000000000001', 'note_staff', 'note_staff@example.test', true),
+  ('48000000-0000-0000-0000-000000000002', 'note_top', 'note_top@example.test', false),
+  ('48000000-0000-0000-0000-000000000003', 'note_next', 'note_next@example.test', false),
+  ('48000000-0000-0000-0000-000000000004', 'note_rep', 'note_rep@example.test', false);
+SELECT set_hub_cities(id, '{us-il-chicago}'::text[]) FROM users WHERE handle IN ('note_top', 'note_next');
+INSERT INTO user_artist_scores (user_id, artist_id, raw_score, percentile, is_estimated, baseline_weight) VALUES
+  ('48000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000001', 90, 99, false, 0.1),
+  ('48000000-0000-0000-0000-000000000003', '40000000-0000-0000-0000-000000000001', 80, 95, false, 0.1);
+INSERT INTO events (id, artist_id, name, city_id, starts_at) VALUES
+  ('46000000-0000-0000-0000-000000000005', '40000000-0000-0000-0000-000000000001', 'Notice night', 'us-il-chicago',
+   now() + interval '20 days');
+DO $$
+DECLARE al uuid; staff uuid := '48000000-0000-0000-0000-000000000001'; top uuid := '48000000-0000-0000-0000-000000000002';
+        nxt uuid := '48000000-0000-0000-0000-000000000003'; rep uuid := '48000000-0000-0000-0000-000000000004';
+        res uuid; sub uuid; log_id uuid; n integer;
+BEGIN
+  INSERT INTO allocations (event_id, tickets, face_value_cents, min_raw_score, registration_opens_at, registration_closes_at, published_at)
+  VALUES ('46000000-0000-0000-0000-000000000005', 1, 4500, 0, now() - interval '1 hour', now() + interval '5 days', now())
+  RETURNING id INTO al;
+  PERFORM register_for_allocation(top, al);
+  PERFORM register_for_allocation(nxt, al);
+  ALTER TABLE allocations DISABLE TRIGGER trg_allocation_check;
+  UPDATE allocations SET registration_opens_at = now() - interval '2 hours', registration_closes_at = now() - interval '1 hour' WHERE id = al;
+  ALTER TABLE allocations ENABLE TRIGGER trg_allocation_check;
+  PERFORM run_allocation_selection(al, NULL);
+
+  ASSERT (SELECT kind FROM notifications WHERE user_id = top) = 'draw_selected', 'the selected fan hears so';
+  ASSERT (SELECT kind FROM notifications WHERE user_id = nxt) = 'draw_not_selected', 'the other fan hears too';
+  ASSERT (SELECT data->>'event_name' FROM notifications WHERE user_id = top) = 'Notice night', 'with the show';
+  ASSERT EXISTS (SELECT 1 FROM notifications WHERE user_id = staff AND kind = 'staff_draw' AND subject_id = al
+                   AND (data->>'selected_fans')::int = 1), 'staff hear about the draw';
+  PERFORM run_allocation_selection(al, NULL);   -- idempotent draw: no second notices
+  ASSERT (SELECT count(*) FROM notifications WHERE user_id IN (top, nxt, staff) AND kind LIKE '%draw%') = 3, 'no duplicates';
+
+  -- top returns the seat; next gets it and is told.
+  SELECT id INTO res FROM reservations WHERE user_id = top;
+  PERFORM return_reservation(top, res);
+  ASSERT EXISTS (SELECT 1 FROM notifications WHERE user_id = nxt AND kind = 'seat_backfilled'), 'backfilled fan hears so';
+
+  -- Delivery is announced once, when its time has passed.
+  ASSERT notify_delivered_tickets() = 0, 'nothing delivered yet';
+  ALTER TABLE reservations DISABLE TRIGGER trg_reservation_guard;
+  UPDATE reservations SET deliver_at = now() - interval '1 minute' WHERE user_id = nxt;
+  ALTER TABLE reservations ENABLE TRIGGER trg_reservation_guard;
+  ASSERT notify_delivered_tickets() = 1, 'one ticket delivered';
+  ASSERT notify_delivered_tickets() = 0, 'announced once';
+  ASSERT NOT EXISTS (SELECT 1 FROM notifications WHERE user_id = top AND kind = 'ticket_delivered'), 'a returned ticket is not announced';
+
+  -- Staff hear about the first open report on a post, not every one.
+  INSERT INTO album_logs (user_id, album_id, visibility) VALUES (top, '10000000-0000-0000-0000-000000000001', 'public') RETURNING id INTO log_id;
+  INSERT INTO reports (reporter_id, target_type, target_id, reason) VALUES (rep, 'log', log_id, 'spam');
+  INSERT INTO reports (reporter_id, target_type, target_id, reason) VALUES (nxt, 'log', log_id, 'abuse');
+  ASSERT (SELECT count(*) FROM notifications WHERE user_id = staff AND kind = 'staff_report') = 1, 'one notice per reported post';
+
+  -- Proof waiting for review.
+  INSERT INTO submissions (user_id, artist_id, kind, status) VALUES (top, '40000000-0000-0000-0000-000000000001', 'merch', 'needs_review')
+  RETURNING id INTO sub;
+  ASSERT EXISTS (SELECT 1 FROM notifications WHERE user_id = staff AND kind = 'staff_review' AND subject_id = sub), 'staff hear about proof';
+
+  -- Only read_at changes, once.
+  UPDATE notifications SET read_at = now() WHERE user_id = staff;
+  BEGIN
+    UPDATE notifications SET read_at = NULL WHERE user_id = staff;
+    RAISE EXCEPTION 'unreading should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%only read_at changes, once%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE notifications SET kind = 'staff_draw' WHERE user_id = top;
+    RAISE EXCEPTION 'changing a notification should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%only read_at changes, once%', SQLERRM;
+  END;
+
+  -- A deleted account's notifications go, and it gets no new ones.
+  UPDATE users SET deleted_at = now() WHERE id = top;
+  ASSERT NOT EXISTS (SELECT 1 FROM notifications WHERE user_id = top), 'deletion removes notifications';
+  PERFORM notify(top, 'draw_selected', gen_random_uuid());
+  ASSERT NOT EXISTS (SELECT 1 FROM notifications WHERE user_id = top), 'a deleted account gets none';
+  SELECT count(*) INTO n FROM notifications WHERE user_id = staff;
+  ASSERT n = 3, 'staff: draw, report, review';
+END $$;
+
 -- ------------------------------------------------------------ artist profile (0016)
 -- Links need the artist flag; handles are bare; deletion clears the flag and links and they stay empty.
 INSERT INTO users (id, handle, email, is_artist, band_url, instagram_handle, x_handle) VALUES

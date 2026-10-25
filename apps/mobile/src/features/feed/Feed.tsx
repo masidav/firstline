@@ -1,4 +1,4 @@
-import { type ReactElement, useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactElement, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -8,6 +8,7 @@ import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { setFollowing } from '../follows/follows';
+import { BouncerDoorCard } from '../grab-bag/BouncerDoorCard';
 import { FeedCard } from './FeedCard';
 import { type FeedItem, newSeed } from './feedText';
 
@@ -16,13 +17,26 @@ export type { FeedItem } from './feedText';
 
 const PAGE = 20;
 
+/** The bouncer's door sits after this many feed items ("after some scrolling"), or at the end of a shorter feed. */
+export const DOOR_AFTER = 6;
+
+type Row = FeedItem | { type: 'bouncer_door'; id: 'door' };
+
+/** The feed with the bouncer's door placed once enough is loaded to know where it goes. */
+export function withDoor(items: FeedItem[], morePages: boolean): Row[] {
+  // An empty feed shows its empty message instead; a short one waits until the last page is in.
+  if (items.length === 0 || (items.length < DOOR_AFTER && morePages)) return items;
+  const at = Math.min(DOOR_AFTER, items.length);
+  return [...items.slice(0, at), { type: 'bouncer_door', id: 'door' }, ...items.slice(at)];
+}
+
 /**
  * The home feed (GET /feed) as one vertical scroll: a random mix of fans' shared photos and album logs, grab-bag
  * songs and stats from the fans you follow, upcoming shows of your artists, and your own fan-ticket registrations.
  * More loads as you scroll (or with "Show more"); pull down or tap Shuffle for a new mix (a new `seed`).
  * `header` renders above the feed; with `active` false (the home search is in use) the feed itself is hidden.
  */
-export function Feed({ header, active = true }: { header?: ReactElement; active?: boolean }) {
+export function Feed({ header, active = true, overlay }: { header?: ReactElement; active?: boolean; overlay?: ReactNode }) {
   const { session, state } = useSession();
   const myHandle = state?.status === 'signedIn' ? state.me.handle : null;
   const [items, setItems] = useState<FeedItem[] | null>(null);
@@ -90,16 +104,21 @@ export function Feed({ header, active = true }: { header?: ReactElement; active?
     }
   }
 
-  const data = active ? (items ?? []) : [];
+  const data: Row[] = active && items ? withDoor(items, cursor !== null) : [];
   return (
     <SafeAreaView style={styles.safe}>
       <FlatList
         data={data}
         keyExtractor={(item) => `${item.type}:${item.id}`}
-        renderItem={({ item }) => (
+        renderItem={({ item }) =>
+          item.type === 'bouncer_door' ? (
+            <View style={styles.column}>
+              <BouncerDoorCard />
+            </View>
+          ) : (
           <View style={styles.column}>
             <FeedCard
-              item={item}
+              item={item as FeedItem}
               mine={item.user?.handle != null && item.user.handle === myHandle}
               following={item.user?.handle ? (following[item.user.handle] ?? item.following) : false}
               onFollow={(handle, follow) => {
@@ -107,7 +126,8 @@ export function Feed({ header, active = true }: { header?: ReactElement; active?
               }}
             />
           </View>
-        )}
+          )
+        }
         ListHeaderComponent={
           <View style={styles.column}>
             {header}
@@ -152,6 +172,7 @@ export function Feed({ header, active = true }: { header?: ReactElement; active?
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       />
+      {overlay}
     </SafeAreaView>
   );
 }

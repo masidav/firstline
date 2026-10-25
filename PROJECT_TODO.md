@@ -103,6 +103,8 @@ Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring wo
       logs show to followers since 2026-10-25 (follows, migration 0018); offline sync is the app's queue, still to build.)
 - [ ] Implement ordered album lists.
 - [ ] Implement comments, replies, anti-abuse rules, and reward reversals.
+- [ ] Music trivia, music prompts ("What's your best hypothetical band name?"), and a featured artist of the week in
+      the feed (requested 2026-10-25; open questions in `apps/mobile/TODO.md`).
 
 Details: [Album journal API](services/api/src/features/album-journal/TODO.md) · [Journal UI](apps/mobile/src/features/album-journal/TODO.md) · [Lists API](services/api/src/features/lists/TODO.md) · [Lists UI](apps/mobile/src/features/lists/TODO.md) · [Comments API](services/api/src/features/comments/TODO.md) · [Comments UI](apps/mobile/src/features/comments/TODO.md)
 
@@ -169,8 +171,14 @@ Details: [Sharing API](services/api/src/features/sharing/TODO.md) · [Sharing UI
       post down or dismiss the reports; every decision is recorded (`moderation_actions`). Migration 0014.
       Verified: `dotnet test` (ReportApiTests 3, invariants), app Jest (Feed, ModerationScreen), clicked through in Chrome.
 - [ ] Blocking: not wanted for now (decided 2026-10-24); revisit with follows (Phase 8).
-- [ ] Email staff when something needs them: a post is reported, proof is submitted for review, and allocation
-      selection runs for a show (winners chosen). Needs an email provider (open decision) and a staff address list.
+- [x] In-app notifications (2026-10-25, migration 0021): fans hear when a draw picks them or not, when a returned
+      seat comes to them, and when their ticket is delivered (worker `notifications.tickets_delivered`, every 15
+      minutes); staff hear when a draw runs, a post gets its first open report, and proof waits for review. Written by
+      triggers in the same transaction, once per person and subject. `GET /me/notifications`, `POST /me/notifications/read`;
+      app: Alerts button with the unread count and an Alerts screen. Verified: `dotnet test` (NotificationApiTests,
+      invariants), app Jest (NotificationsScreen, HomeScreen), Chrome at phone size.
+- [ ] Email staff when something needs them (the same three staff events as the in-app notices). Needs an email
+      provider (open decision) and a staff address list; the notification rows are the source to send from.
 - [ ] Complete privacy review, deletion flows, and retention rules.
 - [ ] Complete integration, end-to-end, security, and performance testing.
 - [ ] Document deployment, backups, monitoring, and recovery.
@@ -235,8 +243,8 @@ Details: [ADR 0002](docs/adr/0002-hosting-gcp-gke.md) · [Infrastructure](infras
 - [x] Dev environment with synthetic data: `tools/dev/seed.py` (fans, artists, shows, allocations, registrations),
       verified 2026-10-24 against a scratch database and run by CI. The cloud proving ground is **beta** with real
       testers, not a synthetic staging (ADR 0002, amended 2026-10-24); see `infrastructure/README.md`.
-      *Requested 2026-10-25: seed real artists and albums (real Spotify ids and covers) instead of made-up ones, so the
-      dev app looks right; see `apps/mobile/TODO.md`.*
+      *Since 2026-10-25 it seeds real artists and albums from Spotify when Spotify credentials are set (made-up ones
+      otherwise, as in CI); see `apps/mobile/TODO.md`.*
 - [ ] Test accounts for every external provider (Spotify, Apple, ticketers) usable on beta.
 - [ ] Beta distribution: TestFlight and Google Play closed testing.
 - [ ] App Store and Google Play readiness: privacy labels, data safety form, in-app account deletion, Sign in with Apple.

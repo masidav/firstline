@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { type Artist, type ArtistSearchResult, unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
@@ -8,7 +8,9 @@ import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Field, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { ArtistRow } from './ArtistRow';
+import { CameraIcon } from '../../ui/CameraIcon';
 import { Feed } from '../feed/Feed';
+import { AlertsButton } from '../notifications/AlertsButton';
 import { YourArtists } from './YourArtists';
 
 const DEBOUNCE_MS = 300;
@@ -127,6 +129,7 @@ export function HomeScreen() {
         <Title>Your artists</Title>
       </View>
       <View style={styles.headerButtons}>
+        <AlertsButton />
         <Button label="Tickets" kind="secondary" onPress={() => router.push('/tickets')} />
         <Button label="Journal" kind="secondary" onPress={() => router.push('/journal')} />
         <Button label="People" kind="secondary" onPress={() => router.push('/people')} />
@@ -148,8 +151,6 @@ export function HomeScreen() {
       {!text && (
         <>
           <YourArtists />
-          <Button label="Post a photo" onPress={() => router.push('/post')} />
-          <Button label="Bouncer door: a song from someone you follow" kind="secondary" onPress={() => router.push('/bouncer-door')} />
         </>
       )}
       {text !== '' && tracked?.length === 0 && !spotify && !askingSpotify && (
@@ -198,7 +199,18 @@ export function HomeScreen() {
       <ErrorText>{spotifyError}</ErrorText>
     </>
   );
-  return <Feed header={header} active={!text} />;
+  // Posting a photo is a camera button floating over the feed (requested 2026-10-25), not a full-width button.
+  const camera = !text && (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Post a photo"
+      onPress={() => router.push('/post')}
+      style={({ pressed }) => [styles.camera, pressed && styles.cameraPressed]}
+    >
+      <CameraIcon />
+    </Pressable>
+  );
+  return <Feed header={header} active={!text} overlay={camera} />;
 }
 
 /** Release count for same-named artists (so the real one stands out), otherwise genres if Spotify sent any. */
@@ -215,4 +227,10 @@ const styles = StyleSheet.create({
   headerButtons: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   section: { color: colors.text, fontSize: 18, fontWeight: '700', marginTop: space.md },
   note: { color: colors.muted, fontSize: 14 },
+  camera: {
+    position: 'absolute', right: space.lg, bottom: space.lg, width: 60, height: 60, borderRadius: 30, backgroundColor: colors.accent,
+    alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
+    elevation: 6,
+  },
+  cameraPressed: { opacity: 0.8 },
 });

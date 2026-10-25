@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
 import { Linking } from 'react-native';
 
 import type { components } from '../../api/client';
-import { Feed, stars } from './Feed';
+import { DOOR_AFTER, Feed, stars, withDoor } from './Feed';
 import { newSeed, statSentence, ticketsLine } from './feedText';
 
 const ok = (data: unknown, status = 200) => ({ data, response: { ok: true, status } });
@@ -197,4 +197,25 @@ test("other fans' posts can be reported; your own can't", async () => {
   expect(mockApi.POST).toHaveBeenCalledWith('/reports', {
     body: { target_type: 'photo', target_id: 's1', reason: 'inappropriate', details: 'Not ok' },
   });
+});
+
+test('the bouncer door sits after six items, or at the end of a shorter last page, and knocking draws a song', async () => {
+  const many = Array.from({ length: 8 }, (_, i) => ({ ...log, id: `l${i}`, user: { handle: `fan_${i}`, deleted: false, display_name: `Fan ${i}` } }));
+  const door = withDoor(many as never, false).map((row) => row.type);
+  expect(door.indexOf('bouncer_door')).toBe(DOOR_AFTER);
+  expect(withDoor(many.slice(0, 3) as never, true).some((row) => row.type === 'bouncer_door')).toBe(false);
+  expect(withDoor(many.slice(0, 3) as never, false).map((row) => row.type).at(-1)).toBe('bouncer_door');
+  expect(withDoor([], false)).toEqual([]);
+
+  mockApi.GET.mockImplementation(async (path: string) =>
+    path === '/feed'
+      ? ok({ items: [photo], next_cursor: null, seed: 'abc' })
+      : ok({ song: song.grab_bag, owner: { handle: 'fan_two', deleted: false, display_name: 'Ben' }, following: 1, songs: 2 }),
+  );
+  render(<Feed />);
+  fireEvent.press(await screen.findByRole('button', { name: 'Knock on the bouncer door' }));
+  expect(await screen.findByText('Ben let you in')).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Open Cowboy Nudes on Spotify' })).toBeTruthy();
+  expect(mockApi.GET).toHaveBeenCalledWith('/me/bouncer-door');
+  expect(screen.getByRole('button', { name: 'Knock again on the bouncer door' })).toBeTruthy();
 });

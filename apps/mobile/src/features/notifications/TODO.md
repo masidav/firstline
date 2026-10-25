@@ -10,6 +10,11 @@ Use `- [x]` only after the task is implemented and verified.
 - [ ] Handle revoked permissions and invalid tokens gracefully.
 - [ ] Add tests for preferences, navigation, and permission denial.
 
+## In-app notifications (2026-10-25)
+- [x] Alerts button on the home screen with the unread count (polled every minute, updated when notifications are
+      read), and an Alerts screen (`/notifications`): tap opens the right screen and marks it read; "Mark all read".
+      Verified: NotificationsScreen and HomeScreen tests, Chrome at phone size.
+
 ## Verification
 - [ ] Add or update automated tests.
 - [ ] Run the relevant tests and record actual results.

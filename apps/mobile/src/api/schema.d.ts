@@ -1478,6 +1478,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My notifications
+         * @description In-app notifications, newest first, with the unread count. Fans hear when a draw picks them or not, when a
+         *     returned seat comes to them, and when their ticket is delivered; staff when a draw runs, a post gets its first
+         *     open report, and proof waits for review. `title` and `body` are ready to show; `link` is the app screen to open.
+         */
+        get: operations["listMyNotifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/notifications/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark notifications read
+         * @description The given ones (the caller's only), or all of them when `ids` is empty or missing. Idempotent.
+         */
+        post: operations["markNotificationsRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me/reservations": {
         parameters: {
             query?: never;
@@ -2362,6 +2404,28 @@ export interface components {
             registration: components["schemas"]["Registration"];
             allocation: components["schemas"]["Allocation"];
             event: components["schemas"]["Event"];
+        };
+        Notification: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "draw_selected" | "draw_not_selected" | "seat_backfilled" | "ticket_delivered" | "staff_report" | "staff_review" | "staff_draw";
+            title: string;
+            body: string;
+            /** @description App route to open, e.g. /tickets or /show/{id} */
+            link: string;
+            /** Format: date-time */
+            created_at: string;
+            read: boolean;
+            /** @description What the text was made from (ids */
+            data: {
+                [key: string]: unknown;
+            };
+        };
+        NotificationPage: {
+            items: components["schemas"]["Notification"][];
+            unread_count: number;
+            next_cursor: string | null;
         };
         /**
          * @description A selected fan's seats at face value (migration 0020). `status`: `held` (a seat is theirs; the ticket arrives
@@ -5569,6 +5633,59 @@ export interface operations {
                     };
                 };
             };
+        };
+    };
+    listMyNotifications: {
+        parameters: {
+            query?: {
+                limit?: components["parameters"]["Limit"];
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of notifications */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPage"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    markNotificationsRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    ids?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description How many are still unread */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        unread_count: number;
+                    };
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
         };
     };
     listMyReservations: {

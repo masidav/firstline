@@ -1,14 +1,8 @@
-# Notification worker
+# Notification worker jobs
 
-## Purpose
-Defines the scope and responsibilities for notification worker in Fandom Score.
+| File | Job | What |
+| --- | --- | --- |
+| `TicketDeliveredJob.cs` | `notifications.tickets_delivered` (every 15 minutes) | Tells holders their ticket has arrived once a reservation's `deliver_at` passes (`notify_delivered_tickets()`, migration 0021). Each reservation once; returned, cancelled, and started shows are skipped. |
 
-## How to work here
-- Inspect existing code and conventions before changes.
-- Follow the actionable checklist in `TODO.md`.
-- Preserve existing working functionality.
-- Add tests and document actual verification results.
-- Record unresolved decisions rather than assuming answers.
-
-## Dependencies
-Refer to the root `ARCHITECTURE.md` and `PROJECT_TODO.md`, plus the feature checklist for implementation order and interfaces.
+Everything else in `services/api/src/features/notifications/README.md` is written by database triggers. Push and email
+senders will live here once their providers are chosen.

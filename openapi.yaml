@@ -1767,6 +1767,52 @@ paths:
                   items:
                     type: array
                     items: {$ref: '#/components/schemas/MyRegistration'}
+  /me/notifications:
+    get:
+      tags: [Me]
+      operationId: listMyNotifications
+      summary: My notifications
+      description: |
+        In-app notifications, newest first, with the unread count. Fans hear when a draw picks them or not, when a
+        returned seat comes to them, and when their ticket is delivered; staff when a draw runs, a post gets its first
+        open report, and proof waits for review. `title` and `body` are ready to show; `link` is the app screen to open.
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page of notifications
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotificationPage'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /me/notifications/read:
+    post:
+      tags: [Me]
+      operationId: markNotificationsRead
+      summary: Mark notifications read
+      description: The given ones (the caller's only), or all of them when `ids` is empty or missing. Idempotent.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids:
+                  type: array
+                  maxItems: 200
+                  items: {type: string, format: uuid}
+      responses:
+        '200':
+          description: How many are still unread
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [unread_count]
+                properties:
+                  unread_count: {type: integer, minimum: 0}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
   /me/reservations:
     get:
       tags: [Allocations]
@@ -2843,6 +2889,29 @@ components:
         registration: {$ref: '#/components/schemas/Registration'}
         allocation: {$ref: '#/components/schemas/Allocation'}
         event: {$ref: '#/components/schemas/Event'}
+    Notification:
+      type: object
+      required: [id, kind, title, body, link, created_at, read, data]
+      properties:
+        id: {type: string, format: uuid}
+        kind:
+          type: string
+          enum: [draw_selected, draw_not_selected, seat_backfilled, ticket_delivered, staff_report, staff_review, staff_draw]
+        title: {type: string}
+        body: {type: string}
+        link: {type: string, description: 'App route to open, e.g. /tickets or /show/{id}'}
+        created_at: {type: string, format: date-time}
+        read: {type: boolean}
+        data: {type: object, additionalProperties: true, description: What the text was made from (ids, show name, counts).}
+    NotificationPage:
+      type: object
+      required: [items, unread_count, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Notification'}
+        unread_count: {type: integer, minimum: 0}
+        next_cursor: {type: [string, 'null']}
     Reservation:
       type: object
       description: |

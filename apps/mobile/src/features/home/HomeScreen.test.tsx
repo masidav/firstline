@@ -109,7 +109,15 @@ test('with no scores yet, a connected fan is told how scores appear', async () =
 });
 
 test('a failed load of your artists can be retried', async () => {
-  mockApi.GET.mockResolvedValueOnce(problem(503, 'internal_error'));
+  // Only the scores request fails (the Alerts badge and the feed load too).
+  let failed = false;
+  mockApi.GET.mockImplementation(async (path: string) => {
+    if (path === '/me/scores' && !failed) {
+      failed = true;
+      return problem(503, 'internal_error');
+    }
+    return ok({ items: [], next_cursor: null, unread_count: 0 });
+  });
   render(<HomeScreen />);
 
   const retry = await screen.findByRole('button', { name: 'Try again' });
@@ -224,4 +232,20 @@ test('one letter is too short for Spotify', async () => {
 
   expect(await screen.findByText(/at least 2 letters/)).toBeTruthy();
   expect(calls('/artists/search')).toHaveLength(0);
+});
+
+test('a camera button posts a photo, and Alerts shows the unread count', async () => {
+  mockApi.GET.mockImplementation(async (path: string) =>
+    path === '/me/notifications' ? ok({ items: [], unread_count: 3, next_cursor: null }) : ok({ items: [], next_cursor: null }),
+  );
+  render(<HomeScreen />);
+
+  fireEvent.press(await screen.findByRole('button', { name: 'Post a photo' }));
+  expect(jest.requireMock('expo-router').router.push).toHaveBeenCalledWith('/post');
+  fireEvent.press(await screen.findByRole('button', { name: 'Alerts, 3 unread' }));
+  expect(jest.requireMock('expo-router').router.push).toHaveBeenCalledWith('/notifications');
+
+  // While searching, the camera button steps aside.
+  fireEvent.changeText(screen.getByLabelText('Search artists'), 'gee');
+  expect(screen.queryByRole('button', { name: 'Post a photo' })).toBeNull();
 });

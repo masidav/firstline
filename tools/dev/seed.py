@@ -12,9 +12,13 @@ What you get, all deterministic for a given --seed:
     triggers; some followers-only), a few verified ticket and merch submissions (merch shared to the feed, with a
     generated placeholder photo written to the API's local storage so the feed shows an image), and a fandom score
     per followed artist;
-  - follows between fans (2 to 6 each) and grab bags (up to five favourite songs by the artists they listen to,
-    with made-up 22-character Spotify ids, so the Spotify links don't resolve), which fill the home feed;
-  - active artists ('seed:...' Spotify ids, so nothing talks to Spotify) with albums and tracks;
+  - follows between fans (2 to 6 each) and grab bags (up to five favourite songs by the artists they listen to),
+    which fill the home feed;
+  - active artists with albums and tracks. With Spotify credentials (Spotify__ClientId and Spotify__ClientSecret,
+    from the environment or the repo's .env) these are REAL artists fetched from Spotify with the app token: real
+    names, Spotify ids, photos, album covers, and track lists, so covers, Spotify links, song search, and the
+    bouncer door look like the real thing (REAL_ARTISTS below; --fake to skip). Without credentials (CI) they are
+    made up, with 'seed:' ids;
   - shows in hub cities, each with a fan allocation in a different state: open, upcoming, open with a high
     raw-score threshold, closed with the selection draw run (selected and not-selected fans, +1 guests), draft,
     cancelled; registrations through register_for_allocation(), so every snapshot and rule is the real one. Some
@@ -25,14 +29,16 @@ Sign in from the app with dev sign-in (Auth__DevSignIn=true in .env) as any hand
 Nobody has a Spotify connection (a fake one would make the hourly sync fail), so "connect Spotify" still works.
 Photo files go to --storage (default services/api/.local-storage, the API's Storage__LocalPath); with --sql they are
 not written, so the file links 404.
-The artists' catalogs count as loaded now; after a week the worker's weekly catalog refresh will try Spotify for the
-'seed:' ids and log a failed job per artist. Re-seed (--wipe) or ignore those.
-Refuses to run on a database that already holds seed data: wipe first. Stdlib only.
+The artists' catalogs count as loaded now. With real artists the worker's weekly catalog refresh keeps them current;
+with made-up ones it will log a failed job per 'seed:' id after a week. Re-seed (--wipe) or ignore those.
+Refuses to run on a database that already holds seed data, or that already tracks one of the real artists: wipe
+first. Stdlib only.
 
-LOCAL ONLY. The data is fake and the artists are not on Spotify. Never run this against beta or prod.
+LOCAL ONLY. The fans and their activity are fake. Never run this against beta or prod.
 """
 
 import argparse
+import base64
 import datetime
 import hashlib
 import json
@@ -42,6 +48,10 @@ import random
 import struct
 import subprocess
 import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
 import zlib
 
@@ -65,6 +75,12 @@ LAST_NAMES = ["Reyes", "Park", "Okafor", "Lindqvist", "Nakamura", "Costa", "Bren
               "Ibarra", "Chen", "Dubois", "Petrov", "Nguyen", "Hale", "Varga", "Adeyemi", "Larsen"]
 ARTISTS = ["Glass Harbor", "Neon Orchard", "The Late Trains", "Marrow & Pine", "Saltwater Choir", "Ivy Signal",
            "Paper Lanterns", "Cobalt Youth", "Hollow Pines", "Velvet Static", "Northern Attic", "Candle District"]
+# Real artists for the dev seed, looked up on Spotify by name (exact name match preferred). Varied on purpose.
+REAL_ARTISTS = ["Radiohead", "Geese", "Phoebe Bridgers", "Fontaines D.C.", "Big Thief", "Mitski", "Japanese Breakfast",
+                "Wet Leg", "Turnstile", "Alvvays", "Black Country, New Road", "boygenius"]
+REAL_ALBUMS_PER_ARTIST = 4
+SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
+SPOTIFY_API = "https://api.spotify.com/v1/"
 ALBUM_WORDS = (["Quiet", "Electric", "Paper", "Midnight", "Golden", "Broken", "Summer", "Static", "Hollow", "Violet"],
                ["Rooms", "Gardens", "Signals", "Weather", "Letters", "Harbors", "Machines", "Lights", "Tides", "Maps"])
 TRACK_WORDS = (["Last", "First", "Open", "Slow", "Wild", "Lost", "Blue", "Second", "Long", "Low"],
@@ -143,6 +159,100 @@ def placeholder_png(rng, width=640, height=480):
             + chunk(b"IDAT", zlib.compress(bytes(rows), 6)) + chunk(b"IEND", b""))
 
 
+def fake_catalog(count, rng, now):
+    """Made-up artists (no Spotify): the same shape fetch_real_catalog returns."""
+    catalog = []
+    for name in ARTISTS[:count]:
+        albums = []
+        for n in range(rng.randint(3, 6)):
+            release = datetime.date(rng.randint(2012, 2026), rng.randint(1, 12), rng.randint(1, 28))
+            if release > now.date():
+                release = now.date() - datetime.timedelta(days=rng.randint(10, 300))
+            tracks = [{"title": f"{rng.choice(TRACK_WORDS[0])} {rng.choice(TRACK_WORDS[1])}", "track_number": t,
+                       "spotify_id": f"seed:{slug(name)}:{n}:{t}"} for t in range(1, rng.randint(8, 12) + 1)]
+            albums.append({"title": f"{rng.choice(ALBUM_WORDS[0])} {rng.choice(ALBUM_WORDS[1])}", "spotify_id": f"seed:{slug(name)}:{n}",
+                           "release_date": release, "precision": "day", "cover_url": None, "tracks": tracks})
+        catalog.append({"name": name, "spotify_id": f"seed:{slug(name)}", "image_url": None, "real": False, "albums": albums,
+                        "website_url": f"https://{slug(name)}.example.test", "merch_url": f"https://{slug(name)}.example.test/shop"})
+    return catalog
+
+
+def spotify_credentials(root):
+    """(client id, client secret) from the environment, else from the repo's .env; None when either is missing."""
+    values = {key: os.environ.get(key, "") for key in ("Spotify__ClientId", "Spotify__ClientSecret")}
+    env_file = os.path.join(root, ".env")
+    if not all(values.values()) and os.path.exists(env_file):
+        with open(env_file, encoding="utf-8") as handle:
+            for line in handle:
+                key, sep, value = line.strip().partition("=")
+                if sep and key in values and not values[key]:
+                    values[key] = value.strip().strip("'\"")
+    return (values["Spotify__ClientId"], values["Spotify__ClientSecret"]) if all(values.values()) else None
+
+
+def _read_json(request, opener):
+    """GET or POST with up to three tries on 429 and 5xx (Retry-After honoured, capped at 10 s)."""
+    for attempt in range(1, 4):
+        try:
+            with opener(request, timeout=20) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            if attempt == 3 or (e.code != 429 and e.code < 500):
+                raise
+            time.sleep(min(10, int(e.headers.get("Retry-After") or attempt)))
+    raise RuntimeError("unreachable")
+
+
+def parse_release(raw, precision):
+    """Spotify's release date string ('2023', '2023-06', '2023-06-23') as a date and its precision."""
+    parts = (raw or "1970").split("-")
+    precision = precision or ("day" if len(parts) == 3 else "month" if len(parts) == 2 else "year")
+    return datetime.date(int(parts[0]), int(parts[1]) if len(parts) > 1 else 1, int(parts[2]) if len(parts) > 2 else 1), precision
+
+
+def fetch_real_catalog(names, credentials, albums_per_artist=REAL_ALBUMS_PER_ARTIST, opener=urllib.request.urlopen):
+    """Real artists from Spotify with the app token (client credentials): photo, newest albums, and their tracks.
+    Only endpoints and limits available to development-mode apps (search 10, artist albums 10 per page)."""
+    client_id, secret = credentials
+    basic = base64.b64encode(f"{client_id}:{secret}".encode()).decode()
+    token = _read_json(urllib.request.Request(
+        SPOTIFY_TOKEN_URL, data=b"grant_type=client_credentials", method="POST",
+        headers={"Authorization": f"Basic {basic}", "Content-Type": "application/x-www-form-urlencoded"}), opener)["access_token"]
+
+    def get(path):
+        return _read_json(urllib.request.Request(SPOTIFY_API + path, headers={"Authorization": f"Bearer {token}"}), opener)
+
+    def pick_image(images, minimum=0):
+        images = [i for i in images or [] if i.get("url")]
+        fitting = sorted((i for i in images if (i.get("width") or 0) >= minimum), key=lambda i: i.get("width") or 0)
+        return (fitting[0] if fitting and minimum else max(images, key=lambda i: i.get("width") or 0, default=None) or {}).get("url")
+
+    catalog = []
+    for name in names:
+        found = get("search?" + urllib.parse.urlencode({"type": "artist", "limit": 5, "q": name}))["artists"]["items"]
+        if not found:
+            print(f"Spotify has no artist called {name}; skipped.", file=sys.stderr)
+            continue
+        artist = next((a for a in found if a["name"].lower() == name.lower()), found[0])
+        releases = get(f"artists/{artist['id']}/albums?include_groups=album&market=US&limit=10")["items"]
+        albums, titles, track_ids = [], set(), set()
+        for release in releases:
+            if len(albums) >= albums_per_artist or release["name"].lower() in titles:
+                continue   # one edition per title (deluxe reissues share names)
+            titles.add(release["name"].lower())
+            tracks = get(f"albums/{release['id']}/tracks?market=US&limit=50")["items"]
+            date, precision = parse_release(release.get("release_date"), release.get("release_date_precision"))
+            albums.append({"title": release["name"], "spotify_id": release["id"], "release_date": date, "precision": precision,
+                           "cover_url": pick_image(release.get("images")),
+                           "tracks": [{"title": t["name"], "track_number": t.get("track_number") or n, "spotify_id": t["id"]}
+                                      for n, t in enumerate(tracks, 1)
+                                      if t.get("id") and not (t["id"] in track_ids or track_ids.add(t["id"]))]})
+        if albums:
+            catalog.append({"name": artist["name"], "spotify_id": artist["id"], "image_url": pick_image(artist.get("images"), 300),
+                            "real": True, "albums": albums, "website_url": None, "merch_url": None})
+    return catalog
+
+
 def lognormal_curve(median, sigma):
     """Same shape as workers/artist-onboarding/ProvisionalBaseline.cs: 61 [score, cdf] points over -3σ..+3σ."""
     mu = math.log(median)
@@ -150,15 +260,19 @@ def lognormal_curve(median, sigma):
             for z in range(-30, 31)]
 
 
-def generate(fans, artists, shows, seed):
+def generate(fans, artists, shows, seed, catalog_source=None):
+    """The seed SQL. catalog_source: artists from fetch_real_catalog (real), or None for made-up ones."""
     rng = random.Random(seed)
     now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
     new_id = lambda: uuid.UUID(int=rng.getrandbits(128), version=4)  # noqa: E731 (deterministic ids)
     city_ids = list(CITIES)
     files = []  # (storage key, bytes): placeholder photos to write under the API's local storage
+    source = (catalog_source or fake_catalog(artists, rng, now))[:artists]
+    seeded_ids = [a["spotify_id"] for a in source]
     sql = ["\\set ON_ERROR_STOP on", "BEGIN;",
-           "DO $$ BEGIN IF EXISTS (SELECT 1 FROM artists WHERE spotify_artist_id LIKE 'seed:%') THEN\n"
-           "  RAISE EXCEPTION 'seed data is already present; wipe the local database first "
+           "DO $$ BEGIN IF EXISTS (SELECT 1 FROM users WHERE handle = 'dev_staff')\n"
+           f"  OR EXISTS (SELECT 1 FROM artists WHERE spotify_artist_id LIKE 'seed:%' OR spotify_artist_id = ANY({lit(seeded_ids)})) THEN\n"
+           "  RAISE EXCEPTION 'seed data (or one of its artists) is already present; wipe the local database first "
            "(testScripts/wipeLocalDb.sh or seed.py --wipe)'; END IF; END $$;"]
 
     # --- staff and fans -------------------------------------------------------------------------------------------
@@ -190,39 +304,36 @@ def generate(fans, artists, shows, seed):
     # --- artists, albums, tracks ----------------------------------------------------------------------------------
     sql.append("-- Artists start onboarding (the activation trigger needs the baseline first), then go active.")
     artist_rows, baseline_rows, album_rows, track_rows = [], [], [], []
-    catalog = {}  # artist_id -> {"albums": [(album_id, [track_ids])]}
-    for name in ARTISTS[:artists]:
+    catalog = {}  # artist_id -> {"name", "albums": [(album_id, [track_ids])]}
+    for entry in source:
+        name = entry["name"]
         artist_id = new_id()
         albums = []
-        for n in range(rng.randint(3, 6)):
+        for album in entry["albums"]:
             album_id = new_id()
-            title = f"{rng.choice(ALBUM_WORDS[0])} {rng.choice(ALBUM_WORDS[1])}"
-            release = datetime.date(rng.randint(2012, 2026), rng.randint(1, 12), rng.randint(1, 28))
-            if release > now.date():
-                release = now.date() - datetime.timedelta(days=rng.randint(10, 300))
-            album_rows.append((album_id, artist_id, title, release, f"seed:{slug(name)}:{n}", "album", now))
+            album_rows.append((album_id, artist_id, album["title"], album["release_date"], album["precision"], album["spotify_id"],
+                               "album", album["cover_url"], now))
             tracks = []
-            for t in range(1, rng.randint(8, 12) + 1):
+            for track in album["tracks"]:
                 track_id = new_id()
                 tracks.append(track_id)
-                track_rows.append((track_id, album_id, f"{rng.choice(TRACK_WORDS[0])} {rng.choice(TRACK_WORDS[1])}",
-                                   t, rng.randint(5, 80), f"seed:{slug(name)}:{n}:{t}"))
+                track_rows.append((track_id, album_id, track["title"], track["track_number"], rng.randint(5, 80), track["spotify_id"]))
             albums.append((album_id, tracks))
         catalog[artist_id] = {"name": name, "albums": albums}
-        artist_rows.append((artist_id, name, f"seed:{slug(name)}", "onboarding", now,
-                            f"https://{slug(name)}.example.test", f"https://{slug(name)}.example.test/shop"))
+        artist_rows.append((artist_id, name, entry["spotify_id"], "onboarding", now, entry["website_url"], entry["merch_url"],
+                            entry["image_url"]))
         baseline_rows.append((artist_id, "lognormal",
                               json.dumps({"mu": math.log(15), "sigma": 1, "provisional": True, "source": "seed"}),
                               json.dumps({"source": "seed", "albums": len(albums),
                                           "tracks": sum(len(t) for _, t in albums)}),
                               json.dumps(lognormal_curve(15, 1)), 200))
-    sql.append(insert("artists", ["id", "name", "spotify_artist_id", "status", "catalog_loaded_at", "website_url", "merch_url"],
-                      artist_rows))
+    sql.append(insert("artists", ["id", "name", "spotify_artist_id", "status", "catalog_loaded_at", "website_url", "merch_url",
+                                  "image_url"], artist_rows))
     sql.append(insert("artist_baselines", ["artist_id", "dist_family", "dist_params", "proxy_metrics", "curve", "blend_k"],
                       baseline_rows))
-    sql.append("UPDATE artists SET status = 'active' WHERE spotify_artist_id LIKE 'seed:%';")
-    sql.append(insert("albums", ["id", "artist_id", "title", "release_date", "spotify_album_id", "album_type", "refreshed_at"],
-                      album_rows))
+    sql.append(f"UPDATE artists SET status = 'active' WHERE spotify_artist_id = ANY({lit(seeded_ids)});")
+    sql.append(insert("albums", ["id", "artist_id", "title", "release_date", "release_date_precision", "spotify_album_id", "album_type",
+                                 "cover_url", "refreshed_at"], album_rows))
     sql.append(insert("tracks", ["id", "album_id", "title", "track_number", "popularity", "spotify_track_id"], track_rows))
 
     # --- fandom: signals, liked tracks, journal, proof -------------------------------------------------------------
@@ -296,15 +407,16 @@ def generate(fans, artists, shows, seed):
                 for album_id, tracks in catalog[artist_id]["albums"]:
                     picks.extend((artist_id, album_id, track_id) for track_id in tracks)
             for position, (artist_id, album_id, track_id) in enumerate(rng.sample(picks, min(len(picks), rng.randint(1, 5))), 1):
-                title = next(t[2] for t in track_rows if t[0] == track_id)
-                album = next(a[2] for a in album_rows if a[0] == album_id)
-                fake_spotify_id = "".join(rng.choice("0123456789ABCDEFGHJKMNPQRSTVWXYZabcdefghjkmnpqrstvwxyz") for _ in range(22))
-                song_rows.append((user_id, position, fake_spotify_id, title, artist_id, album,
+                track = next(t for t in track_rows if t[0] == track_id)
+                album = next(a for a in album_rows if a[0] == album_id)
+                spotify_id = track[5] if not track[5].startswith("seed:") else \
+                    "".join(rng.choice("0123456789ABCDEFGHJKMNPQRSTVWXYZabcdefghjkmnpqrstvwxyz") for _ in range(22))
+                song_rows.append((user_id, position, spotify_id, track[2], artist_id, album[2], album[7],
                                   now - datetime.timedelta(days=rng.uniform(0, 60))))
     sql.append(insert("follows", ["follower_id", "followee_id", "created_at"], follow_rows))
     if song_rows:
-        sql.append(insert("grab_bag_songs", ["user_id", "position", "spotify_track_id", "title", "artist_id", "album_title", "added_at"],
-                          song_rows))
+        sql.append(insert("grab_bag_songs", ["user_id", "position", "spotify_track_id", "title", "artist_id", "album_title", "cover_url",
+                                             "added_at"], song_rows))
 
     # --- scores -----------------------------------------------------------------------------------------------------
     sql.append("""-- Provisional scores so registrations work right away: raw score from v_raw_scores, mid-rank percentile
@@ -317,11 +429,11 @@ SELECT user_id, artist_id, raw_score,
              / count(*) OVER (PARTITION BY artist_id), 2),
        false, 0, '{"source": "seed"}'
   FROM v_raw_scores
- WHERE artist_id IN (SELECT id FROM artists WHERE spotify_artist_id LIKE 'seed:%')
+ WHERE artist_id IN (SELECT id FROM artists WHERE spotify_artist_id = ANY(%SEEDED_IDS%))
 ON CONFLICT (user_id, artist_id) DO UPDATE
   SET raw_score = EXCLUDED.raw_score, percentile = EXCLUDED.percentile, is_estimated = EXCLUDED.is_estimated,
       baseline_weight = EXCLUDED.baseline_weight, breakdown = EXCLUDED.breakdown, computed_at = now();
-SELECT request_full_rescore() AS rescore_jobs_queued;""")
+SELECT request_full_rescore() AS rescore_jobs_queued;""".replace("%SEEDED_IDS%", lit(seeded_ids)))
 
     # --- shows, allocations, registrations ----------------------------------------------------------------------
     sql.append("-- Shows and allocations, one state each; registrations through register_for_allocation().")
@@ -419,21 +531,32 @@ def main():
     parser.add_argument("--seed", type=int, default=1, help="random seed; the same seed gives the same data")
     parser.add_argument("--wipe", action="store_true", help="run testScripts/wipeLocalDb.sh first (it asks)")
     parser.add_argument("--sql", action="store_true", help="print the SQL instead of running it")
+    parser.add_argument("--fake", action="store_true", help="made-up artists even when Spotify credentials are set")
     parser.add_argument("--storage", default=None,
                         help="where to write the placeholder photo files (the API's Storage__LocalPath; "
                              "default services/api/.local-storage)")
     args = parser.parse_args()
-    if not 1 <= args.artists <= len(ARTISTS):
-        sys.exit(f"--artists must be between 1 and {len(ARTISTS)}.")
+    if not 1 <= args.artists <= min(len(ARTISTS), len(REAL_ARTISTS)):
+        sys.exit(f"--artists must be between 1 and {min(len(ARTISTS), len(REAL_ARTISTS))}.")
     if args.fans < 1 or args.shows < 1:
         sys.exit("--fans and --shows must be at least 1.")
 
-    sql, examples, files = generate(args.fans, args.artists, args.shows, args.seed)
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+    credentials = None if args.fake else spotify_credentials(root)
+    real = None
+    if credentials:
+        print(f"Fetching {args.artists} real artists from Spotify...", file=sys.stderr)
+        try:
+            real = fetch_real_catalog(REAL_ARTISTS[:args.artists], credentials)
+        except (urllib.error.URLError, KeyError, ValueError) as e:
+            sys.exit(f"Couldn't read the artists from Spotify ({e}). Check Spotify__ClientId and Spotify__ClientSecret, or use --fake.")
+    else:
+        print("No Spotify credentials (Spotify__ClientId, Spotify__ClientSecret): seeding made-up artists.", file=sys.stderr)
+    sql, examples, files = generate(args.fans, args.artists, args.shows, args.seed, real)
     if args.sql:
         sys.stdout.write(sql)
         return
 
-    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
     storage = args.storage or os.path.join(root, "services", "api", ".local-storage")
     if args.wipe:
         subprocess.run([os.path.join(root, "testScripts", "wipeLocalDb.sh")], check=True)

@@ -1,23 +1,23 @@
 # Notifications API
 
-## Purpose
-This folder owns the notifications api responsibilities for Fandom Score.
+In-app notifications (migration 0021, 2026-10-25). Push and email are later channels over the same rows.
 
-## Responsibilities
-- Implement the feature's domain behavior and interfaces.
-- Validate inputs and enforce authorization at the correct boundary.
-- Handle expected failures and avoid duplicate effects on retries.
-- Keep implementation and automated tests close to the feature where practical.
+## What is sent
+| Kind | Who | Written by |
+| --- | --- | --- |
+| `draw_selected`, `draw_not_selected` | each live registration's fan | trigger on the draw's outcome |
+| `seat_backfilled` | the fan a returned seat went to | same trigger (not selected → selected) |
+| `ticket_delivered` | the reservation's holder | worker `notifications.tickets_delivered` (every 15 minutes), `notify_delivered_tickets()` |
+| `staff_draw` | every live staff account | trigger on `allocation_selections` |
+| `staff_report` | staff | trigger on `reports`, first open report on a post only |
+| `staff_review` | staff | trigger on `submissions` reaching `needs_review` |
 
-## Dependencies
-Review the corresponding `TODO.md` and the repository's architecture documentation for upstream dependencies, provider choices, database contracts, and unresolved decisions.
+One row per person, kind, and subject (`notifications_once`), so retries never notify twice. Only `read_at` changes
+afterwards (`trg_notifications_guard`). A deleted account's notifications are deleted and it gets no new ones.
 
-## Development
-1. Inspect existing code and tests before changing files.
-2. Implement tasks in `TODO.md` in dependency order.
-3. Add tests for success, failure, authorization, and edge cases.
-4. Run tests and document actual results.
-5. Update documentation and the root `PROJECT_TODO.md`.
+## Endpoints
+- `GET /v1/me/notifications`: newest first with `unread_count`; each item has ready-made `title` and `body`, the app
+  route to open (`link`), and the `data` it was made from.
+- `POST /v1/me/notifications/read`: the given `ids` (the caller's only), or all when none are sent.
 
-## Scope note
-This README is a starter document. Replace generic details with the real module interfaces and setup instructions once the implementation is inspected.
+Tests: `tests/FandomScore.Tests/NotificationApiTests.cs`, `database/tests/invariants.sql` (0021 section).

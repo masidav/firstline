@@ -18,6 +18,12 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Update the feature README with setup, interfaces, dependencies, and known limitations.
 - [ ] Update `PROJECT_TODO.md` when this feature reaches a verified milestone.
 
+## In-app notifications (2026-10-25)
+- [x] `notifications` table (migration 0021), written by triggers (draw, backfill, reports, proof) and the worker
+      (`notify_delivered_tickets()`, delivered tickets), once per person, kind, and subject; deleted with the account.
+      `GET /me/notifications` (title, body, and app link made by the API), `POST /me/notifications/read`.
+      Verified: NotificationApiTests, invariants (0021 section).
+
 ## Staff email (added 2026-10-24)
 - [ ] Email staff when a post is reported (first open report on a post, not every report).
 - [ ] Email staff when proof is submitted and waits in the review queue.

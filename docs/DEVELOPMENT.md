@@ -33,7 +33,9 @@ dotnet run --project workers               # background jobs (separate terminal)
 ```
 
 ## Seed data
-`tools/dev/seed.py` fills the local database with a realistic, deterministic data set: 200 fans (hub cities,
+`tools/dev/seed.py` fills the local database with a realistic, deterministic data set. With `Spotify__ClientId` and
+`Spotify__ClientSecret` set (exported, or in `.env`) the artists are real ones fetched from Spotify, with their albums,
+covers, and tracks; without them, or with `--fake`, they are made up. The rest: 200 fans (hub cities,
 Spotify-like signals, album journal logs that earn ledger points through the real triggers, a few verified tickets
 and merch with the merch shared to the feed and a placeholder photo file written to `services/api/.local-storage/`,
 follows between fans, and grab bags), 8 active artists with albums and tracks, 10 shows with a fan allocation each in a different state (open,

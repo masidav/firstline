@@ -21,18 +21,28 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] A **red velvet rope** as a visual motif (for example, along the staff or guarding the door below).
 - [ ] Non-music items break from the sheet and **bounce in vertically**: reviews from people the fan follows,
       upcoming concerts (in the fan's hub cities), merch someone shared.
-- [ ] After some scrolling, a **bouncer at a door**. Tapping the door shows a real track from the **grab bag**
-      of someone the fan follows, with that fan's name and a link to the song on Spotify. *The draw exists as its
-      own screen (`/bouncer-door`, 2026-10-25); the door inside the feed is not built.*
+- [x] After some scrolling, a **bouncer at a door**. Tapping the door shows a real track from the **grab bag**
+      of someone the fan follows, with that fan's name and a link to the song on Spotify. *Done 2026-10-25: the door is
+      a card in the feed after the sixth item (or at the end of a shorter feed); "Knock" draws a song inline
+      (`BouncerDoorCard`). Verified: Feed tests, clicked through in Chrome at phone size.*
 - [ ] **Grab bag** screen: pick up to 5 favorite songs (any artist), reorder or remove them. Shared with
       followers; sharing can't be turned off. *Built 2026-10-25 (`/grab-bag`) except reordering.*
-- [ ] **Change "Post a photo" to something better** (requested 2026-10-25): the full-width button under the artist
-      list on the home screen is the wrong shape for it; find a better name, place, and entry for posting a photo
-      (for example a camera or plus action near the feed). Not designed yet.
-- [ ] **Use real artists and albums for dev testing** (requested 2026-10-25): `tools/dev/seed.py` makes up artists
-      ("Glass Harbor") with `seed:` ids, so covers, Spotify links, song search, and the bouncer door look wrong in the
-      app. Seed real artists and albums (real Spotify ids, names, and cover art) instead, so the dev app looks like
-      the real thing; the artist catalog loader (ADR 0006) already knows how to fetch them.
+- [x] **Change "Post a photo" to something better** (requested 2026-10-25): *done 2026-10-25 as a round camera button
+      floating over the feed (drawn with views; no icon font), hidden while searching. Verified: HomeScreen tests, Chrome.*
+- [x] **Use real artists and albums for dev testing** (requested 2026-10-25): *done 2026-10-25: with Spotify credentials
+      `tools/dev/seed.py` fetches real artists (`REAL_ARTISTS`), their newest albums, covers, and tracks with the app
+      token; grab bags use real track ids. Without credentials (CI, or `--fake`) it falls back to made-up artists.
+      Verified with a faked Spotify (`tools/ci/test_seed_catalog.py`) and both variants applied to a fresh database;
+      not yet run against real Spotify (no credentials in the build environment).*
+- [ ] **Music trivia** (requested 2026-10-25): quick questions about the fan's artists in the feed (for example which
+      album a song is on, or the release year), answered in a tap. Open: where questions come from (the stored
+      catalog can generate many), whether answers earn points (they are an attack surface if they do), and how often.
+- [ ] **Music prompts** (requested 2026-10-25): open questions fans answer for their followers, for example "What's
+      your best hypothetical band name?", shown in the feed with the answers from people the fan follows. Answers are
+      posts, so they need reporting and takedowns like logs and photos.
+- [ ] **Featured artist of the week** (requested 2026-10-25): one artist highlighted at the top of the feed for a
+      week. Open: who picks (staff, the most-followed artists, or a promoter placement, which would need disclosure),
+      and what the feature shows (top fans, upcoming fan-ticket shows, a grab-bag song).
 - [x] Sign-up: choose a primary hub city (required), plus up to two backups.
 - [x] Changing hub cities: allowed once a week; warn before saving (next change possible in 7 days, and hub
       cities decide which allocations the fan qualifies for).
