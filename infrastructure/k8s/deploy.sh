@@ -26,7 +26,7 @@ instance="fandomscore-${environment}"
 
 cd "$overlay"
 # Registry prefix from the overlay's api image (IMAGE_REPOSITORY overrides it), e.g.
-# us-central1-docker.pkg.dev/firstline/fandomscore
+# us-central1-docker.pkg.dev/project-ef36a8a9-d958-4163-b4c/fandomscore
 repository="${IMAGE_REPOSITORY:-$(awk '/^  - name: api$/ { found = 1 } found && /newName:/ { print $2; exit }' kustomization.yaml | sed 's|/api$||')}"
 [ -n "$repository" ] || { echo "Cannot find the image repository; set IMAGE_REPOSITORY." >&2; exit 1; }
 project="${GCP_PROJECT_ID:-$(sed -n 's|.*-docker\.pkg\.dev/\([^/]*\)/.*|\1|p' <<<"$repository")}"

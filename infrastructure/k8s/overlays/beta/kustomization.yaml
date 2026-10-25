@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# beta: GCP project firstline (number 494880048811) in us-central1. Values here must match infrastructure/terraform/envs/beta.
+# beta: GCP project project-ef36a8a9-d958-4163-b4c (display name "firstline", number 494880048811) in us-central1. Values here must match infrastructure/terraform/envs/beta.
 namespace: fandomscore
 
 labels:
@@ -16,13 +16,13 @@ resources:
 # deploy.sh sets newTag to the git commit being deployed.
 images:
   - name: api
-    newName: us-central1-docker.pkg.dev/firstline/fandomscore/api
+    newName: us-central1-docker.pkg.dev/project-ef36a8a9-d958-4163-b4c/fandomscore/api
     newTag: latest
   - name: worker
-    newName: us-central1-docker.pkg.dev/firstline/fandomscore/worker
+    newName: us-central1-docker.pkg.dev/project-ef36a8a9-d958-4163-b4c/fandomscore/worker
     newTag: latest
   - name: migrate
-    newName: us-central1-docker.pkg.dev/firstline/fandomscore/migrate
+    newName: us-central1-docker.pkg.dev/project-ef36a8a9-d958-4163-b4c/fandomscore/migrate
     newTag: latest
 
 configMapGenerator:
