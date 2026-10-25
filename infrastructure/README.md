@@ -20,6 +20,7 @@ manifests describe the workloads; GitHub Actions builds images and deploys.
 | `k8s/base` | Namespace, service accounts, migrate Job, API and worker Deployments, HPA, PDB, Gateway. |
 | `k8s/overlays/{beta,prod}` | Project, images, hostnames, secrets list, replica counts. |
 | `k8s/deploy.sh` | Backup, migrations, rollout, health check. Used by CI and by hand. |
+| `RUNBOOK.md` | On-call: what each alert means and what to do; first-five-minutes checklist; common actions. |
 | `../.github/workflows/deploy.yml` | Push to `main`: build, deploy beta, promote to prod after approval. |
 | `../tools/ci/check_migration_safety.py` | CI: a new migration must keep the previous release working during the rollout. |
 | `../tools/dev/seed.py` | dev only: fills the local database with fake data. |
@@ -64,6 +65,10 @@ use it, then approve prod.
   file named after its configuration key (`/secrets/Auth__SigningKey`), and the processes read that directory
   (`Secrets__Directory`). Each workload has its own Kubernetes service account bound through Workload Identity
   to a Google service account that can read only its secrets (`secret_readers` in the Terraform module).
+- The database connection is TLS with the server certificate verified: Terraform stores the Cloud SQL instance's
+  server CA as the secret `Database__ServerCa`, mounted next to the connection string, which refers to it
+  (`SSL Mode=VerifyCA;Root Certificate=/secrets/Database__ServerCa`). Npgsql validates the certificate, so a
+  connection string without the CA fails against Cloud SQL's per-instance CA.
 - Only the `redaction` identity can read the quarantine bucket; the API can only write to it and read the
   archive. The archive keeps versions. Nothing uses service-account key files.
 
@@ -96,7 +101,8 @@ steps with `prod` in place of `beta`.
    printf '%s' "$SPOTIFY_CLIENT_SECRET" | gcloud secrets versions add Spotify__ClientSecret --project fandomscore-beta --data-file=-
    gcloud secrets versions add Auth__Apple__PrivateKey --project fandomscore-beta --data-file=AuthKey_XXXX.p8
    ```
-   Every secret listed in `k8s/overlays/<env>/secrets.yaml` needs a version, or the pods cannot start.
+   Every secret listed in `k8s/overlays/<env>/secrets.yaml` needs a version, or the pods cannot start
+   (`ConnectionStrings__Database` and `Database__ServerCa` already have one, written by Terraform).
    `Spotify__TokenKey` must be the same value for the API and the worker (it is: one secret, two readers).
    Beta and prod use different Spotify apps and Apple keys, so a beta tester never touches prod credentials.
 5. **Overlay.** In `k8s/overlays/<env>/`, set the project id and region (`kustomization.yaml`,
@@ -176,20 +182,33 @@ drift, so update `sql.tf` or import the clone). Rehearse this on beta and record
 
 ## Looking at it
 
+`RUNBOOK.md` is the page to open when something is wrong. What exists:
+
+- Dashboard (Terraform output `dashboard_url`, `dashboard.tf`): requests per second by response class and latency
+  percentiles at the load balancer, running containers and CPU/memory per workload, the worker's failed and
+  given-up jobs, container restarts, health-check failures by region, Cloud SQL CPU/memory/disk and connections,
+  and a panel of recent errors.
+- Alerts (`monitoring.tf`), all emailed to `alert_email`: API down (uptime check failing from more than one region
+  for five minutes), API returning errors (more than 5 % 5xx over five minutes), pods restarting, worker gave up on
+  a job, worker cannot reach the queue, Cloud SQL under pressure, and the budget at 50 %, 90 %, 100 % and
+  forecast.
+- Worker liveness: the worker serves no traffic, so each job loop reports to a heartbeat and `GET /healthz` on port
+  8081 returns 503 once a loop has been silent for ten minutes; the pod then restarts (`workers/README.md`).
+  Job failures are log lines (`failed on attempt`, `failed permanently`) turned into log-based metrics.
 - Logs: Cloud Logging, `resource.type="k8s_container" resource.labels.namespace_name="fandomscore"`. The API and
   worker log JSON, so fields are queryable. Locally: `kubectl logs deployment/api -n fandomscore`.
-- Health: `https://<api_domain>/v1/health`, checked every minute from several regions; the alert policy emails
-  `alert_email` after five minutes of failures. Budget alerts go to the same address at 50 %, 90 %, 100 % and when
-  the forecast exceeds 100 %.
+- Health: `https://<api_domain>/v1/health`, checked every minute from several regions.
 - Images: Artifact Registry scans each pushed image; findings are on the image in the console.
 - Database: Query Insights is on for the Cloud SQL instance.
 
 ## Known limitations
 
-- Nothing here has been applied to a real project yet: Terraform passes `validate` and the manifests build, but
-  the first `apply` and deploy will surface anything the provider rejects at runtime.
-- The worker has no health probe (it serves no HTTP). A stuck worker is visible through the job queue
-  (`jobs` table) and logs, not through Kubernetes.
+- Nothing here has been applied to a real project yet: Terraform passes `validate` and the manifests build (CI
+  checks both, and builds the images, on every push), but the first `apply` and deploy will surface anything the
+  provider rejects at runtime. The dashboard and alert definitions in particular name metric types and log
+  fields that `validate` cannot check; confirm each chart has data and each alert can fire on beta.
+- The worker's liveness probe only catches a loop that stops iterating. A loop that keeps erroring (database
+  unreachable) stays "alive" on purpose; the "worker cannot reach the queue" alert covers that.
 - The `SecretProviderClass` lists in each overlay duplicate the `secret_readers` map in Terraform; change both.
 - The migration safety check is a pattern match, not a parser: it knows the common breaking statements and
   ignores function bodies. Slow-but-additive migrations (indexes on big tables) are on the author.

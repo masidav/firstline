@@ -232,7 +232,7 @@ built, images built locally). Nothing is applied to a GCP project yet; `infrastr
 - [ ] Restrict the quarantine bucket to the redaction workload only. (Configured; verify on first deploy.)
 - [ ] Put the API behind Gateway API with managed TLS and Cloud Armor (WAF, bot and rate limiting). (Configured; verify on first deploy. Forwarded headers done and tested.)
 - [ ] Plan for on-sale traffic spikes: autoscaling, pre-scaling before scheduled on-sales, and load tests. (HPA and procedure written; no load test yet.)
-- [ ] Set up CI/CD, logging, monitoring, alerting, backups with point-in-time recovery, and a tested restore. (Workflow, uptime alert, and PITR configured; restore not rehearsed.)
+- [ ] Set up CI/CD, logging, monitoring, alerting, backups with point-in-time recovery, and a tested restore. (Workflow, uptime alert, and PITR configured; restore not rehearsed. 2026-10-25: dashboard, alerts for the API, pods, worker, and database, a worker liveness endpoint, and `infrastructure/RUNBOOK.md`; CI now validates the Terraform and manifests and builds the images.)
 
 Details: [ADR 0002](docs/adr/0002-hosting-gcp-gke.md) · [Infrastructure](infrastructure/TODO.md)
 

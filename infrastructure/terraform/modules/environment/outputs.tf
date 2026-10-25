@@ -74,3 +74,8 @@ output "buckets" {
     archive    = google_storage_bucket.archive.name
   }
 }
+
+output "dashboard_url" {
+  description = "The environment's Cloud Monitoring dashboard."
+  value       = "https://console.cloud.google.com/monitoring/dashboards/builder/${element(split("/", google_monitoring_dashboard.main.id), length(split("/", google_monitoring_dashboard.main.id)) - 1)}?project=${var.project_id}"
+}

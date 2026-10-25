@@ -80,6 +80,12 @@ variable "edge_rate_limit_per_minute" {
   default     = 600
 }
 
+variable "secrets_directory" {
+  description = "Where the pods mount Secret Manager secrets (Secrets__Directory in infrastructure/k8s/base/kustomization.yaml). The database connection string refers to the server CA file there."
+  type        = string
+  default     = "/secrets"
+}
+
 variable "application_secrets" {
   description = "Secret Manager secrets whose values are set out of band (gcloud secrets versions add), keyed by the configuration key the app reads (.env.example)."
   type        = set(string)

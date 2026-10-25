@@ -180,6 +180,50 @@ jobs:
           echo "live registrations: $live, scores: $scores"
           [ "$live" -gt 0 ] && [ "$scores" -gt 0 ]
 
+  # Terraform and the manifests are applied only on a real GCP project (infrastructure/README.md); until then this
+  # is what keeps them valid, and the image build is what the Deploy workflow runs first.
+  infrastructure:
+    name: Infrastructure (terraform, kustomize, images)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Terraform format
+        run: terraform -chdir=infrastructure/terraform fmt -check -recursive -diff
+
+      - name: Terraform validate (beta, prod)
+        run: |
+          for env in beta prod; do
+            terraform -chdir="infrastructure/terraform/envs/$env" init -backend=false -input=false
+            terraform -chdir="infrastructure/terraform/envs/$env" validate
+          done
+
+      - name: Install kustomize
+        run: |
+          curl -fsSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.6.0/kustomize_v5.6.0_linux_amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin kustomize
+
+      - name: Kustomize build (beta, prod)
+        run: |
+          for env in beta prod; do
+            kustomize build "infrastructure/k8s/overlays/$env" > "/tmp/$env.yaml"
+            echo "$env: $(grep -c '^kind:' "/tmp/$env.yaml") resources"
+          done
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the api, worker, and migrate images
+        run: |
+          for target in api worker migrate; do
+            docker buildx build --target "$target" --output type=cacheonly \
+              --cache-from type=gha --cache-to type=gha,mode=max .
+          done
+
   agent-hooks:
     name: Agent hook tests
     runs-on: ubuntu-latest

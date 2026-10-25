@@ -19,6 +19,7 @@ locals {
   secret_ids = merge(
     { for key, secret in google_secret_manager_secret.app : key => secret.secret_id },
     { (google_secret_manager_secret.db.secret_id) = google_secret_manager_secret.db.secret_id },
+    { (google_secret_manager_secret.db_ca.secret_id) = google_secret_manager_secret.db_ca.secret_id },
   )
 }
 

@@ -39,12 +39,13 @@ USER app
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "FandomScore.Api.dll"]
 
-# --- Worker: background jobs from the Postgres queue. No ports. ---
+# --- Worker: background jobs from the Postgres queue. Serves nothing but its liveness endpoint (Health__Port). ---
 FROM mcr.microsoft.com/dotnet/runtime:${DOTNET_VERSION}-noble-chiseled AS worker
 WORKDIR /app
 COPY --from=build /out/worker .
-ENV DOTNET_ENVIRONMENT=Production
+ENV DOTNET_ENVIRONMENT=Production Health__Port=8081
 USER app
+EXPOSE 8081
 ENTRYPOINT ["dotnet", "FandomScore.Worker.dll"]
 
 # --- Migrator: applies database/migrations once and exits (Kubernetes Job before each rollout). ---

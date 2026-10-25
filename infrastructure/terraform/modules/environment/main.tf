@@ -18,10 +18,11 @@ locals {
   workloads = ["api", "worker", "migrate", "redaction"]
 
   # Which workload may read which secret. The app reads them as files named after the configuration key.
+  # Database__ServerCa goes wherever ConnectionStrings__Database goes: the connection string refers to it.
   secret_readers = {
-    api       = ["ConnectionStrings__Database", "Auth__SigningKey", "Auth__Apple__PrivateKey", "Spotify__ClientSecret", "Spotify__TokenKey"]
-    worker    = ["ConnectionStrings__Database", "Spotify__ClientSecret", "Spotify__TokenKey"]
-    migrate   = ["ConnectionStrings__Database"]
+    api       = ["ConnectionStrings__Database", "Database__ServerCa", "Auth__SigningKey", "Auth__Apple__PrivateKey", "Spotify__ClientSecret", "Spotify__TokenKey"]
+    worker    = ["ConnectionStrings__Database", "Database__ServerCa", "Spotify__ClientSecret", "Spotify__TokenKey"]
+    migrate   = ["ConnectionStrings__Database", "Database__ServerCa"]
     redaction = []
   }
   secret_bindings = {

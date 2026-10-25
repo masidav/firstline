@@ -67,7 +67,29 @@ resource "google_sql_user" "app" {
   password = random_password.db.result
 }
 
-# The only secret Terraform writes a value for. The others are set with gcloud (infrastructure/README.md).
+# The instance's server CA, mounted next to the connection string so Npgsql can verify the server certificate
+# (Npgsql validates it since version 6: without the CA, "SSL Mode=Require" fails against Cloud SQL's
+# per-instance CA). Cloud SQL rotates this CA on request only (gcloud sql ssl server-ca-certs rotate);
+# after a rotation, terraform apply writes the new certificate and the pods need a restart.
+resource "google_secret_manager_secret" "db_ca" {
+  secret_id = "Database__ServerCa"
+  project   = var.project_id
+  labels    = local.labels
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret_version" "db_ca" {
+  secret      = google_secret_manager_secret.db_ca.id
+  secret_data = google_sql_database_instance.main.server_ca_cert[0].cert
+}
+
+# The connection string and the CA above are the only secrets Terraform writes values for. The others are set
+# with gcloud (infrastructure/README.md).
 resource "google_secret_manager_secret" "db" {
   secret_id = "ConnectionStrings__Database"
   project   = var.project_id
@@ -88,7 +110,8 @@ resource "google_secret_manager_secret_version" "db" {
     "Database=${google_sql_database.main.name}",
     "Username=${google_sql_user.app.name}",
     "Password=${random_password.db.result}",
-    "SSL Mode=Require",
+    "SSL Mode=VerifyCA",
+    "Root Certificate=${var.secrets_directory}/${google_secret_manager_secret.db_ca.secret_id}",
     "Maximum Pool Size=20",
   ])
 }

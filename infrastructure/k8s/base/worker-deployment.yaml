@@ -1,5 +1,7 @@
 # Background jobs from the Postgres queue. Jobs hold a lease (Jobs__Lease, 5 min); a pod stopped mid-job
 # hands it to the next poll, and handlers are idempotent, so the grace period only needs to cover the common case.
+# The worker serves no traffic; its only port is the liveness endpoint (workers/hosting/WorkerHealthServer.cs):
+# 503 once a job loop has been silent for Health__StaleAfter (10 min), and the pod restarts.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -26,6 +28,12 @@ spec:
       containers:
         - name: worker
           image: worker
+          ports:
+            - name: health
+              containerPort: 8081
+          env:
+            - name: Health__Port
+              value: "8081"
           envFrom:
             - configMapRef:
                 name: app-config
@@ -35,6 +43,13 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
           resources:
             requests:
               cpu: 250m

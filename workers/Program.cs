@@ -24,6 +24,11 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<JobOptions>(builder.Configuration.GetSection(JobOptions.Section));
 builder.Services.AddSingleton<JobQueue>();
 builder.Services.AddHostedService<JobRunner>();
+
+// Liveness for Kubernetes (Health__Port; off locally): the job loops report each iteration, GET /healthz answers.
+builder.Services.Configure<HealthOptions>(builder.Configuration.GetSection(HealthOptions.Section));
+builder.Services.AddSingleton<WorkerHeartbeat>();
+builder.Services.AddHostedService<WorkerHealthServer>();
 builder.Services.AddSpotify(builder.Configuration);
 builder.Services.Configure<BaselineOptions>(builder.Configuration.GetSection(BaselineOptions.Section));
 builder.Services.AddSingleton<CatalogLoader>();

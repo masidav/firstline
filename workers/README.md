@@ -12,6 +12,7 @@ dotnet run --project workers        # needs ConnectionStrings__Database, like th
 | --- | --- |
 | `Program.cs` | Host setup and the list of registered job handlers. |
 | `jobs/` | Queue runtime: `JobQueue` (claim, finish, retry, schedules), `JobRunner` (polling loops), `IJobHandler`, `PruneJobsJob`. |
+| `hosting/` | Secrets mounted as files (`SecretsDirectory`), and the liveness endpoint (`WorkerHeartbeat`, `WorkerHealthServer`). |
 | `account-retention/` | `PurgeDeletedAccountsJob`: hourly, purges content of accounts deleted 30+ days ago. |
 | `spotify-sync/` | `SpotifySyncJob` (`spotify.sync`) and hourly `ScheduleSpotifySyncsJob`. See [ADR 0005](../docs/adr/0005-spotify-integration.md). |
 | `grab-bag/` | `GrabBagRefreshJob` (`grab_bag.refresh_songs`, daily): keeps grab-bag song titles and covers current from Spotify. See the folder's README. |
@@ -32,6 +33,17 @@ dotnet run --project workers        # needs ConnectionStrings__Database, like th
 | `Jobs__Lease` | `00:05:00` (jobs must finish or be idempotent within this) |
 | `Jobs__Concurrency` | `2` jobs at a time per process |
 | `Jobs__KeepSucceeded` / `Jobs__KeepFailed` | `7.00:00:00` / `30.00:00:00` |
+
+## Liveness (`Health` section)
+The worker serves no traffic, so Kubernetes cannot tell a stuck process from a quiet one. Each job loop reports to
+`WorkerHeartbeat` every iteration; with `Health__Port` set (the container image sets `8081`), `GET /healthz` answers
+`200 {"status":"ok", ...}` while every loop has reported within `Health__StaleAfter` (default 10 minutes, twice the
+lease) and `503 {"status":"stale", ...}` otherwise, which fails the pod's liveness probe
+(`infrastructure/k8s/base/worker-deployment.yaml`). A loop that cannot reach the database keeps reporting: that is
+logged (`Job loop error`) and alerted on, since a restart would not help. Locally the port is unset and nothing listens.
+
+A job that fails on its last attempt is logged at Error (`failed permanently`) and stays in the `jobs` table with
+status `failed`; on GCP a log-based metric and alert watch for that line (`infrastructure/RUNBOOK.md`).
 
 ## Operating
 - Inspect: `SELECT kind, status, attempts, last_error, run_at FROM jobs WHERE status <> 'succeeded' ORDER BY run_at;`
