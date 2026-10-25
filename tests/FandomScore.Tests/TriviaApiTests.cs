@@ -107,6 +107,49 @@ public sealed class TriviaApiTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Fans_of_an_artist_share_the_question_and_see_who_they_follow_got_it_right_and_the_percent()
+    {
+        var ana = await FanAsync("ana", scored: true);
+        var fans = new Dictionary<string, string>();
+        foreach (var handle in new[] { "ben", "cat", "dee", "eve" })
+        {
+            fans[handle] = await FanAsync(handle, scored: true);
+            await SendAsync(HttpMethod.Put, $"/v1/users/{handle}/follow", ana);
+        }
+
+        var question = (await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/trivia", ana), HttpStatusCode.OK)).GetProperty("question");
+        Assert.Equal(JsonValueKind.Null, question.GetProperty("results").ValueKind);   // nothing before answering
+        var right = await AnswerIndexAsync(question.GetProperty("id").GetString()!);
+
+        // Everyone gets the same question; ben, cat, and dee answer right (in that order), eve wrong.
+        foreach (var (handle, correct) in new[] { ("ben", true), ("cat", true), ("dee", true), ("eve", false) })
+        {
+            var theirs = (await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/trivia", fans[handle]), HttpStatusCode.OK)).GetProperty("question");
+            Assert.Equal(question.GetProperty("prompt").GetString(), theirs.GetProperty("prompt").GetString());
+            Assert.Equal(question.GetProperty("options").GetRawText(), theirs.GetProperty("options").GetRawText());
+            await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/me/trivia/{theirs.GetProperty("id").GetString()}/answer", fans[handle],
+                new { choice = correct ? right : (right + 1) % 2 }), HttpStatusCode.OK);
+        }
+
+        var answered = await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/me/trivia/{question.GetProperty("id").GetString()}/answer", ana,
+            new { choice = (right + 1) % 2 }), HttpStatusCode.OK);
+        var results = answered.GetProperty("results");
+        Assert.Equal((5, 3, 60), (results.GetProperty("answered").GetInt32(), results.GetProperty("right").GetInt32(),
+            results.GetProperty("percent_right").GetInt32()));
+        Assert.Equal(["ben", "cat"], results.GetProperty("following_right").EnumerateArray().Select(u => u.GetProperty("handle").GetString()));
+
+        // Results stay on the question when it's read again.
+        var again = (await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/trivia", ana), HttpStatusCode.OK)).GetProperty("question");
+        Assert.Equal(60, again.GetProperty("results").GetProperty("percent_right").GetInt32());
+    }
+
+    private async Task<int> AnswerIndexAsync(string questionId)
+    {
+        await using var connection = await _db.OpenConnectionAsync();
+        return await connection.ExecuteScalarAsync<int>("SELECT answer_index FROM trivia_questions WHERE id = @questionId::uuid", new { questionId });
+    }
+
+    [Fact]
     public async Task A_fan_without_scored_artists_gets_no_question()
     {
         var cat = await FanAsync("cat", scored: false);

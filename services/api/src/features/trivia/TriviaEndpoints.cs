@@ -2,15 +2,18 @@ using System.Security.Claims;
 using Dapper;
 using FandomScore.Api.Features.Authentication;
 using FandomScore.Api.Features.Scoring;
+using FandomScore.Api.Features.Submissions;
 using FandomScore.Api.Infrastructure;
 using Npgsql;
 
 namespace FandomScore.Api.Features.Trivia;
 
 /// <summary>
-/// Daily music trivia (migration 0022, decided 2026-10-25): one question a day per fan about one of their scored
-/// artists, made from the stored catalog when first asked for. A right answer earns <c>trivia_correct</c> (0.30
-/// points, a tenth of logging an album) through <c>answer_trivia()</c>. The answer is never sent before the fan answers.
+/// Daily music trivia (migrations 0022 and 0024, decided 2026-10-25): one question a day per fan about one of their
+/// scored artists. Fans of the same artist share the day's question (made from the stored catalog by the first fan who
+/// asks), so once a fan answers they see one or two people they follow who got it right and the percent of fans who
+/// did. A right answer earns <c>trivia_correct</c> (0.30 points, a tenth of logging an album) through
+/// <c>answer_trivia()</c>. Neither the answer nor the results are sent before the fan answers.
 /// </summary>
 public static class TriviaEndpoints
 {
@@ -20,10 +23,17 @@ public static class TriviaEndpoints
         v1.MapPost("/me/trivia/{questionId:guid}/answer", AnswerAsync);
     }
 
-    /// <summary>openapi TriviaQuestion. <c>AnswerIndex</c> and <c>Correct</c> only once answered.</summary>
+    /// <summary>openapi TriviaQuestion. <c>AnswerIndex</c>, <c>Correct</c>, and <c>Results</c> only once answered.</summary>
     public sealed record TriviaQuestion(
         Guid Id, DateOnly Day, ScoringEndpoints.ArtistRef Artist, string Kind, string Prompt, IReadOnlyList<string> Options,
-        bool Answered, int? ChosenIndex, int? AnswerIndex, bool? Correct, decimal PointsForRight, decimal? PointsEarned);
+        bool Answered, int? ChosenIndex, int? AnswerIndex, bool? Correct, decimal PointsForRight, decimal? PointsEarned,
+        TriviaResults? Results);
+
+    /// <summary>
+    /// How the day's shared question went so far: fans who answered it, how many got it right (the caller included),
+    /// and up to two people the caller follows who got it right, first to answer first.
+    /// </summary>
+    public sealed record TriviaResults(int Answered, int Right, int PercentRight, IReadOnlyList<SubmissionEndpoints.UserRef> FollowingRight);
 
     /// <summary><c>Question</c> is null when the fan has no artist with enough catalog to ask about yet.</summary>
     public sealed record TriviaToday(TriviaQuestion? Question);
@@ -40,19 +50,19 @@ public static class TriviaEndpoints
             return Results.Ok(new TriviaToday(existing));
         }
 
-        if (await MakeQuestionAsync(connection, me) is not { } made)
+        if (await SharedQuestionAsync(connection, me) is not { } shared)
         {
             return Results.Ok(new TriviaToday(null));
         }
 
-        // Two requests at once: the first insert wins and both read it back.
+        // The fan's copy of the shared question. Two requests at once: the first insert wins and both read it back.
         await connection.ExecuteAsync(
             """
-            INSERT INTO trivia_questions (user_id, day, artist_id, kind, prompt, options, answer_index)
-            VALUES (@me, (now() AT TIME ZONE 'UTC')::date, @ArtistId, @Kind, @Prompt, @Options, @AnswerIndex)
+            INSERT INTO trivia_questions (user_id, day, artist_id, kind, prompt, options, answer_index, daily_question_id)
+            SELECT @me, d.day, d.artist_id, d.kind, d.prompt, d.options, d.answer_index, d.id FROM trivia_daily_questions d WHERE d.id = @shared
             ON CONFLICT ON CONSTRAINT trivia_questions_one_a_day DO NOTHING
             """,
-            new { me, made.ArtistId, made.Kind, made.Prompt, Options = made.Options.ToArray(), made.AnswerIndex });
+            new { me, shared });
         return Results.Ok(new TriviaToday(await LoadTodayAsync(connection, me)));
     }
 
@@ -98,7 +108,8 @@ public static class TriviaEndpoints
                q.prompt AS Prompt, q.options AS Options, q.answered_at IS NOT NULL AS Answered, q.chosen_index AS ChosenIndex,
                q.answer_index AS AnswerIndex, q.correct AS Correct,
                (SELECT points FROM scoring_rules WHERE rule_key = 'trivia_correct') AS PointsForRight,
-               (SELECT sum(points) FROM score_events se WHERE se.source_type = 'trivia' AND se.source_id = q.id AND se.reversed_at IS NULL) AS PointsEarned
+               (SELECT sum(points) FROM score_events se WHERE se.source_type = 'trivia' AND se.source_id = q.id AND se.reversed_at IS NULL) AS PointsEarned,
+               q.daily_question_id AS DailyQuestionId
         FROM trivia_questions q JOIN artists a ON a.id = q.artist_id
         """;
 
@@ -106,15 +117,78 @@ public static class TriviaEndpoints
     {
         var row = await connection.QuerySingleOrDefaultAsync<QuestionRow>(
             $"{QuestionSelect} WHERE q.user_id = @me AND q.day = (now() AT TIME ZONE 'UTC')::date", new { me });
-        return row is null ? null : ToQuestion(row);
+        return row is null ? null : await ToQuestionAsync(connection, me, row);
     }
 
     private static async Task<TriviaQuestion> LoadAsync(NpgsqlConnection connection, Guid me, Guid id) =>
-        ToQuestion(await connection.QuerySingleAsync<QuestionRow>($"{QuestionSelect} WHERE q.user_id = @me AND q.id = @id", new { me, id }));
+        await ToQuestionAsync(connection, me,
+            await connection.QuerySingleAsync<QuestionRow>($"{QuestionSelect} WHERE q.user_id = @me AND q.id = @id", new { me, id }));
 
-    private static TriviaQuestion ToQuestion(QuestionRow r) =>
+    private static async Task<TriviaQuestion> ToQuestionAsync(NpgsqlConnection connection, Guid me, QuestionRow r) =>
         new(r.Id, r.Day, new ScoringEndpoints.ArtistRef(r.ArtistId, r.ArtistName, r.ArtistImageUrl), r.Kind, r.Prompt,
-            r.Options, r.Answered, r.ChosenIndex, r.Answered ? r.AnswerIndex : null, r.Correct, r.PointsForRight ?? 0, r.Answered ? r.PointsEarned ?? 0 : null);
+            r.Options, r.Answered, r.ChosenIndex, r.Answered ? r.AnswerIndex : null, r.Correct, r.PointsForRight ?? 0,
+            r.Answered ? r.PointsEarned ?? 0 : null,
+            r.Answered && r.DailyQuestionId is { } shared ? await ResultsAsync(connection, me, shared) : null);
+
+    // Live accounts that answered the shared question; the people the caller follows who got it right, first first.
+    private static async Task<TriviaResults> ResultsAsync(NpgsqlConnection connection, Guid me, Guid shared)
+    {
+        var (answered, right) = await connection.QuerySingleAsync<(int, int)>(
+            """
+            SELECT count(*)::int, count(*) FILTER (WHERE t.correct)::int
+            FROM trivia_questions t JOIN users u ON u.id = t.user_id AND u.deleted_at IS NULL
+            WHERE t.daily_question_id = @shared AND t.answered_at IS NOT NULL
+            """,
+            new { shared });
+        var following = await connection.QueryAsync<SubmissionEndpoints.UserRef>(
+            """
+            SELECT u.handle::text AS Handle, false AS Deleted, u.display_name AS DisplayName, u.avatar_url AS AvatarUrl
+            FROM trivia_questions t
+            JOIN follows f ON f.followee_id = t.user_id AND f.follower_id = @me
+            JOIN users u ON u.id = t.user_id AND u.deleted_at IS NULL
+            WHERE t.daily_question_id = @shared AND t.correct
+            ORDER BY t.answered_at, u.id
+            LIMIT 2
+            """,
+            new { me, shared });
+        return new TriviaResults(answered, right, answered == 0 ? 0 : (int)Math.Round(100.0 * right / answered), [.. following]);
+    }
+
+    // Today's shared question for one of the fan's active scored artists: the one another fan already started for
+    // that artist, or a new one made from the catalog (the first insert wins). Artists are tried in random order;
+    // null when none has enough catalog.
+    private static async Task<Guid?> SharedQuestionAsync(NpgsqlConnection connection, Guid me)
+    {
+        var existing = await connection.QueryAsync<Guid>(
+            """
+            SELECT d.id FROM trivia_daily_questions d
+            JOIN user_artist_scores s ON s.artist_id = d.artist_id AND s.user_id = @me
+            JOIN artists a ON a.id = d.artist_id AND a.status = 'active'
+            WHERE d.day = (now() AT TIME ZONE 'UTC')::date
+            """,
+            new { me });
+        // Prefer joining a question other fans are already playing: that is what makes the results worth seeing.
+        if (existing.OrderBy(_ => Random.Shared.Next()).FirstOrDefault() is var started && started != Guid.Empty)
+        {
+            return started;
+        }
+
+        if (await MakeQuestionAsync(connection, me) is not { } made)
+        {
+            return null;
+        }
+
+        await connection.ExecuteAsync(
+            """
+            INSERT INTO trivia_daily_questions (day, artist_id, kind, prompt, options, answer_index)
+            VALUES ((now() AT TIME ZONE 'UTC')::date, @ArtistId, @Kind, @Prompt, @Options, @AnswerIndex)
+            ON CONFLICT ON CONSTRAINT trivia_daily_one_per_artist DO NOTHING
+            """,
+            new { made.ArtistId, made.Kind, made.Prompt, Options = made.Options.ToArray(), made.AnswerIndex });
+        return await connection.ExecuteScalarAsync<Guid>(
+            "SELECT id FROM trivia_daily_questions WHERE day = (now() AT TIME ZONE 'UTC')::date AND artist_id = @ArtistId",
+            new { made.ArtistId });
+    }
 
     // A question about one of the fan's active scored artists, from what the catalog has: which album a song is on
     // (needs two albums), or the year an album came out (any dated album). Null when nothing fits.
@@ -217,5 +291,6 @@ public static class TriviaEndpoints
         public bool? Correct { get; set; }
         public decimal? PointsForRight { get; set; }
         public decimal? PointsEarned { get; set; }
+        public Guid? DailyQuestionId { get; set; }
     }
 }

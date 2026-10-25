@@ -6,8 +6,21 @@ import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { ErrorText } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
+import { fanName } from '../follows/follows';
 
 export type TriviaQuestion = components['schemas']['TriviaQuestion'];
+
+/**
+ * After answering: who the fan follows got it right, then how all fans did. "Ben and Cat got it right. 60% of fans
+ * did." A fan who is first to answer hears so.
+ */
+export function resultsLine(results: NonNullable<TriviaQuestion['results']>, fanName: (u: { handle?: string | null; display_name?: string | null }) => string): string {
+  const names = results.following_right.map(fanName);
+  const people =
+    names.length === 2 ? `${names[0]} and ${names[1]} got it right.` : names.length === 1 ? `${names[0]} got it right.` : 'Nobody you follow has it right yet.';
+  if (results.answered <= 1) return `You're the first fan to answer this one.`;
+  return `${people} ${results.percent_right}% of fans did.`;
+}
 
 /** "+0.3 points" without trailing zeros. */
 export function pointsLabel(points: number): string {
@@ -83,6 +96,9 @@ export function DailyTriviaCard() {
             : 'Not this time. A new question tomorrow.'}
         </Text>
       )}
+      {question.answered && question.results && (
+        <Text accessibilityRole="summary" style={styles.results}>{resultsLine(question.results, fanName)}</Text>
+      )}
       {!question.answered && (
         <Text style={styles.muted}>Answer right for {pointsLabel(question.points_for_right)} toward your {question.artist.name} score.</Text>
       )}
@@ -104,4 +120,5 @@ const styles = StyleSheet.create({
   result: { fontSize: 15, fontWeight: '600' },
   good: { color: '#3fb950' },
   muted: { color: colors.muted, fontSize: 14 },
+  results: { color: colors.text, fontSize: 15, lineHeight: 21 },
 });

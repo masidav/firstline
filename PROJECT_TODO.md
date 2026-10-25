@@ -106,6 +106,8 @@ Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring wo
 - [x] Daily music trivia (2026-10-25, migration 0022): one question a day from the fan's artists' catalog; a right
       answer earns `trivia_correct` (0.30, a tenth of `album_logged`; decided 2026-10-25), once a day. `GET /me/trivia`,
       `POST /me/trivia/{id}/answer`. Verified: `dotnet test` (TriviaApiTests 2, invariants), app Jest, Chrome.
+      Fans of an artist share the day's question (migration 0024); once answered, the card names up to two people the
+      fan follows who got it right and the percent of fans who did (decided 2026-10-25). Verified: TriviaApiTests 3.
 - [x] Featured artist of the week (2026-10-25, migration 0023): staff-picked, with a video (MP4 upload up to 100 MB,
       or a YouTube or TikTok link) and a Spotify song; on top of every fan's home screen for the week. `GET /featured`,
       `/admin/featured/{monday}`. Verified: `dotnet test` (FeaturedApiTests 3, FeaturedLinkTests), app Jest, Chrome.

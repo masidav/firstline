@@ -1635,6 +1635,40 @@ BEGIN
   END;
 END $$;
 
+-- ------------------------------------------------------------ shared daily trivia (0024)
+-- One shared question per artist per day; a fan's copy must match it; shared questions never change.
+DO $$
+DECLARE artist uuid := '40000000-0000-0000-0000-000000000001'; d uuid; fan uuid := '49000000-0000-0000-0000-000000000001';
+BEGIN
+  INSERT INTO trivia_daily_questions (day, artist_id, kind, prompt, options, answer_index)
+  VALUES ((now() AT TIME ZONE 'UTC')::date + 3, artist, 'track_album', 'Which album?', ARRAY['A', 'B', 'C'], 2)
+  RETURNING id INTO d;
+  BEGIN
+    INSERT INTO trivia_daily_questions (day, artist_id, kind, prompt, options, answer_index)
+    VALUES ((now() AT TIME ZONE 'UTC')::date + 3, artist, 'release_year', 'Again?', ARRAY['1', '2'], 0);
+    RAISE EXCEPTION 'two shared questions for one artist and day should fail';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO trivia_questions (user_id, day, artist_id, kind, prompt, options, answer_index, daily_question_id)
+    VALUES (fan, (now() AT TIME ZONE 'UTC')::date + 3, artist, 'track_album', 'Which album?', ARRAY['A', 'B', 'C'], 0, d);
+    RAISE EXCEPTION 'a copy with another answer should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%must match its shared daily question%', SQLERRM;
+  END;
+  INSERT INTO trivia_questions (user_id, day, artist_id, kind, prompt, options, answer_index, daily_question_id)
+  VALUES (fan, (now() AT TIME ZONE 'UTC')::date + 3, artist, 'track_album', 'Which album?', ARRAY['A', 'B', 'C'], 2, d);
+  BEGIN
+    UPDATE trivia_daily_questions SET answer_index = 0 WHERE id = d;
+    RAISE EXCEPTION 'changing a shared question should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%shared daily question never changes%', SQLERRM;
+  END;
+  BEGIN
+    DELETE FROM trivia_daily_questions WHERE id = d;
+    RAISE EXCEPTION 'deleting a shared question should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%shared daily question never changes%', SQLERRM;
+  END;
+END $$;
+
 -- ------------------------------------------------------------ featured artist of the week (0023)
 DO $$
 DECLARE artist uuid := '40000000-0000-0000-0000-000000000001'; up uuid; monday date := date_trunc('week', now())::date;

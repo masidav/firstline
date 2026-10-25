@@ -1458,8 +1458,9 @@ paths:
       operationId: getTodaysTrivia
       summary: Today's music trivia
       description: |
-        One question a day (UTC) about one of the fan's scored artists, made from the album catalog the first time it
-        is asked for. `question` is null when none of the fan's artists has enough catalog yet. The right answer is
+        One question a day (UTC) about one of the fan's scored artists, shared by the artist's fans that day (made from
+        the album catalog by the first who asks). Once answered, `results` names up to two people the fan follows who
+        got it right and the percent of fans who did. `question` is null when none of the fan's artists has enough catalog yet. The right answer is
         only included once the fan has answered. A right answer earns `trivia_correct` ledger points (0.30, a tenth
         of logging an album; decided 2026-10-25).
       responses:
@@ -3775,7 +3776,11 @@ components:
         songs: {type: integer, description: Songs in their grab bags, all together.}
     TriviaQuestion:
       type: object
-      required: [id, day, artist, kind, prompt, options, answered, chosen_index, answer_index, correct, points_for_right, points_earned]
+      description: |
+        Fans of the same artist share the day's question. `answer_index`, `correct`, `points_earned`, and `results` are
+        only set once the fan has answered.
+      required: [id, day, artist, kind, prompt, options, answered, chosen_index, answer_index, correct, points_for_right, points_earned,
+                 results]
       properties:
         id: {type: string, format: uuid}
         day: {type: string, format: date}
@@ -3793,6 +3798,21 @@ components:
         correct: {type: [boolean, 'null']}
         points_for_right: {type: number}
         points_earned: {type: [number, 'null'], description: 'Once answered: 0, or the points a right answer earned'}
+        results:
+          description: How the shared question went so far, once the fan has answered
+          oneOf:
+            - type: object
+              required: [answered, right, percent_right, following_right]
+              properties:
+                answered: {type: integer, minimum: 0, description: Fans who answered it (the caller included)}
+                right: {type: integer, minimum: 0}
+                percent_right: {type: integer, minimum: 0, maximum: 100}
+                following_right:
+                  type: array
+                  maxItems: 2
+                  description: Up to two people the caller follows who got it right, first to answer first
+                  items: {$ref: '#/components/schemas/UserRef'}
+            - {type: 'null'}
     FeaturedArtist:
       type: object
       required: [id, week_start, week_end, artist, headline, video, song]

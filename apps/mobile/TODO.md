@@ -44,9 +44,10 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       your best hypothetical band name?", shown in the feed with the answers from people the fan follows. Answers are
       posts, so they need reporting and takedowns like logs and photos. Planned storage: `prompts` (the question and the
       day it runs) and `prompt_answers` (one per fan per prompt), in the main database.
-- [ ] **Share answers on the feed** (requested 2026-10-25): prompt answers and trivia results show on followers'
-      feeds. Open: trivia questions can repeat between fans on the same day, so sharing the picked answer would give it
-      away; share the result only ("got today's Geese trivia right"), or the full answer once the day is over.
+- [x] **Trivia results** (decided 2026-10-25): once a fan answers, the card names one or two people they follow who
+      got it right and the percent of fans who did. Fans of an artist share the day's question (migration 0024) so
+      this works. *Done 2026-10-25. Verified: TriviaApiTests (shared question and results), DailyTriviaCard tests.*
+- [ ] **Share prompt answers on the feed** (requested 2026-10-25), with prompts.
 - [x] **Featured artist of the week** (requested 2026-10-25): *done 2026-10-25: staff pick it (decided) with a video
       (an uploaded MP4, or a YouTube or TikTok link) and a Spotify song; it shows above the artist list on home. The web
       build plays the video in place; phones open it in YouTube, TikTok, or the browser (in-app playback needs

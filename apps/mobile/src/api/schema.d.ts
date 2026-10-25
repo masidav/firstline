@@ -1185,8 +1185,9 @@ export interface paths {
         };
         /**
          * Today's music trivia
-         * @description One question a day (UTC) about one of the fan's scored artists, made from the album catalog the first time it
-         *     is asked for. `question` is null when none of the fan's artists has enough catalog yet. The right answer is
+         * @description One question a day (UTC) about one of the fan's scored artists, shared by the artist's fans that day (made from
+         *     the album catalog by the first who asks). Once answered, `results` names up to two people the fan follows who
+         *     got it right and the percent of fans who did. `question` is null when none of the fan's artists has enough catalog yet. The right answer is
          *     only included once the fan has answered. A right answer earns `trivia_correct` ledger points (0.30, a tenth
          *     of logging an album; decided 2026-10-25).
          */
@@ -3228,6 +3229,10 @@ export interface components {
             /** @description Songs in their grab bags */
             songs: number;
         };
+        /**
+         * @description Fans of the same artist share the day's question. `answer_index`, `correct`, `points_earned`, and `results` are
+         *     only set once the fan has answered.
+         */
         TriviaQuestion: {
             /** Format: uuid */
             id: string;
@@ -3246,6 +3251,15 @@ export interface components {
             points_for_right: number;
             /** @description Once answered: 0, or the points a right answer earned */
             points_earned: number | null;
+            /** @description How the shared question went so far, once the fan has answered */
+            results: {
+                /** @description Fans who answered it (the caller included) */
+                answered: number;
+                right: number;
+                percent_right: number;
+                /** @description Up to two people the caller follows who got it right, first to answer first */
+                following_right: components["schemas"]["UserRef"][];
+            } | null;
         };
         FeaturedArtist: {
             /** Format: uuid */
