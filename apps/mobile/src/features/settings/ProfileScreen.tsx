@@ -8,6 +8,7 @@ import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Field, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { cityLabel, formatDay } from '../hub-cities/HubCitiesScreen';
+import { connectErrorMessage, describeStatus } from '../spotify/spotifyConnect';
 
 type Errors = {
   handle?: string;
@@ -45,6 +46,25 @@ export function ProfileScreen({ me }: { me: Me }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string>();
+  const [resyncing, setResyncing] = useState(false);
+  const [resyncError, setResyncError] = useState<string>();
+
+  // Resync now (POST /me/spotify/sync): one manual sync per 15 minutes; the app also syncs quietly when it opens.
+  async function resync() {
+    setResyncing(true);
+    setResyncError(undefined);
+    try {
+      session.updateMe({ spotify: unwrap(await session.api.POST('/me/spotify/sync')) });
+    } catch (e) {
+      setResyncError(
+        e instanceof ApiError && e.code === 'rate_limited'
+          ? 'Spotify was synced in the last 15 minutes. Try again a little later.'
+          : connectErrorMessage(e),
+      );
+    } finally {
+      setResyncing(false);
+    }
+  }
 
   // What the save would send. Band fields only count while the artist switch is on: turning it off clears them.
   const body: {
@@ -187,7 +207,11 @@ export function ProfileScreen({ me }: { me: Me }) {
       <Button label="Save" onPress={() => void save()} busy={saving} disabled={!changed} />
 
       <View style={{ height: 24 }} />
-      <Body>{me.spotify?.connected ? 'Spotify: connected' : 'Spotify: not connected'}</Body>
+      <Body>{me.spotify?.connected ? `Spotify: ${describeStatus(me.spotify)}` : 'Spotify: not connected'}</Body>
+      {me.spotify?.connected && (
+        <Button label="Resync Spotify" kind="secondary" busy={resyncing} onPress={() => void resync()} />
+      )}
+      <ErrorText>{resyncError}</ErrorText>
       <Button
         label={me.spotify?.connected ? 'Spotify settings' : 'Connect Spotify'}
         kind="secondary"

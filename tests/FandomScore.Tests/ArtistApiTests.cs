@@ -232,6 +232,30 @@ public sealed class ArtistApiTests(PostgresFixture postgres) : IAsyncLifetime, I
     }
 
     [Fact]
+    public async Task Adding_an_active_artist_you_have_no_score_for_queues_your_Spotify_sync()
+    {
+        var first = await SignInAsync("fan_one");
+        var second = await SignInAsync("fan_two");
+        var added = await JsonAsync(await AddAsync(first, GeeseId), HttpStatusCode.Created);
+        await using var connection = await _db.OpenConnectionAsync();
+        await connection.ExecuteAsync(
+            """
+            INSERT INTO artist_baselines (artist_id, dist_params, curve) VALUES (@id::uuid, '{}', '[]');
+            UPDATE artists SET status = 'active', catalog_loaded_at = now() WHERE id = @id::uuid;
+            INSERT INTO spotify_connections (user_id, spotify_user_id, refresh_token_enc, scopes)
+              SELECT id, 'sp-fan-two', '\\x00', '{}' FROM users WHERE handle = 'fan_two';
+            DELETE FROM jobs;
+            """,
+            new { id = added.GetProperty("id").GetString() });
+
+        await JsonAsync(await AddAsync(second, GeeseId), HttpStatusCode.OK);
+
+        Assert.Equal(["spotify.sync"], await connection.QueryAsync<string>("SELECT kind FROM jobs"));
+        Assert.Equal("queued", await connection.ExecuteScalarAsync<string>(
+            "SELECT sync_state FROM spotify_connections c JOIN users u ON u.id = c.user_id WHERE u.handle = 'fan_two'"));
+    }
+
+    [Fact]
     public async Task Adding_an_artist_Spotify_does_not_know_is_not_found()
     {
         var token = await SignInAsync("fan_one");

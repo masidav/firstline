@@ -66,7 +66,12 @@ Details: [Artists](services/api/src/features/artists/TODO.md) · [Artist search 
       `tools/dev/spotify_connect.py`. Verified 2026-10-20 on the local compose stack: real consent, `PUT
       /v1/me/spotify`, worker sync to `idle` with no error, 1 tracked artist found (liked 11, playlist 8,
       albums 11, top rank 17, recent 0).
-- [ ] Mobile connect screen (see Spotify mobile UI).
+- [x] Mobile connect screen (see Spotify mobile UI): `/spotify` (connect, sync status, disconnect), since 2026-10-18.
+- [x] Sync behaviour (decided 2026-10-25): the app syncs quietly in the background each time it opens
+      (`POST /me/spotify/sync?background=true`: only when the last sync is over 15 minutes old, never an error); adding
+      an artist syncs the fan (a new one when its onboarding finishes, an already-tracked one right away when the fan
+      has no score for it); fans resync by hand from their profile ("Resync Spotify"). Verified: SpotifyApiTests
+      (background sync), ArtistApiTests (sync on adding), app Jest (backgroundSync, ProfileScreen).
 - [x] A Spotify sync adds the fan's top artists that nobody tracks yet, so their page is lively right after
       connecting: tracked for the fan like `POST /v1/artists`, then onboarded and scored on the next sync
       (`SpotifyStatus.top_artists_added`, `GET /artists?added_by_me=true`; decided 2026-10-22, ADR 0005). Verified
@@ -102,7 +107,12 @@ Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring wo
 - [ ] Implement ratings, reviews, relistens, visibility, and offline sync. (API side done 2026-10-21 with the logs above; followers-only
       logs show to followers since 2026-10-25 (follows, migration 0018); offline sync is the app's queue, still to build.)
 - [ ] Implement ordered album lists.
-- [ ] Implement comments, replies, anti-abuse rules, and reward reversals.
+- [x] Comments replaced by emoji reactions (decided 2026-10-25: no comments). Fans react to shared photos, album logs,
+      and prompt answers with 🔥 ❤️ 😂 🤘 😮 👏 (several per post, take back any time, no points); counts show on the
+      feed. Migration 0026; `PUT/DELETE /reactions/{type}/{id}/{reaction}`. Verified: `dotnet test` (ReactionApiTests 2,
+      invariants), app Jest (ReactionBar). The old `comments` table and its points rule stay unused.
+- [ ] Custom emoji reactions from Shelby (requested 2026-10-25): add her emoji as new reaction keys with images
+      (reactions are stored by key, so this is a new key list plus artwork, no data change).
 - [x] Daily music trivia (2026-10-25, migration 0022): one question a day from the fan's artists' catalog; a right
       answer earns `trivia_correct` (0.30, a tenth of `album_logged`; decided 2026-10-25), once a day. `GET /me/trivia`,
       `POST /me/trivia/{id}/answer`. Verified: `dotnet test` (TriviaApiTests 2, invariants), app Jest, Chrome.

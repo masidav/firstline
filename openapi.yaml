@@ -358,7 +358,18 @@ paths:
         (`top_artists_added`; the daily artist add limit applies). A sync already `queued` or `running` is returned as is. Otherwise one manual sync per 15 minutes
         (`429 rate_limited`). `409 spotify_not_connected` without a connection; `409 spotify_reauth_required`
         when Spotify rejected the stored authorization (connect again with `PUT /me/spotify`).
+
+        `background=true` is the app's sync when it opens (decided 2026-10-25): when a sync ran or was requested in the
+        last 15 minutes, or the authorization needs renewing, it returns the status with `200` and queues nothing;
+        otherwise it queues like a manual sync.
+      parameters:
+        - {name: background, in: query, schema: {type: boolean, default: false}}
       responses:
+        '200':
+          description: Background sync not needed now; the current status.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SpotifyStatus'}
         '202':
           description: Sync queued. Poll `GET /me/spotify` for `sync_state`.
           content:
@@ -538,7 +549,8 @@ paths:
         Takes a Spotify artist id from search; the server fetches the name and image from Spotify
         (client-supplied names are never trusted) and calls `track_artist()`. A new artist starts as
         `onboarding`; a worker loads the catalog and baseline and then marks it `active`. The adding user
-        is synced immediately after activation. An artist that is already tracked is returned as is.
+        is synced immediately after activation. An artist that is already tracked is returned as is; when it is
+        active and the caller has no score for it yet, the caller's Spotify sync is queued so the score arrives soon.
       parameters:
         - {$ref: '#/components/parameters/IdempotencyKey'}
       requestBody:
@@ -1503,6 +1515,51 @@ paths:
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /reactions/{targetType}/{targetId}/{reaction}:
+    parameters:
+      - {name: targetType, in: path, required: true, schema: {type: string, enum: [photo, log, prompt_answer]}}
+      - {name: targetId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: reaction, in: path, required: true, schema: {$ref: '#/components/schemas/Reaction'}}
+    put:
+      tags: [Social]
+      operationId: addReaction
+      summary: React to a post
+      description: |
+        Emoji reactions instead of comments (decided 2026-10-25). Any post the caller can see (a shared photo, an album
+        log, a prompt answer); several different emoji per post; the same one twice is still one. No points.
+      responses:
+        '200':
+          description: The post's reactions after the change
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [reactions]
+                properties:
+                  reactions:
+                    type: array
+                    items: {$ref: '#/components/schemas/ReactionCount'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+    delete:
+      tags: [Social]
+      operationId: removeReaction
+      summary: Take a reaction back
+      description: Idempotent.
+      responses:
+        '200':
+          description: The post's reactions after the change
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [reactions]
+                properties:
+                  reactions:
+                    type: array
+                    items: {$ref: '#/components/schemas/ReactionCount'}
+        '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
   /prompts/today:
     get:
@@ -3883,6 +3940,10 @@ components:
         stat:
           description: A number from a followed fan.
           oneOf: [{$ref: '#/components/schemas/FeedStat'}, {type: 'null'}]
+        reactions:
+          description: Emoji reactions, for posts (photo, album_log, prompt_answer); null for other items.
+          type: [array, 'null']
+          items: {$ref: '#/components/schemas/ReactionCount'}
         prompt_answer:
           description: An answer to a music prompt from the last week (everyone's public ones; followers-only from people the caller follows).
           type: [object, 'null']
@@ -4022,6 +4083,17 @@ components:
           oneOf: [{$ref: '#/components/schemas/UserRef'}, {type: 'null'}]
         following: {type: integer, description: Fans the caller follows.}
         songs: {type: integer, description: Songs in their grab bags, all together.}
+    ReactionCount:
+      type: object
+      required: [reaction, count, mine]
+      properties:
+        reaction: {$ref: '#/components/schemas/Reaction'}
+        count: {type: integer, minimum: 1}
+        mine: {type: boolean, description: The caller reacted with this emoji}
+    Reaction:
+      type: string
+      description: 'An emoji by key: fire 🔥, heart ❤️, laugh 😂, rock 🤘, wow 😮, clap 👏.'
+      enum: [fire, heart, laugh, rock, wow, clap]
     Prompt:
       type: object
       required: [id, day, text, source, open, answer_count]

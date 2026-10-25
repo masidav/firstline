@@ -64,7 +64,8 @@ public static partial class FeedEndpoints
     public sealed record FeedItem(
         string Type, Guid Id, DateTime At, SubmissionEndpoints.UserRef? User, ScoringEndpoints.ArtistRef? Artist, bool Following,
         FeedPhoto? Photo, FeedLog? Log, GrabBagEndpoints.GrabBagSong? GrabBag, FeedShow? Concert,
-        AllocationEndpoints.RegistrationCard? Registration, FeedStat? Stat, FeedPromptAnswer? PromptAnswer = null);
+        AllocationEndpoints.RegistrationCard? Registration, FeedStat? Stat, FeedPromptAnswer? PromptAnswer = null,
+        IReadOnlyList<Reactions.ReactionEndpoints.ReactionCount>? Reactions = null);
 
     public sealed record FeedPage(IReadOnlyList<FeedItem> Items, string? NextCursor, string Seed);
 
@@ -151,6 +152,20 @@ public static partial class FeedEndpoints
             if (item is not null)
             {
                 items.Add(item);
+            }
+        }
+
+        // Emoji reactions on posts (photos, album logs, prompt answers; migration 0026). Other items have none.
+        var reactionTypes = new Dictionary<string, string> { ["photo"] = "photo", ["album_log"] = "log", ["prompt_answer"] = "prompt_answer" };
+        foreach (var (itemType, targetType) in reactionTypes)
+        {
+            var counts = await Reactions.ReactionEndpoints.LoadAsync(connection, me, targetType, [.. items.Where(i => i.Type == itemType).Select(i => i.Id)]);
+            for (var i = 0; i < items.Count; i++)
+            {
+                if (items[i].Type == itemType)
+                {
+                    items[i] = items[i] with { Reactions = counts.GetValueOrDefault(items[i].Id) ?? [] };
+                }
             }
         }
 

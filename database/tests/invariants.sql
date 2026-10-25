@@ -1780,6 +1780,39 @@ BEGIN
   END;
 END $$;
 
+-- ------------------------------------------------------------ emoji reactions (0026)
+-- Known emoji only, one of each per fan per post, pointing at a post that exists; deleting the post or the account
+-- removes them.
+INSERT INTO users (id, handle, email) VALUES
+  ('4b000000-0000-0000-0000-000000000001', 'react_fan', 'react_fan@example.test'),
+  ('4b000000-0000-0000-0000-000000000002', 'react_two', 'react_two@example.test');
+DO $$
+DECLARE fan uuid := '4b000000-0000-0000-0000-000000000001'; two uuid := '4b000000-0000-0000-0000-000000000002'; log_id uuid;
+BEGIN
+  INSERT INTO album_logs (user_id, album_id) VALUES (two, '10000000-0000-0000-0000-000000000001') RETURNING id INTO log_id;
+  INSERT INTO post_reactions (target_type, target_id, user_id, reaction) VALUES ('log', log_id, fan, 'fire'), ('log', log_id, fan, 'heart');
+  BEGIN
+    INSERT INTO post_reactions (target_type, target_id, user_id, reaction) VALUES ('log', log_id, fan, 'fire');
+    RAISE EXCEPTION 'the same emoji twice should fail';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO post_reactions (target_type, target_id, user_id, reaction) VALUES ('log', log_id, fan, 'poop');
+    RAISE EXCEPTION 'an unknown emoji should fail';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%post_reactions_known%', SQLERRM;
+  END;
+  BEGIN
+    INSERT INTO post_reactions (target_type, target_id, user_id, reaction) VALUES ('photo', log_id, fan, 'fire');
+    RAISE EXCEPTION 'a reaction to a missing post should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'reaction: no photo with this id%', SQLERRM;
+  END;
+  INSERT INTO post_reactions (target_type, target_id, user_id, reaction) VALUES ('log', log_id, two, 'clap');
+  UPDATE users SET deleted_at = now() WHERE id = fan;
+  ASSERT NOT EXISTS (SELECT 1 FROM post_reactions WHERE user_id = fan), 'deleting an account removes its reactions';
+  DELETE FROM album_logs WHERE id = log_id;
+  ASSERT NOT EXISTS (SELECT 1 FROM post_reactions WHERE target_id = log_id), 'deleting a post removes its reactions';
+END $$;
+
 -- ------------------------------------------------------------ artist profile (0016)
 -- Links need the artist flag; handles are bare; deletion clears the flag and links and they stay empty.
 INSERT INTO users (id, handle, email, is_artist, band_url, instagram_handle, x_handle) VALUES

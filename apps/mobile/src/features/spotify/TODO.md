@@ -15,6 +15,8 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       bundles). Not yet run on a device: needs a dev build (Apple Developer Program), and the redirect registered in the
       Spotify dashboard and added to `Spotify__RedirectUris`.
 - [ ] Try with a real Spotify account (allowlisted in the Spotify dashboard).
+- [x] Quiet sync when the app opens (`backgroundSync.ts`, once per launch, `?background=true`) and a "Resync Spotify"
+      button on the profile (decided 2026-10-25). Verified: backgroundSync and ProfileScreen tests.
 
 ## Verification
 - [x] Add or update automated tests for the behavior above.

@@ -217,6 +217,10 @@ export interface paths {
          *     (`top_artists_added`; the daily artist add limit applies). A sync already `queued` or `running` is returned as is. Otherwise one manual sync per 15 minutes
          *     (`429 rate_limited`). `409 spotify_not_connected` without a connection; `409 spotify_reauth_required`
          *     when Spotify rejected the stored authorization (connect again with `PUT /me/spotify`).
+         *
+         *     `background=true` is the app's sync when it opens (decided 2026-10-25): when a sync ran or was requested in the
+         *     last 15 minutes, or the authorization needs renewing, it returns the status with `200` and queues nothing;
+         *     otherwise it queues like a manual sync.
          */
         post: operations["syncSpotify"];
         delete?: never;
@@ -355,7 +359,8 @@ export interface paths {
          * @description Takes a Spotify artist id from search; the server fetches the name and image from Spotify
          *     (client-supplied names are never trusted) and calls `track_artist()`. A new artist starts as
          *     `onboarding`; a worker loads the catalog and baseline and then marks it `active`. The adding user
-         *     is synced immediately after activation. An artist that is already tracked is returned as is.
+         *     is synced immediately after activation. An artist that is already tracked is returned as is; when it is
+         *     active and the caller has no score for it yet, the caller's Spotify sync is queued so the score arrives soon.
          */
         post: operations["trackArtist"];
         delete?: never;
@@ -1217,6 +1222,35 @@ export interface paths {
          */
         post: operations["answerTrivia"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reactions/{targetType}/{targetId}/{reaction}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                targetType: "photo" | "log" | "prompt_answer";
+                targetId: string;
+                reaction: components["schemas"]["Reaction"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * React to a post
+         * @description Emoji reactions instead of comments (decided 2026-10-25). Any post the caller can see (a shared photo, an album
+         *     log, a prompt answer); several different emoji per post; the same one twice is still one. No points.
+         */
+        put: operations["addReaction"];
+        post?: never;
+        /**
+         * Take a reaction back
+         * @description Idempotent.
+         */
+        delete: operations["removeReaction"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3313,6 +3347,8 @@ export interface components {
             registration?: components["schemas"]["RegistrationCard"] | null;
             /** @description A number from a followed fan. */
             stat?: components["schemas"]["FeedStat"] | null;
+            /** @description Emoji reactions, for posts (photo, album_log, prompt_answer); null for other items. */
+            reactions?: components["schemas"]["ReactionCount"][] | null;
             /** @description An answer to a music prompt from the last week (everyone's public ones; followers-only from people the caller follows). */
             prompt_answer?: {
                 /** Format: uuid */
@@ -3447,6 +3483,17 @@ export interface components {
             /** @description Songs in their grab bags */
             songs: number;
         };
+        ReactionCount: {
+            reaction: components["schemas"]["Reaction"];
+            count: number;
+            /** @description The caller reacted with this emoji */
+            mine: boolean;
+        };
+        /**
+         * @description An emoji by key: fire 🔥, heart ❤️, laugh 😂, rock 🤘, wow 😮, clap 👏.
+         * @enum {string}
+         */
+        Reaction: "fire" | "heart" | "laugh" | "rock" | "wow" | "clap";
         Prompt: {
             /** Format: uuid */
             id: string;
@@ -4198,13 +4245,24 @@ export interface operations {
     };
     syncSpotify: {
         parameters: {
-            query?: never;
+            query?: {
+                background?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
+            /** @description Background sync not needed now; the current status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpotifyStatus"];
+                };
+            };
             /** @description Sync queued. Poll `GET /me/spotify` for `sync_state`. */
             202: {
                 headers: {
@@ -5755,6 +5813,62 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    addReaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                targetType: "photo" | "log" | "prompt_answer";
+                targetId: string;
+                reaction: components["schemas"]["Reaction"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The post's reactions after the change */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        reactions: components["schemas"]["ReactionCount"][];
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    removeReaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                targetType: "photo" | "log" | "prompt_answer";
+                targetId: string;
+                reaction: components["schemas"]["Reaction"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The post's reactions after the change */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        reactions: components["schemas"]["ReactionCount"][];
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
         };
     };

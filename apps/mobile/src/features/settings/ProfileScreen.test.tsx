@@ -9,9 +9,9 @@ const problem = (status: number, errors: { field: string; message: string }[]) =
   response: { ok: false, status },
 });
 
-const mockApi = { PATCH: jest.fn() };
+const mockApi = { PATCH: jest.fn(), POST: jest.fn() };
 const mockSetMe = jest.fn();
-const mockSession = { api: mockApi, setMe: mockSetMe, signOut: jest.fn(), deleteAccount: jest.fn() };
+const mockSession = { api: mockApi, setMe: mockSetMe, updateMe: jest.fn(), signOut: jest.fn(), deleteAccount: jest.fn() };
 
 jest.mock('../../auth/SessionProvider', () => ({
   useSession: () => ({ session: mockSession }),
@@ -91,4 +91,18 @@ test('field errors land on the band fields', async () => {
   fireEvent.press(screen.getByText('Save'));
   expect(await screen.findByText('Use an https:// link.')).toBeTruthy();
   expect(mockSetMe).not.toHaveBeenCalled();
+});
+
+test('a connected fan can resync Spotify; a second try within 15 minutes is explained', async () => {
+  const spotify = { connected: true, scopes: [], connected_at: '2026-10-20T00:00:00Z', last_synced_at: '2026-10-25T10:00:00Z',
+    sync_state: 'idle', sync_error: null, tracked_artists_found: 3, top_artists_added: 0 };
+  mockApi.POST.mockResolvedValueOnce(ok({ ...spotify, sync_state: 'queued' }, 202))
+    .mockResolvedValueOnce({ error: { code: 'rate_limited' }, response: { ok: false, status: 429 } });
+  render(<ProfileScreen me={{ ...fan, spotify } as never} />);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Resync Spotify' }));
+  await waitFor(() => expect(mockSession.updateMe).toHaveBeenCalledWith({ spotify: { ...spotify, sync_state: 'queued' } }));
+  expect(mockApi.POST).toHaveBeenCalledWith('/me/spotify/sync');
+  fireEvent.press(screen.getByRole('button', { name: 'Resync Spotify' }));
+  expect(await screen.findByText(/synced in the last 15 minutes/)).toBeTruthy();
 });

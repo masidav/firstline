@@ -15,6 +15,8 @@ import { AlertsButton } from '../notifications/AlertsButton';
 import { DailyPromptCard } from '../prompts/DailyPromptCard';
 import { DailyTriviaCard } from '../trivia/DailyTriviaCard';
 import { YourArtists } from './YourArtists';
+import { useSyncOnOpen } from '../spotify/backgroundSync';
+import type { SpotifyStatus } from '../spotify/spotifyConnect';
 
 const DEBOUNCE_MS = 300;
 
@@ -25,7 +27,10 @@ const DEBOUNCE_MS = 300;
  * Pressing Enter with no exact match asks Spotify (GET /artists/search) and offers to add an artist (POST /artists).
  */
 export function HomeScreen() {
-  const { session } = useSession();
+  const { session, state } = useSession();
+  // A quiet Spotify sync each time the app opens (the server skips it when the last one is recent).
+  const updateSpotify = useCallback((spotify: SpotifyStatus) => session.updateMe({ spotify }), [session]);
+  useSyncOnOpen(session.api, state.status === 'signedIn' && state.me.spotify?.connected === true, updateSpotify);
   const [query, setQuery] = useState('');
   const [tracked, setTracked] = useState<Artist[] | null>(null);
   const [searchError, setSearchError] = useState<string>();

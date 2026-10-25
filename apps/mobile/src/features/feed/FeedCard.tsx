@@ -9,6 +9,7 @@ import { FollowButton } from '../follows/FollowButton';
 import { concertLine } from '../submissions/photoUpload';
 import { standingMessage } from '../ticketing/standing';
 import { type FeedItem, formatWhen, stars, statSentence, ticketsLine } from './feedText';
+import { ReactionBar } from './ReactionBar';
 import { ReportForm } from './ReportForm';
 
 export type FeedCardProps = {
@@ -98,6 +99,7 @@ function PhotoCard(props: FeedCardProps) {
       )}
       {photo.concert ? <Text style={styles.muted}>{concertLine(photo.concert)}</Text> : null}
       {photo.caption ? <Text style={styles.text}>{photo.caption}</Text> : null}
+      <ReactionBar targetType="photo" targetId={item.id} initial={item.reactions ?? []} />
       <Report item={item} mine={mine} />
     </View>
   );
@@ -131,6 +133,7 @@ function LogCard(props: FeedCardProps) {
         </View>
       </Pressable>
       {log.review ? <Text style={styles.text}>{log.review}</Text> : null}
+      <ReactionBar targetType="log" targetId={item.id} initial={item.reactions ?? []} />
       <Report item={item} mine={mine} />
     </View>
   );
@@ -247,6 +250,7 @@ function PromptAnswerCard(props: FeedCardProps) {
         onPress={() => router.push(`/prompts/${answer.prompt_id}`)} hitSlop={8}>
         <Text style={styles.link}>See all answers</Text>
       </Pressable>
+      <ReactionBar targetType="prompt_answer" targetId={item.id} initial={item.reactions ?? []} />
       <Report item={item} mine={mine} />
     </View>
   );
