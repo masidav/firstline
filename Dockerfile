@@ -3,7 +3,8 @@
 #   docker build --target api     -t fandomscore-api     .
 #   docker build --target worker  -t fandomscore-worker  .
 #   docker build --target migrate -t fandomscore-migrate .
-# Runtime images are Ubuntu "chiseled" (no shell or package manager) and run as the non-root `app` user.
+# Runtime images are Ubuntu "chiseled" (no shell or package manager) and run as the non-root `app` user
+# (by its numeric id, APP_UID=1654, so Kubernetes' runAsNonRoot can verify it).
 
 ARG DOTNET_VERSION=10.0
 
@@ -39,7 +40,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION}-noble-chiseled AS api
 WORKDIR /app
 COPY --from=build /out/api .
 ENV DOTNET_ENVIRONMENT=Production ASPNETCORE_ENVIRONMENT=Production
-USER app
+USER $APP_UID
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "FandomScore.Api.dll"]
 
@@ -48,7 +49,7 @@ FROM mcr.microsoft.com/dotnet/runtime:${DOTNET_VERSION}-noble-chiseled AS worker
 WORKDIR /app
 COPY --from=build /out/worker .
 ENV DOTNET_ENVIRONMENT=Production Health__Port=8081
-USER app
+USER $APP_UID
 EXPOSE 8081
 ENTRYPOINT ["dotnet", "FandomScore.Worker.dll"]
 
@@ -56,5 +57,5 @@ ENTRYPOINT ["dotnet", "FandomScore.Worker.dll"]
 FROM mcr.microsoft.com/dotnet/runtime:${DOTNET_VERSION}-noble-chiseled AS migrate
 WORKDIR /app
 COPY --from=build /out/migrate .
-USER app
+USER $APP_UID
 ENTRYPOINT ["dotnet", "FandomScore.Database.dll"]

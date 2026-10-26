@@ -22,6 +22,10 @@ spec:
       serviceAccountName: api
       terminationGracePeriodSeconds: 30
       securityContext:
+        # The image's "app" user (APP_UID in the .NET base images). Given as a number because runAsNonRoot
+        # cannot verify a named user.
+        runAsUser: 1654
+        runAsGroup: 1654
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
