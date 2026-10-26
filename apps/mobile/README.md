@@ -113,6 +113,10 @@ npm run build:web      # static web build in dist/
 - Every API call goes through `session.api`. On a 401 it refreshes once and retries. Refreshes are
   single-flight, because the API ends the whole session when a refresh token is used twice.
 - Known limit on web: two open tabs can both refresh with the same token, which signs both out.
+- Every route under `src/app` must show `<Loading />` while `state.status === 'loading'` and only then decide to
+  redirect. On a reload the session is still restoring, and an early redirect sends the fan home from a deep link.
+  `src/routeGuards.test.tsx` checks every route. Don't put test files under `src/app`: expo-router makes each
+  file there a route and bundles it.
 
 ## Moving to iOS
 Needs the Apple Developer Program ($99/year). Then:
