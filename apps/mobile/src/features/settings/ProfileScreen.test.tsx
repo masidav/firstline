@@ -16,6 +16,11 @@ const mockSession = { api: mockApi, setMe: mockSetMe, updateMe: jest.fn(), signO
 jest.mock('../../auth/SessionProvider', () => ({
   useSession: () => ({ session: mockSession }),
 }));
+jest.mock('../notifications/push', () => ({
+  pushSupported: () => false,
+  registerForPush: jest.fn(),
+  unregisterPush: jest.fn(() => Promise.resolve()),
+}));
 jest.mock('expo-router', () => ({ router: { replace: jest.fn(), push: jest.fn() } }));
 jest.mock('../authentication/appleSignIn', () => ({ reauthenticateWithApple: jest.fn() }));
 
@@ -31,6 +36,7 @@ const fan = {
   instagram_handle: null,
   x_handle: null,
   presale_reminders: true,
+  push: { tickets: true, presales: true, staff: true },
 };
 const artist = { ...fan, is_artist: true, band_url: 'https://open.spotify.com/artist/abc', instagram_handle: 'the.band', x_handle: 'theband' };
 

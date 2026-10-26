@@ -119,6 +119,35 @@ public static class MeEndpoints
             }
         }
 
+        // push: {tickets?, presales?, staff?}; a missing key is left alone.
+        if (body.TryGetProperty("push", out var push))
+        {
+            if (push.ValueKind != JsonValueKind.Object)
+            {
+                errors.Add(new FieldError("push", "Send an object with tickets, presales, or staff."));
+            }
+            else
+            {
+                foreach (var (key, column) in new[] { ("tickets", "push_tickets"), ("presales", "push_presales"), ("staff", "push_staff") })
+                {
+                    if (!push.TryGetProperty(key, out var on))
+                    {
+                        continue;
+                    }
+
+                    if (on.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                    {
+                        sets.Add($"{column} = @{column}");
+                        parameters.Add(column, on.GetBoolean());
+                    }
+                    else
+                    {
+                        errors.Add(new FieldError($"push.{key}", "Send true or false."));
+                    }
+                }
+            }
+        }
+
         var links = new (string Field, Regex Pattern, string Rule, Func<string, string> Normalize)[]
         {
             ("band_url", UserProfiles.BandUrlPattern(), UserProfiles.BandUrlRule, static v => v),

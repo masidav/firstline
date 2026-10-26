@@ -78,6 +78,7 @@ v1.MapFollows();
 v1.MapGrabBag();
 v1.MapReports();
 v1.MapNotifications();
+v1.MapPushDevices();
 v1.MapTrivia();
 v1.MapFeatured();
 v1.MapPrompts();

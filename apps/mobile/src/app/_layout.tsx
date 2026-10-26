@@ -4,6 +4,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { SessionProvider } from '../auth/SessionProvider';
 import { JournalSync } from '../features/album-journal/JournalSync';
+import { PushSetup } from '../features/notifications/PushSetup';
 import { colors } from '../ui/theme';
 
 export default function RootLayout() {
@@ -11,6 +12,7 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <SessionProvider>
         <JournalSync />
+        <PushSetup />
         <StatusBar style="light" />
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }} />
       </SessionProvider>

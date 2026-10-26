@@ -218,7 +218,11 @@ Lower priority under the new direction: ticket purchases now flow through alloca
 Details: [Sharing API](services/api/src/features/sharing/TODO.md) · [Sharing UI](apps/mobile/src/features/sharing/TODO.md) · [Ticketing API](services/api/src/features/ticketing/TODO.md) · [Ticketing UI](apps/mobile/src/features/ticketing/TODO.md)
 
 ## Phase 9 — Notifications, moderation, release
-- [ ] Implement opt-in push notifications and preferences.
+- [x] Implement opt-in push notifications and preferences. *Done 2026-10-26 (migration 0032): every in-app
+      notification is also pushed through Expo to the fan's phones, with per-category settings (tickets, presales,
+      staff); devices register from the phone app (Profile, "Turn on push notifications"), unregister on sign-out, and
+      are switched off when Apple or Google drop them. Verified: `dotnet test` (PushNotificationTests 5), app Jest.
+      Not tried on a real phone yet: needs an EAS project id (`eas init`) and a development build.*
 - [x] Reports and staff takedowns (2026-10-24): fans report a shared photo or public album log (`POST /reports`);
       staff see reported posts grouped with their reasons (`/admin/reports`, app screen "Reported posts") and take the
       post down or dismiss the reports; every decision is recorded (`moderation_actions`). Migration 0014.

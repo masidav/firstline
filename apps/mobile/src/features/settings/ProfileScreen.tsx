@@ -9,6 +9,8 @@ import { Body, Button, ErrorText, Field, Screen, Title } from '../../ui/componen
 import { colors, space } from '../../ui/theme';
 import { reauthenticateWithApple } from '../authentication/appleSignIn';
 import { cityLabel, formatDay } from '../hub-cities/HubCitiesScreen';
+import { unregisterPush } from '../notifications/push';
+import { PushSettingsSection } from '../notifications/PushSettingsSection';
 import { connectErrorMessage, describeStatus } from '../spotify/spotifyConnect';
 
 type Errors = {
@@ -231,6 +233,7 @@ export function ProfileScreen({ me }: { me: Me }) {
       <Button label="Save" onPress={() => void save()} busy={saving} disabled={!changed} />
 
       <View style={{ height: 24 }} />
+      <PushSettingsSection me={me} />
       <View style={styles.switchRow}>
         <View style={styles.switchText}>
           <Body>Presale reminders</Body>
@@ -268,7 +271,11 @@ export function ProfileScreen({ me }: { me: Me }) {
       <Button label="Change hub cities" kind="secondary" onPress={() => router.push('/hub-cities')} />
 
       <View style={{ height: 24 }} />
-      <Button label="Sign out" kind="secondary" onPress={() => void session.signOut()} />
+      <Button
+        label="Sign out"
+        kind="secondary"
+        onPress={() => void unregisterPush(session.api).then(() => session.signOut())}
+      />
 
       <View style={{ height: 24 }} />
       {confirmingDelete ? (

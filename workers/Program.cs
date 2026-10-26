@@ -41,6 +41,12 @@ builder.Services.AddHttpClient<TicketmasterClient>(http => http.Timeout = Ticket
     .UseSocketsHttpHandler((handler, _) => handler.PooledConnectionLifetime = TimeSpan.FromMinutes(15))
     .SetHandlerLifetime(Timeout.InfiniteTimeSpan);
 
+// Push notifications through Expo (Push__Enabled, Push__ExpoAccessToken). workers/notifications.
+builder.Services.Configure<PushOptions>(builder.Configuration.GetSection(PushOptions.Section));
+builder.Services.AddHttpClient<ExpoPushClient>(http => http.Timeout = ExpoPushClient.RequestTimeout)
+    .UseSocketsHttpHandler((handler, _) => handler.PooledConnectionLifetime = TimeSpan.FromMinutes(15))
+    .SetHandlerLifetime(Timeout.InfiniteTimeSpan);
+
 // One line per job kind. Feature folders under workers/ hold the handlers.
 builder.Services.AddSingleton<IJobHandler, PruneJobsJob>();
 builder.Services.AddSingleton<IJobHandler, PurgeDeletedAccountsJob>();
@@ -56,6 +62,8 @@ builder.Services.AddSingleton<IJobHandler, ScheduleCatalogRefreshesJob>();
 builder.Services.AddSingleton<IJobHandler, GrabBagRefreshJob>();
 builder.Services.AddSingleton<IJobHandler, TicketDeliveredJob>();
 builder.Services.AddSingleton<IJobHandler, PresaleReminderJob>();
+builder.Services.AddSingleton<IJobHandler, PushNotificationJob>();
+builder.Services.AddSingleton<IJobHandler, PushReceiptsJob>();
 builder.Services.AddSingleton<IJobHandler, ScoreArtistJob>();
 builder.Services.AddSingleton<IJobHandler, RescoreAllJob>();
 builder.Services.AddSingleton<IJobHandler, ConcertSyncJob>();

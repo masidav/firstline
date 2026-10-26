@@ -1836,6 +1836,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/push-devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Register this phone for push notifications
+         * @description The phone app sends its Expo push token on every launch once the fan allows notifications. Every in-app
+         *     notification is then also pushed to the fan's live devices, unless they turned that category off (`Me.push`).
+         *     A token already registered moves to the caller (whoever signed in last on that phone) and is switched back on.
+         *     Not available on the web app.
+         */
+        put: operations["registerPushDevice"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/push-devices/{deviceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Stop pushing to this phone
+         * @description The app calls it on sign-out. Idempotent; only the caller's own devices.
+         */
+        delete: operations["removePushDevice"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me/notifications": {
         parameters: {
             query?: never;
@@ -2545,6 +2590,7 @@ export interface components {
             instagram_handle?: string | null;
             /** @description The band's X handle without the @; the link is `https://x.com/{handle}`. */
             x_handle?: string | null;
+            push: components["schemas"]["PushSettings"];
             /**
              * @description Remind me of presales (a `presale` notification), on by default: once per presale, within a day of it
              *     opening, for shows by artists the fan has a score for in their hub cities.
@@ -2590,6 +2636,12 @@ export interface components {
             x_handle?: string | null;
             /** @description Turn presale reminders on or off. */
             presale_reminders?: boolean;
+            /** @description Only the categories sent change. */
+            push?: {
+                tickets?: boolean;
+                presales?: boolean;
+                staff?: boolean;
+            };
         };
         SpotifyConnect: {
             code: string;
@@ -2694,6 +2746,25 @@ export interface components {
             /** Format: date-time */
             activated_at?: string | null;
             my_score?: components["schemas"]["ScoreSummary"] | null;
+        };
+        /** @description Which notifications also go to the fan's phones. All on by default; in-app notifications are kept either way. */
+        PushSettings: {
+            /** @description Draw results, seats that open up, delivered tickets. */
+            tickets: boolean;
+            /** @description Presale reminders. */
+            presales: boolean;
+            /** @description Staff notices (staff accounts only). */
+            staff: boolean;
+        };
+        PushDevice: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            platform: "ios" | "android";
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            last_seen_at: string;
         };
         ArtistSource: {
             /** @enum {string} */
@@ -6919,6 +6990,55 @@ export interface operations {
                         items: components["schemas"]["MyRegistration"][];
                     };
                 };
+            };
+        };
+    };
+    registerPushDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    token: string;
+                    /** @enum {string} */
+                    platform: "ios" | "android";
+                };
+            };
+        };
+        responses: {
+            /** @description Registered */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushDevice"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    removePushDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

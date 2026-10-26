@@ -198,12 +198,12 @@ public sealed class NotificationApiTests(PostgresFixture postgres) : IAsyncLifet
         var now = new DateTime(2026, 10, 26, 12, 0, 0, DateTimeKind.Utc);
         static JsonElement Data(string starts, string? ends = null) =>
             JsonDocument.Parse(JsonSerializer.Serialize(new { starts_at = starts, ends_at = ends })).RootElement;
-        Assert.Equal("starts within the hour", FandomScore.Api.Features.Notifications.NotificationEndpoints.PresaleWhen(Data("2026-10-26T12:30:00Z"), now));
-        Assert.Equal("starts in about an hour", FandomScore.Api.Features.Notifications.NotificationEndpoints.PresaleWhen(Data("2026-10-26T13:10:00Z"), now));
-        Assert.Equal("starts in about 22 hours", FandomScore.Api.Features.Notifications.NotificationEndpoints.PresaleWhen(Data("2026-10-27T10:00:00Z"), now));
-        Assert.Equal("starts in 3 days", FandomScore.Api.Features.Notifications.NotificationEndpoints.PresaleWhen(Data("2026-10-29T12:00:00Z"), now));
-        Assert.Equal("is on now", FandomScore.Api.Features.Notifications.NotificationEndpoints.PresaleWhen(Data("2026-10-26T10:00:00Z", "2026-10-27T10:00:00Z"), now));
-        Assert.Equal("has ended", FandomScore.Api.Features.Notifications.NotificationEndpoints.PresaleWhen(Data("2026-10-25T10:00:00Z", "2026-10-26T10:00:00Z"), now));
+        Assert.Equal("starts within the hour", FandomScore.Notifications.NotificationText.PresaleWhen(Data("2026-10-26T12:30:00Z"), now));
+        Assert.Equal("starts in about an hour", FandomScore.Notifications.NotificationText.PresaleWhen(Data("2026-10-26T13:10:00Z"), now));
+        Assert.Equal("starts in about 22 hours", FandomScore.Notifications.NotificationText.PresaleWhen(Data("2026-10-27T10:00:00Z"), now));
+        Assert.Equal("starts in 3 days", FandomScore.Notifications.NotificationText.PresaleWhen(Data("2026-10-29T12:00:00Z"), now));
+        Assert.Equal("is on now", FandomScore.Notifications.NotificationText.PresaleWhen(Data("2026-10-26T10:00:00Z", "2026-10-27T10:00:00Z"), now));
+        Assert.Equal("has ended", FandomScore.Notifications.NotificationText.PresaleWhen(Data("2026-10-25T10:00:00Z", "2026-10-26T10:00:00Z"), now));
     }
 
     private async Task<string> FanAsync(string handle, decimal score)

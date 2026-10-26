@@ -2199,6 +2199,43 @@ paths:
                   items:
                     type: array
                     items: {$ref: '#/components/schemas/MyRegistration'}
+  /me/push-devices:
+    put:
+      tags: [Me]
+      operationId: registerPushDevice
+      summary: Register this phone for push notifications
+      description: |
+        The phone app sends its Expo push token on every launch once the fan allows notifications. Every in-app
+        notification is then also pushed to the fan's live devices, unless they turned that category off (`Me.push`).
+        A token already registered moves to the caller (whoever signed in last on that phone) and is switched back on.
+        Not available on the web app.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, platform]
+              properties:
+                token: {type: string, pattern: '^Expo(nent)?PushToken\[[A-Za-z0-9_-]{10,200}\]$'}
+                platform: {type: string, enum: [ios, android]}
+      responses:
+        '200':
+          description: Registered
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PushDevice'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /me/push-devices/{deviceId}:
+    parameters:
+      - {name: deviceId, in: path, required: true, schema: {type: string, format: uuid}}
+    delete:
+      tags: [Me]
+      operationId: removePushDevice
+      summary: Stop pushing to this phone
+      description: The app calls it on sign-out. Idempotent; only the caller's own devices.
+      responses:
+        '204': {description: Removed}
   /me/notifications:
     get:
       tags: [Me]
@@ -3081,7 +3118,7 @@ components:
         user: {$ref: '#/components/schemas/Me'}
     Me:
       type: object
-      required: [id, handle, email, created_at, hub_cities, is_artist, presale_reminders]
+      required: [id, handle, email, created_at, hub_cities, is_artist, presale_reminders, push]
       properties:
         id: {type: string, format: uuid}
         handle: {type: string}
@@ -3103,6 +3140,8 @@ components:
         x_handle:
           type: [string, 'null']
           description: The band's X handle without the @; the link is `https://x.com/{handle}`.
+        push:
+          $ref: '#/components/schemas/PushSettings'
         presale_reminders:
           type: boolean
           description: |
@@ -3155,6 +3194,13 @@ components:
           pattern: '^@?[A-Za-z0-9_]{1,15}$'
           description: A leading @ is dropped. Null clears it. Needs `is_artist` (422 otherwise).
         presale_reminders: {type: boolean, description: Turn presale reminders on or off.}
+        push:
+          type: object
+          description: Only the categories sent change.
+          properties:
+            tickets: {type: boolean}
+            presales: {type: boolean}
+            staff: {type: boolean}
     SpotifyConnect:
       type: object
       required: [code, code_verifier, redirect_uri]
@@ -3257,6 +3303,22 @@ components:
         tracked_at: {type: string, format: date-time}
         activated_at: {type: [string, 'null'], format: date-time}
         my_score: {oneOf: [{$ref: '#/components/schemas/ScoreSummary'}, {type: 'null'}]}
+    PushSettings:
+      type: object
+      description: Which notifications also go to the fan's phones. All on by default; in-app notifications are kept either way.
+      required: [tickets, presales, staff]
+      properties:
+        tickets: {type: boolean, description: 'Draw results, seats that open up, delivered tickets.'}
+        presales: {type: boolean, description: Presale reminders.}
+        staff: {type: boolean, description: Staff notices (staff accounts only).}
+    PushDevice:
+      type: object
+      required: [id, platform, created_at, last_seen_at]
+      properties:
+        id: {type: string, format: uuid}
+        platform: {type: string, enum: [ios, android]}
+        created_at: {type: string, format: date-time}
+        last_seen_at: {type: string, format: date-time}
     ArtistSource:
       type: object
       required: [source, external_id, matched_by, checked_at, synced_at]

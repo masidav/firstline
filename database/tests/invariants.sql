@@ -2061,4 +2061,29 @@ SELECT pg_temp.expect_error(
   $$INSERT INTO notifications (user_id, kind, subject_id) VALUES ('00000000-0000-0000-0000-000000000001', 'presale_spam', gen_random_uuid())$$,
   'notifications_kind_check');
 
+-- ------------------------------------------------------------ push notifications (0032)
+-- Expo tokens only, one row per token; a notification for a fan with a live device queues its push once; a deleted
+-- account loses its devices.
+DO $$
+DECLARE u uuid; n uuid;
+BEGIN
+  INSERT INTO users (handle, email) VALUES ('push_fan', 'push_fan@example.test') RETURNING id INTO u;
+  INSERT INTO notifications (user_id, kind, subject_id) VALUES (u, 'ticket_delivered', gen_random_uuid()) RETURNING id INTO n;
+  ASSERT NOT EXISTS (SELECT 1 FROM jobs WHERE dedupe_key = 'push:' || n), 'no device, no push job';
+  INSERT INTO push_devices (user_id, token, platform) VALUES (u, 'ExponentPushToken[inv-token-0001]', 'ios');
+  BEGIN
+    INSERT INTO push_devices (user_id, token, platform) VALUES (u, 'ExponentPushToken[inv-token-0001]', 'android');
+    RAISE EXCEPTION 'a token twice should fail';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  INSERT INTO notifications (user_id, kind, subject_id) VALUES (u, 'ticket_delivered', gen_random_uuid()) RETURNING id INTO n;
+  ASSERT (SELECT count(*) FROM jobs WHERE kind = 'notifications.push' AND dedupe_key = 'push:' || n) = 1, 'a live device queues the push';
+  UPDATE users SET deleted_at = now() WHERE id = u;
+  ASSERT NOT EXISTS (SELECT 1 FROM push_devices WHERE user_id = u), 'deleting the account removes its devices';
+  DELETE FROM jobs WHERE kind = 'notifications.push';
+END $$;
+SELECT pg_temp.expect_error(
+  $$INSERT INTO push_devices (user_id, token, platform) VALUES ('00000000-0000-0000-0000-000000000001', 'fcm:abc', 'android')$$,
+  'push_devices_token_check');
+
 \echo ALL INVARIANT TESTS PASSED

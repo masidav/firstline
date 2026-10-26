@@ -14,6 +14,7 @@ WORKDIR /src
 COPY global.json Directory.Build.props ./
 COPY packages/spotify/FandomScore.Spotify.csproj packages/spotify/
 COPY packages/storage/FandomScore.Storage.csproj packages/storage/
+COPY packages/notifications/FandomScore.Notifications.csproj packages/notifications/
 COPY database/FandomScore.Database.csproj database/
 COPY services/api/FandomScore.Api.csproj services/api/
 COPY workers/FandomScore.Worker.csproj workers/
@@ -23,6 +24,7 @@ RUN dotnet restore services/api/FandomScore.Api.csproj \
 
 COPY packages/spotify/ packages/spotify/
 COPY packages/storage/ packages/storage/
+COPY packages/notifications/ packages/notifications/
 COPY database/ database/
 COPY services/api/ services/api/
 COPY workers/ workers/
