@@ -19,6 +19,7 @@ public sealed class PlaceholderSecretTests
         Assert.False(new SpotifyOptions { ClientId = "id", ClientSecret = placeholder }.IsCatalogEnabled);
         Assert.False(new TicketmasterOptions { ApiKey = placeholder }.IsEnabled);
         Assert.False(new AppleOptions { ClientIds = "app", TeamId = "t", KeyId = "k", PrivateKey = placeholder }.CanRevoke);
+        AppleClient.ValidateKey(new AppleOptions { PrivateKey = placeholder });
     }
 
     [Fact]

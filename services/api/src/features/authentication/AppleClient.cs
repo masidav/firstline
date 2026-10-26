@@ -101,7 +101,8 @@ public sealed partial class AppleClient(
     /// <summary>Fails startup on a malformed key instead of at the first account deletion.</summary>
     public static void ValidateKey(AppleOptions apple)
     {
-        if (apple.PrivateKey.Length == 0)
+        // Whitespace is the "not set up" placeholder (a Secret Manager version cannot be empty).
+        if (string.IsNullOrWhiteSpace(apple.PrivateKey))
         {
             return;
         }
