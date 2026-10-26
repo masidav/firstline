@@ -48,13 +48,6 @@ patches:
   - path: serviceaccounts.yaml
   - path: gateway.yaml
   - target:
-      kind: Gateway
-      name: api
-    patch: |-
-      - op: replace
-        path: /spec/listeners/1/tls/options/networking.gke.io~1cert-manager-certs
-        value: fandomscore-beta-api
-  - target:
       kind: HorizontalPodAutoscaler
       name: api
     patch: |-

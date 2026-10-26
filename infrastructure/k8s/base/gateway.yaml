@@ -16,15 +16,12 @@ spec:
     - name: http
       protocol: HTTP
       port: 80
+    # No tls block: with the global gateway class, TLS comes from the Certificate Manager map named by the
+    # networking.gke.io/certmap annotation above (a tls block here is treated as an SSL-certificate configuration
+    # and rejected together with the annotation).
     - name: https
       protocol: HTTPS
       port: 443
-      tls:
-        mode: Terminate
-        # Certificate Manager map (terraform output certificate_map). A Terminate listener must name its
-        # certificates here; the certmap annotation above alone is rejected by the Gateway API validation.
-        options:
-          networking.gke.io/cert-manager-certs: set-by-overlay
 ---
 # Plain HTTP only redirects to HTTPS.
 apiVersion: gateway.networking.k8s.io/v1
