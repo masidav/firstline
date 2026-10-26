@@ -1,0 +1,5 @@
+# run state and outputs
+*.state.json
+seen*.json
+*.csv
+out/
