@@ -2251,6 +2251,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/artists/{artistId}/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artistId: components["parameters"]["ArtistId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Which concert-source artist this artist is
+         * @description The worker links an artist to Ticketmaster by itself only when Ticketmaster lists the artist's Spotify page.
+         *     `external_id` null means it looked and found no match (it looks again weekly).
+         */
+        get: operations["listArtistSources"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/artists/{artistId}/sources/{source}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artistId: components["parameters"]["ArtistId"];
+                source: "ticketmaster";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Link the artist to a source's artist id
+         * @description For artists the worker couldn't match. `external_id` is the Ticketmaster Discovery attraction id (letters and
+         *     digits), not a ticketmaster.com link. Queues a sync of the artist's shows. `409 conflict` when another tracked
+         *     artist holds that id.
+         */
+        put: operations["linkArtistSource"];
+        post?: never;
+        /**
+         * Remove a wrong link
+         * @description Shows already loaded stay. The worker may link the artist again if the source lists its Spotify page.
+         */
+        delete: operations["unlinkArtistSource"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/redactions": {
         parameters: {
             query?: never;
@@ -2636,6 +2688,20 @@ export interface components {
             activated_at?: string | null;
             my_score?: components["schemas"]["ScoreSummary"] | null;
         };
+        ArtistSource: {
+            /** @enum {string} */
+            source: "ticketmaster";
+            external_id: string | null;
+            /** @enum {string|null} */
+            matched_by: "spotify_link" | "staff" | null;
+            /** Format: date-time */
+            checked_at: string;
+            /**
+             * Format: date-time
+             * @description Last time the artist's shows were loaded.
+             */
+            synced_at: string | null;
+        };
         RedactionReview: {
             /** Format: uuid */
             file_id: string;
@@ -2690,6 +2756,11 @@ export interface components {
                 share: number;
             }[];
         };
+        /**
+         * @description A show. Staff enter some; the rest come from Ticketmaster (`source: ticketmaster`, loaded daily for tracked
+         *     artists), with its ticket link, status, public sale, and presales. A show with a fan allocation keeps the time
+         *     and city staff set even if Ticketmaster changes them.
+         */
         Event: {
             /** Format: uuid */
             id: string;
@@ -2702,9 +2773,43 @@ export interface components {
             city?: string | null;
             region?: string | null;
             country?: string | null;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description With `time_tba`, local midnight of the show's date.
+             */
             starts_at: string;
+            /** @description A fan allocation is open or upcoming for this show. */
             tickets_available: boolean;
+            /**
+             * @description Null for shows staff entered.
+             * @enum {string|null}
+             */
+            source: "ticketmaster" | null;
+            /**
+             * Format: uri
+             * @description Where the public buys tickets (Ticketmaster's event page).
+             */
+            ticket_url: string | null;
+            /**
+             * @description Ticketmaster's status; `scheduled` for staff-entered shows.
+             * @enum {string}
+             */
+            status: "scheduled" | "onsale" | "offsale" | "cancelled" | "postponed" | "rescheduled";
+            /** @description Only the date is known. */
+            time_tba: boolean;
+            /** Format: date-time */
+            public_sale_starts_at: string | null;
+            /** Format: date-time */
+            public_sale_ends_at: string | null;
+            /** @description Presales that haven't ended, earliest first. */
+            presales: {
+                /** @description As Ticketmaster names it, e.g. "Verified Fan Presale". */
+                name: string;
+                /** Format: date-time */
+                starts_at: string;
+                /** Format: date-time */
+                ends_at: string | null;
+            }[];
         };
         EventDetail: {
             event: components["schemas"]["Event"];
@@ -7396,6 +7501,88 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    listArtistSources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artistId: components["parameters"]["ArtistId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The artist's sources */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ArtistSource"][];
+                    };
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    linkArtistSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artistId: components["parameters"]["ArtistId"];
+                source: "ticketmaster";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    external_id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Linked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtistSource"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    unlinkArtistSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artistId: components["parameters"]["ArtistId"];
+                source: "ticketmaster";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     listRedactionReviews: {

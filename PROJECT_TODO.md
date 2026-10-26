@@ -104,8 +104,11 @@ Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring wo
 ## Phase 6 — Journal and community
 - [x] Implement album metadata cache and album logs. Provider, caching, artwork, and attribution rules: [ADR 0006](docs/adr/0006-album-catalog.md).
       Albums and Journal endpoints with `Idempotency-Key` replay (migration 0009). Verified 2026-10-21: `dotnet test` (JournalApiTests 11, invariants).
-- [ ] Implement ratings, reviews, relistens, visibility, and offline sync. (API side done 2026-10-21 with the logs above; followers-only
-      logs show to followers since 2026-10-25 (follows, migration 0018); offline sync is the app's queue, still to build.)
+- [x] Implement ratings, reviews, relistens, visibility, and offline sync. (API side done 2026-10-21 with the logs above; followers-only
+      logs show to followers since 2026-10-25 (follows, migration 0018). Offline sync done 2026-10-26: the app keeps logs and
+      edits made without a connection on the device, with their `Idempotency-Key`, and sends them on reconnect; refused
+      entries stay with their reason for the fan to fix or discard. Verified: app Jest (journalQueue 9, AlbumScreen,
+      JournalScreen, HomeScreen), Chrome offline/online run.)
 - [ ] Implement ordered album lists.
 - [x] Comments replaced by emoji reactions (decided 2026-10-25: no comments). Fans react to shared photos, album logs,
       and prompt answers with 🔥 ❤️ 😂 🤘 😮 👏 (several per post, take back any time, no points); counts show on the
@@ -185,8 +188,12 @@ Lower priority under the new direction: ticket purchases now flow through alloca
 - [ ] Display artist, ticket, and merch links.
 - [ ] Track outbound clicks without misrepresenting clicks as purchases.
 - [ ] Integrate purchase confirmation only if supported by the selected partner.
-- [ ] Load upcoming concerts, presale dates, and general-sale openings for tracked artists (source: open
-      decision below). Feeds `/artists/{id}/events` and the home-screen concert cards.
+- [x] Load upcoming concerts, presale dates, and general-sale openings for tracked artists. *Ticketmaster done
+      2026-10-26 (migration 0030, `workers/concerts`): artists linked by the Spotify page Ticketmaster lists (staff
+      link the rest, `/v1/admin/artists/{id}/sources`); daily sync of US and Canadian shows with status, ticket link,
+      public sale, and presales; shown on the artist's shows, the show screen ("Tickets on Ticketmaster"), and feed
+      concert cards. Needs `Ticketmaster__ApiKey`. Verified: `dotnet test`, app Jest. Not yet run against the real
+      API. SeatGeek, Bandsintown, Songkick next (`workers/concerts/TODO.md`).*
 - [x] Fan location preference: a primary hub city plus two backups, used to pick which shows to show. From a
       curated list of US and Canadian metros (migration 0010; `GET /v1/cities`, `PUT /v1/me/hub-cities`). Verified
       2026-10-21: `dotnet test` 157/157 (HubCityApiTests 13, invariants), app `npm test` 62/62, clicked through in Chrome.
@@ -420,7 +427,11 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
 - [x] Concert data source (decided 2026-10-20): **concert APIs** for shows and sale dates (candidates:
       Ticketmaster Discovery, SeatGeek, Bandsintown, Songkick), plus possibly a **scraper for news and presale
       announcements**, including artists' X/Twitter and Instagram posts.
-- [ ] Choose the concert APIs, and the presale/news sources a scraper may use. X and Instagram forbid
+- [x] Concert APIs (decided 2026-10-26): Ticketmaster, SeatGeek, Bandsintown, and Songkick, starting with Ticketmaster.
+- [ ] Ticketmaster's API terms forbid deriving "revenues from the use or provision of the Ticketmaster API" and limit
+      caching to "reasonable periods". Fandom Score plans fees: check whether a partner agreement is needed before
+      launch, and read SeatGeek's, Bandsintown's, and Songkick's terms before building those.
+- [ ] Choose the presale/news sources a scraper may use. X and Instagram forbid
       scraping in their terms, and their official APIs are paid or restricted, so check each source's terms
       first. Prefer artist/label newsletters, official sites, and RSS where possible.
 - [x] A "concert hub" is a **city** (decided 2026-10-20): each fan picks a primary city plus two backups.

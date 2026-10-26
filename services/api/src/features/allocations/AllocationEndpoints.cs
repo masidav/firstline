@@ -40,9 +40,20 @@ public static partial class AllocationEndpoints
         MapSelection(admin);
     }
 
+    /// <summary>
+    /// A show. Staff-entered shows have <c>Source</c> null and <c>Status</c> scheduled; shows loaded from Ticketmaster
+    /// (migration 0030, workers/concerts) carry its link, status, public sale, and presales.
+    /// </summary>
     public sealed record Show(
         Guid Id, Guid ArtistId, string Name, string? Venue, string? CityId, string? City, string? Region, string? Country,
-        DateTime StartsAt, bool TicketsAvailable);
+        DateTime StartsAt, bool TicketsAvailable, string? Source = null, string? TicketUrl = null, string Status = "scheduled",
+        bool TimeTba = false, DateTime? PublicSaleStartsAt = null, DateTime? PublicSaleEndsAt = null)
+    {
+        /// <summary>Presales that haven't ended, earliest first.</summary>
+        public IReadOnlyList<Presale> Presales { get; init; } = [];
+    }
+
+    public sealed record Presale(string Name, DateTime StartsAt, DateTime? EndsAt);
 
     public sealed record EventPage(IReadOnlyList<Show> Items, string? NextCursor);
 
@@ -98,7 +109,7 @@ public static partial class AllocationEndpoints
              LIMIT @take OFFSET @offset
              """,
             new { artistId, includePast = includePast ?? false, take = pageSize + 1, offset })).ToList();
-        return Results.Ok(new EventPage([.. rows.Take(pageSize)],
+        return Results.Ok(new EventPage(await WithPresalesAsync(connection, rows.Take(pageSize)),
             rows.Count > pageSize ? PageCursor.Write(offset + pageSize) : null));
     }
 
@@ -304,8 +315,30 @@ public static partial class AllocationEndpoints
         COALESCE(c.name, e.city) AS City, c.region AS Region, COALESCE(c.country, e.country) AS Country,
         e.starts_at AS StartsAt,
         EXISTS (SELECT 1 FROM allocations a WHERE a.event_id = e.id AND a.published_at IS NOT NULL
-                  AND a.cancelled_at IS NULL AND a.registration_closes_at > now()) AS TicketsAvailable
+                  AND a.cancelled_at IS NULL AND a.registration_closes_at > now()) AS TicketsAvailable,
+        e.external_source AS Source, e.ticket_url AS TicketUrl, e.status AS Status, e.time_tba AS TimeTba,
+        e.public_sale_starts_at AS PublicSaleStartsAt, e.public_sale_ends_at AS PublicSaleEndsAt
         """;
+
+    /// <summary>Adds each show's presales that haven't ended (migration 0030).</summary>
+    internal static async Task<List<Show>> WithPresalesAsync(NpgsqlConnection connection, IEnumerable<Show> shows)
+    {
+        var list = shows.ToList();
+        if (list.Count == 0)
+        {
+            return list;
+        }
+
+        var presales = (await connection.QueryAsync<(Guid EventId, string Name, DateTime StartsAt, DateTime? EndsAt)>(
+                """
+                SELECT event_id, name, starts_at, ends_at FROM event_presales
+                WHERE event_id = ANY(@ids) AND (ends_at IS NULL OR ends_at > now())
+                ORDER BY starts_at, name
+                """,
+                new { ids = list.Select(s => s.Id).ToArray() }))
+            .ToLookup(p => p.EventId, p => new Presale(p.Name, p.StartsAt, p.EndsAt));
+        return [.. list.Select(s => presales.Contains(s.Id) ? s with { Presales = [.. presales[s.Id]] } : s)];
+    }
 
     internal const string AllocationColumns =
         """
@@ -339,7 +372,7 @@ public static partial class AllocationEndpoints
              ORDER BY a.registration_opens_at, a.created_at
              """,
             new { eventId, includeDrafts });
-        return new EventDetail(show, [.. allocations]);
+        return new EventDetail((await WithPresalesAsync(connection, [show]))[0], [.. allocations]);
     }
 
     private static async Task<Allocation> LoadAllocationAsync(NpgsqlConnection connection, Guid allocationId) =>

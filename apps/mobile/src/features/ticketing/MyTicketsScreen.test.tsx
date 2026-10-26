@@ -9,7 +9,7 @@ const mockSession = { api: mockApi };
 jest.mock('../../auth/SessionProvider', () => ({ useSession: () => ({ session: mockSession, state: { status: 'signedIn', me: { handle: 'ana' } } }) }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn(), back: jest.fn(), replace: jest.fn(), canGoBack: () => false } }));
 
-const event = { id: 'e1', artist_id: 'a1', name: 'Geese at Metro', venue: 'Metro', city_id: 'us-il-chicago', city: 'Chicago', region: 'IL', country: 'US', starts_at: '2026-11-20T02:00:00Z', tickets_available: false };
+const event = { id: 'e1', artist_id: 'a1', name: 'Geese at Metro', venue: 'Metro', city_id: 'us-il-chicago', city: 'Chicago', region: 'IL', country: 'US', starts_at: '2026-11-20T02:00:00Z', tickets_available: false, source: null, ticket_url: null, status: 'scheduled', time_tba: false, public_sale_starts_at: null, public_sale_ends_at: null, presales: [] };
 const base = {
   id: 'res-1', allocation_id: 'al-1', event_id: 'e1', registration_id: 'r1', status: 'held', role: 'holder', seats: 2,
   face_value_cents: 4500, currency: 'USD', deliver_at: '2026-11-18T02:00:00Z', created_at: '2026-10-25T00:00:00Z',

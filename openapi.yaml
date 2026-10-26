@@ -2651,6 +2651,70 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+  /admin/artists/{artistId}/sources:
+    parameters:
+      - {$ref: '#/components/parameters/ArtistId'}
+    get:
+      tags: [Admin]
+      operationId: listArtistSources
+      summary: Which concert-source artist this artist is
+      description: |
+        The worker links an artist to Ticketmaster by itself only when Ticketmaster lists the artist's Spotify page.
+        `external_id` null means it looked and found no match (it looks again weekly).
+      responses:
+        '200':
+          description: The artist's sources
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/ArtistSource'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/artists/{artistId}/sources/{source}:
+    parameters:
+      - {$ref: '#/components/parameters/ArtistId'}
+      - {name: source, in: path, required: true, schema: {type: string, enum: [ticketmaster]}}
+    put:
+      tags: [Admin]
+      operationId: linkArtistSource
+      summary: Link the artist to a source's artist id
+      description: |
+        For artists the worker couldn't match. `external_id` is the Ticketmaster Discovery attraction id (letters and
+        digits), not a ticketmaster.com link. Queues a sync of the artist's shows. `409 conflict` when another tracked
+        artist holds that id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [external_id]
+              properties:
+                external_id: {type: string, pattern: '^[A-Za-z0-9]{5,40}$'}
+      responses:
+        '200':
+          description: Linked
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ArtistSource'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+    delete:
+      tags: [Admin]
+      operationId: unlinkArtistSource
+      summary: Remove a wrong link
+      description: Shows already loaded stay. The worker may link the artist again if the source lists its Spotify page.
+      responses:
+        '204': {description: Removed}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /admin/redactions:
     get:
       tags: [Admin]
@@ -3187,6 +3251,15 @@ components:
         tracked_at: {type: string, format: date-time}
         activated_at: {type: [string, 'null'], format: date-time}
         my_score: {oneOf: [{$ref: '#/components/schemas/ScoreSummary'}, {type: 'null'}]}
+    ArtistSource:
+      type: object
+      required: [source, external_id, matched_by, checked_at, synced_at]
+      properties:
+        source: {type: string, enum: [ticketmaster]}
+        external_id: {type: [string, 'null']}
+        matched_by: {type: [string, 'null'], enum: [spotify_link, staff, null]}
+        checked_at: {type: string, format: date-time}
+        synced_at: {type: [string, 'null'], format: date-time, description: Last time the artist's shows were loaded.}
     RedactionReview:
       type: object
       required: [file_id, submission_id, kind, artist, user, note, codes_redacted, uploaded_at, deleted_after, file]
@@ -3247,7 +3320,12 @@ components:
               share: {type: number}
     Event:
       type: object
-      required: [id, artist_id, name, starts_at, tickets_available]
+      description: |
+        A show. Staff enter some; the rest come from Ticketmaster (`source: ticketmaster`, loaded daily for tracked
+        artists), with its ticket link, status, public sale, and presales. A show with a fan allocation keeps the time
+        and city staff set even if Ticketmaster changes them.
+      required: [id, artist_id, name, starts_at, tickets_available, source, ticket_url, status, time_tba,
+                 public_sale_starts_at, public_sale_ends_at, presales]
       properties:
         id: {type: string, format: uuid}
         artist_id: {type: string, format: uuid}
@@ -3257,8 +3335,27 @@ components:
         city: {type: [string, 'null']}
         region: {type: [string, 'null']}
         country: {type: [string, 'null']}
-        starts_at: {type: string, format: date-time}
-        tickets_available: {type: boolean}
+        starts_at: {type: string, format: date-time, description: 'With `time_tba`, local midnight of the show''s date.'}
+        tickets_available: {type: boolean, description: A fan allocation is open or upcoming for this show.}
+        source: {type: [string, 'null'], enum: [ticketmaster, null], description: Null for shows staff entered.}
+        ticket_url: {type: [string, 'null'], format: uri, description: Where the public buys tickets (Ticketmaster's event page).}
+        status:
+          type: string
+          enum: [scheduled, onsale, offsale, cancelled, postponed, rescheduled]
+          description: Ticketmaster's status; `scheduled` for staff-entered shows.
+        time_tba: {type: boolean, description: Only the date is known.}
+        public_sale_starts_at: {type: [string, 'null'], format: date-time}
+        public_sale_ends_at: {type: [string, 'null'], format: date-time}
+        presales:
+          type: array
+          description: Presales that haven't ended, earliest first.
+          items:
+            type: object
+            required: [name, starts_at, ends_at]
+            properties:
+              name: {type: string, description: 'As Ticketmaster names it, e.g. "Verified Fan Presale".'}
+              starts_at: {type: string, format: date-time}
+              ends_at: {type: [string, 'null'], format: date-time}
     EventDetail:
       type: object
       required: [event, allocations]

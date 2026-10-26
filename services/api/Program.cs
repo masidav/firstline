@@ -3,6 +3,7 @@ using FandomScore.Api.Features.AlbumJournal;
 using FandomScore.Api.Features.Allocations;
 using FandomScore.Api.Features.Artists;
 using FandomScore.Api.Features.Authentication;
+using FandomScore.Api.Features.Concerts;
 using FandomScore.Api.Features.Featured;
 using FandomScore.Api.Features.Feed;
 using FandomScore.Api.Features.Follows;
@@ -82,6 +83,7 @@ v1.MapFeatured();
 v1.MapPrompts();
 v1.MapReactions();
 v1.MapRedaction();
+v1.MapConcertSources();
 
 app.Run();
 

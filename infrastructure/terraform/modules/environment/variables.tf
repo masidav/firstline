@@ -88,5 +88,6 @@ variable "application_secrets" {
     "Auth__Apple__PrivateKey",
     "Spotify__ClientSecret",
     "Spotify__TokenKey",
+    "Ticketmaster__ApiKey",
   ]
 }

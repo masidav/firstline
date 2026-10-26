@@ -217,7 +217,7 @@ public static partial class FeedEndpoints
           UNION ALL
           (SELECT 'concert', e.id, e.starts_at, NULL::uuid, e.artist_id, NULL, NULL, NULL, NULL, NULL, NULL
              FROM events e JOIN artists a ON a.id = e.artist_id AND a.status = 'active'
-            WHERE e.starts_at > now() AND e.starts_at < now() + make_interval(days => @horizonDays)
+            WHERE e.starts_at > now() AND e.starts_at < now() + make_interval(days => @horizonDays) AND e.status <> 'cancelled'
               AND (EXISTS (SELECT 1 FROM user_artist_scores sc WHERE sc.user_id = @me AND sc.artist_id = e.artist_id)
                    OR EXISTS (SELECT 1 FROM user_hub_cities h WHERE h.user_id = @me AND h.city_id = e.city_id))
             ORDER BY e.starts_at LIMIT @pool)
@@ -344,9 +344,9 @@ public static partial class FeedEndpoints
             return [];
         }
 
-        var shows = await connection.QueryAsync<AllocationEndpoints.Show>(
+        var shows = await AllocationEndpoints.WithPresalesAsync(connection, await connection.QueryAsync<AllocationEndpoints.Show>(
             $"SELECT {AllocationEndpoints.EventColumns} FROM events e LEFT JOIN cities c ON c.id = e.city_id WHERE e.id = ANY(@ids)",
-            new { ids });
+            new { ids }));
         var allocations = (await connection.QueryAsync<AllocationEndpoints.Allocation>(
                 $"""
                  SELECT DISTINCT ON (a.event_id) {AllocationEndpoints.AllocationColumns} FROM allocations a

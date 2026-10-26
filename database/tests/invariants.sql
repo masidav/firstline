@@ -2017,4 +2017,32 @@ END $$;
 SELECT pg_temp.expect_error($$UPDATE submission_files SET redaction_state = 'lost'$$, 'submission_files_redaction_state_check');
 DELETE FROM storage_deletions;
 
+-- ------------------------------------------------------------ concert sources (0030)
+-- One source id per artist and per source id; a match needs both id and how it was matched; shows carry a known status
+-- and an https ticket link; hub_city_for matches name, region, and country.
+DO $$
+DECLARE a uuid;
+BEGIN
+  SELECT id INTO a FROM artists WHERE spotify_artist_id = 'sp-active';
+  INSERT INTO artist_sources (artist_id, source, external_id, matched_by) VALUES (a, 'ticketmaster', 'K8vZinv1', 'staff');
+  BEGIN
+    INSERT INTO artist_sources (artist_id, source, external_id, matched_by)
+      SELECT id, 'ticketmaster', 'K8vZinv1', 'staff' FROM artists WHERE id <> a LIMIT 1;
+    RAISE EXCEPTION 'two artists on one Ticketmaster id should fail';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  BEGIN
+    UPDATE artist_sources SET matched_by = NULL WHERE artist_id = a;
+    RAISE EXCEPTION 'an id without how it was matched should fail';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%artist_sources_match%', SQLERRM;
+  END;
+  DELETE FROM artist_sources WHERE artist_id = a;
+
+  ASSERT hub_city_for(' chicago', 'il', 'us') = 'us-il-chicago', 'hub cities match without case or spaces';
+  ASSERT hub_city_for('Chicago', 'IN', 'US') IS NULL, 'the region must match too';
+  ASSERT hub_city_for('Rosemont', 'IL', 'US') IS NULL, 'a suburb has no hub city';
+END $$;
+SELECT pg_temp.expect_error($$UPDATE events SET status = 'sold_out'$$, 'events_status_check');
+SELECT pg_temp.expect_error($$UPDATE events SET ticket_url = 'http://example.com'$$, 'events_ticket_url_check');
+
 \echo ALL INVARIANT TESTS PASSED

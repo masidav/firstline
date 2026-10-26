@@ -43,7 +43,7 @@ const song = {
   following: true,
   grab_bag: { id: 'g1', position: 2, spotify_track_id: '1aaaaaaaaaaaaaaaaaaaaa', title: 'Cowboy Nudes', artist, artist_status: 'active', album_title: '3D Country', cover_url: null, spotify_url: 'https://open.spotify.com/track/1aaaaaaaaaaaaaaaaaaaaa', added_at: '2026-10-21T10:00:00Z' },
 };
-const event: components['schemas']['Event'] = { id: 'e1', artist_id: 'a1', name: 'Geese at Metro', venue: 'Metro', city_id: 'us-il-chicago', city: 'Chicago', region: 'IL', country: 'US', starts_at: '2026-11-20T02:00:00Z', tickets_available: true };
+const event: components['schemas']['Event'] = { id: 'e1', artist_id: 'a1', name: 'Geese at Metro', venue: 'Metro', city_id: 'us-il-chicago', city: 'Chicago', region: 'IL', country: 'US', starts_at: '2026-11-20T02:00:00Z', tickets_available: true, source: null, ticket_url: null, status: 'scheduled', time_tba: false, public_sale_starts_at: null, public_sale_ends_at: null, presales: [] };
 const allocation: components['schemas']['Allocation'] = { id: 'al-1', event_id: 'e1', name: 'Fan allocation', tickets: 100, face_value_cents: 4500, currency: 'USD', min_raw_score: 10, registration_opens_at: '2026-10-20T00:00:00Z', registration_closes_at: '2026-11-01T00:00:00Z', status: 'open', published_at: '2026-10-19T00:00:00Z', cancelled_at: null, selected_at: null, seats_left: null, delivery_hours_before_show: 24 };
 const concert = { ...base, type: 'concert', id: 'e1', at: event.starts_at, user: null, artist, concert: { event, allocation, registered: false } };
 const registration = {

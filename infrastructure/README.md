@@ -95,6 +95,7 @@ steps with `prod` in place of `beta`.
    openssl rand -base64 32 | tr -d '\n' | gcloud secrets versions add Spotify__TokenKey --project fandomscore-beta --data-file=-
    printf '%s' "$SPOTIFY_CLIENT_SECRET" | gcloud secrets versions add Spotify__ClientSecret --project fandomscore-beta --data-file=-
    gcloud secrets versions add Auth__Apple__PrivateKey --project fandomscore-beta --data-file=AuthKey_XXXX.p8
+   printf '%s' "$TICKETMASTER_API_KEY" | gcloud secrets versions add Ticketmaster__ApiKey --project fandomscore-beta --data-file=-
    ```
    Every secret listed in `k8s/overlays/<env>/secrets.yaml` needs a version, or the pods cannot start.
    `Spotify__TokenKey` must be the same value for the API and the worker (it is: one secret, two readers).

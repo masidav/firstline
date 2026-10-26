@@ -20,7 +20,7 @@ locals {
   # Which workload may read which secret. The app reads them as files named after the configuration key.
   secret_readers = {
     api       = ["ConnectionStrings__Database", "Auth__SigningKey", "Auth__Apple__PrivateKey", "Spotify__ClientSecret", "Spotify__TokenKey"]
-    worker    = ["ConnectionStrings__Database", "Spotify__ClientSecret", "Spotify__TokenKey"]
+    worker    = ["ConnectionStrings__Database", "Spotify__ClientSecret", "Spotify__TokenKey", "Ticketmaster__ApiKey"]
     migrate   = ["ConnectionStrings__Database"]
     redaction = []
   }

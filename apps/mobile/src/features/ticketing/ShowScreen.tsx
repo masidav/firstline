@@ -1,12 +1,13 @@
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Linking, StyleSheet, Text, View } from 'react-native';
 
 import { type components, unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Field, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
+import { saleLines, statusLabel, ticketLink, whenLabel } from './showInfo';
 import { formatPrice, standingMessage } from './standing';
 
 type EventDetail = components['schemas']['EventDetail'];
@@ -56,8 +57,19 @@ export function ShowScreen({ eventId }: { eventId: string }) {
         <>
           <Title>{show.name}</Title>
           <Body muted>
-            {new Date(show.starts_at).toLocaleString()} · {[show.venue, show.city].filter(Boolean).join(', ')}
+            {whenLabel(show)} · {[show.venue, show.city].filter(Boolean).join(', ')}
           </Body>
+          {statusLabel(show.status) && (
+            <Text style={[styles.status, show.status === 'cancelled' && styles.cancelled]}>{statusLabel(show.status)}</Text>
+          )}
+          {saleLines(show).map((line) => (
+            <Text key={line} style={styles.sale}>
+              {line}
+            </Text>
+          ))}
+          {ticketLink(show) && (
+            <Button label="Tickets on Ticketmaster" kind="secondary" onPress={() => void Linking.openURL(ticketLink(show)!)} />
+          )}
           {detail.allocations.length === 0 && <Body muted>No fan tickets for this show yet.</Body>}
           {detail.allocations.map((allocation) => (
             <AllocationCard key={allocation.id} allocation={allocation} />
@@ -239,6 +251,9 @@ function AllocationCard({ allocation }: { allocation: Allocation }) {
 }
 
 const styles = StyleSheet.create({
+  status: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  cancelled: { color: colors.danger },
+  sale: { color: colors.text, fontSize: 15 },
   card: { gap: space.sm, padding: space.md, borderRadius: 12, borderWidth: 1, borderColor: colors.border },
   name: { color: colors.text, fontSize: 18, fontWeight: '700' },
   good: { color: colors.accent, fontSize: 16, fontWeight: '600' },

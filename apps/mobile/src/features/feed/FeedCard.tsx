@@ -7,6 +7,7 @@ import { colors, space } from '../../ui/theme';
 import { fanName } from '../follows/follows';
 import { FollowButton } from '../follows/FollowButton';
 import { concertLine } from '../submissions/photoUpload';
+import { saleLines } from '../ticketing/showInfo';
 import { standingMessage } from '../ticketing/standing';
 import { type FeedItem, formatWhen, stars, statSentence, ticketsLine } from './feedText';
 import { ReactionBar } from './ReactionBar';
@@ -189,6 +190,7 @@ function ConcertCard({ item }: FeedCardProps) {
         {where ? ` · ${where}` : ''}
       </Text>
       <Text style={[styles.strong, (show.registered || show.allocation?.status === 'open') && styles.accent]}>{ticketsLine(show)}</Text>
+      {!show.allocation && saleLines(show.event)[0] ? <Text style={styles.muted}>{saleLines(show.event)[0]}</Text> : null}
     </Pressable>
   );
 }
