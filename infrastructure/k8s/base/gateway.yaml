@@ -21,6 +21,10 @@ spec:
       port: 443
       tls:
         mode: Terminate
+        # Certificate Manager map (terraform output certificate_map). A Terminate listener must name its
+        # certificates here; the certmap annotation above alone is rejected by the Gateway API validation.
+        options:
+          networking.gke.io/cert-manager-certs: set-by-overlay
 ---
 # Plain HTTP only redirects to HTTPS.
 apiVersion: gateway.networking.k8s.io/v1
