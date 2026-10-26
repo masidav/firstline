@@ -16,7 +16,7 @@ metadata:
   name: api
 spec:
   hostnames:
-    - api.beta.example.com
+    - api.beta.firstline.com
 ---
 apiVersion: networking.gke.io/v1
 kind: GCPBackendPolicy

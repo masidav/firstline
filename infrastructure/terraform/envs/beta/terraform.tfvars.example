@@ -1,6 +1,6 @@
 # Copy to terraform.tfvars (ignored by git) and fill in.
 project_id         = "project-ef36a8a9-d958-4163-b4c"
 region             = "us-central1"
-api_domain         = "api.beta.example.com"
+api_domain         = "api.beta.firstline.com"
 billing_account_id = "XXXXXX-XXXXXX-XXXXXX"
 alert_email        = "ops@example.com"
