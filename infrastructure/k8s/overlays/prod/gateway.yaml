@@ -7,7 +7,7 @@ metadata:
     networking.gke.io/certmap: fandomscore-prod-api
 spec:
   addresses:
-    - type: networking.gke.io/named-address
+    - type: NamedAddress
       value: fandomscore-prod-api
 ---
 apiVersion: gateway.networking.k8s.io/v1

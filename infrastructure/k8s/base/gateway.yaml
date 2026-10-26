@@ -10,7 +10,7 @@ metadata:
 spec:
   gatewayClassName: gke-l7-global-external-managed
   addresses:
-    - type: networking.gke.io/named-address
+    - type: NamedAddress
       value: set-by-overlay
   listeners:
     - name: http
