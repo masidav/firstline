@@ -39,6 +39,9 @@ public static class Problems
         services.AddProblemDetails(options => options.CustomizeProblemDetails = context =>
         {
             var problem = context.ProblemDetails;
+            // RFC 9457: a problem without a more specific type is "about:blank". ASP.NET fills in a type for some
+            // statuses only (not 429, for one); openapi.yaml requires it on every problem.
+            problem.Type ??= "about:blank";
             problem.Extensions.TryAdd("code", CodeForStatus(problem.Status ?? StatusCodes.Status500InternalServerError));
         });
         services.AddExceptionHandler<ApiProblemExceptionHandler>();

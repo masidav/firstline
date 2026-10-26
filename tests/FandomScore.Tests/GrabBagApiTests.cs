@@ -1,3 +1,4 @@
+using FandomScore.Tests.Contract;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -44,7 +45,7 @@ public sealed class GrabBagApiTests(PostgresFixture postgres) : IAsyncLifetime, 
         _spotify.Tracks.Add(new FakeSpotify.TrackDetail(Track3, "Brand New Song", "al-2", "Debut", (NewArtistId, "Newcomer"), (GeeseId, "Geese")));
 
         var options = FakeSpotify.Options();
-        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        _factory = new ContractCheckedFactory().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("ConnectionStrings:Database", connectionString);

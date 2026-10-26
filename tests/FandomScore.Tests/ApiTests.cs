@@ -1,3 +1,4 @@
+using FandomScore.Tests.Contract;
 using System.Net;
 using System.Text.Json;
 using FandomScore.Api.Infrastructure;
@@ -57,7 +58,7 @@ public sealed class ApiTests : IClassFixture<ApiTests.ApiFactory>
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
     }
 
-    public sealed class ApiFactory : WebApplicationFactory<Program>
+    public sealed class ApiFactory : ContractCheckedFactory
     {
         public const string ProblemPath = "/__test/problem";
         public const string CrashPath = "/__test/crash";
@@ -65,6 +66,7 @@ public sealed class ApiTests : IClassFixture<ApiTests.ApiFactory>
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            base.ConfigureWebHost(builder);
             // Health and error handling never open a connection; no database is needed here.
             builder.UseSetting("ConnectionStrings:Database", "Host=localhost;Database=unused");
             builder.UseSetting("Auth:SigningKey", TestAuth.SigningKey);

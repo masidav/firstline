@@ -306,6 +306,8 @@ export interface paths {
         /**
          * A stored submission photo (signed link)
          * @description The `url` of a submission file; signed and valid for an hour, so image tags can load it without sign-in.
+         *     Where files are in Cloud Storage, this redirects (302) to a 15-minute storage link instead of sending the
+         *     bytes; image tags and players follow it.
          */
         get: operations["getFile"];
         put?: never;
@@ -1408,7 +1410,8 @@ export interface paths {
         };
         /**
          * An uploaded featured video
-         * @description Signed, short-lived link from `FeaturedArtist.video.url`; needs no sign-in. Supports range requests.
+         * @description Signed, short-lived link from `FeaturedArtist.video.url`; needs no sign-in. Supports range requests. Where
+         *     files are in Cloud Storage, this redirects (302) to a 15-minute storage link, which supports ranges too.
          */
         get: operations["getFeaturedVideo"];
         put?: never;
@@ -4674,6 +4677,14 @@ export interface operations {
                     "image/png": string;
                 };
             };
+            /** @description The photo is in Cloud Storage; `Location` is a short-lived link to it. */
+            302: {
+                headers: {
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
@@ -6381,6 +6392,23 @@ export interface operations {
                 content: {
                     "video/mp4": string;
                 };
+            };
+            /** @description Part of the MP4, for a `Range` request */
+            206: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "video/mp4": string;
+                };
+            };
+            /** @description The video is in Cloud Storage; `Location` is a short-lived link to it. */
+            302: {
+                headers: {
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

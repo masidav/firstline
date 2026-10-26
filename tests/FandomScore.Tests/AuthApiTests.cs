@@ -1,3 +1,4 @@
+using FandomScore.Tests.Contract;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
@@ -32,7 +33,7 @@ public sealed class AuthApiTests(PostgresFixture postgres) : IAsyncLifetime
         var migration = Migrator.Upgrade(_connectionString);
         Assert.True(migration.Successful, migration.Error?.ToString());
 
-        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        _factory = new ContractCheckedFactory().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("ConnectionStrings:Database", _connectionString);

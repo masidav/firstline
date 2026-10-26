@@ -1,3 +1,4 @@
+using FandomScore.Tests.Contract;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -12,7 +13,7 @@ namespace FandomScore.Tests;
 
 public sealed class RateLimitTests : IDisposable
 {
-    private readonly WebApplicationFactory<Program> _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+    private readonly WebApplicationFactory<Program> _factory = new ContractCheckedFactory().WithWebHostBuilder(builder =>
     {
         // Rejected identity tokens never reach the database.
         builder.UseSetting("ConnectionStrings:Database", "Host=localhost;Database=unused");

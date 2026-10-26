@@ -1,3 +1,4 @@
+using FandomScore.Tests.Contract;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -35,7 +36,7 @@ public sealed class RegistrationApiTests(PostgresFixture postgres) : IAsyncLifet
         Assert.True(migration.Successful, migration.Error?.ToString());
         _db = NpgsqlDataSource.Create(connectionString);
 
-        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        _factory = new ContractCheckedFactory().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:Database", connectionString);
             builder.UseSetting("Auth:SigningKey", TestAuth.SigningKey);

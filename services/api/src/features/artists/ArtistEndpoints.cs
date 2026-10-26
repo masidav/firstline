@@ -15,7 +15,7 @@ using Npgsql;
 namespace FandomScore.Api.Features.Artists;
 
 /// <summary>
-/// openapi <c>GET /artists</c>, <c>/artists/search</c>, and <c>POST /artists</c>. Spotify is called with the app's own token (client
+/// openapi <c>GET /artists</c>, <c>/artists/{id}</c>, <c>/artists/search</c>, and <c>POST /artists</c>. Spotify is called with the app's own token (client
 /// credentials), so users don't need to connect Spotify first. Untracked search results are never stored, and an
 /// added artist's name and image come from Spotify, never from the client. See docs/adr/0005-spotify-integration.md.
 /// </summary>
@@ -40,6 +40,7 @@ public static partial class ArtistEndpoints
     {
         v1.MapGet("/artists", ListAsync);
         v1.MapGet("/artists/search", SearchAsync).RequireRateLimiting(SearchRateLimit);
+        v1.MapGet("/artists/{artistId:guid}", GetAsync);
         v1.MapPost("/artists", TrackAsync);
     }
 
@@ -134,6 +135,19 @@ public static partial class ArtistEndpoints
 
         var next = rows.Count > pageSize ? PageCursor.Write(offset + pageSize) : null;
         return Results.Ok(new ArtistPage([.. rows.Take(pageSize).Select(ToArtist)], next));
+    }
+
+    // One tracked artist with the fan's score summary (the score screen's header). Like the list, paused artists
+    // don't exist for fans.
+    private static async Task<IResult> GetAsync(ClaimsPrincipal user, Guid artistId, NpgsqlDataSource db, CancellationToken cancellationToken)
+    {
+        await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        var row = await connection.QuerySingleOrDefaultAsync<ArtistRow>(
+            $"SELECT {ArtistColumns} FROM artists a {MyScoreJoin} WHERE a.id = @artistId AND a.status IN ('active', 'onboarding')",
+            new { userId = user.UserId(), artistId });
+        return row is null
+            ? throw new ApiProblemException(StatusCodes.Status404NotFound, "not_found", "Artist not found", "No artist has this id.")
+            : Results.Ok(ToArtist(row));
     }
 
     private static async Task<IResult> SearchAsync(
