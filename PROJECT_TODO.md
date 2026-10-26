@@ -309,7 +309,11 @@ Details: [ADR 0002](docs/adr/0002-hosting-gcp-gke.md) · [Infrastructure](infras
 - [ ] API contract tests against `openapi.yaml`; load tests for on-sale registration spikes.
       *Database load test for registration spikes done 2026-10-26 (`tools/load/run.sh`, results in `tools/load/README.md`):
       registering holds 4,000 to 5,000 a second; the show page's standing was the bottleneck and now uses an in-memory
-      snapshot. Still to do: contract tests, and k6 through the full HTTP path on beta.*
+      snapshot. Contract tests done 2026-10-26 (`tests/FandomScore.Tests/Contract`): every response in the API tests is
+      checked against `openapi.yaml`, and the API's routes are compared with it both ways. They found `GET /artists/{id}`
+      documented and used by the app's score screen but never built (now built), rate-limit problems without `type`,
+      undocumented redirects, and 22 documented operations not built (now marked `x-planned`). Still to do: k6 through
+      the full HTTP path on beta.*
 - [x] Dev environment with synthetic data: `tools/dev/seed.py` (fans, artists, shows, allocations, registrations),
       verified 2026-10-24 against a scratch database and run by CI. The cloud proving ground is **beta** with real
       testers, not a synthetic staging (ADR 0002, amended 2026-10-24); see `infrastructure/README.md`.

@@ -1,3 +1,4 @@
+using FandomScore.Tests.Contract;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
@@ -47,7 +48,7 @@ public sealed class FeaturedApiTests(PostgresFixture postgres) : IAsyncLifetime,
         _db = NpgsqlDataSource.Create(connectionString);
         _spotify.Tracks.Add(new FakeSpotify.TrackDetail(Track, "Trinidad", "al-1", "Getting Killed", ("sp-geese", "Geese")));
         var options = FakeSpotify.Options();
-        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        _factory = new ContractCheckedFactory().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("ConnectionStrings:Database", connectionString);

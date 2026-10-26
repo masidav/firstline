@@ -40,7 +40,8 @@ Local setup: `docs/DEVELOPMENT.md`. If the .NET SDK isn't installed, run these i
 - Errors are RFC 9457 problem+json with a stable `code` from `openapi.yaml` (`ApiProblemException`).
 - Every `/v1` endpoint requires sign-in unless it calls `AllowAnonymous()`. Staff-only (`/admin`) endpoints add
   `RequireAuthorization(AuthSetup.StaffPolicy)`.
-- JSON is snake_case. Every API change updates `openapi.yaml` in the same pull request.
+- JSON is snake_case. Every API change updates `openapi.yaml` in the same pull request. API tests build the app with
+  `ContractCheckedFactory`, which fails any response that doesn't match the contract (`tests/FandomScore.Tests/Contract`).
 - New triggers or constraints get a check in `database/tests/invariants.sql`.
 - Work that can wait or retry goes to the job queue: `enqueue_job()` in the same transaction. Handlers are idempotent.
 - Mark a TODO `[x]` only after it is implemented and verified; record what was actually run.

@@ -1,3 +1,4 @@
+using FandomScore.Tests.Contract;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -93,7 +94,7 @@ public sealed class DevSignInTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     private WebApplicationFactory<Program> Factory(string environment, bool devSignIn) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        new ContractCheckedFactory().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment(environment);
             builder.UseSetting("ConnectionStrings:Database", _connectionString);

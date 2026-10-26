@@ -1,3 +1,4 @@
+using FandomScore.Tests.Contract;
 using System.Net;
 using System.Net.Http.Json;
 using FandomScore.Api.Features.Authentication;
@@ -16,7 +17,7 @@ public sealed class ForwardedHeadersTests : IDisposable
 {
     private const string LoadBalancerIp = "203.0.113.10";
 
-    private readonly WebApplicationFactory<Program> _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+    private readonly WebApplicationFactory<Program> _factory = new ContractCheckedFactory().WithWebHostBuilder(builder =>
     {
         builder.UseSetting("ConnectionStrings:Database", "Host=localhost;Database=unused");
         builder.UseSetting("Auth:SigningKey", TestAuth.SigningKey);

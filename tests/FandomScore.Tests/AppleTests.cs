@@ -1,3 +1,4 @@
+using FandomScore.Tests.Contract;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
@@ -49,7 +50,7 @@ public sealed class AppleTests(PostgresFixture postgres) : IAsyncLifetime, IDisp
             ["apple"] = new([AppleIssuer], [BundleId], new StaticConfigurationManager<OpenIdConnectConfiguration>(configuration)),
         });
 
-        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        _factory = new ContractCheckedFactory().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("ConnectionStrings:Database", connectionString);

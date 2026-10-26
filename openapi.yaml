@@ -12,6 +12,9 @@ info:
     - **Versioning:** URL prefix `/v1`. Breaking changes ship as `/v2`.
     - **Auth:** `Authorization: Bearer <access token>` (JWT, 15 minutes). Refresh tokens rotate on every use.
       Staff-only routes live under `/admin` and require `is_staff` (checked on every request; `403 forbidden` otherwise).
+      So every operation without `security: []` can answer `401` (Unauthorized), and every `/admin` operation `403`
+      (Forbidden), whether or not it lists them. The test suite checks every response against this file, these two
+      rules included (`tests/FandomScore.Tests/Contract`).
     - **Format:** JSON, `snake_case`, UUID ids, RFC 3339 UTC timestamps.
     - **Pagination:** cursor based. Send `limit` (1 to 100, default 25) and `cursor`; read `next_cursor`
       (null on the last page).
@@ -27,6 +30,7 @@ info:
       content returns `404` to everyone but the owner. Until follows ship (Phase 8), `followers` content is
       visible to its owner only.
     - **`x-requires-schema`:** marks operations that need tables not yet in `database/migrations`.
+    - **`x-planned`:** marks operations designed here but not built (or no longer planned), with why.
 
     ## Rate limits (proposed starting values)
 
@@ -463,7 +467,10 @@ paths:
       tags: [Submissions]
       operationId: getFile
       summary: A stored submission photo (signed link)
-      description: The `url` of a submission file; signed and valid for an hour, so image tags can load it without sign-in.
+      description: |
+        The `url` of a submission file; signed and valid for an hour, so image tags can load it without sign-in.
+        Where files are in Cloud Storage, this redirects (302) to a 15-minute storage link instead of sending the
+        bytes; image tags and players follow it.
       security: []
       parameters:
         - {name: fileId, in: path, required: true, schema: {type: string, format: uuid}}
@@ -477,6 +484,11 @@ paths:
               schema: {type: string, format: binary}
             image/png:
               schema: {type: string, format: binary}
+        '302':
+          description: The photo is in Cloud Storage; `Location` is a short-lived link to it.
+          headers:
+            Location:
+              schema: {type: string, format: uri}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
 
@@ -652,6 +664,7 @@ paths:
     parameters:
       - {$ref: '#/components/parameters/ArtistId'}
     get:
+      x-planned: 'Per-artist fan statistics; not built yet.'
       tags: [Artists]
       operationId: getArtistStats
       summary: Fan base size and score distribution
@@ -886,6 +899,7 @@ paths:
     parameters:
       - {$ref: '#/components/parameters/LogId'}
     get:
+      x-planned: 'Comments were replaced by emoji reactions (decided 2026-10-25); not built.'
       tags: [Comments]
       operationId: listComments
       summary: Comments on a log
@@ -901,6 +915,7 @@ paths:
               schema: {$ref: '#/components/schemas/CommentPage'}
         '404': {$ref: '#/components/responses/NotFound'}
     post:
+      x-planned: 'Comments were replaced by emoji reactions (decided 2026-10-25); not built.'
       tags: [Comments]
       operationId: createComment
       summary: Comment on a log
@@ -928,6 +943,7 @@ paths:
     parameters:
       - {$ref: '#/components/parameters/CommentId'}
     patch:
+      x-planned: 'Comments were replaced by emoji reactions (decided 2026-10-25); not built.'
       tags: [Comments]
       operationId: updateComment
       summary: Edit my comment
@@ -950,6 +966,7 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
     delete:
+      x-planned: 'Comments were replaced by emoji reactions (decided 2026-10-25); not built.'
       tags: [Comments]
       operationId: deleteComment
       summary: Delete my comment (soft delete)
@@ -962,6 +979,7 @@ paths:
   # ------------------------------------------------------------------ Lists
   /lists:
     post:
+      x-planned: 'Ordered album lists (PROJECT_TODO.md Phase 6); not built yet.'
       tags: [Lists]
       operationId: createList
       summary: Create a list
@@ -979,6 +997,7 @@ paths:
         '422': {$ref: '#/components/responses/ValidationFailed'}
   /me/lists:
     get:
+      x-planned: 'Ordered album lists (PROJECT_TODO.md Phase 6); not built yet.'
       tags: [Lists]
       operationId: listMyLists
       summary: My lists
@@ -995,6 +1014,7 @@ paths:
     parameters:
       - {$ref: '#/components/parameters/ListId'}
     get:
+      x-planned: 'Ordered album lists (PROJECT_TODO.md Phase 6); not built yet.'
       tags: [Lists]
       operationId: getList
       summary: List with ordered items
@@ -1006,6 +1026,7 @@ paths:
               schema: {$ref: '#/components/schemas/AlbumListDetail'}
         '404': {$ref: '#/components/responses/NotFound'}
     patch:
+      x-planned: 'Ordered album lists (PROJECT_TODO.md Phase 6); not built yet.'
       tags: [Lists]
       operationId: updateList
       summary: Edit list details
@@ -1023,6 +1044,7 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
     delete:
+      x-planned: 'Ordered album lists (PROJECT_TODO.md Phase 6); not built yet.'
       tags: [Lists]
       operationId: deleteList
       summary: Delete a list
@@ -1032,6 +1054,7 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
   /lists/{listId}/items:
     post:
+      x-planned: 'Ordered album lists (PROJECT_TODO.md Phase 6); not built yet.'
       tags: [Lists]
       operationId: addListItem
       summary: Add an album to a list
@@ -1063,6 +1086,7 @@ paths:
       - {$ref: '#/components/parameters/ListId'}
       - {$ref: '#/components/parameters/AlbumId'}
     patch:
+      x-planned: 'Ordered album lists (PROJECT_TODO.md Phase 6); not built yet.'
       tags: [Lists]
       operationId: updateListItem
       summary: Change note or position
@@ -1084,6 +1108,7 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
     delete:
+      x-planned: 'Ordered album lists (PROJECT_TODO.md Phase 6); not built yet.'
       tags: [Lists]
       operationId: removeListItem
       summary: Remove an album from a list
@@ -1228,6 +1253,7 @@ paths:
   # ------------------------------------------------------------------ Share and shop
   /artists/{artistId}/share-cards:
     post:
+      x-planned: 'Score cards and sharing (PROJECT_TODO.md Phase 8); not built yet.'
       tags: [Share and shop]
       operationId: createShareCard
       summary: Generate a share card from my current score
@@ -1259,6 +1285,7 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
   /share-cards/{cardId}:
     get:
+      x-planned: 'Score cards and sharing (PROJECT_TODO.md Phase 8); not built yet.'
       tags: [Share and shop]
       operationId: getShareCard
       summary: Get a share card
@@ -1275,6 +1302,7 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
   /share-cards/{cardId}/shares:
     post:
+      x-planned: 'Score cards and sharing (PROJECT_TODO.md Phase 8); not built yet.'
       tags: [Share and shop]
       operationId: recordShare
       summary: Record where a card was shared
@@ -1296,6 +1324,7 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
   /outbound-clicks:
     post:
+      x-planned: 'Outbound click tracking (PROJECT_TODO.md Phase 8); not built yet.'
       tags: [Share and shop]
       operationId: createOutboundClick
       summary: Get a tracked link to tickets, merch, or the artist site
@@ -1730,7 +1759,9 @@ paths:
       tags: [Social]
       operationId: getFeaturedVideo
       summary: An uploaded featured video
-      description: Signed, short-lived link from `FeaturedArtist.video.url`; needs no sign-in. Supports range requests.
+      description: |
+        Signed, short-lived link from `FeaturedArtist.video.url`; needs no sign-in. Supports range requests. Where
+        files are in Cloud Storage, this redirects (302) to a 15-minute storage link, which supports ranges too.
       security: []
       responses:
         '200':
@@ -1738,6 +1769,16 @@ paths:
           content:
             video/mp4:
               schema: {type: string, format: binary}
+        '206':
+          description: Part of the MP4, for a `Range` request
+          content:
+            video/mp4:
+              schema: {type: string, format: binary}
+        '302':
+          description: The video is in Cloud Storage; `Location` is a short-lived link to it.
+          headers:
+            Location:
+              schema: {type: string, format: uri}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
   /admin/featured:
@@ -1940,6 +1981,7 @@ paths:
     parameters:
       - {$ref: '#/components/parameters/Handle'}
     get:
+      x-planned: 'Ordered album lists (PROJECT_TODO.md Phase 6); not built yet.'
       tags: [Social]
       operationId: listUserLists
       summary: A user's visible lists
@@ -1996,6 +2038,7 @@ paths:
   # ------------------------------------------------------------------ Webhooks
   /webhooks/ticketing/{partner}:
     post:
+      x-planned: 'Primary ticketing integration (PROJECT_TODO.md Phase 11); not built yet.'
       tags: [Webhooks]
       operationId: ticketingWebhook
       summary: Ticket partner purchase confirmation
@@ -2804,6 +2847,7 @@ paths:
         '422': {$ref: '#/components/responses/ValidationFailed'}
   /admin/artists:
     post:
+      x-planned: 'Staff artist management; not built yet (artists are added by fans and onboarded by the worker).'
       tags: [Admin]
       operationId: seedArtist
       summary: Seed an artist onto the tracked list
@@ -2826,6 +2870,7 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
   /admin/artists/{artistId}:
     patch:
+      x-planned: 'Staff artist management; not built yet (artists are added by fans and onboarded by the worker).'
       tags: [Admin]
       operationId: updateArtistAdmin
       summary: Pause, resume, or edit an artist
@@ -2855,6 +2900,7 @@ paths:
         '409': {$ref: '#/components/responses/Conflict'}
   /admin/artists/{artistId}/onboarding/retry:
     post:
+      x-planned: 'Staff artist management; not built yet (artists are added by fans and onboarded by the worker).'
       tags: [Admin]
       operationId: retryOnboarding
       summary: Re-run onboarding for a stuck artist

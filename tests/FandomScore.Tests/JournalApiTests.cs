@@ -1,3 +1,4 @@
+using FandomScore.Tests.Contract;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
@@ -83,7 +84,7 @@ public sealed class JournalApiTests(PostgresFixture postgres) : IAsyncLifetime, 
         _spotify.Artists.Add(new FakeSpotify.Artist("0aaaaaaaaaaaaaaaaaaaaa", "Geese", "indie rock"));
 
         var options = FakeSpotify.Options();
-        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        _factory = new ContractCheckedFactory().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("ConnectionStrings:Database", connectionString);

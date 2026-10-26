@@ -1,3 +1,4 @@
+using FandomScore.Tests.Contract;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -31,7 +32,7 @@ public sealed class StaffAuthorizationTests(PostgresFixture postgres) : IAsyncLi
         var migration = Migrator.Upgrade(_connectionString);
         Assert.True(migration.Successful, migration.Error?.ToString());
 
-        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        _factory = new ContractCheckedFactory().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:Database", _connectionString);
             builder.UseSetting("Auth:SigningKey", TestAuth.SigningKey);

@@ -1,3 +1,4 @@
+using FandomScore.Tests.Contract;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -145,7 +146,7 @@ public sealed class GcsFileStoreTests(PostgresFixture postgres) : IAsyncLifetime
         var connectionString = await postgres.CreateDatabaseAsync($"gcs_api_{Guid.NewGuid():N}");
         Assert.True(Migrator.Upgrade(connectionString).Successful);
         await using var db = NpgsqlDataSource.Create(connectionString);
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        await using var factory = new ContractCheckedFactory().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:Database", connectionString);
             builder.UseSetting("Auth:SigningKey", TestAuth.SigningKey);

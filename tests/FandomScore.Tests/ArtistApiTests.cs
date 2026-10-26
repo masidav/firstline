@@ -1,3 +1,4 @@
+using FandomScore.Tests.Contract;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
@@ -43,7 +44,7 @@ public sealed class ArtistApiTests(PostgresFixture postgres) : IAsyncLifetime, I
         _spotify.Artists.Add(new FakeSpotify.Artist(GeeseSoundalikeId, "Geese Tribute Band"));
 
         var options = FakeSpotify.Options();
-        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        _factory = new ContractCheckedFactory().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("ConnectionStrings:Database", connectionString);
@@ -347,6 +348,36 @@ public sealed class ArtistApiTests(PostgresFixture postgres) : IAsyncLifetime, I
         Assert.Equal(["100%_Real"], await NamesAsync("q=100%25_&status=all"));
         Assert.Empty(await NamesAsync("q=1%25"));
         Assert.Empty(_spotify.Calls);
+    }
+
+    [Fact]
+    public async Task An_artist_is_found_by_id_with_the_fans_score_and_paused_artists_are_not()
+    {
+        var token = await SignInAsync("fan_one");
+        Guid active, paused;
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            active = await connection.ExecuteScalarAsync<Guid>(
+                "INSERT INTO artists (name, spotify_artist_id) VALUES ('Wednesday', 'sp-wednesday') RETURNING id");
+            paused = await connection.ExecuteScalarAsync<Guid>(
+                "INSERT INTO artists (name, spotify_artist_id) VALUES ('Paused Band', 'sp-paused') RETURNING id");
+            await connection.ExecuteAsync(
+                """
+                INSERT INTO artist_baselines (artist_id, dist_params, curve) VALUES (@active, '{}', '[]');
+                UPDATE artists SET status = 'active', activated_at = now(), catalog_loaded_at = now() WHERE id = @active;
+                UPDATE artists SET status = 'paused' WHERE id = @paused;
+                INSERT INTO user_artist_scores (user_id, artist_id, raw_score, percentile, is_estimated, baseline_weight)
+                SELECT id, @active, 42.5, 88, false, 0.1 FROM users WHERE handle = 'fan_one';
+                """,
+                new { active, paused });
+        }
+
+        var artist = await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/artists/{active}", token), HttpStatusCode.OK);
+        Assert.Equal(("Wednesday", "active"), (artist.GetProperty("name").GetString(), artist.GetProperty("status").GetString()));
+        Assert.Equal(88m, artist.GetProperty("my_score").GetProperty("percentile").GetDecimal());
+
+        Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Get, $"/v1/artists/{paused}", token)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Get, $"/v1/artists/{Guid.NewGuid()}", token)).StatusCode);
     }
 
     [Fact]
