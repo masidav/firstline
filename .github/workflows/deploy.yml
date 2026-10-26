@@ -36,9 +36,10 @@ jobs:
     with:
       environment: beta
 
+  # Also gated on PROD_DEPLOY_ENABLED: until the prod project and GitHub environment exist, a push only deploys beta.
   prod:
     needs: beta
-    if: vars.DEPLOY_ENABLED == 'true' && (github.event_name == 'push' || github.event.inputs.environment == 'prod')
+    if: vars.DEPLOY_ENABLED == 'true' && vars.PROD_DEPLOY_ENABLED == 'true' && (github.event_name == 'push' || github.event.inputs.environment == 'prod')
     uses: ./.github/workflows/deploy-environment.yml
     with:
       environment: prod
