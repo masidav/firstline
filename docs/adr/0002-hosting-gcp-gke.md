@@ -13,8 +13,8 @@
 | Workloads | `api` (Deployment), `worker` (Deployment), `redaction` (Deployment), `migrate` (Job before each rollout), `promoter-web` (Deployment) | Matches ADR 0001: one codebase, separate processes. |
 | Images | **Artifact Registry** with vulnerability scanning | One registry per environment project or a shared one with per-environment access. |
 | Secrets | **Secret Manager**, mounted with the GKE Secret Manager add-on | Matches the environment-variable-only configuration already in the API. |
-| GCP access from pods | **Workload Identity Federation for GKE**, one Google service account per workload | No key files. Only `redaction` can read the quarantine bucket. |
-| Files | **Cloud Storage**: `quarantine` (short retention, redaction only) and `archive` (redacted files only) | Enforces the schema's "never archive unredacted files" rule at the access level too. |
+| GCP access from pods | **Workload Identity Federation for GKE**, one Google service account per workload | No key files. Only `redaction` can read the quarantine bucket. *Amended 2026-10-26, see Files below.* |
+| Files | **Cloud Storage**: `quarantine` (short retention, redaction only) and `archive` (redacted files only) | Enforces the schema's "never archive unredacted files" rule at the access level too. *Amended 2026-10-26, see Files below.* |
 | Ingress | **Gateway API** with Google-managed certificates (Certificate Manager) | Standard Kubernetes ingress model on GKE. |
 | Edge protection | **Cloud Armor** (WAF rules, rate limiting, bot management), optionally reCAPTCHA Enterprise on registration | Bots are the product's main adversary; on-sale registration must be defended at the edge. |
 | Cache/queue | Memorystore for Redis only if the job library or rate limiting needs it | Postgres-backed jobs may make it unnecessary (ADR 0001 open item). |
@@ -34,6 +34,25 @@ Amended 2026-10-24. Three environments, two of them in the cloud:
 The original plan had a synthetic-data `staging` project between dev and prod. It was dropped: the local seed
 gives every developer a full data set, and a small group of real testers on beta finds what synthetic data
 doesn't. Load tests run against a seeded local stack or against beta outside testers' hours.
+
+## Files
+Amended 2026-10-26, when Cloud Storage was wired up (`packages/storage/GcsFileStore.cs`). Three buckets, picked by the
+storage key's prefix: `quarantine/` (unredacted uploads, deleted by the bucket at 30 days), `archive/` (redacted proof
+only), and `media/` (staff-published media such as featured videos, which must outlive the quarantine expiry).
+
+Access follows what the code does, which differs from the table above:
+- Staff review unredacted proof and fans see their own pending photos, both through the API, and the API deletes
+  quarantined files when a fan withdraws or staff discard one. So the API reads, writes, and deletes in quarantine.
+- Redaction runs inside the worker (`workers/image-redaction`), not a separate deployment, so the worker reads
+  quarantine and writes the archive. It also runs `storage.cleanup`, which deletes from all three buckets.
+- So "only redaction can read quarantine" doesn't hold today: the API and the worker both can. The schema still
+  refuses unredacted archive rows (migration 0029), the archive is written only by redaction code, and the API can
+  only read it. Splitting redaction into its own deployment with its own identity would restore the stricter rule;
+  the `redaction` service account and its bindings are kept for that.
+
+Uploads go through the API, not straight to the bucket: the API strips photo metadata (GPS location included) before
+anything is stored. Downloads keep the API's signed link, which redirects to a 15-minute Cloud Storage link signed
+by the API's own identity (IAM signBlob, so no key files), so the API doesn't stream the bytes.
 
 ## On-sale traffic
 Allocation registration opens at announced times, so traffic arrives in sharp spikes:

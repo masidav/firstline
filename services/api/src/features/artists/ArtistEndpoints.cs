@@ -233,6 +233,13 @@ public static partial class ArtistEndpoints
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
         if (await LoadAsync(connection, userId, spotifyArtistId) is { } existing)
         {
+            // Already tracked: sync the fan now so their score for it arrives soon (decided 2026-10-25). A brand-new
+            // artist is synced for the fan who added it when onboarding finishes (ArtistOnboardingJob).
+            if (existing.Status == "active" && existing.MyScore is null)
+            {
+                await connection.ExecuteAsync("SELECT request_spotify_sync(@userId)", new { userId });
+            }
+
             return Results.Ok(existing);
         }
 

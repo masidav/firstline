@@ -239,6 +239,39 @@ public sealed class SpotifyApiTests(PostgresFixture postgres) : IAsyncLifetime, 
         Assert.Equal("queued", reconnected.GetProperty("sync_state").GetString());
     }
 
+    [Fact]
+    public async Task The_background_sync_on_opening_queues_only_when_the_last_sync_is_old_and_never_errors()
+    {
+        var token = await SignInAsync("fan_one");
+        await JsonAsync(await ConnectAsync(token), HttpStatusCode.OK);   // connecting queues the first sync
+
+        // Just connected (a sync was asked for a moment ago and is queued): the status, nothing new.
+        Assert.Equal("queued", (await JsonAsync(await SendAsync(HttpMethod.Post, "/v1/me/spotify/sync?background=true", token), HttpStatusCode.OK))
+            .GetProperty("sync_state").GetString());
+        Assert.Equal(1, await CountJobsAsync());
+
+        // Synced a minute ago: nothing to do, no error.
+        await ExecuteAsync("UPDATE spotify_connections SET sync_state = 'idle', last_synced_at = now() - interval '1 minute', sync_requested_at = NULL; UPDATE jobs SET status = 'succeeded', finished_at = now()");
+        var fresh = await JsonAsync(await SendAsync(HttpMethod.Post, "/v1/me/spotify/sync?background=true", token), HttpStatusCode.OK);
+        Assert.Equal("idle", fresh.GetProperty("sync_state").GetString());
+        Assert.Equal(1, await CountJobsAsync());
+
+        // Last synced an hour ago: queued.
+        await ExecuteAsync("UPDATE spotify_connections SET last_synced_at = now() - interval '1 hour'");
+        Assert.Equal("queued", (await JsonAsync(await SendAsync(HttpMethod.Post, "/v1/me/spotify/sync?background=true", token), HttpStatusCode.Accepted))
+            .GetProperty("sync_state").GetString());
+        Assert.Equal(2, await CountJobsAsync());
+
+        // Asked a moment ago (by the manual button, say): no 429 for the background call.
+        await ExecuteAsync("UPDATE spotify_connections SET sync_state = 'idle', sync_requested_at = now(); UPDATE jobs SET status = 'succeeded', finished_at = now()");
+        Assert.Equal(HttpStatusCode.OK, (await SendAsync(HttpMethod.Post, "/v1/me/spotify/sync?background=true", token)).StatusCode);
+
+        // A lapsed authorization: the status says so, without a 409.
+        await ExecuteAsync("UPDATE spotify_connections SET sync_state = 'reauth_required', sync_requested_at = NULL");
+        Assert.Equal("reauth_required", (await JsonAsync(await SendAsync(HttpMethod.Post, "/v1/me/spotify/sync?background=true", token), HttpStatusCode.OK))
+            .GetProperty("sync_state").GetString());
+    }
+
     private static async Task<string> AssertCodeRejectedAsync(HttpResponseMessage response)
     {
         var problem = await JsonAsync(response, HttpStatusCode.UnprocessableEntity);

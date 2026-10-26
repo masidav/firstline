@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Dapper;
 using FandomScore.Api.Features.SpotifySync;
@@ -11,10 +12,16 @@ namespace FandomScore.Api.Features.Users;
 /// The band links are only kept while <paramref name="IsArtist"/> is true. Social handles are stored without the @.
 /// Everything the query returns is a constructor parameter (Dapper maps a record by its constructor).
 /// </remarks>
+public sealed record PushSettings(bool Tickets, bool Presales, bool Staff);
+
 public sealed record MeResponse(
     Guid Id, string Handle, string Email, string? DisplayName, string? AvatarUrl, bool IsStaff, DateTime CreatedAt,
-    bool IsArtist, string? BandUrl, string? InstagramHandle, string? XHandle)
+    bool IsArtist, string? BandUrl, string? InstagramHandle, string? XHandle, bool PresaleReminders,
+    [property: JsonIgnore] bool PushTickets, [property: JsonIgnore] bool PushPresales, [property: JsonIgnore] bool PushStaff)
 {
+    /// <summary>Which notifications also go to the fan's phones (migration 0032).</summary>
+    public PushSettings Push => new(PushTickets, PushPresales, PushStaff);
+
     public SpotifyStatus Spotify { get; init; } = SpotifyStatus.NotConnected;
 
     /// <summary>Primary first. Empty until the fan picks them (the app asks right after sign-up).</summary>
@@ -64,7 +71,9 @@ public static partial class UserProfiles
             """
             SELECT id AS Id, handle::text AS Handle, email::text AS Email, display_name AS DisplayName,
                    avatar_url AS AvatarUrl, is_staff AS IsStaff, created_at AS CreatedAt,
-                   is_artist AS IsArtist, band_url AS BandUrl, instagram_handle AS InstagramHandle, x_handle AS XHandle
+                   is_artist AS IsArtist, band_url AS BandUrl, instagram_handle AS InstagramHandle, x_handle AS XHandle,
+                   presale_reminders AS PresaleReminders, push_tickets AS PushTickets, push_presales AS PushPresales,
+                   push_staff AS PushStaff
             FROM users WHERE id = @userId AND deleted_at IS NULL
             """,
             new { userId }, transaction);

@@ -89,3 +89,15 @@ test('firstEmptySlot finds the gap', () => {
   expect(firstEmptySlot({ items: [song(1, 'a'), song(2, 'b')] as never, slots: 5 })).toBe(3);
   expect(firstEmptySlot({ items: [1, 2, 3, 4, 5].map((n) => song(n, 'x')) as never, slots: 5 })).toBeNull();
 });
+
+test('songs move up and down a slot, swapping with what is there', async () => {
+  const bag = { owner, items: [song(1, 'Cowboy Nudes'), song(2, '2122')], slots: 5 };
+  mockApi.GET.mockResolvedValue(ok(bag));
+  mockApi.PUT.mockResolvedValue(ok({ ...bag, items: [{ ...song(1, '2122'), id: 'g2' }, { ...song(2, 'Cowboy Nudes'), id: 'g1' }] }));
+  render(<GrabBagScreen />);
+
+  expect(await screen.findByRole('button', { name: 'Move Cowboy Nudes up' })).toBeDisabled();
+  fireEvent.press(screen.getByRole('button', { name: 'Move 2122 up' }));
+  await waitFor(() => expect(mockApi.PUT).toHaveBeenCalledWith('/me/grab-bag/order', { body: { slots: ['g2', 'g1', null, null, null] } }));
+  expect(await screen.findByRole('button', { name: 'Move 2122 up' })).toBeDisabled();
+});

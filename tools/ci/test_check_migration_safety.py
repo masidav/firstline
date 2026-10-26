@@ -15,6 +15,26 @@ def run(sql: str):
 
 
 class SafetyCheckTests(unittest.TestCase):
+    def test_reviewed_allowance_file_allows_a_named_migration_only_with_a_reason(self):
+        with tempfile.TemporaryDirectory() as d:
+            listing = os.path.join(d, "allowances.txt")
+            with open(listing, "w", encoding="utf-8") as f:
+                f.write("# comment\n0099_tighten.sql: only migrations write this table\n0098_no_reason.sql:\n")
+            allowances = check.reviewed_allowances(listing)
+            self.assertEqual(list(allowances), ["0099_tighten.sql"])
+            for name, expected in [("0099_tighten.sql", True), ("0098_no_reason.sql", False)]:
+                path = os.path.join(d, name)
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write("ALTER TABLE cities ALTER COLUMN time_zone SET NOT NULL;")
+                allowed, findings = check.check_file(path, allowances)
+                self.assertEqual(allowed, expected, name)
+                self.assertEqual(len(findings), 1)
+
+    def test_every_listed_allowance_names_a_real_migration(self):
+        root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "database", "migrations")
+        for name in check.reviewed_allowances():
+            self.assertTrue(os.path.exists(os.path.join(root, name)), name)
+
     def test_additive_migration_passes(self):
         allowed, findings = run(
             """

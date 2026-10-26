@@ -403,3 +403,35 @@ resource "google_monitoring_alert_policy" "api_errors" {
     auto_close = "1800s"
   }
 }
+
+# Verified proof must be redacted and archived before the quarantine bucket deletes it at 30 days (storage.tf). The
+# worker's hourly redaction.sweep logs "Redaction overdue: ..." while any verified file is still in quarantine 25 days
+# after upload (workers/image-redaction/RedactionSweepJob.cs); this alert emails at most once every 6 hours.
+resource "google_monitoring_alert_policy" "redaction_overdue" {
+  display_name = "Proof photos about to be lost (${var.environment})"
+  project      = var.project_id
+  combiner     = "OR"
+
+  conditions {
+    display_name = "Verified files still in quarantine after 25 days"
+    condition_matched_log {
+      filter = "resource.type = \"k8s_container\" AND resource.labels.container_name = \"worker\" AND jsonPayload.Message =~ \"^Redaction overdue\""
+    }
+  }
+
+  documentation {
+    content   = "Verified proof is still unarchived 25 days after upload; the quarantine bucket deletes it at 30. Check the staff Photo redaction screen (GET /v1/admin/redactions) and failed submissions.redact jobs."
+    mime_type = "text/markdown"
+  }
+
+  notification_channels = [google_monitoring_notification_channel.email.id]
+
+  alert_strategy {
+    notification_rate_limit {
+      period = "21600s"
+    }
+    auto_close = "86400s"
+  }
+
+  depends_on = [google_project_service.apis]
+}

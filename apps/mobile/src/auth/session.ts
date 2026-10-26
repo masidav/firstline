@@ -1,5 +1,5 @@
 import { type Api, ApiError, createApi, type FetchLike, type Me, type Session, unwrap } from '../api/client';
-import type { TokenStore } from './storage';
+import type { Provider, TokenStore } from './storage';
 
 export type SessionState =
   | { status: 'loading' }
@@ -8,7 +8,14 @@ export type SessionState =
   /** The API could not be reached; the refresh token is kept so a retry can resume. */
   | { status: 'unreachable' };
 
-export type Provider = 'apple' | 'google';
+export type { Provider };
+
+/** What a sign-in provider handed the app: its identity token, and the nonce the app put in it (if any). */
+export interface Credential {
+  provider: Provider;
+  idToken: string;
+  nonce?: string;
+}
 
 /**
  * Holds the signed-in session (docs/adr/0003-authentication.md).
@@ -24,6 +31,7 @@ export class SessionManager {
 
   private readonly bareApi: Api;
   private accessToken: string | null = null;
+  private signInProvider: Provider | null = null;
   private refreshing: Promise<boolean> | null = null;
   private state: SessionState = { status: 'loading' };
   private readonly listeners = new Set<() => void>();
@@ -38,6 +46,11 @@ export class SessionManager {
   }
 
   getState = (): SessionState => this.state;
+
+  /** Which provider the current session signed in with; null when signed out or not recorded. */
+  get provider(): Provider | null {
+    return this.signInProvider;
+  }
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -60,11 +73,12 @@ export class SessionManager {
    * Signs in with a provider identity token. For a new account the API needs a handle: without one this
    * throws ApiError with `fieldError('handle')` set.
    */
-  async signIn(provider: Provider, idToken: string, handle?: string): Promise<{ isNewUser: boolean }> {
+  async signIn(credential: Credential, handle?: string): Promise<{ isNewUser: boolean }> {
+    const { provider, idToken, nonce } = credential;
     const session = unwrap(
-      await this.bareApi.POST('/auth/sessions', { body: { provider, id_token: idToken, handle } }),
+      await this.bareApi.POST('/auth/sessions', { body: { provider, id_token: idToken, nonce, handle } }),
     );
-    await this.accept(session);
+    await this.accept(session, provider);
     return { isNewUser: session.is_new_user };
   }
 
@@ -108,17 +122,17 @@ export class SessionManager {
   }
 
   private async doRefresh(): Promise<boolean> {
-    const refreshToken = await this.store.get();
-    if (!refreshToken) {
+    const stored = await this.store.get();
+    if (!stored) {
       return false;
     }
 
-    const result = await this.bareApi.POST('/auth/refresh', { body: { refresh_token: refreshToken } });
+    const result = await this.bareApi.POST('/auth/refresh', { body: { refresh_token: stored.refreshToken } });
     if (result.response.status === 401) {
       await this.clear();
       return false;
     }
-    await this.accept(unwrap(result));
+    await this.accept(unwrap(result), stored.provider);
     return true;
   }
 
@@ -140,14 +154,16 @@ export class SessionManager {
     return authorized;
   }
 
-  private async accept(session: Session): Promise<void> {
+  private async accept(session: Session, provider: Provider | null): Promise<void> {
     this.accessToken = session.access_token;
-    await this.store.set(session.refresh_token);
+    this.signInProvider = provider;
+    await this.store.set({ refreshToken: session.refresh_token, provider });
     this.setState({ status: 'signedIn', me: session.user });
   }
 
   private async clear(): Promise<void> {
     this.accessToken = null;
+    this.signInProvider = null;
     await this.store.clear();
     this.setState({ status: 'signedOut' });
   }

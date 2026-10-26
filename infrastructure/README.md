@@ -100,6 +100,7 @@ steps with `prod` in place of `beta`.
    openssl rand -base64 32 | tr -d '\n' | gcloud secrets versions add Spotify__TokenKey --project project-ef36a8a9-d958-4163-b4c --data-file=-
    printf '%s' "$SPOTIFY_CLIENT_SECRET" | gcloud secrets versions add Spotify__ClientSecret --project project-ef36a8a9-d958-4163-b4c --data-file=-
    gcloud secrets versions add Auth__Apple__PrivateKey --project project-ef36a8a9-d958-4163-b4c --data-file=AuthKey_XXXX.p8
+   printf '%s' "$TICKETMASTER_API_KEY" | gcloud secrets versions add Ticketmaster__ApiKey --project project-ef36a8a9-d958-4163-b4c --data-file=-
    ```
    Every secret listed in `k8s/overlays/<env>/secrets.yaml` needs a version, or the pods cannot start
    (`ConnectionStrings__Database` and `Database__ServerCa` already have one, written by Terraform).
@@ -209,6 +210,10 @@ drift, so update `sql.tf` or import the clone). Rehearse this on beta and record
   fields that `validate` cannot check; confirm each chart has data and each alert can fire on beta.
 - The worker's liveness probe only catches a loop that stops iterating. A loop that keeps erroring (database
   unreachable) stays "alive" on purpose; the "worker cannot reach the queue" alert covers that.
+- Stored photos have no cluster storage yet. `Storage__LocalPath` (local disk) is for development; in the cluster the
+  root filesystem is read-only and the API and worker pods share no volume. Both processes must use the **same**
+  storage, because the API writes files and the worker's `storage.cleanup` job deletes them: put any `Storage__*`
+  setting in the shared `app-config` ConfigMap, not one Deployment, until the Cloud Storage `IFileStore` replaces it.
 - The `SecretProviderClass` lists in each overlay duplicate the `secret_readers` map in Terraform; change both.
 - The migration safety check is a pattern match, not a parser: it knows the common breaking statements and
   ignores function bodies. Slow-but-additive migrations (indexes on big tables) are on the author.

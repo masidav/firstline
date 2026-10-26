@@ -7,6 +7,7 @@ import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
+import { saleLines, statusLabel, whenLabel } from './showInfo';
 
 type Show = components['schemas']['Event'];
 
@@ -55,10 +56,15 @@ export function ArtistShowsScreen({ artistId }: { artistId: string }) {
           <View style={styles.rowText}>
             <Text style={styles.name}>{show.name}</Text>
             <Text style={styles.note}>
-              {new Date(show.starts_at).toLocaleDateString()} · {[show.venue, show.city].filter(Boolean).join(', ')}
+              {whenLabel(show)} · {[show.venue, show.city].filter(Boolean).join(', ')}
             </Text>
+            {saleLines(show)[0] ? <Text style={styles.note}>{saleLines(show)[0]}</Text> : null}
           </View>
-          {show.tickets_available && <Text style={styles.badge}>Fan tickets</Text>}
+          {show.tickets_available ? (
+            <Text style={styles.badge}>Fan tickets</Text>
+          ) : statusLabel(show.status) && show.status !== 'onsale' ? (
+            <Text style={[styles.badge, show.status === 'cancelled' && styles.cancelled]}>{statusLabel(show.status)}</Text>
+          ) : null}
         </Pressable>
       ))}
     </Screen>
@@ -71,4 +77,5 @@ const styles = StyleSheet.create({
   name: { color: colors.text, fontSize: 16, fontWeight: '600' },
   note: { color: colors.muted, fontSize: 14 },
   badge: { color: colors.accent, fontSize: 14, fontWeight: '600' },
+  cancelled: { color: colors.danger },
 });

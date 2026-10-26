@@ -7,8 +7,8 @@ using Npgsql;
 
 namespace FandomScore.Api.Features.Users;
 
-/// <summary>openapi Hub city: one of the curated metro areas a fan can pick.</summary>
-public sealed record HubCity(string Id, string Name, string Region, string Country);
+/// <summary>openapi Hub city: one of the curated metro areas a fan can pick, with its IANA time zone (migration 0033).</summary>
+public sealed record HubCity(string Id, string Name, string Region, string Country, string TimeZone);
 
 /// <summary>
 /// openapi <c>GET /cities</c> and <c>PUT /me/hub-cities</c>. A fan has a primary hub city and up to two backups;
@@ -25,7 +25,7 @@ public static class HubCities
 
     public sealed record HubCityList(IReadOnlyList<HubCity> Items);
 
-    private const string Columns = "c.id AS Id, c.name AS Name, c.region AS Region, c.country AS Country";
+    private const string Columns = "c.id AS Id, c.name AS Name, c.region AS Region, c.country AS Country, c.time_zone AS TimeZone";
 
     // Matches the start of the name or of any word in it ("york" finds New York), or the exact region code ("ON").
     private static async Task<IResult> SearchAsync(string? q, int? limit, NpgsqlDataSource db, CancellationToken cancellationToken)

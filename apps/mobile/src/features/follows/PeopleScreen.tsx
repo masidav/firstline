@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
@@ -98,7 +98,8 @@ export function PeopleScreen() {
 
   const row = (user: UserSummary, action: 'follow' | 'follower') => (
     <View key={user.handle} style={styles.row}>
-      <View style={styles.rowText}>
+      <Pressable accessibilityRole="link" accessibilityLabel={`Open ${fanName(user)}'s page`} onPress={() => router.push(`/fans/${user.handle}`)}
+        style={styles.rowText}>
         <Text style={styles.name} numberOfLines={1}>
           {fanName(user)}
         </Text>
@@ -106,7 +107,7 @@ export function PeopleScreen() {
           @{user.handle}
           {user.follows_me ? ' · follows you' : ''}
         </Text>
-      </View>
+      </Pressable>
       <FollowButton handle={user.handle} following={user.followed_by_me} busy={busy === user.handle} onToggle={(h, f) => void toggle(h, f)} />
       {action === 'follower' && (
         <Button

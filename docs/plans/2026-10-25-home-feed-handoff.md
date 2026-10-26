@@ -57,3 +57,14 @@ another reshuffles; keep that property if the ordering changes.
   `ASPNETCORE_ENVIRONMENT=Development Auth__DevSignIn=true Cors__AllowedOrigins=http://localhost:8081`, and the app
   with `CI=1 EXPO_PUBLIC_DEV_SIGN_IN=true npx expo start --web`. Expo rewrites `apps/mobile/tsconfig.json` on start;
   `git checkout` it before committing. `playwright-core` with `/usr/bin/google-chrome` works for screenshots.
+- Observed 2026-10-26: with `CI=1`, that Expo server kept serving the first bundle after source edits (Metro did
+  not pick up changes); started without `CI=1` (`< /dev/null`) it rebuilt on every edit. `apps/mobile/.env.local`
+  sets `EXPO_PUBLIC_API_URL` and wins over the same variable on the command line, so run the API where it points
+  (`http://127.0.0.1:5271`). `dotnet run` takes its port from the launch profile; pass `--no-launch-profile` for
+  `ASPNETCORE_URLS` to apply. `pgrep -f <pattern>` matches the calling shell too; write the pattern as `[a]pi` to
+  avoid killing it. To run the API from a clean `main` while another session has uncommitted changes, use
+  `git worktree add --detach /tmp/fs-main HEAD`.
+- CI also runs `tools/ci/check_migration_safety.py` on new migrations (rollout safety: no NOT NULL on an existing
+  column, no drops or renames, unless the file says `-- allow-breaking: <why>`). `dotnet test` doesn't run it, so run
+  it on a new migration before pushing. A migration already on `main` can't be edited to add the comment; a reviewed
+  exception goes in `tools/ci/migration_safety_allowances.txt` instead.

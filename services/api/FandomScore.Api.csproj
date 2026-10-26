@@ -14,6 +14,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\packages\spotify\FandomScore.Spotify.csproj" />
+    <ProjectReference Include="..\..\packages\storage\FandomScore.Storage.csproj" />
+    <ProjectReference Include="..\..\packages\notifications\FandomScore.Notifications.csproj" />
   </ItemGroup>
 
 </Project>

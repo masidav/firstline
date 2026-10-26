@@ -72,6 +72,7 @@ output "buckets" {
   value = {
     quarantine = google_storage_bucket.quarantine.name
     archive    = google_storage_bucket.archive.name
+    media      = google_storage_bucket.media.name
   }
 }
 

@@ -4,6 +4,7 @@ using Dapper;
 using FandomScore.Api.Features.Authentication;
 using FandomScore.Api.Features.Scoring;
 using FandomScore.Api.Infrastructure;
+using FandomScore.Storage;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -340,7 +341,9 @@ public static class SubmissionEndpoints
                 "Verified submissions can't be withdrawn.");
         }
 
-        // Deleting the row removes its file rows and upload slots (cascade); then the stored files go too.
+        // Deleting the row removes its file rows and upload slots (cascade), and the database queues their keys in
+        // storage_deletions (migration 0027). The stored files go now; if that fails, the queue keeps their keys and the
+        // worker's storage.cleanup job deletes them.
         var keys = (await connection.QueryAsync<string>(
             "SELECT storage_key FROM submission_files WHERE submission_id = @submissionId", new { submissionId })).ToList();
         if (await connection.ExecuteAsync(
@@ -350,9 +353,18 @@ public static class SubmissionEndpoints
                 "Verified submissions can't be withdrawn.");
         }
 
-        foreach (var key in keys)
+        try
         {
-            await files.DeleteAsync(key, cancellationToken);
+            foreach (var key in keys)
+            {
+                await files.DeleteAsync(key, cancellationToken);
+            }
+
+            await connection.ExecuteAsync("DELETE FROM storage_deletions WHERE storage_key = ANY(@keys)", new { keys = keys.ToArray() });
+        }
+        catch (IOException)
+        {
+            // The submission is withdrawn either way; storage.cleanup retries the files still queued.
         }
 
         return Results.NoContent();

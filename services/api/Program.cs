@@ -3,15 +3,21 @@ using FandomScore.Api.Features.AlbumJournal;
 using FandomScore.Api.Features.Allocations;
 using FandomScore.Api.Features.Artists;
 using FandomScore.Api.Features.Authentication;
+using FandomScore.Api.Features.Concerts;
+using FandomScore.Api.Features.Featured;
 using FandomScore.Api.Features.Feed;
 using FandomScore.Api.Features.Follows;
 using FandomScore.Api.Features.GrabBag;
 using FandomScore.Api.Features.Moderation;
 using FandomScore.Api.Features.Notifications;
+using FandomScore.Api.Features.Prompts;
+using FandomScore.Api.Features.Reactions;
+using FandomScore.Api.Features.Redaction;
 using FandomScore.Api.Features.Scoring;
 using FandomScore.Api.Features.SpotifySync;
 using FandomScore.Api.Features.Stats;
 using FandomScore.Api.Features.Submissions;
+using FandomScore.Api.Features.Trivia;
 using FandomScore.Api.Features.Users;
 using FandomScore.Api.Infrastructure;
 using FandomScore.Spotify;
@@ -29,6 +35,7 @@ if (string.IsNullOrWhiteSpace(connectionString))
 
 builder.Services.AddNpgsqlDataSource(connectionString);
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<StandingSnapshots>();
 builder.Services.AddAuth(builder.Configuration);
 builder.Services.AddSpotify(builder.Configuration);
 builder.Services.AddArtists();
@@ -72,6 +79,13 @@ v1.MapFollows();
 v1.MapGrabBag();
 v1.MapReports();
 v1.MapNotifications();
+v1.MapPushDevices();
+v1.MapTrivia();
+v1.MapFeatured();
+v1.MapPrompts();
+v1.MapReactions();
+v1.MapRedaction();
+v1.MapConcertSources();
 
 app.Run();
 

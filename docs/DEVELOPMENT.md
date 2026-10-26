@@ -82,6 +82,8 @@ The suite starts its own PostgreSQL 16 container, so it needs Docker but not the
   without it they return `503`, and the worker cannot load catalogs (added artists stay `onboarding` until it is set).
   `Spotify__TokenKey` is a key you generate, not anything from Spotify. See [ADR 0005](adr/0005-spotify-integration.md);
   catalog settings (`Spotify__CatalogMarket` and friends) are in `workers/artist-onboarding/README.md`.
+- Concert data from Ticketmaster needs `Ticketmaster__ApiKey` (a Discovery API key from developer.ticketmaster.com)
+  for the worker. Without it the concert sync is off and only staff-entered shows exist. See `workers/concerts/README.md`.
 - To connect a real Spotify account without the mobile app: `python3 tools/dev/spotify_connect.py --help`. It
   creates a local dev user and session (local database only), runs Spotify's sign-in in your browser, calls
   `PUT /v1/me/spotify`, and shows what the sync stored. Register `http://127.0.0.1:8888/callback` in the
@@ -92,7 +94,10 @@ The suite starts its own PostgreSQL 16 container, so it needs Docker but not the
   `scoringWeights.sh` (lists the Spotify scoring weights, or sets one: `scoringWeights.sh spotify_liked_track 2`;
   the worker rescores every artist afterwards).
 - Uploaded photos are stored on local disk under `services/api/.local-storage/` (`Storage__LocalPath` to change it;
-  git ignores it). Production needs the Cloud Storage quarantine bucket, which isn't wired up yet. To review posts
+  git ignores it). The worker's hourly `storage.cleanup` deletes unused files there, so give the worker the same
+  directory: `Storage__LocalPath=$PWD/services/api/.local-storage dotnet run --project workers`. The cluster uses
+  Cloud Storage instead (`Storage__Provider=gcs` and three bucket names; `packages/storage/README.md`), which you can
+  also try locally against an emulator. To review posts
   locally, make your account staff: `UPDATE users SET is_staff = true WHERE handle = '...'` in the compose database.
 - Production logs are JSON on the console. Development uses the plain formatter.
 - In Kubernetes, secrets arrive as files in `Secrets__Directory` (one per configuration key) instead of environment

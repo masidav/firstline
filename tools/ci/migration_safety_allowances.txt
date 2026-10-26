@@ -1,0 +1,4 @@
+# Reviewed exceptions to tools/ci/check_migration_safety.py for migrations already on main (which can't be edited
+# to add an "-- allow-breaking:" line). One line per file: "<file name>: <why the running release can't break>".
+
+0033_city_time_zones_and_rule_lock.sql: SET NOT NULL on cities.time_zone. Only migrations write cities (curated list); no API, worker, or tool code inserts or updates them, and 0033 fills every row before the constraint. Reviewed 2026-10-26.

@@ -8,10 +8,16 @@ import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Field, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { ArtistRow } from './ArtistRow';
+import { usePendingLogs } from '../album-journal/journalQueue';
 import { CameraIcon } from '../../ui/CameraIcon';
 import { Feed } from '../feed/Feed';
+import { FeaturedArtistCard } from '../featured/FeaturedArtistCard';
 import { AlertsButton } from '../notifications/AlertsButton';
+import { DailyPromptCard } from '../prompts/DailyPromptCard';
+import { DailyTriviaCard } from '../trivia/DailyTriviaCard';
 import { YourArtists } from './YourArtists';
+import { useSyncOnOpen } from '../spotify/backgroundSync';
+import type { SpotifyStatus } from '../spotify/spotifyConnect';
 
 const DEBOUNCE_MS = 300;
 
@@ -22,7 +28,11 @@ const DEBOUNCE_MS = 300;
  * Pressing Enter with no exact match asks Spotify (GET /artists/search) and offers to add an artist (POST /artists).
  */
 export function HomeScreen() {
-  const { session } = useSession();
+  const { session, state } = useSession();
+  // A quiet Spotify sync each time the app opens (the server skips it when the last one is recent).
+  const updateSpotify = useCallback((spotify: SpotifyStatus) => session.updateMe({ spotify }), [session]);
+  useSyncOnOpen(session.api, state.status === 'signedIn' && state.me.spotify?.connected === true, updateSpotify);
+  const pendingLogs = usePendingLogs();
   const [query, setQuery] = useState('');
   const [tracked, setTracked] = useState<Artist[] | null>(null);
   const [searchError, setSearchError] = useState<string>();
@@ -135,6 +145,13 @@ export function HomeScreen() {
         <Button label="People" kind="secondary" onPress={() => router.push('/people')} />
         <Button label="Profile" kind="secondary" onPress={() => router.push('/profile')} />
       </View>
+      {pendingLogs.length > 0 && (
+        <Pressable accessibilityRole="button" onPress={() => router.push('/journal')} style={styles.pendingBanner}>
+          <Text style={styles.pendingText}>
+            {pendingLogs.length === 1 ? '1 journal entry' : `${pendingLogs.length} journal entries`} waiting to sync. Tap to see.
+          </Text>
+        </Pressable>
+      )}
 
       <Field
         label="Search artists"
@@ -150,7 +167,10 @@ export function HomeScreen() {
 
       {!text && (
         <>
+          <FeaturedArtistCard />
           <YourArtists />
+          <DailyTriviaCard />
+          <DailyPromptCard />
         </>
       )}
       {text !== '' && tracked?.length === 0 && !spotify && !askingSpotify && (
@@ -225,6 +245,8 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md },
   // Wraps on narrow phones instead of pushing the last button off the screen.
   headerButtons: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  pendingBanner: { padding: space.sm, borderRadius: 8, borderWidth: 1, borderColor: colors.accent },
+  pendingText: { color: colors.text, fontSize: 14 },
   section: { color: colors.text, fontSize: 18, fontWeight: '700', marginTop: space.md },
   note: { color: colors.muted, fontSize: 14 },
   camera: {

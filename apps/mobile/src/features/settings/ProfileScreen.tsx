@@ -7,7 +7,11 @@ import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Field, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
+import { reauthenticateWithApple } from '../authentication/appleSignIn';
 import { cityLabel, formatDay } from '../hub-cities/HubCitiesScreen';
+import { unregisterPush } from '../notifications/push';
+import { PushSettingsSection } from '../notifications/PushSettingsSection';
+import { connectErrorMessage, describeStatus } from '../spotify/spotifyConnect';
 
 type Errors = {
   handle?: string;
@@ -45,6 +49,37 @@ export function ProfileScreen({ me }: { me: Me }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string>();
+  const [resyncing, setResyncing] = useState(false);
+  const [resyncError, setResyncError] = useState<string>();
+  const [remindersError, setRemindersError] = useState<string>();
+
+  // Resync now (POST /me/spotify/sync): one manual sync per 15 minutes; the app also syncs quietly when it opens.
+  async function resync() {
+    setResyncing(true);
+    setResyncError(undefined);
+    try {
+      session.updateMe({ spotify: unwrap(await session.api.POST('/me/spotify/sync')) });
+    } catch (e) {
+      setResyncError(
+        e instanceof ApiError && e.code === 'rate_limited'
+          ? 'Spotify was synced in the last 15 minutes. Try again a little later.'
+          : connectErrorMessage(e),
+      );
+    } finally {
+      setResyncing(false);
+    }
+  }
+
+  // Presale reminders save at once (PATCH /me), like a settings switch.
+  async function setPresaleReminders(on: boolean) {
+    setRemindersError(undefined);
+    try {
+      const updated = unwrap(await session.api.PATCH('/me', { body: { presale_reminders: on } }));
+      session.updateMe({ presale_reminders: updated.presale_reminders });
+    } catch (e) {
+      setRemindersError(errorMessage(e));
+    }
+  }
 
   // What the save would send. Band fields only count while the artist switch is on: turning it off clears them.
   const body: {
@@ -107,8 +142,18 @@ export function ProfileScreen({ me }: { me: Me }) {
     setDeleting(true);
     setDeleteError(undefined);
     try {
-      // On iOS this will first get a fresh Sign in with Apple code for Apple accounts (App Store rule).
-      await session.deleteAccount();
+      // An Apple account first confirms with Sign in with Apple; the API uses the code to revoke the sign-in
+      // (App Store rule). Deletion still goes ahead if Apple fails, but not if the fan backs out of the sheet.
+      let appleCode: string | undefined;
+      if (session.provider === 'apple') {
+        const reauth = await reauthenticateWithApple();
+        if (reauth === 'cancelled') {
+          setDeleting(false);
+          return;
+        }
+        appleCode = reauth === 'failed' ? undefined : reauth.code;
+      }
+      await session.deleteAccount(appleCode);
     } catch (e) {
       setDeleteError(errorMessage(e));
       setDeleting(false);
@@ -135,6 +180,7 @@ export function ProfileScreen({ me }: { me: Me }) {
           ))}
         </View>
       )}
+      <Button label="Your public page" kind="secondary" onPress={() => router.push(`/fans/${me.handle}`)} />
       <Button label="Your tickets" kind="secondary" onPress={() => router.push('/tickets')} />
       <Button label="Your stats" kind="secondary" onPress={() => router.push('/stats')} />
       <Button label="My posts" kind="secondary" onPress={() => router.push('/posts')} />
@@ -143,6 +189,9 @@ export function ProfileScreen({ me }: { me: Me }) {
       <Button label="People you follow" kind="secondary" onPress={() => router.push('/people')} />
       {me.is_staff && <Button label="Review queue" kind="secondary" onPress={() => router.push('/review')} />}
       {me.is_staff && <Button label="Reported posts" kind="secondary" onPress={() => router.push('/moderation')} />}
+      {me.is_staff && <Button label="Photo redaction" kind="secondary" onPress={() => router.push('/redactions')} />}
+      {me.is_staff && <Button label="Featured artist" kind="secondary" onPress={() => router.push('/featured-admin')} />}
+      {me.is_staff && <Button label="Daily prompts" kind="secondary" onPress={() => router.push('/prompts-admin')} />}
 
       <Field label="Handle" value={handle} onChangeText={edit(setHandle)} error={errors.handle} />
       <Field
@@ -184,7 +233,26 @@ export function ProfileScreen({ me }: { me: Me }) {
       <Button label="Save" onPress={() => void save()} busy={saving} disabled={!changed} />
 
       <View style={{ height: 24 }} />
-      <Body>{me.spotify?.connected ? 'Spotify: connected' : 'Spotify: not connected'}</Body>
+      <PushSettingsSection me={me} />
+      <View style={styles.switchRow}>
+        <View style={styles.switchText}>
+          <Body>Presale reminders</Body>
+          <Body muted>A heads-up the day before a presale for artists you listen to, in your hub cities.</Body>
+        </View>
+        <Switch
+          accessibilityLabel="Presale reminders"
+          value={me.presale_reminders}
+          onValueChange={(on) => void setPresaleReminders(on)}
+        />
+      </View>
+      <ErrorText>{remindersError}</ErrorText>
+
+      <View style={{ height: 24 }} />
+      <Body>{me.spotify?.connected ? `Spotify: ${describeStatus(me.spotify)}` : 'Spotify: not connected'}</Body>
+      {me.spotify?.connected && (
+        <Button label="Resync Spotify" kind="secondary" busy={resyncing} onPress={() => void resync()} />
+      )}
+      <ErrorText>{resyncError}</ErrorText>
       <Button
         label={me.spotify?.connected ? 'Spotify settings' : 'Connect Spotify'}
         kind="secondary"
@@ -203,7 +271,11 @@ export function ProfileScreen({ me }: { me: Me }) {
       <Button label="Change hub cities" kind="secondary" onPress={() => router.push('/hub-cities')} />
 
       <View style={{ height: 24 }} />
-      <Button label="Sign out" kind="secondary" onPress={() => void session.signOut()} />
+      <Button
+        label="Sign out"
+        kind="secondary"
+        onPress={() => void unregisterPush(session.api).then(() => session.signOut())}
+      />
 
       <View style={{ height: 24 }} />
       {confirmingDelete ? (
@@ -228,4 +300,5 @@ const styles = StyleSheet.create({
   link: { color: colors.accent, fontSize: 16, fontWeight: '600' },
   switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: space.md },
   switchLabel: { color: colors.text, fontSize: 16 },
+  switchText: { flex: 1, gap: 2, marginRight: space.md },
 });

@@ -3,8 +3,14 @@
     <Project Path="database/FandomScore.Database.csproj" />
   </Folder>
   <Folder Name="/packages/" />
+  <Folder Name="/packages/notifications/">
+    <Project Path="packages/notifications/FandomScore.Notifications.csproj" />
+  </Folder>
   <Folder Name="/packages/spotify/">
     <Project Path="packages/spotify/FandomScore.Spotify.csproj" />
+  </Folder>
+  <Folder Name="/packages/storage/">
+    <Project Path="packages/storage/FandomScore.Storage.csproj" />
   </Folder>
   <Folder Name="/services/" />
   <Folder Name="/services/api/">

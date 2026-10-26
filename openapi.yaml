@@ -358,7 +358,18 @@ paths:
         (`top_artists_added`; the daily artist add limit applies). A sync already `queued` or `running` is returned as is. Otherwise one manual sync per 15 minutes
         (`429 rate_limited`). `409 spotify_not_connected` without a connection; `409 spotify_reauth_required`
         when Spotify rejected the stored authorization (connect again with `PUT /me/spotify`).
+
+        `background=true` is the app's sync when it opens (decided 2026-10-25): when a sync ran or was requested in the
+        last 15 minutes, or the authorization needs renewing, it returns the status with `200` and queues nothing;
+        otherwise it queues like a manual sync.
+      parameters:
+        - {name: background, in: query, schema: {type: boolean, default: false}}
       responses:
+        '200':
+          description: Background sync not needed now; the current status.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SpotifyStatus'}
         '202':
           description: Sync queued. Poll `GET /me/spotify` for `sync_state`.
           content:
@@ -401,6 +412,9 @@ paths:
         `headers`; the link is signed and short-lived, so it needs no sign-in. Files land in quarantine storage
         with their metadata (EXIF location, camera details, comments) stripped. JPEG and PNG only: convert HEIC
         or WebP on the device first. 50 uploads per day per user.
+
+        Staff also upload featured-artist videos here (`purpose: featured_video`): MP4 up to 100 MB, stored as
+        uploaded; others get 403.
       requestBody:
         required: true
         content:
@@ -535,7 +549,8 @@ paths:
         Takes a Spotify artist id from search; the server fetches the name and image from Spotify
         (client-supplied names are never trusted) and calls `track_artist()`. A new artist starts as
         `onboarding`; a worker loads the catalog and baseline and then marks it `active`. The adding user
-        is synced immediately after activation. An artist that is already tracked is returned as is.
+        is synced immediately after activation. An artist that is already tracked is returned as is; when it is
+        active and the caller has no score for it yet, the caller's Spotify sync is queued so the score arrives soon.
       parameters:
         - {$ref: '#/components/parameters/IdempotencyKey'}
       requestBody:
@@ -658,8 +673,8 @@ paths:
       description: |
         The signed-in fan's numbers, read from stored state and the ledger (never from Spotify at request time).
         Deleted logs and comments and reversed awards don't count. Listening totals cover active tracked artists
-        only. `ledger_points` is the sum of unreversed awards (journal, proof of fandom). Other fans' stats will
-        follow their profile visibility once follows and blocks exist (Phase 8).
+        only. `ledger_points` is the sum of unreversed awards (journal, proof of fandom). Other fans' stats:
+        `GET /users/{handle}/stats`.
       responses:
         '200':
           description: Stats
@@ -1185,7 +1200,8 @@ paths:
       operationId: getFeed
       summary: Home feed
       description: |
-        One vertical scroll mixing, at random: shared photos (verified merch and concert photos) and public album
+        One vertical scroll mixing, at random: shared photos (verified merch and concert photos, once every file is
+        redacted and archived) and public album
         logs from every fan; from the fans the caller follows, their followers-only logs, grab-bag songs, and top
         fandom stats; upcoming shows (within 120 days) of artists the caller has a score for or in their hub cities,
         with the fan allocation to register for; and the caller's own live registrations with their standing.
@@ -1423,6 +1439,422 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/BouncerDoor'}
+  /me/grab-bag/order:
+    put:
+      tags: [Social]
+      operationId: reorderGrabBag
+      summary: Reorder the grab bag
+      description: The five slots in their new order. Each of the caller's songs appears once; null leaves a slot empty.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slots]
+              properties:
+                slots:
+                  type: array
+                  minItems: 5
+                  maxItems: 5
+                  items: {type: [string, 'null'], format: uuid}
+      responses:
+        '200':
+          description: The grab bag in its new order
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GrabBag'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /me/trivia:
+    get:
+      tags: [Social]
+      operationId: getTodaysTrivia
+      summary: Today's music trivia
+      description: |
+        One question a day (UTC) about one of the fan's scored artists, shared by the artist's fans that day (made from
+        the album catalog by the first who asks). Once answered, `results` names up to two people the fan follows who
+        got it right and the percent of fans who did. `question` is null when none of the fan's artists has enough catalog yet. The right answer is
+        only included once the fan has answered. A right answer earns `trivia_correct` ledger points (0.30, a tenth
+        of logging an album; decided 2026-10-25).
+      responses:
+        '200':
+          description: Today's question, or none
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [question]
+                properties:
+                  question:
+                    oneOf: [{$ref: '#/components/schemas/TriviaQuestion'}, {type: 'null'}]
+  /me/trivia/{questionId}/answer:
+    parameters:
+      - {name: questionId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      tags: [Social]
+      operationId: answerTrivia
+      summary: Answer today's question
+      description: Once, and only on its day.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [choice]
+              properties:
+                choice: {type: integer, minimum: 0, description: Index of the picked option}
+      responses:
+        '200':
+          description: The answered question with the right answer and the points earned
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TriviaQuestion'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: 'Already answered (`code: trivia_answered`), or another day''s question (`code: trivia_expired`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /reactions/{targetType}/{targetId}/{reaction}:
+    parameters:
+      - {name: targetType, in: path, required: true, schema: {type: string, enum: [photo, log, prompt_answer]}}
+      - {name: targetId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: reaction, in: path, required: true, schema: {$ref: '#/components/schemas/Reaction'}}
+    put:
+      tags: [Social]
+      operationId: addReaction
+      summary: React to a post
+      description: |
+        Emoji reactions instead of comments (decided 2026-10-25). Any post the caller can see (a shared photo, an album
+        log, a prompt answer); several different emoji per post; the same one twice is still one. No points.
+      responses:
+        '200':
+          description: The post's reactions after the change
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [reactions]
+                properties:
+                  reactions:
+                    type: array
+                    items: {$ref: '#/components/schemas/ReactionCount'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+    delete:
+      tags: [Social]
+      operationId: removeReaction
+      summary: Take a reaction back
+      description: Idempotent.
+      responses:
+        '200':
+          description: The post's reactions after the change
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [reactions]
+                properties:
+                  reactions:
+                    type: array
+                    items: {$ref: '#/components/schemas/ReactionCount'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /prompts/today:
+    get:
+      tags: [Social]
+      operationId: getTodaysPrompt
+      summary: Today's music prompt
+      description: |
+        One open question a day (UTC) for everyone, from staff or the built-in library, for example "What's your best
+        hypothetical band name?". `following_answers` (up to three answers from people the caller follows) is only
+        filled once the caller has answered.
+      responses:
+        '200':
+          description: The prompt, the caller's answer, and answers from people they follow
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PromptToday'}
+  /prompts/{promptId}/answer:
+    parameters:
+      - {name: promptId, in: path, required: true, schema: {type: string, format: uuid}}
+    put:
+      tags: [Social]
+      operationId: answerPrompt
+      summary: Answer today's prompt
+      description: Writes or rewrites the caller's answer. Only on the prompt's day. Answers show on the feed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: {type: string, minLength: 1, maxLength: 280}
+                visibility: {type: string, enum: [public, followers], default: public}
+      responses:
+        '200':
+          description: The prompt with the caller's answer
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PromptToday'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: 'Not the prompt''s day (`code: prompt_closed`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+    delete:
+      tags: [Social]
+      operationId: withdrawPromptAnswer
+      summary: Withdraw your answer
+      description: Only on the prompt's day. Idempotent.
+      responses:
+        '204': {description: No answer}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: 'Not the prompt''s day (`code: prompt_closed`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+  /prompts/{promptId}/answers:
+    parameters:
+      - {name: promptId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [Social]
+      operationId: listPromptAnswers
+      summary: Answers to a prompt
+      description: Answers the caller can see, theirs first, then people they follow, then everyone else's public ones, newest first.
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page of answers
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/PromptAnswer'}
+                  next_cursor: {type: [string, 'null']}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /admin/prompts:
+    get:
+      tags: [Admin]
+      operationId: listPrompts
+      summary: Prompts around today
+      description: The last week and the next four weeks that have a prompt (days without one get a library prompt on the day).
+      responses:
+        '200':
+          description: Prompts, latest day first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/Prompt'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/prompts/{day}:
+    parameters:
+      - {name: day, in: path, required: true, schema: {type: string, format: date}}
+    put:
+      tags: [Admin]
+      operationId: schedulePrompt
+      summary: Set a day's prompt
+      description: Today or later. Refused once fans have answered that day's prompt.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: {type: string, minLength: 1, maxLength: 200}
+      responses:
+        '200':
+          description: The prompt
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Prompt'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+    delete:
+      tags: [Admin]
+      operationId: unschedulePrompt
+      summary: Remove a day's prompt
+      description: Refused once fans have answered it. The day then gets a library prompt.
+      responses:
+        '204': {description: No prompt that day}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /featured:
+    get:
+      tags: [Social]
+      operationId: getFeaturedArtist
+      summary: This week's featured artist
+      description: |
+        The staff pick for the current week (Monday to Sunday, UTC): the artist, a video (an uploaded MP4 through a
+        signed link, or a YouTube or TikTok link with an embeddable URL), and a song on Spotify. Null when no pick.
+      responses:
+        '200':
+          description: The pick, or none
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [featured]
+                properties:
+                  featured:
+                    oneOf: [{$ref: '#/components/schemas/FeaturedArtist'}, {type: 'null'}]
+  /featured/videos/{uploadId}:
+    parameters:
+      - {name: uploadId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: exp, in: query, required: true, schema: {type: integer}}
+      - {name: sig, in: query, required: true, schema: {type: string}}
+    get:
+      tags: [Social]
+      operationId: getFeaturedVideo
+      summary: An uploaded featured video
+      description: Signed, short-lived link from `FeaturedArtist.video.url`; needs no sign-in. Supports range requests.
+      security: []
+      responses:
+        '200':
+          description: The MP4
+          content:
+            video/mp4:
+              schema: {type: string, format: binary}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/featured:
+    get:
+      tags: [Admin]
+      operationId: listFeaturedArtists
+      summary: Featured picks
+      description: The last four weeks and everything scheduled, newest first.
+      responses:
+        '200':
+          description: Picks
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/FeaturedArtist'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/featured/{weekStart}:
+    parameters:
+      - {name: weekStart, in: path, required: true, description: The Monday the week starts on, schema: {type: string, format: date}}
+    put:
+      tags: [Admin]
+      operationId: putFeaturedArtist
+      summary: Pick the featured artist for a week
+      description: |
+        Creates or replaces the week's pick. Send `video_url` (a YouTube or TikTok link) or `video_upload_id` (a
+        finished `featured_video` upload), not both. `spotify_track` is an open.spotify.com/track link or a track id;
+        the title and cover come from Spotify.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [artist_id, spotify_track]
+              properties:
+                artist_id: {type: string, format: uuid}
+                headline: {type: [string, 'null'], maxLength: 200}
+                video_url: {type: string, format: uri}
+                video_upload_id: {type: string, format: uuid}
+                spotify_track: {type: string}
+      responses:
+        '200':
+          description: The pick
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FeaturedArtist'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: 'Spotify does not know this track (`code: spotify_track_not_found`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '503': {$ref: '#/components/responses/SpotifyUnavailable'}
+    delete:
+      tags: [Admin]
+      operationId: deleteFeaturedArtist
+      summary: Remove a week's pick
+      responses:
+        '204': {description: No pick that week}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /users/{handle}/stats:
+    parameters:
+      - {$ref: '#/components/parameters/Handle'}
+    get:
+      tags: [Social]
+      operationId: getUserStats
+      summary: A fan's fandom stats
+      description: |
+        For the fan and their followers (decided 2026-10-20: followers see top fandom stats): artists with percentile
+        and rank, journal and proof counts, ledger points. Listening counts stay private. Stats are followers-only
+        (decided 2026-10-25: none are public by default), so others get 403.
+      responses:
+        '200':
+          description: Stats
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProfileStats'}
+        '403':
+          description: 'The caller does not follow this fan (`code: followers_only`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /users/{handle}/answers:
+    parameters:
+      - {$ref: '#/components/parameters/Handle'}
+    get:
+      tags: [Social]
+      operationId: listUserPromptAnswers
+      summary: A fan's prompt answers
+      description: The last 20 the caller may see (public ones, followers-only ones for followers), newest first, with their prompts.
+      responses:
+        '200':
+          description: Answers
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [answer, prompt_text, day]
+                      properties:
+                        answer: {$ref: '#/components/schemas/PromptAnswer'}
+                        prompt_text: {type: string}
+                        day: {type: string, format: date}
+        '404': {$ref: '#/components/responses/NotFound'}
   /users/{handle}/grab-bag:
     parameters:
       - {$ref: '#/components/parameters/Handle'}
@@ -1641,6 +2073,8 @@ paths:
         place if the draw ran now, counting equal scores against them. `likely` is true only when the seats of
         everyone ahead plus the fan's own fit within `tickets - margin_seats` (25 to start), a buffer for fans who
         register later with higher scores, so the app can say "you'll most likely get a ticket" without false hope.
+        Other fans' registrations are counted from a snapshot at most a few seconds old, so `registrants` and the
+        rank can lag fans who registered in that time.
       parameters:
         - name: plus_one
           in: query
@@ -1767,6 +2201,43 @@ paths:
                   items:
                     type: array
                     items: {$ref: '#/components/schemas/MyRegistration'}
+  /me/push-devices:
+    put:
+      tags: [Me]
+      operationId: registerPushDevice
+      summary: Register this phone for push notifications
+      description: |
+        The phone app sends its Expo push token on every launch once the fan allows notifications. Every in-app
+        notification is then also pushed to the fan's live devices, unless they turned that category off (`Me.push`).
+        A token already registered moves to the caller (whoever signed in last on that phone) and is switched back on.
+        Not available on the web app.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, platform]
+              properties:
+                token: {type: string, pattern: '^Expo(nent)?PushToken\[[A-Za-z0-9_-]{10,200}\]$'}
+                platform: {type: string, enum: [ios, android]}
+      responses:
+        '200':
+          description: Registered
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PushDevice'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /me/push-devices/{deviceId}:
+    parameters:
+      - {name: deviceId, in: path, required: true, schema: {type: string, format: uuid}}
+    delete:
+      tags: [Me]
+      operationId: removePushDevice
+      summary: Stop pushing to this phone
+      description: The app calls it on sign-out. Idempotent; only the caller's own devices.
+      responses:
+        '204': {description: Removed}
   /me/notifications:
     get:
       tags: [Me]
@@ -2198,7 +2669,7 @@ paths:
         removes it from the feed for good (it stays as proof; points unchanged). Taking down a log hides it from
         everyone but its author and reverses its points.
       parameters:
-        - {name: targetType, in: path, required: true, schema: {type: string, enum: [photo, log]}}
+        - {name: targetType, in: path, required: true, schema: {type: string, enum: [photo, log, prompt_answer]}}
         - {name: targetId, in: path, required: true, schema: {type: string, format: uuid}}
       requestBody:
         required: true
@@ -2218,6 +2689,118 @@ paths:
               schema: {$ref: '#/components/schemas/ModerationDecision'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /admin/artists/{artistId}/sources:
+    parameters:
+      - {$ref: '#/components/parameters/ArtistId'}
+    get:
+      tags: [Admin]
+      operationId: listArtistSources
+      summary: Which concert-source artist this artist is
+      description: |
+        The worker links an artist to Ticketmaster by itself only when Ticketmaster lists the artist's Spotify page.
+        `external_id` null means it looked and found no match (it looks again weekly).
+      responses:
+        '200':
+          description: The artist's sources
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/ArtistSource'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/artists/{artistId}/sources/{source}:
+    parameters:
+      - {$ref: '#/components/parameters/ArtistId'}
+      - {name: source, in: path, required: true, schema: {type: string, enum: [ticketmaster]}}
+    put:
+      tags: [Admin]
+      operationId: linkArtistSource
+      summary: Link the artist to a source's artist id
+      description: |
+        For artists the worker couldn't match. `external_id` is the Ticketmaster Discovery attraction id (letters and
+        digits), not a ticketmaster.com link. Queues a sync of the artist's shows. `409 conflict` when another tracked
+        artist holds that id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [external_id]
+              properties:
+                external_id: {type: string, pattern: '^[A-Za-z0-9]{5,40}$'}
+      responses:
+        '200':
+          description: Linked
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ArtistSource'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+    delete:
+      tags: [Admin]
+      operationId: unlinkArtistSource
+      summary: Remove a wrong link
+      description: Shows already loaded stay. The worker may link the artist again if the source lists its Spotify page.
+      responses:
+        '204': {description: Removed}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/redactions:
+    get:
+      tags: [Admin]
+      operationId: listRedactionReviews
+      summary: Files the redaction worker sent to staff
+      description: |
+        Verified proof is scanned for barcodes and QR codes, which are blacked out before the file moves to the
+        archive. A file comes here when the scanner can't settle it: a ticket or screenshot with no code found, codes
+        still found after redacting, or an image that can't be read. Oldest first, at most 100. The quarantine bucket
+        deletes the original at `deleted_after`.
+      responses:
+        '200':
+          description: Files waiting for a decision
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/RedactionReview'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/redactions/{fileId}/decision:
+    post:
+      tags: [Admin]
+      operationId: decideRedaction
+      summary: Archive a file staff checked, or discard it
+      description: |
+        `archive`: staff looked and nothing sensitive is left. The worker still blacks out any code it finds, then
+        archives the file. `discard`: the file is deleted now; the submission keeps its status and points.
+      parameters:
+        - {name: fileId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: {type: string, enum: [archive, discard]}
+      responses:
+        '204': {description: Decision recorded}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
   /admin/artists:
     post:
@@ -2450,6 +3033,9 @@ components:
             - guest_unavailable
             - selection_not_ready
             - reservation_unavailable
+            - trivia_answered
+            - trivia_expired
+            - prompt_closed
             - hub_change_limit
             - artist_not_active
             - spotify_artist_not_found
@@ -2491,7 +3077,7 @@ components:
         - $ref: '#/components/schemas/UserRef'
         - type: object
           required: [created_at, log_count, list_count, followed_by_me, follows_me, follower_count, following_count, is_artist,
-                     grab_bag_count]
+                     grab_bag_count, is_me, can_see_follower_content, band_url, instagram_handle, x_handle, answer_count]
           properties:
             created_at: {type: string, format: date-time}
             log_count: {type: integer, description: Logs the caller can see.}
@@ -2502,6 +3088,14 @@ components:
             following_count: {type: integer}
             is_artist: {type: boolean}
             grab_bag_count: {type: integer, description: Songs in their grab bag (visible to followers).}
+            is_me: {type: boolean}
+            can_see_follower_content:
+              type: boolean
+              description: The caller is the fan or follows them, so the grab bag, fandom stats, and followers-only posts are visible
+            band_url: {type: [string, 'null'], format: uri, description: Set when is_artist}
+            instagram_handle: {type: [string, 'null']}
+            x_handle: {type: [string, 'null']}
+            answer_count: {type: integer, description: Prompt answers the caller can see}
 
     SessionRequest:
       type: object
@@ -2526,7 +3120,7 @@ components:
         user: {$ref: '#/components/schemas/Me'}
     Me:
       type: object
-      required: [id, handle, email, created_at, hub_cities, is_artist]
+      required: [id, handle, email, created_at, hub_cities, is_artist, presale_reminders, push]
       properties:
         id: {type: string, format: uuid}
         handle: {type: string}
@@ -2548,6 +3142,13 @@ components:
         x_handle:
           type: [string, 'null']
           description: The band's X handle without the @; the link is `https://x.com/{handle}`.
+        push:
+          $ref: '#/components/schemas/PushSettings'
+        presale_reminders:
+          type: boolean
+          description: |
+            Remind me of presales (a `presale` notification), on by default: once per presale, within a day of it
+            opening, for shows by artists the fan has a score for in their hub cities.
         spotify:
           $ref: '#/components/schemas/SpotifyStatus'
           description: Same as `GET /me/spotify`.
@@ -2562,12 +3163,13 @@ components:
           description: When hub cities may next be changed; null when they may be changed now.
     HubCity:
       type: object
-      required: [id, name, region, country]
+      required: [id, name, region, country, time_zone]
       properties:
         id: {type: string, description: 'Stable id, e.g. `us-il-chicago`'}
         name: {type: string}
         region: {type: string, description: State or province code}
         country: {type: string, description: ISO 3166-1 alpha-2}
+        time_zone: {type: string, description: 'IANA time zone, e.g. `America/Chicago`. Show local times with it.'}
     MeUpdate:
       type: object
       properties:
@@ -2594,6 +3196,14 @@ components:
           type: [string, 'null']
           pattern: '^@?[A-Za-z0-9_]{1,15}$'
           description: A leading @ is dropped. Null clears it. Needs `is_artist` (422 otherwise).
+        presale_reminders: {type: boolean, description: Turn presale reminders on or off.}
+        push:
+          type: object
+          description: Only the categories sent change.
+          properties:
+            tickets: {type: boolean}
+            presales: {type: boolean}
+            staff: {type: boolean}
     SpotifyConnect:
       type: object
       required: [code, code_verifier, redirect_uri]
@@ -2644,9 +3254,9 @@ components:
       type: object
       required: [purpose, mime_type, bytes]
       properties:
-        purpose: {type: string, enum: [submission]}
-        mime_type: {type: string, enum: [image/jpeg, image/png]}
-        bytes: {type: integer, minimum: 1, maximum: 15728640}
+        purpose: {type: string, enum: [submission, featured_video]}
+        mime_type: {type: string, enum: [image/jpeg, image/png, video/mp4], description: 'video/mp4 only for featured_video'}
+        bytes: {type: integer, minimum: 1, maximum: 104857600, description: 'Photos up to 15 MB, videos up to 100 MB'}
         sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
     UploadIntent:
       type: object
@@ -2696,6 +3306,53 @@ components:
         tracked_at: {type: string, format: date-time}
         activated_at: {type: [string, 'null'], format: date-time}
         my_score: {oneOf: [{$ref: '#/components/schemas/ScoreSummary'}, {type: 'null'}]}
+    PushSettings:
+      type: object
+      description: Which notifications also go to the fan's phones. All on by default; in-app notifications are kept either way.
+      required: [tickets, presales, staff]
+      properties:
+        tickets: {type: boolean, description: 'Draw results, seats that open up, delivered tickets.'}
+        presales: {type: boolean, description: Presale reminders.}
+        staff: {type: boolean, description: Staff notices (staff accounts only).}
+    PushDevice:
+      type: object
+      required: [id, platform, created_at, last_seen_at]
+      properties:
+        id: {type: string, format: uuid}
+        platform: {type: string, enum: [ios, android]}
+        created_at: {type: string, format: date-time}
+        last_seen_at: {type: string, format: date-time}
+    ArtistSource:
+      type: object
+      required: [source, external_id, matched_by, checked_at, synced_at]
+      properties:
+        source: {type: string, enum: [ticketmaster]}
+        external_id: {type: [string, 'null']}
+        matched_by: {type: [string, 'null'], enum: [spotify_link, staff, null]}
+        checked_at: {type: string, format: date-time}
+        synced_at: {type: [string, 'null'], format: date-time, description: Last time the artist's shows were loaded.}
+    RedactionReview:
+      type: object
+      required: [file_id, submission_id, kind, artist, user, note, codes_redacted, uploaded_at, deleted_after, file]
+      properties:
+        file_id: {type: string, format: uuid}
+        submission_id: {type: string, format: uuid}
+        kind: {type: string, enum: [ticket, merch, screenshot, concert_photo]}
+        artist: {$ref: '#/components/schemas/ArtistRef'}
+        user: {$ref: '#/components/schemas/UserRef'}
+        note: {type: [string, 'null'], description: Why the worker couldn't finish the file.}
+        codes_redacted: {type: integer, minimum: 0, description: Codes the worker found and blacked out before sending the file to staff.}
+        uploaded_at: {type: string, format: date-time}
+        deleted_after: {type: string, format: date-time, description: When the quarantine bucket deletes the original.}
+        file:
+          type: object
+          description: The quarantined original (a short-lived signed link).
+          required: [id, mime_type, url, redacted]
+          properties:
+            id: {type: string, format: uuid}
+            mime_type: {type: string}
+            url: {type: string, format: uri}
+            redacted: {type: boolean}
     ArtistRef:
       type: object
       required: [id, name]
@@ -2734,7 +3391,12 @@ components:
               share: {type: number}
     Event:
       type: object
-      required: [id, artist_id, name, starts_at, tickets_available]
+      description: |
+        A show. Staff enter some; the rest come from Ticketmaster (`source: ticketmaster`, loaded daily for tracked
+        artists), with its ticket link, status, public sale, and presales. A show with a fan allocation keeps the time
+        and city staff set even if Ticketmaster changes them.
+      required: [id, artist_id, name, starts_at, tickets_available, source, ticket_url, status, time_tba,
+                 public_sale_starts_at, public_sale_ends_at, presales]
       properties:
         id: {type: string, format: uuid}
         artist_id: {type: string, format: uuid}
@@ -2744,8 +3406,30 @@ components:
         city: {type: [string, 'null']}
         region: {type: [string, 'null']}
         country: {type: [string, 'null']}
-        starts_at: {type: string, format: date-time}
-        tickets_available: {type: boolean}
+        time_zone:
+          type: [string, 'null']
+          description: The hub city's IANA time zone, for showing the show's time and registration window locally. Null without a hub city.
+        starts_at: {type: string, format: date-time, description: 'With `time_tba`, local midnight of the show''s date.'}
+        tickets_available: {type: boolean, description: A fan allocation is open or upcoming for this show.}
+        source: {type: [string, 'null'], enum: [ticketmaster, null], description: Null for shows staff entered.}
+        ticket_url: {type: [string, 'null'], format: uri, description: Where the public buys tickets (Ticketmaster's event page).}
+        status:
+          type: string
+          enum: [scheduled, onsale, offsale, cancelled, postponed, rescheduled]
+          description: Ticketmaster's status; `scheduled` for staff-entered shows.
+        time_tba: {type: boolean, description: Only the date is known.}
+        public_sale_starts_at: {type: [string, 'null'], format: date-time}
+        public_sale_ends_at: {type: [string, 'null'], format: date-time}
+        presales:
+          type: array
+          description: Presales that haven't ended, earliest first.
+          items:
+            type: object
+            required: [name, starts_at, ends_at]
+            properties:
+              name: {type: string, description: 'As Ticketmaster names it, e.g. "Verified Fan Presale".'}
+              starts_at: {type: string, format: date-time}
+              ends_at: {type: [string, 'null'], format: date-time}
     EventDetail:
       type: object
       required: [event, allocations]
@@ -2896,7 +3580,7 @@ components:
         id: {type: string, format: uuid}
         kind:
           type: string
-          enum: [draw_selected, draw_not_selected, seat_backfilled, ticket_delivered, staff_report, staff_review, staff_draw]
+          enum: [draw_selected, draw_not_selected, seat_backfilled, ticket_delivered, presale, staff_report, staff_review, staff_draw, staff_redaction]
         title: {type: string}
         body: {type: string}
         link: {type: string, description: 'App route to open, e.g. /tickets or /show/{id}'}
@@ -3045,6 +3729,45 @@ components:
             top_tracks: {type: integer, description: Tracked artists' tracks among the fan's Spotify top tracks}
             followed_artists: {type: integer, description: Tracked artists the fan follows on Spotify}
             plays_last_quarter: {type: integer, description: 'Plays of tracked artists in the last 90 days (play ledger, polled hourly)'}
+        journal:
+          type: object
+          required: [logs, albums_logged, relistens, reviews, ratings, lists, comments]
+          properties:
+            logs: {type: integer}
+            albums_logged: {type: integer, description: Distinct albums}
+            relistens: {type: integer}
+            reviews: {type: integer}
+            ratings: {type: integer}
+            lists: {type: integer}
+            comments: {type: integer}
+        proof:
+          type: object
+          required: [tickets, merch, screenshots]
+          description: Verified submissions only.
+          properties:
+            tickets: {type: integer}
+            merch: {type: integer}
+            screenshots: {type: integer}
+        ledger_points: {type: number}
+    ProfileStats:
+      type: object
+      description: A fan's fandom stats as their followers see them. Listening counts stay private.
+      required: [artists, journal, proof, ledger_points]
+      properties:
+        artists:
+          type: array
+          description: Best percentile first.
+          items:
+            type: object
+            required: [artist, raw_score, percentile, rank, fans, is_estimated, computed_at]
+            properties:
+              artist: {$ref: '#/components/schemas/ArtistRef'}
+              raw_score: {type: number}
+              percentile: {type: number, minimum: 0, maximum: 100}
+              rank: {type: integer, minimum: 1, description: 'Among the artist''s scored fans; ties share the better rank'}
+              fans: {type: integer, minimum: 1, description: Scored fans of the artist}
+              is_estimated: {type: boolean}
+              computed_at: {type: string, format: date-time}
         journal:
           type: object
           required: [logs, albums_logged, relistens, reviews, ratings, lists, comments]
@@ -3431,10 +4154,10 @@ components:
         seed: {type: string, description: The shuffle key this page used; send it back with `cursor`.}
     FeedItem:
       type: object
-      description: '`type` says which payload is set: `photo`, `log`, `grab_bag`, `concert`, `registration`, or `stat`.'
+      description: '`type` says which payload is set: `photo`, `log`, `grab_bag`, `concert`, `registration`, `stat`, or `prompt_answer`.'
       required: [type, id, at, user, artist, following]
       properties:
-        type: {type: string, enum: [photo, album_log, grab_bag, concert, registration, stat]}
+        type: {type: string, enum: [photo, album_log, grab_bag, concert, registration, stat, prompt_answer]}
         id:
           type: string
           format: uuid
@@ -3459,6 +4182,20 @@ components:
         stat:
           description: A number from a followed fan.
           oneOf: [{$ref: '#/components/schemas/FeedStat'}, {type: 'null'}]
+        reactions:
+          description: Emoji reactions, for posts (photo, album_log, prompt_answer); null for other items.
+          type: [array, 'null']
+          items: {$ref: '#/components/schemas/ReactionCount'}
+        prompt_answer:
+          description: An answer to a music prompt from the last week (everyone's public ones; followers-only from people the caller follows).
+          type: [object, 'null']
+          required: [prompt_id, prompt_text, day, body, visibility]
+          properties:
+            prompt_id: {type: string, format: uuid}
+            prompt_text: {type: string}
+            day: {type: string, format: date}
+            body: {type: string}
+            visibility: {type: string, enum: [public, followers]}
         photo:
           type: [object, 'null']
           required: [kind, files]
@@ -3588,6 +4325,117 @@ components:
           oneOf: [{$ref: '#/components/schemas/UserRef'}, {type: 'null'}]
         following: {type: integer, description: Fans the caller follows.}
         songs: {type: integer, description: Songs in their grab bags, all together.}
+    ReactionCount:
+      type: object
+      required: [reaction, count, mine]
+      properties:
+        reaction: {$ref: '#/components/schemas/Reaction'}
+        count: {type: integer, minimum: 1}
+        mine: {type: boolean, description: The caller reacted with this emoji}
+    Reaction:
+      type: string
+      description: 'An emoji by key: fire 🔥, heart ❤️, laugh 😂, rock 🤘, wow 😮, clap 👏.'
+      enum: [fire, heart, laugh, rock, wow, clap]
+    Prompt:
+      type: object
+      required: [id, day, text, source, open, answer_count]
+      properties:
+        id: {type: string, format: uuid}
+        day: {type: string, format: date}
+        text: {type: string}
+        source: {type: string, enum: [staff, library]}
+        open: {type: boolean, description: It is the prompt's day, so answers can be written}
+        answer_count: {type: integer, minimum: 0}
+    PromptAnswer:
+      type: object
+      required: [id, prompt_id, user, body, visibility, created_at, updated_at, mine, following]
+      properties:
+        id: {type: string, format: uuid}
+        prompt_id: {type: string, format: uuid}
+        user: {$ref: '#/components/schemas/UserRef'}
+        body: {type: string}
+        visibility: {type: string, enum: [public, followers]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        mine: {type: boolean}
+        following: {type: boolean, description: The caller follows its author}
+    PromptToday:
+      type: object
+      required: [prompt, my_answer, following_answers]
+      properties:
+        prompt: {$ref: '#/components/schemas/Prompt'}
+        my_answer:
+          oneOf: [{$ref: '#/components/schemas/PromptAnswer'}, {type: 'null'}]
+        following_answers:
+          type: array
+          maxItems: 3
+          description: Answers from people the caller follows, once the caller has answered
+          items: {$ref: '#/components/schemas/PromptAnswer'}
+    TriviaQuestion:
+      type: object
+      description: |
+        Fans of the same artist share the day's question. `answer_index`, `correct`, `points_earned`, and `results` are
+        only set once the fan has answered.
+      required: [id, day, artist, kind, prompt, options, answered, chosen_index, answer_index, correct, points_for_right, points_earned,
+                 results]
+      properties:
+        id: {type: string, format: uuid}
+        day: {type: string, format: date}
+        artist: {$ref: '#/components/schemas/ArtistRef'}
+        kind: {type: string, enum: [track_album, release_year]}
+        prompt: {type: string}
+        options:
+          type: array
+          minItems: 2
+          maxItems: 4
+          items: {type: string}
+        answered: {type: boolean}
+        chosen_index: {type: [integer, 'null']}
+        answer_index: {type: [integer, 'null'], description: Only once answered}
+        correct: {type: [boolean, 'null']}
+        points_for_right: {type: number}
+        points_earned: {type: [number, 'null'], description: 'Once answered: 0, or the points a right answer earned'}
+        results:
+          description: How the shared question went so far, once the fan has answered
+          oneOf:
+            - type: object
+              required: [answered, right, percent_right, following_right]
+              properties:
+                answered: {type: integer, minimum: 0, description: Fans who answered it (the caller included)}
+                right: {type: integer, minimum: 0}
+                percent_right: {type: integer, minimum: 0, maximum: 100}
+                following_right:
+                  type: array
+                  maxItems: 2
+                  description: Up to two people the caller follows who got it right, first to answer first
+                  items: {$ref: '#/components/schemas/UserRef'}
+            - {type: 'null'}
+    FeaturedArtist:
+      type: object
+      required: [id, week_start, week_end, artist, headline, video, song]
+      properties:
+        id: {type: string, format: uuid}
+        week_start: {type: string, format: date}
+        week_end: {type: string, format: date}
+        artist: {$ref: '#/components/schemas/ArtistRef'}
+        headline: {type: [string, 'null']}
+        video:
+          type: object
+          required: [kind, url, embed_url, thumbnail_url]
+          properties:
+            kind: {type: string, enum: [upload, youtube, tiktok]}
+            url: {type: string, format: uri, description: The link to open (a signed link for an upload)}
+            embed_url: {type: [string, 'null'], format: uri, description: Plays inside a page (iframe or video element)}
+            thumbnail_url: {type: [string, 'null'], format: uri}
+        song:
+          type: object
+          required: [spotify_track_id, title, album_title, cover_url, spotify_url]
+          properties:
+            spotify_track_id: {type: string}
+            title: {type: string}
+            album_title: {type: [string, 'null']}
+            cover_url: {type: [string, 'null'], format: uri}
+            spotify_url: {type: string, format: uri}
     GrabBagPut:
       type: object
       required: [spotify_track_id]
@@ -3723,7 +4571,7 @@ components:
       type: object
       required: [target_type, target_id, reason]
       properties:
-        target_type: {type: string, enum: [photo, log], description: 'photo: a shared submission; log: an album log'}
+        target_type: {type: string, enum: [photo, log, prompt_answer], description: 'photo: a shared submission; log: an album log; prompt_answer: an answer to a music prompt'}
         target_id: {type: string, format: uuid}
         reason: {type: string, enum: [spam, abuse, impersonation, inappropriate, other]}
         details: {type: string, maxLength: 1000}
@@ -3740,10 +4588,19 @@ components:
       description: One reported post with its open reports.
       required: [target_type, target_id, author, artist, report_count, reasons, details, first_reported_at]
       properties:
-        target_type: {type: string, enum: [photo, log]}
+        target_type: {type: string, enum: [photo, log, prompt_answer]}
         target_id: {type: string, format: uuid}
         author: {$ref: '#/components/schemas/UserRef'}
-        artist: {$ref: '#/components/schemas/ArtistRef'}
+        artist:
+          description: Null for a prompt answer.
+          oneOf: [{$ref: '#/components/schemas/ArtistRef'}, {type: 'null'}]
+        prompt_answer:
+          type: [object, 'null']
+          required: [prompt_text, body, visibility]
+          properties:
+            prompt_text: {type: string}
+            body: {type: string}
+            visibility: {type: string}
         photo:
           type: [object, 'null']
           required: [kind, files]
@@ -3784,7 +4641,7 @@ components:
       type: object
       required: [target_type, target_id, action, reports_resolved]
       properties:
-        target_type: {type: string, enum: [photo, log]}
+        target_type: {type: string, enum: [photo, log, prompt_answer]}
         target_id: {type: string, format: uuid}
         action: {type: string, enum: [take_down, dismiss]}
         reports_resolved: {type: integer}

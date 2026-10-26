@@ -4,6 +4,7 @@ using System.Text.Json;
 using Dapper;
 using FandomScore.Api.Features.Authentication;
 using FandomScore.Api.Infrastructure;
+using FandomScore.Storage;
 using Npgsql;
 
 namespace FandomScore.Api.Features.Submissions;
@@ -12,22 +13,46 @@ namespace FandomScore.Api.Features.Submissions;
 /// openapi <c>POST /uploads</c> and the signed links behind it: <c>PUT /uploads/{id}/content</c> takes the bytes and
 /// <c>GET /files/{id}</c> shows a stored file. Both links carry their own short-lived signature (like presigned
 /// storage URLs), so they need no sign-in. Stored files have their metadata stripped (<see cref="ImageMetadata"/>).
+/// Uploads always go through the API, so nothing is stored before the metadata (GPS location included) is gone.
+/// Downloads redirect to a short-lived Cloud Storage link when the store can make one, so the API doesn't stream
+/// the bytes (<see cref="RedirectToStorage"/>).
 /// </summary>
 public static class UploadEndpoints
 {
     public const string UploadPurpose = "upload";
     public const string FilePurpose = "file";
     public const int MaxBytes = 15 * 1024 * 1024;
+
+    /// <summary>Staff-uploaded featured-artist videos (migration 0023): MP4 up to 100 MB, stored as uploaded.</summary>
+    public const int MaxVideoBytes = 100 * 1024 * 1024;
+
+    public const string VideoPurpose = "featured_video";
     public const int DailyUploads = 50;
 
     private static readonly TimeSpan UploadLifetime = TimeSpan.FromHours(1);
     private static readonly TimeSpan FileLinkLifetime = TimeSpan.FromHours(1);
 
+    /// <summary>How long a redirect to Cloud Storage works; the API's own link (an hour) is the one apps hold on to.</summary>
+    public static readonly TimeSpan StorageLinkLifetime = TimeSpan.FromMinutes(15);
+
+    /// <summary>
+    /// A redirect to the file in storage, or null when the store can't sign links (local disk): then the caller serves
+    /// the bytes. The redirect may be cached for less time than the storage link lives.
+    /// </summary>
+    public static async Task<IResult?> RedirectToStorage(IFileStore files, string key, HttpResponse response, CancellationToken cancellationToken)
+    {
+        if (await files.SignedReadUrlAsync(key, StorageLinkLifetime, cancellationToken) is not { } url)
+        {
+            return null;
+        }
+
+        response.Headers.CacheControl = "private, max-age=600";
+        return Results.Redirect(url.ToString());
+    }
+
     public static IServiceCollection AddUploads(this IServiceCollection services, IConfiguration configuration, IWebHostEnvironment environment)
     {
-        var options = configuration.GetSection(StorageOptions.Section).Get<StorageOptions>() ?? new StorageOptions();
-        var root = Path.IsPathRooted(options.LocalPath) ? options.LocalPath : Path.Combine(environment.ContentRootPath, options.LocalPath);
-        services.AddSingleton<IFileStore>(new LocalFileStore(root));
+        services.AddFileStore(configuration, environment.ContentRootPath);
         services.AddSingleton<SignedUrls>();
         return services;
     }
@@ -50,22 +75,23 @@ public static class UploadEndpoints
     {
         var errors = new List<FieldError>();
         var purpose = StringField(body, "purpose");
-        if (purpose != "submission")
+        var video = purpose == VideoPurpose;
+        if (purpose != "submission" && !video)
         {
             errors.Add(new FieldError("purpose", purpose == "avatar" ? "Avatars aren't supported yet." : "Use submission."));
         }
 
         var mimeType = StringField(body, "mime_type");
-        if (mimeType is not ("image/jpeg" or "image/png"))
+        if (video ? mimeType != "video/mp4" : mimeType is not ("image/jpeg" or "image/png"))
         {
-            errors.Add(new FieldError("mime_type", "Send a JPEG or PNG photo (convert HEIC or WebP first)."));
+            errors.Add(new FieldError("mime_type", video ? "Send an MP4 video." : "Send a JPEG or PNG photo (convert HEIC or WebP first)."));
         }
 
         int bytes = 0;
         if (!(body.ValueKind == JsonValueKind.Object && body.TryGetProperty("bytes", out var b) && b.ValueKind == JsonValueKind.Number
-              && b.TryGetInt32(out bytes) && bytes is >= 1 and <= MaxBytes))
+              && b.TryGetInt32(out bytes) && bytes >= 1 && bytes <= (video ? MaxVideoBytes : MaxBytes)))
         {
-            errors.Add(new FieldError("bytes", "Photos can be up to 15 MB."));
+            errors.Add(new FieldError("bytes", video ? "Videos can be up to 100 MB." : "Photos can be up to 15 MB."));
         }
 
         byte[]? declaredSha = null;
@@ -89,6 +115,12 @@ public static class UploadEndpoints
 
         var userId = user.UserId();
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        if (video && !await connection.ExecuteScalarAsync<bool>(
+                "SELECT EXISTS (SELECT 1 FROM users WHERE id = @userId AND is_staff AND deleted_at IS NULL)", new { userId }))
+        {
+            throw new ApiProblemException(StatusCodes.Status403Forbidden, "forbidden", "Staff only", "Only staff upload featured-artist videos.");
+        }
+
         var today = await connection.ExecuteScalarAsync<int>(
             "SELECT count(*) FROM uploads WHERE user_id = @userId AND created_at >= now() - interval '1 day'", new { userId });
         if (today >= DailyUploads)
@@ -100,9 +132,9 @@ public static class UploadEndpoints
         var (uploadId, expiresAt) = await connection.QuerySingleAsync<(Guid, DateTime)>(
             """
             INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes, declared_sha256, expires_at)
-            VALUES (@userId, 'submission', @mimeType, @bytes, @declaredSha, now() + @lifetime) RETURNING id, expires_at
+            VALUES (@userId, @purpose, @mimeType, @bytes, @declaredSha, now() + @lifetime) RETURNING id, expires_at
             """,
-            new { userId, mimeType, bytes, declaredSha, lifetime = UploadLifetime });
+            new { userId, purpose, mimeType, bytes, declaredSha, lifetime = UploadLifetime });
         // The link outlives the slot a little, so a late upload hears "expired" (409) rather than "invalid link".
         var (query, _) = urls.Sign(UploadPurpose, uploadId, UploadLifetime + TimeSpan.FromMinutes(10));
         return Results.Created((string?)null, new UploadIntent(uploadId, "PUT",
@@ -136,6 +168,12 @@ public static class UploadEndpoints
                 upload.Expired ? "This upload has expired. Start again." : "This upload already has its file.");
         }
 
+        if (upload.MimeType == "video/mp4"
+            && request.HttpContext.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit)
+        {
+            limit.MaxRequestBodySize = MaxVideoBytes + 1L;   // Kestrel's default is 30 MB
+        }
+
         // Read at most the declared size (plus one byte to notice a bigger body).
         using var buffer = new MemoryStream();
         var chunk = new byte[81920];
@@ -160,9 +198,16 @@ public static class UploadEndpoints
             throw ApiProblemException.Validation(new FieldError("body", "The file doesn't match the declared SHA-256."));
         }
 
-        var stripped = ImageMetadata.Strip(original, upload.MimeType)
-                       ?? throw ApiProblemException.Validation(new FieldError("body", $"This isn't a valid {(upload.MimeType == "image/png" ? "PNG" : "JPEG")} image."));
-        var key = $"quarantine/{uploadId}";
+        // Videos are stored as uploaded (staff-made promo clips; photo metadata stripping doesn't apply). An MP4
+        // starts with a box size and the "ftyp" box.
+        var stripped = upload.MimeType == "video/mp4"
+            ? (original.Length > 12 && original.AsSpan(4, 4).SequenceEqual("ftyp"u8)
+                ? original
+                : throw ApiProblemException.Validation(new FieldError("body", "This isn't a valid MP4 video.")))
+            : ImageMetadata.Strip(original, upload.MimeType)
+              ?? throw ApiProblemException.Validation(new FieldError("body", $"This isn't a valid {(upload.MimeType == "image/png" ? "PNG" : "JPEG")} image."));
+        // Featured videos are staff media, not proof: they live outside quarantine, which deletes everything at 30 days.
+        var key = upload.MimeType == "video/mp4" ? $"media/{uploadId}" : $"quarantine/{uploadId}";
         await files.PutAsync(key, stripped, cancellationToken);
         var updated = await connection.ExecuteAsync(
             """
@@ -190,6 +235,11 @@ public static class UploadEndpoints
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
         var file = await connection.QuerySingleOrDefaultAsync<(string StorageKey, string MimeType)>(
             "SELECT storage_key, mime_type FROM submission_files WHERE id = @fileId", new { fileId });
+        if (file.StorageKey is not null && await RedirectToStorage(files, file.StorageKey, response, cancellationToken) is { } redirect)
+        {
+            return redirect;
+        }
+
         var content = file.StorageKey is null ? null : await files.ReadAsync(file.StorageKey, cancellationToken);
         if (content is null)
         {

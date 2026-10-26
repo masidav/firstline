@@ -66,7 +66,12 @@ Details: [Artists](services/api/src/features/artists/TODO.md) · [Artist search 
       `tools/dev/spotify_connect.py`. Verified 2026-10-20 on the local compose stack: real consent, `PUT
       /v1/me/spotify`, worker sync to `idle` with no error, 1 tracked artist found (liked 11, playlist 8,
       albums 11, top rank 17, recent 0).
-- [ ] Mobile connect screen (see Spotify mobile UI).
+- [x] Mobile connect screen (see Spotify mobile UI): `/spotify` (connect, sync status, disconnect), since 2026-10-18.
+- [x] Sync behaviour (decided 2026-10-25): the app syncs quietly in the background each time it opens
+      (`POST /me/spotify/sync?background=true`: only when the last sync is over 15 minutes old, never an error); adding
+      an artist syncs the fan (a new one when its onboarding finishes, an already-tracked one right away when the fan
+      has no score for it); fans resync by hand from their profile ("Resync Spotify"). Verified: SpotifyApiTests
+      (background sync), ArtistApiTests (sync on adding), app Jest (backgroundSync, ProfileScreen).
 - [x] A Spotify sync adds the fan's top artists that nobody tracks yet, so their page is lively right after
       connecting: tracked for the fan like `POST /v1/artists`, then onboarded and scored on the next sync
       (`SpotifyStatus.top_artists_added`, `GET /artists?added_by_me=true`; decided 2026-10-22, ADR 0005). Verified
@@ -99,12 +104,35 @@ Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring wo
 ## Phase 6 — Journal and community
 - [x] Implement album metadata cache and album logs. Provider, caching, artwork, and attribution rules: [ADR 0006](docs/adr/0006-album-catalog.md).
       Albums and Journal endpoints with `Idempotency-Key` replay (migration 0009). Verified 2026-10-21: `dotnet test` (JournalApiTests 11, invariants).
-- [ ] Implement ratings, reviews, relistens, visibility, and offline sync. (API side done 2026-10-21 with the logs above; followers-only
-      logs show to followers since 2026-10-25 (follows, migration 0018); offline sync is the app's queue, still to build.)
+- [x] Implement ratings, reviews, relistens, visibility, and offline sync. (API side done 2026-10-21 with the logs above; followers-only
+      logs show to followers since 2026-10-25 (follows, migration 0018). Offline sync done 2026-10-26: the app keeps logs and
+      edits made without a connection on the device, with their `Idempotency-Key`, and sends them on reconnect; refused
+      entries stay with their reason for the fan to fix or discard. Verified: app Jest (journalQueue 9, AlbumScreen,
+      JournalScreen, HomeScreen), Chrome offline/online run.)
 - [ ] Implement ordered album lists.
-- [ ] Implement comments, replies, anti-abuse rules, and reward reversals.
-- [ ] Music trivia, music prompts ("What's your best hypothetical band name?"), and a featured artist of the week in
-      the feed (requested 2026-10-25; open questions in `apps/mobile/TODO.md`).
+- [x] Comments replaced by emoji reactions (decided 2026-10-25: no comments). Fans react to shared photos, album logs,
+      and prompt answers with 🔥 ❤️ 😂 🤘 😮 👏 (several per post, take back any time, no points); counts show on the
+      feed. Migration 0026; `PUT/DELETE /reactions/{type}/{id}/{reaction}`. Verified: `dotnet test` (ReactionApiTests 2,
+      invariants), app Jest (ReactionBar). The old `comments` table and its points rule stay unused.
+- [ ] Custom emoji reactions from Shelby (requested 2026-10-25): add her emoji as new reaction keys with images
+      (reactions are stored by key, so this is a new key list plus artwork, no data change).
+- [x] Daily music trivia (2026-10-25, migration 0022): one question a day from the fan's artists' catalog; a right
+      answer earns `trivia_correct` (0.30, a tenth of `album_logged`; decided 2026-10-25), once a day. `GET /me/trivia`,
+      `POST /me/trivia/{id}/answer`. Verified: `dotnet test` (TriviaApiTests 2, invariants), app Jest, Chrome.
+      Fans of an artist share the day's question (migration 0024); once answered, the card names up to two people the
+      fan follows who got it right and the percent of fans who did (decided 2026-10-25). Verified: TriviaApiTests 3.
+- [x] Featured artist of the week (2026-10-25, migration 0023): staff-picked, with a video (MP4 upload up to 100 MB,
+      or a YouTube or TikTok link) and a Spotify song; on top of every fan's home screen for the week. `GET /featured`,
+      `/admin/featured/{monday}`. Verified: `dotnet test` (FeaturedApiTests 3, FeaturedLinkTests), app Jest, Chrome.
+- [x] Music prompts (2026-10-25, migration 0025): one prompt a day ("What's your best hypothetical band name?") from
+      staff or a built-in library; answers (public or followers-only, one per fan, editable that day) show on the feed,
+      can be reported, and staff can take them down. No points. `GET /prompts/today`, `PUT /prompts/{id}/answer`,
+      `GET /prompts/{id}/answers`, `/admin/prompts/{day}`. Verified: `dotnet test` (PromptApiTests 3, invariants),
+      app Jest (Prompts, Feed, Moderation).
+- [ ] Daily blind album rankings (requested 2026-10-25; open questions in `apps/mobile/TODO.md`).
+- [ ] Trivia and prompts on a weekly cadence instead of daily (requested 2026-10-26): trivia on Tuesdays, prompts on
+      Thursdays, so each day has at most one of them. Open: what the other days show in their place (nothing, or
+      the week's unanswered one), and whether the weekly question stays answerable all week.
 
 Details: [Album journal API](services/api/src/features/album-journal/TODO.md) · [Journal UI](apps/mobile/src/features/album-journal/TODO.md) · [Lists API](services/api/src/features/lists/TODO.md) · [Lists UI](apps/mobile/src/features/lists/TODO.md) · [Comments API](services/api/src/features/comments/TODO.md) · [Comments UI](apps/mobile/src/features/comments/TODO.md)
 
@@ -117,16 +145,44 @@ Details: [Album journal API](services/api/src/features/album-journal/TODO.md) ·
       approve/reject with a manual check row, app screen for staff); automated checks (hash, OCR, event match) not yet,
       so every submission goes to `needs_review`.*
 - [x] Award points only after verification; reverse them if a verified item is later rejected. (Existing trigger; covered by ProofApiTests.)
-- [ ] Photo storage for real hosting: the Cloud Storage quarantine bucket (ADR 0002) behind `IFileStore`, with signed
+- [x] Photo storage for real hosting: the Cloud Storage quarantine bucket (ADR 0002) behind `IFileStore`, with signed
       upload and download URLs from the bucket instead of the API, Workload Identity, and limits on size and count.
       Locally, photos are on disk (`services/api/.local-storage/`).
-- [ ] Clean up stored photos: delete upload slots that expired unused (and their files), files of withdrawn or purged
+      *Done 2026-10-26 (`packages/storage/GcsFileStore.cs`, `Storage__Provider=gcs`): quarantine, archive, and a new
+      media bucket, chosen by key prefix; downloads redirect to 15-minute links signed by the API's own identity
+      (Workload Identity, IAM signBlob; no key files); size and count limits were already in place. Uploads still go
+      through the API so photo metadata is stripped before anything is stored (ADR 0002 amended, along with the bucket
+      access the code actually needs). Verified: GcsFileStoreTests 13 against a Cloud Storage emulator (including
+      upload to redirect to download through the API), Terraform validate and Kustomize build for beta and prod. Not
+      yet run against real Cloud Storage: nothing is applied to GCP.*
+- [x] Clean up stored photos: delete upload slots that expired unused (and their files), files of withdrawn or purged
       submissions, and every file of a deleted account when it is purged (30 days, `purge_deleted_user`). Needs a
-      worker job with storage access and tests that no file outlives its rows.
-- [ ] Redact sensitive barcodes/QR codes before archival.
-- [ ] Enforce archive safety and retention policies.
+      worker job with storage access and tests that no file outlives its rows. *Done 2026-10-25: `IFileStore` moved to
+      `packages/storage` (API and worker); migration 0027 queues every removed storage key in `storage_deletions`;
+      hourly worker job `storage.cleanup` removes slots expired unused for a day (not attached, not a featured video),
+      every file of accounts deleted 30+ days ago (so `accounts.purge_deleted` can then purge them), and queued files
+      no live row names. Withdrawing still deletes files at once; a crash or storage error leaves them queued.
+      Files of rejected submissions and taken-down photos go 30 days after the rejection or takedown (migration 0028
+      stamps `rejected_at`; the row, status, and points stay). Verified 2026-10-25: `dotnet build` 0 warnings,
+      `dotnet test` 258/258 (StorageCleanupJobTests 6, invariants for 0027 and 0028), worker image builds.*
+- [x] Redact sensitive barcodes/QR codes before archival. *Done 2026-10-26 (migration 0029,
+      `workers/image-redaction`): verified proof is scanned with ZXing.Net (whole image, sections, rotations), codes are
+      blacked out and rescanned, and the copy moves to `archive/`. Tickets and screenshots with no code found,
+      leftover codes, and unreadable images go to staff (`/v1/admin/redactions`, app Photo redaction screen,
+      `staff_redaction` notice). Shared photos reach the feed only once archived. Hourly `redaction.sweep` warns at
+      25 days; Terraform alert on it. Verified: `dotnet test` 266/266, worker image run end to end.*
+- [x] Enforce archive safety and retention policies. (Database refuses unredacted or misplaced archive rows;
+      originals deleted after archiving; rejected and taken-down files after 30 days; quarantine expiry 30 days.)
+- [ ] Hide printed order numbers on tickets (OCR) if staff find them often; let staff draw their own boxes.
+- [ ] David adds real photos to test redaction (added 2026-10-26): phone shots of real tickets, ticket screenshots,
+      merch, and receipts, with glare, angles, and blur. Run them through the worker and tune the scanner on what it
+      misses (`workers/image-redaction/TODO.md`). Keep them out of the repo: they hold real order details.
 
 Details: [Submissions API](services/api/src/features/submissions/TODO.md) · [Submission UI](apps/mobile/src/features/submissions/TODO.md) · [Verification](services/api/src/features/verification/TODO.md) · [Verification worker](workers/submission-verification/TODO.md) · [Redaction worker](workers/image-redaction/TODO.md)
+
+- [ ] Keep receipts out of the scroll feed (requested 2026-10-26): a "merch" photo that is really a receipt or
+      order confirmation shouldn't be shareable. Options: a separate `receipt` proof kind that is never shared (like
+      tickets), a staff "not shareable" flag at review, or both. Needs a decision.
 
 Fans can share verified merch and concert photos to the home feed (`PUT /submissions/{id}/share`); tickets and
 screenshots are never shared. The home feed (`GET /feed`) is one vertical scroll mixing, at random, shared photos
@@ -139,8 +195,12 @@ Lower priority under the new direction: ticket purchases now flow through alloca
 - [ ] Display artist, ticket, and merch links.
 - [ ] Track outbound clicks without misrepresenting clicks as purchases.
 - [ ] Integrate purchase confirmation only if supported by the selected partner.
-- [ ] Load upcoming concerts, presale dates, and general-sale openings for tracked artists (source: open
-      decision below). Feeds `/artists/{id}/events` and the home-screen concert cards.
+- [x] Load upcoming concerts, presale dates, and general-sale openings for tracked artists. *Ticketmaster done
+      2026-10-26 (migration 0030, `workers/concerts`): artists linked by the Spotify page Ticketmaster lists (staff
+      link the rest, `/v1/admin/artists/{id}/sources`); daily sync of US and Canadian shows with status, ticket link,
+      public sale, and presales; shown on the artist's shows, the show screen ("Tickets on Ticketmaster"), and feed
+      concert cards. Needs `Ticketmaster__ApiKey`. Verified: `dotnet test`, app Jest. Not yet run against the real
+      API. SeatGeek, Bandsintown, Songkick next (`workers/concerts/TODO.md`).*
 - [x] Fan location preference: a primary hub city plus two backups, used to pick which shows to show. From a
       curated list of US and Canadian metros (migration 0010; `GET /v1/cities`, `PUT /v1/me/hub-cities`). Verified
       2026-10-21: `dotnet test` 157/157 (HubCityApiTests 13, invariants), app `npm test` 62/62, clicked through in Chrome.
@@ -165,7 +225,11 @@ Lower priority under the new direction: ticket purchases now flow through alloca
 Details: [Sharing API](services/api/src/features/sharing/TODO.md) · [Sharing UI](apps/mobile/src/features/sharing/TODO.md) · [Ticketing API](services/api/src/features/ticketing/TODO.md) · [Ticketing UI](apps/mobile/src/features/ticketing/TODO.md)
 
 ## Phase 9 — Notifications, moderation, release
-- [ ] Implement opt-in push notifications and preferences.
+- [x] Implement opt-in push notifications and preferences. *Done 2026-10-26 (migration 0032): every in-app
+      notification is also pushed through Expo to the fan's phones, with per-category settings (tickets, presales,
+      staff); devices register from the phone app (Profile, "Turn on push notifications"), unregister on sign-out, and
+      are switched off when Apple or Google drop them. Verified: `dotnet test` (PushNotificationTests 5), app Jest.
+      Not tried on a real phone yet: needs an EAS project id (`eas init`) and a development build.*
 - [x] Reports and staff takedowns (2026-10-24): fans report a shared photo or public album log (`POST /reports`);
       staff see reported posts grouped with their reasons (`/admin/reports`, app screen "Reported posts") and take the
       post down or dismiss the reports; every decision is recorded (`moderation_actions`). Migration 0014.
@@ -206,6 +270,9 @@ Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](servi
       *Registration done 2026-10-21; selection done 2026-10-24 (migration 0017, `POST /v1/admin/allocations/{id}/selection`):
       hub fans first, snapshot raw score, seeded tiebreak, +1 seats. The app shows each fan's standing and says "most likely"
       only inside a 25-seat margin (decided 2026-10-24). Reservations and notifications are next.*
+      *Hardened 2026-10-26 (migration 0033): concurrency tests for duplicate and racing registrations and the draw,
+      a load test (`tools/load`), the standing served from an in-memory snapshot, rules locked once anyone registers,
+      and IANA time zones on cities and shows.*
 - [x] Non-transferable reservation tokens, delayed delivery, and face-value exchange for fans who can't attend.
       *Done 2026-10-25 (migration 0020): the draw (and backfill) gives each selected fan a reservation tied to their
       account; the ticket token is shown only to its holder and only from `delivery_hours_before_show` before the show
@@ -240,6 +307,9 @@ Details: [ADR 0002](docs/adr/0002-hosting-gcp-gke.md) · [Infrastructure](infras
 - [ ] Mobile component tests (Jest + React Native Testing Library) and end-to-end flows (Maestro) in CI.
 - [ ] Promoter dashboard end-to-end tests (Playwright) and accessibility checks.
 - [ ] API contract tests against `openapi.yaml`; load tests for on-sale registration spikes.
+      *Database load test for registration spikes done 2026-10-26 (`tools/load/run.sh`, results in `tools/load/README.md`):
+      registering holds 4,000 to 5,000 a second; the show page's standing was the bottleneck and now uses an in-memory
+      snapshot. Still to do: contract tests, and k6 through the full HTTP path on beta.*
 - [x] Dev environment with synthetic data: `tools/dev/seed.py` (fans, artists, shows, allocations, registrations),
       verified 2026-10-24 against a scratch database and run by CI. The cloud proving ground is **beta** with real
       testers, not a synthetic staging (ADR 0002, amended 2026-10-24); see `infrastructure/README.md`.
@@ -281,10 +351,14 @@ at request time.
       other fans' stats wait on profile visibility; since 2026-10-25 followers get a fan's top scores, albums logged,
       verified photos/merch, and points as `stat` cards on the home feed.* counts exclude soft-deleted content and
       reversed awards.
-- [ ] Visibility: own stats in full; other fans' stats follow their profile visibility, followers-only stats for
-      followers, nothing for blocked fans.
-- [ ] Stats screen in the fan app (own profile and other fans' profiles), with estimated scores labelled.
-      *Own stats screen done 2026-10-21 (`/stats`).*
+- [x] Visibility: own stats in full; followers see fandom stats; everyone else none (decided 2026-10-25: stats are
+      followers-only, none public by default). Blocking isn't wanted for now (decided 2026-10-24). Verified 2026-10-25:
+      ProfileApiTests (stranger 403, follower and self 200).
+- [x] Stats screen in the fan app (own profile and other fans' profiles), with estimated scores labelled.
+      *Own stats screen done 2026-10-21 (`/stats`); fan pages done 2026-10-25 (`/fans/{handle}`, opened from any fan's
+      name in the feed, People, and prompt answers): basics, band links, public logs and prompt answers for everyone;
+      fandom stats (`GET /users/{handle}/stats`, listening counts excluded) and the grab bag for followers and the fan.
+      Verified: ProfileApiTests, FanProfileScreen tests, Chrome.*
 - [ ] Tests for counts after reversals and deletions, visibility, and blocked fans.
 
 Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps/mobile/src/features/stats/TODO.md)
@@ -324,7 +398,7 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
       (`SpotifySignals.Reduce`).
 - [ ] Decide how to handle co-credited albums and collaborations.
 - [ ] Confirm the product and company name (summary proposes TrueFan Access or VerifyTicket; repo uses Fandom Score).
-- [ ] Decide which user stats are public by default and which are followers-only (Phase 15).
+- [x] User stats are followers-only; none are public by default (decided 2026-10-25, Phase 15).
 - [ ] Choose the primary ticketing model: white-labeled checkout through ticketer APIs, or direct allocation links.
 - [ ] Confirm which primary ticketers will grant API access for reserved inventory, and on what terms.
 - [ ] Confirm Spotify's developer terms allow using listening data to decide ticket eligibility, and that the
@@ -346,6 +420,11 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
 - [ ] +1 rules set provisionally in code (2026-10-24), confirm or change: when only one seat is left for a fan with a
       +1, they **get the seat alone**; a named guest **can't be changed**; a selected fan **can't drop** their +1 after the
       draw; a +1 can be added after the draw **until the show starts**, first come first served while seats are left.
+- [ ] Presale reminder rules set provisionally in code (2026-10-26), confirm or change: a fan is reminded about a
+      presale for a show by an artist they **have a fandom score for**, **in one of their hub cities** (suburb venues
+      without a hub city remind nobody yet), **once**, **within 24 hours before it opens** (or at once if announced
+      later), in-app only until push exists; **on by default**, a Profile switch turns them off. Public on-sales
+      don't get a reminder.
 - [ ] Reservation rules set provisionally in code (2026-10-25), confirm or change: tickets are delivered **24 hours
       before the show** unless staff set another delay per allocation; a returned reservation's seats go to the **next
       not-selected fans in the draw's ranking** (a fan with a +1 takes two only if two are free); a return is allowed
@@ -357,6 +436,11 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
       never (barcodes, personal details). The feed shows everyone's shared photos and public album logs.
 - [x] Concert photos are pinned to the band and the concert (decided 2026-10-21): a listed show, or date, venue, and
       city entered by the fan when the show isn't listed.
+- [x] Stored-file retention (decided 2026-10-25): files of rejected submissions and taken-down photos are kept
+      **30 days**, then deleted (`storage.cleanup`). The quarantine bucket keeps its 30-day expiry rule
+      (`quarantine_retention_days`), so verified proof must reach the archive (redacted) within 30 days or it is
+      lost. Unused upload slots are removed **1 day** after they expire. A featured artist video **stays** when the
+      staff account that uploaded it is purged.
 - [ ] Confirm takedown effects (provisional, 2026-10-24): a taken-down photo leaves the feed for good but stays as
       proof with its points; a taken-down log is hidden from everyone but its author and loses its points.
 - [ ] Choose an email provider for staff notifications (and later fan email), e.g. a transactional email API.
@@ -365,7 +449,11 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
 - [x] Concert data source (decided 2026-10-20): **concert APIs** for shows and sale dates (candidates:
       Ticketmaster Discovery, SeatGeek, Bandsintown, Songkick), plus possibly a **scraper for news and presale
       announcements**, including artists' X/Twitter and Instagram posts.
-- [ ] Choose the concert APIs, and the presale/news sources a scraper may use. X and Instagram forbid
+- [x] Concert APIs (decided 2026-10-26): Ticketmaster, SeatGeek, Bandsintown, and Songkick, starting with Ticketmaster.
+- [ ] Ticketmaster's API terms forbid deriving "revenues from the use or provision of the Ticketmaster API" and limit
+      caching to "reasonable periods". Fandom Score plans fees: check whether a partner agreement is needed before
+      launch, and read SeatGeek's, Bandsintown's, and Songkick's terms before building those.
+- [ ] Choose the presale/news sources a scraper may use. X and Instagram forbid
       scraping in their terms, and their official APIs are paid or restricted, so check each source's terms
       first. Prefer artist/label newsletters, official sites, and RSS where possible.
 - [x] A "concert hub" is a **city** (decided 2026-10-20): each fan picks a primary city plus two backups.

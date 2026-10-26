@@ -43,7 +43,7 @@ const song = {
   following: true,
   grab_bag: { id: 'g1', position: 2, spotify_track_id: '1aaaaaaaaaaaaaaaaaaaaa', title: 'Cowboy Nudes', artist, artist_status: 'active', album_title: '3D Country', cover_url: null, spotify_url: 'https://open.spotify.com/track/1aaaaaaaaaaaaaaaaaaaaa', added_at: '2026-10-21T10:00:00Z' },
 };
-const event: components['schemas']['Event'] = { id: 'e1', artist_id: 'a1', name: 'Geese at Metro', venue: 'Metro', city_id: 'us-il-chicago', city: 'Chicago', region: 'IL', country: 'US', starts_at: '2026-11-20T02:00:00Z', tickets_available: true };
+const event: components['schemas']['Event'] = { id: 'e1', artist_id: 'a1', name: 'Geese at Metro', venue: 'Metro', city_id: 'us-il-chicago', city: 'Chicago', region: 'IL', country: 'US', starts_at: '2026-11-20T02:00:00Z', tickets_available: true, source: null, ticket_url: null, status: 'scheduled', time_tba: false, public_sale_starts_at: null, public_sale_ends_at: null, presales: [] };
 const allocation: components['schemas']['Allocation'] = { id: 'al-1', event_id: 'e1', name: 'Fan allocation', tickets: 100, face_value_cents: 4500, currency: 'USD', min_raw_score: 10, registration_opens_at: '2026-10-20T00:00:00Z', registration_closes_at: '2026-11-01T00:00:00Z', status: 'open', published_at: '2026-10-19T00:00:00Z', cancelled_at: null, selected_at: null, seats_left: null, delivery_hours_before_show: 24 };
 const concert = { ...base, type: 'concert', id: 'e1', at: event.starts_at, user: null, artist, concert: { event, allocation, registered: false } };
 const registration = {
@@ -218,4 +218,25 @@ test('the bouncer door sits after six items, or at the end of a shorter last pag
   expect(screen.getByRole('link', { name: 'Open Cowboy Nudes on Spotify' })).toBeTruthy();
   expect(mockApi.GET).toHaveBeenCalledWith('/me/bouncer-door');
   expect(screen.getByRole('button', { name: 'Knock again on the bouncer door' })).toBeTruthy();
+});
+
+test('a prompt answer shows the prompt, the answer, and a way to all answers', async () => {
+  const promptAnswer = {
+    ...base, type: 'prompt_answer', id: 'pa1', at: '2026-10-25T09:00:00Z', user: { handle: 'fan_two', deleted: false, display_name: 'Ben' }, artist: null,
+    prompt_answer: { prompt_id: 'p1', prompt_text: "What's your best hypothetical band name?", day: '2026-10-25', body: 'The Velvet Ropes', visibility: 'public' },
+  };
+  mockApi.GET.mockResolvedValue(ok({ items: [promptAnswer], next_cursor: null, seed: 'abc' }));
+  render(<Feed />);
+  expect(await screen.findByText('“The Velvet Ropes”')).toBeTruthy();
+  expect(screen.getByText("What's your best hypothetical band name?")).toBeTruthy();
+  fireEvent.press(screen.getByRole('button', { name: "See all answers to: What's your best hypothetical band name?" }));
+  expect(jest.requireMock('expo-router').router.push).toHaveBeenCalledWith('/prompts/p1');
+  expect(screen.getByRole('button', { name: "Report Ben's post" })).toBeTruthy();
+});
+
+test("tapping a fan's name opens their page", async () => {
+  mockApi.GET.mockResolvedValue(ok({ items: [photo], next_cursor: null, seed: 'abc' }));
+  render(<Feed />);
+  fireEvent.press(await screen.findByRole('link', { name: "Open @fan_two's page" }));
+  expect(jest.requireMock('expo-router').router.push).toHaveBeenCalledWith('/fans/fan_two');
 });

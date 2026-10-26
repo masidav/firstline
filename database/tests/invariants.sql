@@ -197,8 +197,8 @@ DO $$ BEGIN
 END $$;
 
 SELECT pg_temp.expect_error(
-  $$INSERT INTO submission_files (submission_id, storage_key, sha256, mime_type, bytes, tier)
-      VALUES ('30000000-0000-0000-0000-000000000001', 'k1', '\x00', 'image/png', 1, 'archive')$$,
+  $$INSERT INTO submission_files (submission_id, storage_key, sha256, mime_type, bytes, tier, archived_at, redaction_state)
+      VALUES ('30000000-0000-0000-0000-000000000001', 'archive/k1', '\x00', 'image/png', 1, 'archive', now(), 'archived')$$,
   'submission_files_check');
 
 -- ------------------------------------------------------------ ledger is append-only
@@ -583,7 +583,7 @@ SELECT pg_temp.expect_error(
 SELECT pg_temp.expect_error($$SELECT set_hub_cities('00000000-0000-0000-0000-0000000000a1', '{us-xx-atlantis}')$$, 'unknown city');
 SELECT pg_temp.expect_error($$INSERT INTO user_hub_cities VALUES ('00000000-0000-0000-0000-0000000000a1', 4, 'us-il-chicago')$$,
   'user_hub_cities_position_check');
-SELECT pg_temp.expect_error($$INSERT INTO cities (id, name, region, country) VALUES ('Chicago', 'Chicago', 'IL', 'US')$$,
+SELECT pg_temp.expect_error($$INSERT INTO cities (id, name, region, country, time_zone) VALUES ('Chicago', 'Chicago', 'IL', 'US', 'America/Chicago')$$,
   'cities_id_check');
 
 DO $$
@@ -632,7 +632,7 @@ END $$;
 -- ------------------------------------------------------------ proof photos and sharing (0012)
 SELECT pg_temp.expect_error(
   $$INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes) VALUES ('00000000-0000-0000-0000-000000000001', 'submission', 'image/gif', 10)$$,
-  'uploads_mime_type_check');
+  'uploads_purpose_kind_check');   -- one combined check since 0023
 SELECT pg_temp.expect_error(
   $$INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes, storage_key) VALUES ('00000000-0000-0000-0000-000000000001', 'submission', 'image/jpeg', 10, 'k')$$,
   'uploads_check');
@@ -1578,6 +1578,241 @@ BEGIN
   ASSERT n = 3, 'staff: draw, report, review';
 END $$;
 
+-- ------------------------------------------------------------ daily trivia (0022)
+-- One question a day; answered once, today only; a right answer earns trivia_correct once (0.30, a tenth of a log).
+INSERT INTO users (id, handle, email) VALUES ('49000000-0000-0000-0000-000000000001', 'quiz_fan', 'quiz_fan@example.test');
+DO $$
+DECLARE fan uuid := '49000000-0000-0000-0000-000000000001'; artist uuid := '40000000-0000-0000-0000-000000000001';
+        q uuid; old_q uuid; was_right boolean;
+BEGIN
+  ASSERT (SELECT points FROM scoring_rules WHERE rule_key = 'trivia_correct') = 0.30, 'a tenth of album_logged';
+  INSERT INTO trivia_questions (user_id, day, artist_id, kind, prompt, options, answer_index)
+  VALUES (fan, (now() AT TIME ZONE 'UTC')::date, artist, 'release_year', 'What year?', ARRAY['2019', '2020', '2021'], 1)
+  RETURNING id INTO q;
+  BEGIN
+    INSERT INTO trivia_questions (user_id, day, artist_id, kind, prompt, options, answer_index)
+    VALUES (fan, (now() AT TIME ZONE 'UTC')::date, artist, 'release_year', 'Again?', ARRAY['a', 'b'], 0);
+    RAISE EXCEPTION 'a second question today should fail';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  BEGIN
+    UPDATE trivia_questions SET chosen_index = 1, correct = true, answered_at = now() WHERE id = q;
+    RAISE EXCEPTION 'answering by hand should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%answered once, through answer_trivia()%', SQLERRM;
+  END;
+  BEGIN
+    PERFORM answer_trivia('49000000-0000-0000-0000-0000000000ff', q, 1);
+    RAISE EXCEPTION 'someone else answering should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'trivia blocked: not_found%', SQLERRM;
+  END;
+  was_right := answer_trivia(fan, q, 1);
+  ASSERT was_right, 'the right option is right';
+  ASSERT (SELECT points FROM score_events WHERE source_type = 'trivia' AND source_id = q AND reversed_at IS NULL) = 0.30, 'points awarded';
+  BEGIN
+    PERFORM answer_trivia(fan, q, 0);
+    RAISE EXCEPTION 'answering twice should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'trivia blocked: answered%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE trivia_questions SET prompt = 'Changed' WHERE id = q;
+    RAISE EXCEPTION 'changing a question should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%a question never changes%', SQLERRM;
+  END;
+  -- Yesterday's question can't be answered any more.
+  INSERT INTO trivia_questions (user_id, day, artist_id, kind, prompt, options, answer_index)
+  VALUES (fan, (now() AT TIME ZONE 'UTC')::date - 1, artist, 'track_album', 'Which album?', ARRAY['A', 'B'], 0)
+  RETURNING id INTO old_q;
+  BEGIN
+    PERFORM answer_trivia(fan, old_q, 0);
+    RAISE EXCEPTION 'answering yesterday''s question should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'trivia blocked: expired%', SQLERRM;
+  END;
+  BEGIN
+    INSERT INTO trivia_questions (user_id, day, artist_id, kind, prompt, options, answer_index)
+    VALUES (fan, (now() AT TIME ZONE 'UTC')::date + 1, artist, 'track_album', 'Out of range', ARRAY['A', 'B'], 2);
+    RAISE EXCEPTION 'an answer outside the options should fail';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+END $$;
+
+-- ------------------------------------------------------------ shared daily trivia (0024)
+-- One shared question per artist per day; a fan's copy must match it; shared questions never change.
+DO $$
+DECLARE artist uuid := '40000000-0000-0000-0000-000000000001'; d uuid; fan uuid := '49000000-0000-0000-0000-000000000001';
+BEGIN
+  INSERT INTO trivia_daily_questions (day, artist_id, kind, prompt, options, answer_index)
+  VALUES ((now() AT TIME ZONE 'UTC')::date + 3, artist, 'track_album', 'Which album?', ARRAY['A', 'B', 'C'], 2)
+  RETURNING id INTO d;
+  BEGIN
+    INSERT INTO trivia_daily_questions (day, artist_id, kind, prompt, options, answer_index)
+    VALUES ((now() AT TIME ZONE 'UTC')::date + 3, artist, 'release_year', 'Again?', ARRAY['1', '2'], 0);
+    RAISE EXCEPTION 'two shared questions for one artist and day should fail';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO trivia_questions (user_id, day, artist_id, kind, prompt, options, answer_index, daily_question_id)
+    VALUES (fan, (now() AT TIME ZONE 'UTC')::date + 3, artist, 'track_album', 'Which album?', ARRAY['A', 'B', 'C'], 0, d);
+    RAISE EXCEPTION 'a copy with another answer should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%must match its shared daily question%', SQLERRM;
+  END;
+  INSERT INTO trivia_questions (user_id, day, artist_id, kind, prompt, options, answer_index, daily_question_id)
+  VALUES (fan, (now() AT TIME ZONE 'UTC')::date + 3, artist, 'track_album', 'Which album?', ARRAY['A', 'B', 'C'], 2, d);
+  BEGIN
+    UPDATE trivia_daily_questions SET answer_index = 0 WHERE id = d;
+    RAISE EXCEPTION 'changing a shared question should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%shared daily question never changes%', SQLERRM;
+  END;
+  BEGIN
+    DELETE FROM trivia_daily_questions WHERE id = d;
+    RAISE EXCEPTION 'deleting a shared question should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%shared daily question never changes%', SQLERRM;
+  END;
+END $$;
+
+-- ------------------------------------------------------------ featured artist of the week (0023)
+DO $$
+DECLARE artist uuid := '40000000-0000-0000-0000-000000000001'; up uuid; monday date := date_trunc('week', now())::date;
+BEGIN
+  INSERT INTO featured_artists (week_start, artist_id, video_kind, video_url, spotify_track_id, track_title)
+  VALUES (monday, artist, 'youtube', 'https://www.youtube.com/watch?v=abc', '1aaaaaaaaaaaaaaaaaaaaa', 'A song');
+  BEGIN
+    INSERT INTO featured_artists (week_start, artist_id, video_kind, video_url, spotify_track_id, track_title)
+    VALUES (monday, artist, 'tiktok', 'https://www.tiktok.com/@x/video/1', '1aaaaaaaaaaaaaaaaaaaaa', 'Same week');
+    RAISE EXCEPTION 'two picks in one week should fail';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO featured_artists (week_start, artist_id, video_kind, video_url, spotify_track_id, track_title)
+    VALUES (monday + 1, artist, 'youtube', 'https://www.youtube.com/watch?v=abc', '1aaaaaaaaaaaaaaaaaaaaa', 'Tuesday');
+    RAISE EXCEPTION 'a week that starts on a Tuesday should fail';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%featured_artists_monday%', SQLERRM;
+  END;
+  BEGIN
+    INSERT INTO featured_artists (week_start, artist_id, video_kind, spotify_track_id, track_title)
+    VALUES (monday + 7, artist, 'youtube', '1aaaaaaaaaaaaaaaaaaaaa', 'No link');
+    RAISE EXCEPTION 'a link video without a link should fail';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%featured_artists_video%', SQLERRM;
+  END;
+  -- An uploaded video must be a finished featured_video upload; photos stay JPEG/PNG up to 15 MB.
+  INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes) VALUES ('00000000-0000-0000-0000-000000000001', 'featured_video', 'video/mp4', 50000000)
+  RETURNING id INTO up;
+  BEGIN
+    INSERT INTO featured_artists (week_start, artist_id, video_kind, video_upload_id, spotify_track_id, track_title)
+    VALUES (monday + 7, artist, 'upload', up, '1aaaaaaaaaaaaaaaaaaaaa', 'Not uploaded yet');
+    RAISE EXCEPTION 'an unfinished upload should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%finished featured_video upload%', SQLERRM;
+  END;
+  UPDATE uploads SET storage_key = 'quarantine/' || up, sha256 = sha256('v'), bytes = 10, uploaded_at = now() WHERE id = up;
+  INSERT INTO featured_artists (week_start, artist_id, video_kind, video_upload_id, spotify_track_id, track_title)
+  VALUES (monday + 7, artist, 'upload', up, '1aaaaaaaaaaaaaaaaaaaaa', 'Uploaded');
+  BEGIN
+    INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes) VALUES ('00000000-0000-0000-0000-000000000001', 'submission', 'video/mp4', 10);
+    RAISE EXCEPTION 'a video as proof should fail';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%uploads_purpose_kind_check%', SQLERRM;
+  END;
+  BEGIN
+    INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes) VALUES ('00000000-0000-0000-0000-000000000001', 'submission', 'image/jpeg', 20000000);
+    RAISE EXCEPTION 'a 20 MB photo should fail';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+END $$;
+
+-- ------------------------------------------------------------ music prompts (0025)
+-- One prompt a day (staff or library); one answer per fan, written or changed only on its day; takedowns stay down.
+INSERT INTO users (id, handle, email) VALUES
+  ('4a000000-0000-0000-0000-000000000001', 'prompt_fan', 'prompt_fan@example.test'),
+  ('4a000000-0000-0000-0000-000000000002', 'prompt_two', 'prompt_two@example.test');
+DO $$
+DECLARE fan uuid := '4a000000-0000-0000-0000-000000000001'; today date := (now() AT TIME ZONE 'UTC')::date;
+        p prompts; again prompts; old_p uuid; ans uuid;
+BEGIN
+  p := prompt_for_day(today);
+  again := prompt_for_day(today);
+  ASSERT p.id = again.id AND p.source = 'library', 'the library fills a day without a staff prompt, once';
+  ASSERT (SELECT text FROM prompt_library ORDER BY position OFFSET ((today - date '2026-01-01') % 30 + 30) % 30 LIMIT 1) = p.text,
+         'the library rotates by day';
+  INSERT INTO prompts (day, text, source) VALUES (today + 1, 'Staff prompt', 'staff');
+  ASSERT (prompt_for_day(today + 1)).text = 'Staff prompt', 'a staff prompt wins';
+
+  INSERT INTO prompt_answers (prompt_id, user_id, body) VALUES (p.id, fan, 'The Velvet Ropes') RETURNING id INTO ans;
+  BEGIN
+    INSERT INTO prompt_answers (prompt_id, user_id, body) VALUES (p.id, fan, 'Second answer');
+    RAISE EXCEPTION 'a second answer should fail';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO prompt_answers (prompt_id, user_id, body, visibility) VALUES (p.id, '4a000000-0000-0000-0000-000000000002', 'Secret', 'private');
+    RAISE EXCEPTION 'a private answer should fail';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%prompt_answers_shared%', SQLERRM;
+  END;
+  BEGIN
+    INSERT INTO prompt_answers (prompt_id, user_id, body) VALUES (p.id, '4a000000-0000-0000-0000-000000000002', '   ');
+    RAISE EXCEPTION 'a blank answer should fail';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO prompt_answers (prompt_id, user_id, body) VALUES ((prompt_for_day(today + 1)).id, fan, 'Too early');
+    RAISE EXCEPTION 'answering tomorrow''s prompt should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%only on the prompt''s day%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE prompts SET text = 'Changed' WHERE id = p.id;
+    RAISE EXCEPTION 'changing an answered prompt should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%fans have answered it%', SQLERRM;
+  END;
+  UPDATE prompt_answers SET body = 'The Velvet Ropes (edited)' WHERE id = ans;
+  UPDATE prompt_answers SET removed_at = now() WHERE id = ans;
+  BEGIN
+    UPDATE prompt_answers SET removed_at = NULL WHERE id = ans;
+    RAISE EXCEPTION 'restoring a taken-down answer should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%stays down%', SQLERRM;
+  END;
+  -- Reports and moderation decisions accept answers.
+  INSERT INTO reports (reporter_id, target_type, target_id, reason) VALUES ('4a000000-0000-0000-0000-000000000002', 'prompt_answer', ans, 'spam');
+  INSERT INTO moderation_actions (staff_id, target_type, target_id, action, reports) VALUES (NULL, 'prompt_answer', ans, 'take_down', 1);
+
+  -- Yesterday's answers are fixed.
+  INSERT INTO prompts (day, text, source) VALUES (today - 1, 'Yesterday', 'staff') RETURNING id INTO old_p;
+  BEGIN
+    INSERT INTO prompt_answers (prompt_id, user_id, body) VALUES (old_p, fan, 'Late');
+    RAISE EXCEPTION 'answering yesterday''s prompt should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%only on the prompt''s day%', SQLERRM;
+  END;
+END $$;
+
+-- ------------------------------------------------------------ emoji reactions (0026)
+-- Known emoji only, one of each per fan per post, pointing at a post that exists; deleting the post or the account
+-- removes them.
+INSERT INTO users (id, handle, email) VALUES
+  ('4b000000-0000-0000-0000-000000000001', 'react_fan', 'react_fan@example.test'),
+  ('4b000000-0000-0000-0000-000000000002', 'react_two', 'react_two@example.test');
+DO $$
+DECLARE fan uuid := '4b000000-0000-0000-0000-000000000001'; two uuid := '4b000000-0000-0000-0000-000000000002'; log_id uuid;
+BEGIN
+  INSERT INTO album_logs (user_id, album_id) VALUES (two, '10000000-0000-0000-0000-000000000001') RETURNING id INTO log_id;
+  INSERT INTO post_reactions (target_type, target_id, user_id, reaction) VALUES ('log', log_id, fan, 'fire'), ('log', log_id, fan, 'heart');
+  BEGIN
+    INSERT INTO post_reactions (target_type, target_id, user_id, reaction) VALUES ('log', log_id, fan, 'fire');
+    RAISE EXCEPTION 'the same emoji twice should fail';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO post_reactions (target_type, target_id, user_id, reaction) VALUES ('log', log_id, fan, 'poop');
+    RAISE EXCEPTION 'an unknown emoji should fail';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%post_reactions_known%', SQLERRM;
+  END;
+  BEGIN
+    INSERT INTO post_reactions (target_type, target_id, user_id, reaction) VALUES ('photo', log_id, fan, 'fire');
+    RAISE EXCEPTION 'a reaction to a missing post should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'reaction: no photo with this id%', SQLERRM;
+  END;
+  INSERT INTO post_reactions (target_type, target_id, user_id, reaction) VALUES ('log', log_id, two, 'clap');
+  UPDATE users SET deleted_at = now() WHERE id = fan;
+  ASSERT NOT EXISTS (SELECT 1 FROM post_reactions WHERE user_id = fan), 'deleting an account removes its reactions';
+  DELETE FROM album_logs WHERE id = log_id;
+  ASSERT NOT EXISTS (SELECT 1 FROM post_reactions WHERE target_id = log_id), 'deleting a post removes its reactions';
+END $$;
+
 -- ------------------------------------------------------------ artist profile (0016)
 -- Links need the artist flag; handles are bare; deletion clears the flag and links and they stay empty.
 INSERT INTO users (id, handle, email, is_artist, band_url, instagram_handle, x_handle) VALUES
@@ -1672,6 +1907,221 @@ DO $$ BEGIN
          'jojo''s follow of the deleted account is gone too';
   ASSERT NOT EXISTS (SELECT 1 FROM grab_bag_songs WHERE user_id = '00000000-0000-0000-0000-000000000014'), 'deletion empties the grab bag';
   ASSERT EXISTS (SELECT 1 FROM grab_bag_songs WHERE user_id = '00000000-0000-0000-0000-000000000001'), 'other grab bags stay';
+END $$;
+
+-- ------------------------------------------------------------ storage cleanup (0027)
+-- Removing a row that names a stored file queues its key in storage_deletions, once, in the same transaction.
+DELETE FROM storage_deletions;
+DO $$
+DECLARE up uuid; sub uuid := '40000000-0000-0000-0000-0000000000c1';
+BEGIN
+  -- An unattached slot without a file queues nothing; one with a file queues its key.
+  INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes) VALUES ('00000000-0000-0000-0000-000000000001', 'submission', 'image/jpeg', 10)
+    RETURNING id INTO up;
+  DELETE FROM uploads WHERE id = up;
+  ASSERT NOT EXISTS (SELECT 1 FROM storage_deletions), 'a slot with no file queues nothing';
+  INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes, storage_key, sha256, bytes, uploaded_at)
+    VALUES ('00000000-0000-0000-0000-000000000001', 'submission', 'image/jpeg', 10, 'quarantine/inv-slot', sha256('s'), 10, now())
+    RETURNING id INTO up;
+  DELETE FROM uploads WHERE id = up;
+  ASSERT EXISTS (SELECT 1 FROM storage_deletions WHERE storage_key = 'quarantine/inv-slot'), 'a deleted slot queues its key';
+
+  -- A submission's file and its attached slot name the same key: deleting the submission queues it once.
+  INSERT INTO submissions (id, user_id, artist_id, kind)
+    SELECT sub, '00000000-0000-0000-0000-000000000001', id, 'merch' FROM artists WHERE spotify_artist_id = 'sp-active';
+  INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes, storage_key, sha256, bytes, uploaded_at, submission_id)
+    VALUES ('00000000-0000-0000-0000-000000000001', 'submission', 'image/jpeg', 10, 'quarantine/inv-sub', sha256('t'), 10, now(), sub);
+  INSERT INTO submission_files (submission_id, storage_key, sha256, mime_type, bytes)
+    VALUES (sub, 'quarantine/inv-sub', sha256('t'), 'image/jpeg', 10), (sub, 'quarantine/inv-sub-2', sha256('u'), 'image/jpeg', 10);
+  ASSERT NOT EXISTS (SELECT 1 FROM storage_deletions WHERE storage_key LIKE 'quarantine/inv-sub%'), 'live files are not queued';
+
+  -- A changed key queues the old one.
+  UPDATE submission_files SET storage_key = 'quarantine/inv-sub-2b' WHERE storage_key = 'quarantine/inv-sub-2';
+  ASSERT EXISTS (SELECT 1 FROM storage_deletions WHERE storage_key = 'quarantine/inv-sub-2'), 'a replaced key is queued';
+
+  DELETE FROM submissions WHERE id = sub;
+  ASSERT (SELECT count(*) FROM storage_deletions WHERE storage_key = 'quarantine/inv-sub') = 1, 'a shared key is queued once';
+  ASSERT EXISTS (SELECT 1 FROM storage_deletions WHERE storage_key = 'quarantine/inv-sub-2b'), 'every file of the submission is queued';
+END $$;
+SELECT pg_temp.expect_error($$INSERT INTO storage_deletions (storage_key) VALUES ('')$$, 'storage_deletions_storage_key_check');
+DELETE FROM storage_deletions;
+
+-- ------------------------------------------------------------ rejected file retention (0028)
+-- rejected_at is stamped when a submission becomes rejected and cleared when it stops being rejected.
+DO $$
+DECLARE sub uuid := '40000000-0000-0000-0000-0000000000c2'; first_stamp timestamptz;
+BEGIN
+  INSERT INTO submissions (id, user_id, artist_id, kind)
+    SELECT sub, '00000000-0000-0000-0000-000000000001', id, 'merch' FROM artists WHERE spotify_artist_id = 'sp-active';
+  ASSERT (SELECT rejected_at FROM submissions WHERE id = sub) IS NULL, 'a new submission is not rejected';
+  UPDATE submissions SET status = 'rejected', rejection_reason = 'test' WHERE id = sub;
+  SELECT rejected_at INTO first_stamp FROM submissions WHERE id = sub;
+  ASSERT first_stamp IS NOT NULL, 'rejecting stamps rejected_at';
+  UPDATE submissions SET rejected_at = first_stamp - interval '40 days' WHERE id = sub;
+  UPDATE submissions SET status = 'rejected' WHERE id = sub;
+  ASSERT (SELECT rejected_at FROM submissions WHERE id = sub) = first_stamp - interval '40 days',
+         'staying rejected keeps the original stamp';
+  UPDATE submissions SET status = 'needs_review' WHERE id = sub;
+  ASSERT (SELECT rejected_at FROM submissions WHERE id = sub) IS NULL, 'leaving rejected clears the stamp';
+  DELETE FROM submissions WHERE id = sub;
+END $$;
+DELETE FROM storage_deletions;
+
+-- ------------------------------------------------------------ redaction and archive (0029)
+-- Verifying queues the redaction once; archive rows are redacted, under archive/, with a time; a file sent to staff
+-- notifies every live staff account once.
+DO $$
+DECLARE sub uuid := '40000000-0000-0000-0000-0000000000c3'; f uuid; staff_count int;
+BEGIN
+  DELETE FROM jobs WHERE kind = 'submissions.redact';
+  INSERT INTO submissions (id, user_id, artist_id, kind)
+    SELECT sub, '00000000-0000-0000-0000-000000000001', id, 'ticket' FROM artists WHERE spotify_artist_id = 'sp-active';
+  INSERT INTO submission_files (submission_id, storage_key, sha256, mime_type, bytes)
+    VALUES (sub, 'quarantine/inv-redact', sha256('r'), 'image/jpeg', 10) RETURNING id INTO f;
+  ASSERT (SELECT redaction_state FROM submission_files WHERE id = f) = 'pending', 'new files wait for redaction';
+  UPDATE submissions SET status = 'verified' WHERE id = sub;
+  UPDATE submissions SET status = 'verified' WHERE id = sub;
+  ASSERT (SELECT count(*) FROM jobs WHERE kind = 'submissions.redact' AND dedupe_key = 'redact:' || sub) = 1,
+         'verifying queues one redaction';
+
+  BEGIN
+    UPDATE submission_files SET tier = 'archive', redacted = true, archived_at = now(), redaction_state = 'archived' WHERE id = f;
+    RAISE EXCEPTION 'an archive row under a quarantine key should fail';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%submission_files_archive_consistent%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE submission_files SET storage_key = 'archive/inv-redact', tier = 'archive', redacted = true, archived_at = now() WHERE id = f;
+    RAISE EXCEPTION 'an archive row not marked archived should fail';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%submission_files_archive_consistent%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE submission_files SET storage_key = 'archive/inv-redact', redaction_state = 'archived' WHERE id = f;
+    RAISE EXCEPTION 'an archived row in the hot tier should fail';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%submission_files_archive_consistent%', SQLERRM;
+  END;
+
+  SELECT count(*) INTO staff_count FROM users WHERE is_staff AND deleted_at IS NULL;
+  UPDATE submission_files SET redaction_state = 'needs_review', redaction_note = 'No code found' WHERE id = f;
+  UPDATE submission_files SET redaction_state = 'approved' WHERE id = f;
+  UPDATE submission_files SET redaction_state = 'needs_review' WHERE id = f;
+  ASSERT (SELECT count(*) FROM notifications WHERE kind = 'staff_redaction' AND subject_id = f) = staff_count,
+         'each staff account hears about a file once';
+
+  UPDATE submission_files SET storage_key = 'archive/inv-redact', tier = 'archive', redacted = true, archived_at = now(),
+                              redaction_state = 'archived' WHERE id = f;
+  ASSERT EXISTS (SELECT 1 FROM storage_deletions WHERE storage_key = 'quarantine/inv-redact'), 'archiving queues the quarantined original';
+  DELETE FROM submissions WHERE id = sub;
+  DELETE FROM notifications WHERE kind = 'staff_redaction';
+  DELETE FROM jobs WHERE kind = 'submissions.redact';
+END $$;
+SELECT pg_temp.expect_error($$UPDATE submission_files SET redaction_state = 'lost'$$, 'submission_files_redaction_state_check');
+DELETE FROM storage_deletions;
+
+-- ------------------------------------------------------------ concert sources (0030)
+-- One source id per artist and per source id; a match needs both id and how it was matched; shows carry a known status
+-- and an https ticket link; hub_city_for matches name, region, and country.
+DO $$
+DECLARE a uuid;
+BEGIN
+  SELECT id INTO a FROM artists WHERE spotify_artist_id = 'sp-active';
+  INSERT INTO artist_sources (artist_id, source, external_id, matched_by) VALUES (a, 'ticketmaster', 'K8vZinv1', 'staff');
+  BEGIN
+    INSERT INTO artist_sources (artist_id, source, external_id, matched_by)
+      SELECT id, 'ticketmaster', 'K8vZinv1', 'staff' FROM artists WHERE id <> a LIMIT 1;
+    RAISE EXCEPTION 'two artists on one Ticketmaster id should fail';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  BEGIN
+    UPDATE artist_sources SET matched_by = NULL WHERE artist_id = a;
+    RAISE EXCEPTION 'an id without how it was matched should fail';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%artist_sources_match%', SQLERRM;
+  END;
+  DELETE FROM artist_sources WHERE artist_id = a;
+
+  ASSERT hub_city_for(' chicago', 'il', 'us') = 'us-il-chicago', 'hub cities match without case or spaces';
+  ASSERT hub_city_for('Chicago', 'IN', 'US') IS NULL, 'the region must match too';
+  ASSERT hub_city_for('Rosemont', 'IL', 'US') IS NULL, 'a suburb has no hub city';
+END $$;
+SELECT pg_temp.expect_error($$UPDATE events SET status = 'sold_out'$$, 'events_status_check');
+SELECT pg_temp.expect_error($$UPDATE events SET ticket_url = 'http://example.com'$$, 'events_ticket_url_check');
+
+-- ------------------------------------------------------------ presale reminders (0031)
+-- A presale's notification id is stable across syncs (same show, name, and start) and differs otherwise; reminders
+-- default on; 'presale' is a known notification kind.
+DO $$
+DECLARE e uuid := gen_random_uuid();
+BEGIN
+  ASSERT presale_subject_id(e, 'Verified Fan', '2026-11-01T15:00:00Z') = presale_subject_id(e, 'Verified Fan', '2026-11-01T15:00:00Z'),
+         'the same presale gets the same id';
+  ASSERT presale_subject_id(e, 'Verified Fan', '2026-11-01T15:00:00Z') <> presale_subject_id(e, 'Verified Fan', '2026-11-02T15:00:00Z'),
+         'another start is another presale';
+  ASSERT (SELECT presale_reminders FROM users WHERE id = '00000000-0000-0000-0000-000000000001'), 'reminders default on';
+END $$;
+SELECT pg_temp.expect_error(
+  $$INSERT INTO notifications (user_id, kind, subject_id) VALUES ('00000000-0000-0000-0000-000000000001', 'presale_spam', gen_random_uuid())$$,
+  'notifications_kind_check');
+
+-- ------------------------------------------------------------ push notifications (0032)
+-- Expo tokens only, one row per token; a notification for a fan with a live device queues its push once; a deleted
+-- account loses its devices.
+DO $$
+DECLARE u uuid; n uuid;
+BEGIN
+  INSERT INTO users (handle, email) VALUES ('push_fan', 'push_fan@example.test') RETURNING id INTO u;
+  INSERT INTO notifications (user_id, kind, subject_id) VALUES (u, 'ticket_delivered', gen_random_uuid()) RETURNING id INTO n;
+  ASSERT NOT EXISTS (SELECT 1 FROM jobs WHERE dedupe_key = 'push:' || n), 'no device, no push job';
+  INSERT INTO push_devices (user_id, token, platform) VALUES (u, 'ExponentPushToken[inv-token-0001]', 'ios');
+  BEGIN
+    INSERT INTO push_devices (user_id, token, platform) VALUES (u, 'ExponentPushToken[inv-token-0001]', 'android');
+    RAISE EXCEPTION 'a token twice should fail';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  INSERT INTO notifications (user_id, kind, subject_id) VALUES (u, 'ticket_delivered', gen_random_uuid()) RETURNING id INTO n;
+  ASSERT (SELECT count(*) FROM jobs WHERE kind = 'notifications.push' AND dedupe_key = 'push:' || n) = 1, 'a live device queues the push';
+  UPDATE users SET deleted_at = now() WHERE id = u;
+  ASSERT NOT EXISTS (SELECT 1 FROM push_devices WHERE user_id = u), 'deleting the account removes its devices';
+  DELETE FROM jobs WHERE kind = 'notifications.push';
+END $$;
+SELECT pg_temp.expect_error(
+  $$INSERT INTO push_devices (user_id, token, platform) VALUES ('00000000-0000-0000-0000-000000000001', 'fcm:abc', 'android')$$,
+  'push_devices_token_check');
+
+-- ------------------------------------------------------------ city time zones and the rules lock (0033)
+-- Every hub city has a zone PostgreSQL knows; a new or changed city must too.
+DO $$
+BEGIN
+  ASSERT NOT EXISTS (SELECT 1 FROM cities WHERE time_zone NOT IN (SELECT name FROM pg_timezone_names)),
+         'every city has a known time zone';
+  ASSERT (SELECT time_zone FROM cities WHERE id = 'us-tx-el-paso') = 'America/Denver', 'El Paso is on Mountain time';
+  ASSERT (SELECT time_zone FROM cities WHERE id = 'us-tn-knoxville') = 'America/New_York', 'Knoxville is on Eastern time';
+END $$;
+SELECT pg_temp.expect_error($$UPDATE cities SET time_zone = 'America/Atlantis' WHERE id = 'us-il-chicago'$$, 'not a known time zone');
+SELECT pg_temp.expect_error($$INSERT INTO cities (id, name, region, country) VALUES ('us-xx-nowhere', 'Nowhere', 'XX', 'US')$$, 'time_zone');
+
+-- An allocation with a registration is locked even while its window hasn't opened (a registration can only get in
+-- early by an insert outside register_for_allocation(); the lock no longer depends on the clock alone).
+DO $$
+DECLARE ev uuid; al uuid;
+BEGIN
+  INSERT INTO events (artist_id, name, city_id, city, country, starts_at)
+  VALUES ('40000000-0000-0000-0000-000000000001', 'Lock show', 'us-il-chicago', 'Chicago', 'US', now() + interval '14 days')
+  RETURNING id INTO ev;
+  INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at, published_at)
+  VALUES (ev, 10, 4500, now() + interval '1 day', now() + interval '5 days', now())
+  RETURNING id INTO al;
+  UPDATE allocations SET tickets = 12 WHERE id = al;
+  ASSERT (SELECT tickets FROM allocations WHERE id = al) = 12, 'rules editable before opening with nobody registered';
+
+  INSERT INTO allocation_registrations (allocation_id, event_id, user_id, hub_city_ids, hub_match, percentile, raw_score,
+                                        is_estimated, baseline_weight, score_computed_at)
+  VALUES (al, ev, '00000000-0000-0000-0000-000000000001', '{us-il-chicago}', 1, 90, 50, false, 0.2, now());
+  BEGIN
+    UPDATE allocations SET tickets = 5 WHERE id = al;
+    RAISE EXCEPTION 'changing an allocation someone registered for should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%rules are locked%', SQLERRM;
+  END;
+  -- Cancelling still works.
+  UPDATE allocations SET cancelled_at = now() WHERE id = al;
 END $$;
 
 \echo ALL INVARIANT TESTS PASSED

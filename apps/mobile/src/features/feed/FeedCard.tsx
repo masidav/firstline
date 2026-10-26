@@ -7,8 +7,10 @@ import { colors, space } from '../../ui/theme';
 import { fanName } from '../follows/follows';
 import { FollowButton } from '../follows/FollowButton';
 import { concertLine } from '../submissions/photoUpload';
+import { saleLines } from '../ticketing/showInfo';
 import { standingMessage } from '../ticketing/standing';
 import { type FeedItem, formatWhen, stars, statSentence, ticketsLine } from './feedText';
+import { ReactionBar } from './ReactionBar';
 import { ReportForm } from './ReportForm';
 
 export type FeedCardProps = {
@@ -35,6 +37,8 @@ export function FeedCard(props: FeedCardProps) {
       return item.registration ? <RegistrationCard {...props} /> : null;
     case 'stat':
       return item.stat ? <StatCard {...props} /> : null;
+    case 'prompt_answer':
+      return item.prompt_answer ? <PromptAnswerCard {...props} /> : null;
     default:
       return null;
   }
@@ -45,7 +49,14 @@ function Byline({ item, mine, following, onFollow, children }: FeedCardProps & {
   const handle = item.user?.handle;
   return (
     <View style={styles.byline}>
-      <Text style={[styles.line, styles.grow]}>{children}</Text>
+      {handle ? (
+        <Pressable accessibilityRole="link" accessibilityLabel={`Open ${fanName(item.user)}'s page`} onPress={() => router.push(`/fans/${handle}`)}
+          style={styles.grow}>
+          <Text style={styles.line}>{children}</Text>
+        </Pressable>
+      ) : (
+        <Text style={[styles.line, styles.grow]}>{children}</Text>
+      )}
       {!mine && handle ? <FollowButton handle={handle} following={following} onToggle={onFollow} /> : null}
     </View>
   );
@@ -57,7 +68,11 @@ function Report({ item, mine }: { item: FeedItem; mine: boolean }) {
   if (mine) return null;
   const who = fanName(item.user);
   return reporting ? (
-    <ReportForm targetType={item.type === 'photo' ? 'photo' : 'log'} targetId={item.id} onClose={() => setReporting(false)} />
+    <ReportForm
+      targetType={item.type === 'photo' ? 'photo' : item.type === 'prompt_answer' ? 'prompt_answer' : 'log'}
+      targetId={item.id}
+      onClose={() => setReporting(false)}
+    />
   ) : (
     <Pressable accessibilityRole="button" accessibilityLabel={`Report ${who}'s post`} onPress={() => setReporting(true)} hitSlop={8}>
       <Text style={styles.report}>Report</Text>
@@ -85,6 +100,7 @@ function PhotoCard(props: FeedCardProps) {
       )}
       {photo.concert ? <Text style={styles.muted}>{concertLine(photo.concert)}</Text> : null}
       {photo.caption ? <Text style={styles.text}>{photo.caption}</Text> : null}
+      <ReactionBar targetType="photo" targetId={item.id} initial={item.reactions ?? []} />
       <Report item={item} mine={mine} />
     </View>
   );
@@ -118,6 +134,7 @@ function LogCard(props: FeedCardProps) {
         </View>
       </Pressable>
       {log.review ? <Text style={styles.text}>{log.review}</Text> : null}
+      <ReactionBar targetType="log" targetId={item.id} initial={item.reactions ?? []} />
       <Report item={item} mine={mine} />
     </View>
   );
@@ -173,6 +190,7 @@ function ConcertCard({ item }: FeedCardProps) {
         {where ? ` · ${where}` : ''}
       </Text>
       <Text style={[styles.strong, (show.registered || show.allocation?.status === 'open') && styles.accent]}>{ticketsLine(show)}</Text>
+      {!show.allocation && saleLines(show.event)[0] ? <Text style={styles.muted}>{saleLines(show.event)[0]}</Text> : null}
     </Pressable>
   );
 }
@@ -219,6 +237,27 @@ function RegistrationCard({ item }: FeedCardProps) {
   );
 }
 
+function PromptAnswerCard(props: FeedCardProps) {
+  const { item, mine } = props;
+  const answer = item.prompt_answer!;
+  return (
+    <View style={[styles.card, styles.promptCard]}>
+      <Byline {...props}>
+        <Text style={styles.strong}>{fanName(item.user)}</Text> answered the prompt
+        {answer.visibility === 'followers' ? ' · followers only' : ''}
+      </Byline>
+      <Text style={styles.muted}>{answer.prompt_text}</Text>
+      <Text style={styles.answer}>“{answer.body}”</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel={`See all answers to: ${answer.prompt_text}`}
+        onPress={() => router.push(`/prompts/${answer.prompt_id}`)} hitSlop={8}>
+        <Text style={styles.link}>See all answers</Text>
+      </Pressable>
+      <ReactionBar targetType="prompt_answer" targetId={item.id} initial={item.reactions ?? []} />
+      <Report item={item} mine={mine} />
+    </View>
+  );
+}
+
 function StatCard(props: FeedCardProps) {
   const { item } = props;
   const who = fanName(item.user);
@@ -235,6 +274,8 @@ const styles = StyleSheet.create({
   concert: { borderColor: colors.accent },
   registration: { borderColor: colors.accent, backgroundColor: colors.surface },
   stat: { backgroundColor: colors.surface },
+  promptCard: { borderColor: '#e57373' },
+  answer: { color: colors.text, fontSize: 18, fontWeight: '700', lineHeight: 24 },
   byline: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   grow: { flex: 1 },
   kicker: { color: colors.muted, fontSize: 13, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },

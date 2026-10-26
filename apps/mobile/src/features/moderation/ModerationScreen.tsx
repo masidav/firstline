@@ -67,12 +67,19 @@ export function ModerationScreen() {
         return (
           <View key={`${post.target_type}:${post.target_id}`} style={styles.card}>
             <Text style={styles.title}>
-              {post.photo ? kindLabel(post.photo.kind) : 'Album log'} · {post.artist.name} · {author}
+              {post.photo ? kindLabel(post.photo.kind) : post.prompt_answer ? 'Prompt answer' : 'Album log'}
+              {post.artist ? ` · ${post.artist.name}` : ''} · {author}
             </Text>
             {post.photo?.files[0] && (
               <Image source={{ uri: post.photo.files[0].url }} style={styles.photo} resizeMode="contain" accessibilityLabel="Reported photo" />
             )}
             {post.photo?.caption ? <Text style={styles.text}>{post.photo.caption}</Text> : null}
+            {post.prompt_answer && (
+              <>
+                <Text style={styles.text}>{post.prompt_answer.prompt_text}</Text>
+                <Text style={styles.text}>“{post.prompt_answer.body}”</Text>
+              </>
+            )}
             {post.log && (
               <>
                 <Text style={styles.text}>

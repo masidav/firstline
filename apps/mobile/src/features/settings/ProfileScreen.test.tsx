@@ -9,14 +9,20 @@ const problem = (status: number, errors: { field: string; message: string }[]) =
   response: { ok: false, status },
 });
 
-const mockApi = { PATCH: jest.fn() };
+const mockApi = { PATCH: jest.fn(), POST: jest.fn() };
 const mockSetMe = jest.fn();
-const mockSession = { api: mockApi, setMe: mockSetMe, signOut: jest.fn(), deleteAccount: jest.fn() };
+const mockSession = { api: mockApi, setMe: mockSetMe, updateMe: jest.fn(), signOut: jest.fn(), deleteAccount: jest.fn() };
 
 jest.mock('../../auth/SessionProvider', () => ({
   useSession: () => ({ session: mockSession }),
 }));
+jest.mock('../notifications/push', () => ({
+  pushSupported: () => false,
+  registerForPush: jest.fn(),
+  unregisterPush: jest.fn(() => Promise.resolve()),
+}));
 jest.mock('expo-router', () => ({ router: { replace: jest.fn(), push: jest.fn() } }));
+jest.mock('../authentication/appleSignIn', () => ({ reauthenticateWithApple: jest.fn() }));
 
 const fan = {
   id: 'u-1',
@@ -29,6 +35,8 @@ const fan = {
   band_url: null,
   instagram_handle: null,
   x_handle: null,
+  presale_reminders: true,
+  push: { tickets: true, presales: true, staff: true },
 };
 const artist = { ...fan, is_artist: true, band_url: 'https://open.spotify.com/artist/abc', instagram_handle: 'the.band', x_handle: 'theband' };
 
@@ -91,4 +99,56 @@ test('field errors land on the band fields', async () => {
   fireEvent.press(screen.getByText('Save'));
   expect(await screen.findByText('Use an https:// link.')).toBeTruthy();
   expect(mockSetMe).not.toHaveBeenCalled();
+});
+
+test('a connected fan can resync Spotify; a second try within 15 minutes is explained', async () => {
+  const spotify = { connected: true, scopes: [], connected_at: '2026-10-20T00:00:00Z', last_synced_at: '2026-10-25T10:00:00Z',
+    sync_state: 'idle', sync_error: null, tracked_artists_found: 3, top_artists_added: 0 };
+  mockApi.POST.mockResolvedValueOnce(ok({ ...spotify, sync_state: 'queued' }, 202))
+    .mockResolvedValueOnce({ error: { code: 'rate_limited' }, response: { ok: false, status: 429 } });
+  render(<ProfileScreen me={{ ...fan, spotify } as never} />);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Resync Spotify' }));
+  await waitFor(() => expect(mockSession.updateMe).toHaveBeenCalledWith({ spotify: { ...spotify, sync_state: 'queued' } }));
+  expect(mockApi.POST).toHaveBeenCalledWith('/me/spotify/sync');
+  fireEvent.press(screen.getByRole('button', { name: 'Resync Spotify' }));
+  expect(await screen.findByText(/synced in the last 15 minutes/)).toBeTruthy();
+});
+
+test('presale reminders switch off and on, saved at once', async () => {
+  mockApi.PATCH.mockResolvedValueOnce(ok({ ...fan, presale_reminders: false }));
+  render(<ProfileScreen me={fan} />);
+
+  fireEvent(screen.getByLabelText('Presale reminders'), 'valueChange', false);
+  await waitFor(() => expect(mockSession.updateMe).toHaveBeenCalledWith({ presale_reminders: false }));
+  expect(mockApi.PATCH).toHaveBeenCalledWith('/me', { body: { presale_reminders: false } });
+});
+
+test('deleting an Apple account first confirms with Apple and sends the fresh code', async () => {
+  const { reauthenticateWithApple } = jest.requireMock('../authentication/appleSignIn');
+  reauthenticateWithApple.mockResolvedValueOnce('cancelled').mockResolvedValueOnce({ code: 'fresh' });
+  (mockSession as { provider?: string }).provider = 'apple';
+  mockSession.deleteAccount.mockResolvedValue(undefined);
+  render(<ProfileScreen me={fan} />);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Delete account' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Yes, delete my account' }));
+  await waitFor(() => expect(reauthenticateWithApple).toHaveBeenCalledTimes(1));
+  expect(mockSession.deleteAccount).not.toHaveBeenCalled();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Yes, delete my account' }));
+  await waitFor(() => expect(mockSession.deleteAccount).toHaveBeenCalledWith('fresh'));
+});
+
+test('deleting a Google account does not involve Apple', async () => {
+  const { reauthenticateWithApple } = jest.requireMock('../authentication/appleSignIn');
+  (mockSession as { provider?: string }).provider = 'google';
+  mockSession.deleteAccount.mockResolvedValue(undefined);
+  render(<ProfileScreen me={fan} />);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Delete account' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Yes, delete my account' }));
+
+  await waitFor(() => expect(mockSession.deleteAccount).toHaveBeenCalledWith(undefined));
+  expect(reauthenticateWithApple).not.toHaveBeenCalled();
 });

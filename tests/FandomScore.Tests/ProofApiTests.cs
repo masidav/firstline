@@ -95,6 +95,19 @@ public sealed class ProofApiTests(PostgresFixture postgres) : IAsyncLifetime
         var shared = await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/submissions/{id}/share", fan, new { shared = true }), HttpStatusCode.OK);
         Assert.NotEqual(JsonValueKind.Null, shared.GetProperty("shared_at").ValueKind);
 
+        // The fixture isn't a decodable image, so mark its file archived as the redaction worker would (RedactionJobTests
+        // covers the worker; the other feed test here runs it).
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            await connection.ExecuteAsync(
+                """
+                UPDATE submission_files SET storage_key = 'archive/' || id, tier = 'archive', redacted = true,
+                       archived_at = now(), redaction_state = 'archived'
+                WHERE submission_id = @id::uuid
+                """,
+                new { id });
+        }
+
         var feed = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/feed", fan), HttpStatusCode.OK);
         var item = Assert.Single(feed.GetProperty("items").EnumerateArray());
         var concert = item.GetProperty("photo").GetProperty("concert");
@@ -118,9 +131,17 @@ public sealed class ProofApiTests(PostgresFixture postgres) : IAsyncLifetime
         var fan = await SignInAsync("fan_one");
         var other = await SignInAsync("fan_two");
         var staff = await StaffAsync("staffer");
-        var merch = await SubmitAsync(other, "merch", Png());
+        var merch = await SubmitAsync(other, "merch", RealPng());
         await DecideAsync(staff, merch, "approve");
         await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/submissions/{merch}/share", other, new { shared = true }), HttpStatusCode.OK);
+
+        // A shared photo reaches the feed only once its files are redacted and archived (migration 0029).
+        var waiting = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/feed", fan), HttpStatusCode.OK);
+        Assert.Empty(waiting.GetProperty("items").EnumerateArray());
+        var redact = new FandomScore.Worker.ImageRedaction.RedactSubmissionJob(
+            _db, new FandomScore.Storage.LocalFileStore(_storage),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<FandomScore.Worker.ImageRedaction.RedactSubmissionJob>.Instance);
+        await redact.RunAsync(new FandomScore.Worker.Jobs.ClaimedJob(1, redact.Kind, $$"""{"submission_id":"{{merch}}"}""", 1, 10), CancellationToken.None);
 
         await using (var connection = await _db.OpenConnectionAsync())
         {
@@ -142,7 +163,9 @@ public sealed class ProofApiTests(PostgresFixture postgres) : IAsyncLifetime
         var log = items.Single(i => i.GetProperty("type").GetString() == "album_log").GetProperty("log");
         Assert.Equal(9, log.GetProperty("rating").GetInt32());
         Assert.True(log.GetProperty("review_truncated").GetBoolean());
-        Assert.Equal("merch", items.Single(i => i.GetProperty("type").GetString() == "photo").GetProperty("photo").GetProperty("kind").GetString());
+        var photo = items.Single(i => i.GetProperty("type").GetString() == "photo").GetProperty("photo");
+        Assert.Equal("merch", photo.GetProperty("kind").GetString());
+        Assert.True(photo.GetProperty("files")[0].GetProperty("redacted").GetBoolean());
 
         // Deleted accounts drop out.
         await using (var connection = await _db.OpenConnectionAsync())
@@ -230,6 +253,11 @@ public sealed class ProofApiTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NoContent, (await SendAsync(HttpMethod.Delete, $"/v1/submissions/{id}", fan)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await _client.GetAsync(url)).StatusCode);
         Assert.Empty(Directory.EnumerateFiles(_storage, "*", SearchOption.AllDirectories));
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            // Deleted inline, so nothing is left queued for the worker's storage cleanup (migration 0027).
+            Assert.Equal(0, await connection.ExecuteScalarAsync<int>("SELECT count(*) FROM storage_deletions"));
+        }
 
         var verified = await SubmitAsync(fan, "merch", Jpeg("cap"));
         await DecideAsync(staff, verified, "approve");
@@ -312,6 +340,16 @@ public sealed class ProofApiTests(PostgresFixture postgres) : IAsyncLifetime
         jpeg.Write(Encoding.ASCII.GetBytes(marker));
         jpeg.Write([0xFF, 0xD9]);
         return jpeg.ToArray();
+    }
+
+    /// <summary>A real, decodable 64×48 PNG (the redaction worker has to read it).</summary>
+    private static byte[] RealPng()
+    {
+        using var bitmap = new SkiaSharp.SKBitmap(64, 48);
+        bitmap.Erase(new SkiaSharp.SKColor(120, 80, 200));
+        using var image = SkiaSharp.SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+        return data.ToArray();
     }
 
     /// <summary>A minimal PNG with a tEXt chunk holding <see cref="GpsSecret"/> (CRCs aren't checked).</summary>

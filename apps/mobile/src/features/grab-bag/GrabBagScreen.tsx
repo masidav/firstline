@@ -92,6 +92,25 @@ export function GrabBagScreen() {
     }
   }
 
+  // Swaps a slot with the one above or below it (filled or empty) and saves the new order.
+  async function move(song: GrabBagSong, delta: -1 | 1) {
+    if (!bag) return;
+    const slots: (string | null)[] = Array.from({ length: bag.slots }, (_, i) => bag.items.find((s) => s.position === i + 1)?.id ?? null);
+    const from = song.position - 1;
+    const to = from + delta;
+    if (to < 0 || to >= slots.length) return;
+    [slots[from], slots[to]] = [slots[to] ?? null, slots[from] ?? null];
+    setBusy(song.id);
+    setNotice(undefined);
+    try {
+      setBag(unwrap(await session.api.PUT('/me/grab-bag/order', { body: { slots } })));
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function remove(song: GrabBagSong) {
     setBusy(song.id);
     setNotice(undefined);
@@ -141,7 +160,17 @@ export function GrabBagScreen() {
                   <Text style={styles.link}>Open in Spotify</Text>
                 </Pressable>
               </View>
-              <Button label="Remove" accessibilityLabel={`Remove ${song.title}`} kind="secondary" busy={busy === song.id} onPress={() => void remove(song)} />
+              <View style={styles.actions}>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Move ${song.title} up`} disabled={slot === 1 || busy !== null}
+                  onPress={() => void move(song, -1)} hitSlop={6} style={[styles.arrow, slot === 1 && styles.arrowOff]}>
+                  <Text style={styles.arrowText}>↑</Text>
+                </Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Move ${song.title} down`} disabled={slot === bag.slots || busy !== null}
+                  onPress={() => void move(song, 1)} hitSlop={6} style={[styles.arrow, slot === bag.slots && styles.arrowOff]}>
+                  <Text style={styles.arrowText}>↓</Text>
+                </Pressable>
+                <Button label="Remove" accessibilityLabel={`Remove ${song.title}`} kind="secondary" busy={busy === song.id} onPress={() => void remove(song)} />
+              </View>
             </View>
           ) : (
             <View key={slot} style={[styles.slot, styles.empty]}>
@@ -205,4 +234,8 @@ const styles = StyleSheet.create({
   strong: { color: colors.text, fontSize: 16, fontWeight: '700' },
   muted: { color: colors.muted, fontSize: 14 },
   link: { color: colors.accent, fontSize: 14, fontWeight: '600' },
+  actions: { alignItems: 'center', gap: space.xs },
+  arrow: { width: 40, height: 32, borderRadius: 8, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  arrowOff: { opacity: 0.3 },
+  arrowText: { color: colors.text, fontSize: 18, fontWeight: '700' },
 });

@@ -10,6 +10,7 @@ The bouncer door draws one of those songs at random for the fan.
 | --- | --- |
 | `GET /me/grab-bag` | the caller's bag: filled slots in order, and how many slots there are |
 | `PUT /me/grab-bag/{position}` | put a song (`spotify_track_id`) in slot 1–5, replacing what was there; a song already in another slot moves |
+| `PUT /me/grab-bag/order` | reorder: the five slots in order, each song id once, null for an empty slot |
 | `DELETE /me/grab-bag/{position}` | empty a slot |
 | `GET /users/{handle}/grab-bag` | a fan's bag, for the owner and their followers (`403 followers_only` otherwise) |
 | `GET /tracks/search?q=` | Spotify track search with the app token (same rate limit as artist search), tracked artists marked |

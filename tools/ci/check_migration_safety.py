@@ -11,14 +11,34 @@ Flags, per statement:
   ADD COLUMN ... NOT NULL without a DEFAULT, TRUNCATE, DELETE FROM.
 A migration that must do one of these (the contract step) says so with a comment line anywhere in the file:
   -- allow-breaking: <what the previous release stopped using, and when it shipped>
+A migration already on main can't be edited to add that line, so a reviewed allowance for it goes in
+tools/ci/migration_safety_allowances.txt instead: one line per file, "<file name>: <why it is safe>".
 
 Usage: check_migration_safety.py database/migrations/0017_x.sql [...]   (exit 1 when a flagged file has no allowance)
 Comments and dollar-quoted bodies (functions, triggers) are not statements and are ignored.
 """
+import os
 import re
 import sys
 
 ALLOWANCE = re.compile(r"^\s*--\s*allow-breaking:\s*\S", re.MULTILINE)
+ALLOWANCES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "migration_safety_allowances.txt")
+
+
+def reviewed_allowances(path: str = ALLOWANCES_FILE) -> dict:
+    """File name -> reason, from the allowances file. Lines without a reason are ignored (a reason is the point)."""
+    allowances = {}
+    if not os.path.exists(path):
+        return allowances
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or ":" not in line:
+                continue
+            name, reason = line.split(":", 1)
+            if reason.strip():
+                allowances[name.strip()] = reason.strip()
+    return allowances
 
 RULES = [
     (re.compile(r"\bDROP\s+(TABLE|TYPE|SCHEMA)\b", re.I), "drops a table, type, or schema the previous release may use"),
@@ -128,10 +148,12 @@ def not_null_without_default(statement: str):
     return found
 
 
-def check_file(path: str):
+def check_file(path: str, allowances: dict | None = None):
     with open(path, encoding="utf-8") as f:
         raw = f.read()
-    allowed = bool(ALLOWANCE.search(raw))
+    if allowances is None:
+        allowances = reviewed_allowances()
+    allowed = bool(ALLOWANCE.search(raw)) or os.path.basename(path) in allowances
     findings = []
     for line, statement in statements(strip_comments_and_bodies(raw)):
         for pattern, why in RULES:
@@ -149,7 +171,7 @@ def main(paths):
         allowed, findings = check_file(path)
         for line, why in findings:
             level = "notice" if allowed else "error"
-            print(f"::{level} file={path},line={line}::{path}:{line}: {why}" + (" (allowed by -- allow-breaking)" if allowed else ""))
+            print(f"::{level} file={path},line={line}::{path}:{line}: {why}" + (" (allowed: -- allow-breaking or migration_safety_allowances.txt)" if allowed else ""))
             if not allowed:
                 failed = True
     if failed:

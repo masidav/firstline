@@ -173,11 +173,13 @@ public static partial class SpotifyEndpoints
         return Results.NoContent();
     }
 
-    private sealed record SyncRequestState(string SyncState, double? WaitSeconds);
+    private sealed record SyncRequestState(string SyncState, double? WaitSeconds, bool? SyncedRecently);
 
     // A sync already queued or running is returned as is. Otherwise one manual sync per ManualSyncInterval.
+    // background=true is the app's sync on opening (decided 2026-10-25): it never errors for timing or a lapsed
+    // authorization; when a sync ran or was asked for in the last ManualSyncInterval it just returns the status (200).
     private static async Task<IResult> SyncAsync(
-        ClaimsPrincipal user, NpgsqlDataSource db, IOptions<SpotifyOptions> options, CancellationToken cancellationToken)
+        ClaimsPrincipal user, bool? background, NpgsqlDataSource db, IOptions<SpotifyOptions> options, CancellationToken cancellationToken)
     {
         var userId = user.UserId();
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
@@ -185,11 +187,18 @@ public static partial class SpotifyEndpoints
         var state = await connection.QuerySingleOrDefaultAsync<SyncRequestState>(
             """
             SELECT sync_state AS SyncState,
-                   extract(epoch FROM sync_requested_at + @interval - now())::float8 AS WaitSeconds
+                   extract(epoch FROM sync_requested_at + @interval - now())::float8 AS WaitSeconds,
+                   last_synced_at > now() - @interval AS SyncedRecently
             FROM spotify_connections WHERE user_id = @userId FOR UPDATE
             """,
             new { userId, interval = options.Value.ManualSyncInterval }, transaction)
             ?? throw SpotifyConnections.NotConnected();
+
+        var quiet = background == true;
+        if (quiet && (state.SyncState == "reauth_required" || state.WaitSeconds > 0 || state.SyncedRecently == true))
+        {
+            return Results.Ok(await SpotifyConnections.LoadStatusAsync(connection, userId, transaction));
+        }
 
         switch (state.SyncState)
         {

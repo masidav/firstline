@@ -217,6 +217,10 @@ export interface paths {
          *     (`top_artists_added`; the daily artist add limit applies). A sync already `queued` or `running` is returned as is. Otherwise one manual sync per 15 minutes
          *     (`429 rate_limited`). `409 spotify_not_connected` without a connection; `409 spotify_reauth_required`
          *     when Spotify rejected the stored authorization (connect again with `PUT /me/spotify`).
+         *
+         *     `background=true` is the app's sync when it opens (decided 2026-10-25): when a sync ran or was requested in the
+         *     last 15 minutes, or the authorization needs renewing, it returns the status with `200` and queues nothing;
+         *     otherwise it queues like a manual sync.
          */
         post: operations["syncSpotify"];
         delete?: never;
@@ -260,6 +264,9 @@ export interface paths {
          *     `headers`; the link is signed and short-lived, so it needs no sign-in. Files land in quarantine storage
          *     with their metadata (EXIF location, camera details, comments) stripped. JPEG and PNG only: convert HEIC
          *     or WebP on the device first. 50 uploads per day per user.
+         *
+         *     Staff also upload featured-artist videos here (`purpose: featured_video`): MP4 up to 100 MB, stored as
+         *     uploaded; others get 403.
          */
         post: operations["createUpload"];
         delete?: never;
@@ -352,7 +359,8 @@ export interface paths {
          * @description Takes a Spotify artist id from search; the server fetches the name and image from Spotify
          *     (client-supplied names are never trusted) and calls `track_artist()`. A new artist starts as
          *     `onboarding`; a worker loads the catalog and baseline and then marks it `active`. The adding user
-         *     is synced immediately after activation. An artist that is already tracked is returned as is.
+         *     is synced immediately after activation. An artist that is already tracked is returned as is; when it is
+         *     active and the caller has no score for it yet, the caller's Spotify sync is queued so the score arrives soon.
          */
         post: operations["trackArtist"];
         delete?: never;
@@ -459,8 +467,8 @@ export interface paths {
          * My stats in one list
          * @description The signed-in fan's numbers, read from stored state and the ledger (never from Spotify at request time).
          *     Deleted logs and comments and reversed awards don't count. Listening totals cover active tracked artists
-         *     only. `ledger_points` is the sum of unreversed awards (journal, proof of fandom). Other fans' stats will
-         *     follow their profile visibility once follows and blocks exist (Phase 8).
+         *     only. `ledger_points` is the sum of unreversed awards (journal, proof of fandom). Other fans' stats:
+         *     `GET /users/{handle}/stats`.
          */
         get: operations["getMyStats"];
         put?: never;
@@ -902,7 +910,8 @@ export interface paths {
         };
         /**
          * Home feed
-         * @description One vertical scroll mixing, at random: shared photos (verified merch and concert photos) and public album
+         * @description One vertical scroll mixing, at random: shared photos (verified merch and concert photos, once every file is
+         *     redacted and archived) and public album
          *     logs from every fan; from the fans the caller follows, their followers-only logs, grab-bag songs, and top
          *     fandom stats; upcoming shows (within 120 days) of artists the caller has a score for or in their hub cities,
          *     with the fan allocation to register for; and the caller's own live registrations with their standing.
@@ -1153,6 +1162,355 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/grab-bag/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reorder the grab bag
+         * @description The five slots in their new order. Each of the caller's songs appears once; null leaves a slot empty.
+         */
+        put: operations["reorderGrabBag"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/trivia": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Today's music trivia
+         * @description One question a day (UTC) about one of the fan's scored artists, shared by the artist's fans that day (made from
+         *     the album catalog by the first who asks). Once answered, `results` names up to two people the fan follows who
+         *     got it right and the percent of fans who did. `question` is null when none of the fan's artists has enough catalog yet. The right answer is
+         *     only included once the fan has answered. A right answer earns `trivia_correct` ledger points (0.30, a tenth
+         *     of logging an album; decided 2026-10-25).
+         */
+        get: operations["getTodaysTrivia"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/trivia/{questionId}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                questionId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer today's question
+         * @description Once, and only on its day.
+         */
+        post: operations["answerTrivia"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reactions/{targetType}/{targetId}/{reaction}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                targetType: "photo" | "log" | "prompt_answer";
+                targetId: string;
+                reaction: components["schemas"]["Reaction"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * React to a post
+         * @description Emoji reactions instead of comments (decided 2026-10-25). Any post the caller can see (a shared photo, an album
+         *     log, a prompt answer); several different emoji per post; the same one twice is still one. No points.
+         */
+        put: operations["addReaction"];
+        post?: never;
+        /**
+         * Take a reaction back
+         * @description Idempotent.
+         */
+        delete: operations["removeReaction"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/prompts/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Today's music prompt
+         * @description One open question a day (UTC) for everyone, from staff or the built-in library, for example "What's your best
+         *     hypothetical band name?". `following_answers` (up to three answers from people the caller follows) is only
+         *     filled once the caller has answered.
+         */
+        get: operations["getTodaysPrompt"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/prompts/{promptId}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                promptId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Answer today's prompt
+         * @description Writes or rewrites the caller's answer. Only on the prompt's day. Answers show on the feed.
+         */
+        put: operations["answerPrompt"];
+        post?: never;
+        /**
+         * Withdraw your answer
+         * @description Only on the prompt's day. Idempotent.
+         */
+        delete: operations["withdrawPromptAnswer"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/prompts/{promptId}/answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                promptId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Answers to a prompt
+         * @description Answers the caller can see, theirs first, then people they follow, then everyone else's public ones, newest first.
+         */
+        get: operations["listPromptAnswers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/prompts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Prompts around today
+         * @description The last week and the next four weeks that have a prompt (days without one get a library prompt on the day).
+         */
+        get: operations["listPrompts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/prompts/{day}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                day: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set a day's prompt
+         * @description Today or later. Refused once fans have answered that day's prompt.
+         */
+        put: operations["schedulePrompt"];
+        post?: never;
+        /**
+         * Remove a day's prompt
+         * @description Refused once fans have answered it. The day then gets a library prompt.
+         */
+        delete: operations["unschedulePrompt"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/featured": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * This week's featured artist
+         * @description The staff pick for the current week (Monday to Sunday, UTC): the artist, a video (an uploaded MP4 through a
+         *     signed link, or a YouTube or TikTok link with an embeddable URL), and a song on Spotify. Null when no pick.
+         */
+        get: operations["getFeaturedArtist"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/featured/videos/{uploadId}": {
+        parameters: {
+            query: {
+                exp: number;
+                sig: string;
+            };
+            header?: never;
+            path: {
+                uploadId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * An uploaded featured video
+         * @description Signed, short-lived link from `FeaturedArtist.video.url`; needs no sign-in. Supports range requests.
+         */
+        get: operations["getFeaturedVideo"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/featured": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Featured picks
+         * @description The last four weeks and everything scheduled, newest first.
+         */
+        get: operations["listFeaturedArtists"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/featured/{weekStart}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The Monday the week starts on */
+                weekStart: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Pick the featured artist for a week
+         * @description Creates or replaces the week's pick. Send `video_url` (a YouTube or TikTok link) or `video_upload_id` (a
+         *     finished `featured_video` upload), not both. `spotify_track` is an open.spotify.com/track link or a track id;
+         *     the title and cover come from Spotify.
+         */
+        put: operations["putFeaturedArtist"];
+        post?: never;
+        /** Remove a week's pick */
+        delete: operations["deleteFeaturedArtist"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{handle}/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: components["parameters"]["Handle"];
+            };
+            cookie?: never;
+        };
+        /**
+         * A fan's fandom stats
+         * @description For the fan and their followers (decided 2026-10-20: followers see top fandom stats): artists with percentile
+         *     and rank, journal and proof counts, ledger points. Listening counts stay private. Stats are followers-only
+         *     (decided 2026-10-25: none are public by default), so others get 403.
+         */
+        get: operations["getUserStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{handle}/answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: components["parameters"]["Handle"];
+            };
+            cookie?: never;
+        };
+        /**
+         * A fan's prompt answers
+         * @description The last 20 the caller may see (public ones, followers-only ones for followers), newest first, with their prompts.
+         */
+        get: operations["listUserPromptAnswers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/{handle}/grab-bag": {
         parameters: {
             query?: never;
@@ -1393,6 +1751,8 @@ export interface paths {
          *     place if the draw ran now, counting equal scores against them. `likely` is true only when the seats of
          *     everyone ahead plus the fan's own fit within `tickets - margin_seats` (25 to start), a buffer for fans who
          *     register later with higher scores, so the app can say "you'll most likely get a ticket" without false hope.
+         *     Other fans' registrations are counted from a snapshot at most a few seconds old, so `registrants` and the
+         *     rank can lag fans who registered in that time.
          */
         get: operations["getEligibility"];
         put?: never;
@@ -1473,6 +1833,51 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/push-devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Register this phone for push notifications
+         * @description The phone app sends its Expo push token on every launch once the fan allows notifications. Every in-app
+         *     notification is then also pushed to the fan's live devices, unless they turned that category off (`Me.push`).
+         *     A token already registered moves to the caller (whoever signed in last on that phone) and is switched back on.
+         *     Not available on the web app.
+         */
+        put: operations["registerPushDevice"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/push-devices/{deviceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Stop pushing to this phone
+         * @description The app calls it on sign-out. Idempotent; only the caller's own devices.
+         */
+        delete: operations["removePushDevice"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1893,6 +2298,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/artists/{artistId}/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artistId: components["parameters"]["ArtistId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Which concert-source artist this artist is
+         * @description The worker links an artist to Ticketmaster by itself only when Ticketmaster lists the artist's Spotify page.
+         *     `external_id` null means it looked and found no match (it looks again weekly).
+         */
+        get: operations["listArtistSources"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/artists/{artistId}/sources/{source}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artistId: components["parameters"]["ArtistId"];
+                source: "ticketmaster";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Link the artist to a source's artist id
+         * @description For artists the worker couldn't match. `external_id` is the Ticketmaster Discovery attraction id (letters and
+         *     digits), not a ticketmaster.com link. Queues a sync of the artist's shows. `409 conflict` when another tracked
+         *     artist holds that id.
+         */
+        put: operations["linkArtistSource"];
+        post?: never;
+        /**
+         * Remove a wrong link
+         * @description Shows already loaded stay. The worker may link the artist again if the source lists its Spotify page.
+         */
+        delete: operations["unlinkArtistSource"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/redactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Files the redaction worker sent to staff
+         * @description Verified proof is scanned for barcodes and QR codes, which are blacked out before the file moves to the
+         *     archive. A file comes here when the scanner can't settle it: a ticket or screenshot with no code found, codes
+         *     still found after redacting, or an image that can't be read. Oldest first, at most 100. The quarantine bucket
+         *     deletes the original at `deleted_after`.
+         */
+        get: operations["listRedactionReviews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/redactions/{fileId}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive a file staff checked, or discard it
+         * @description `archive`: staff looked and nothing sensitive is left. The worker still blacks out any code it finds, then
+         *     archives the file. `discard`: the file is deleted now; the submission keeps its status and points.
+         */
+        post: operations["decideRedaction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/artists": {
         parameters: {
             query?: never;
@@ -2005,7 +2506,7 @@ export interface components {
              * @description Stable machine-readable code.
              * @enum {string}
              */
-            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "reservation_unavailable" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_track_not_found" | "followers_only" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
+            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "reservation_unavailable" | "trivia_answered" | "trivia_expired" | "prompt_closed" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_track_not_found" | "followers_only" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
             errors?: {
                 field?: string;
                 message?: string;
@@ -2037,6 +2538,18 @@ export interface components {
             is_artist: boolean;
             /** @description Songs in their grab bag (visible to followers). */
             grab_bag_count: number;
+            is_me: boolean;
+            /** @description The caller is the fan or follows them, so the grab bag, fandom stats, and followers-only posts are visible */
+            can_see_follower_content: boolean;
+            /**
+             * Format: uri
+             * @description Set when is_artist
+             */
+            band_url: string | null;
+            instagram_handle: string | null;
+            x_handle: string | null;
+            /** @description Prompt answers the caller can see */
+            answer_count: number;
         };
         SessionRequest: {
             /** @enum {string} */
@@ -2079,6 +2592,12 @@ export interface components {
             instagram_handle?: string | null;
             /** @description The band's X handle without the @; the link is `https://x.com/{handle}`. */
             x_handle?: string | null;
+            push: components["schemas"]["PushSettings"];
+            /**
+             * @description Remind me of presales (a `presale` notification), on by default: once per presale, within a day of it
+             *     opening, for shows by artists the fan has a score for in their hub cities.
+             */
+            presale_reminders: boolean;
             /** @description Same as `GET /me/spotify`. */
             spotify?: components["schemas"]["SpotifyStatus"];
             /** @description Primary first. Empty until the fan chooses them (the app asks right after sign-up). */
@@ -2097,6 +2616,8 @@ export interface components {
             region: string;
             /** @description ISO 3166-1 alpha-2 */
             country: string;
+            /** @description IANA time zone, e.g. `America/Chicago`. Show local times with it. */
+            time_zone: string;
         };
         MeUpdate: {
             handle?: string;
@@ -2117,6 +2638,14 @@ export interface components {
             instagram_handle?: string | null;
             /** @description A leading @ is dropped. Null clears it. Needs `is_artist` (422 otherwise). */
             x_handle?: string | null;
+            /** @description Turn presale reminders on or off. */
+            presale_reminders?: boolean;
+            /** @description Only the categories sent change. */
+            push?: {
+                tickets?: boolean;
+                presales?: boolean;
+                staff?: boolean;
+            };
         };
         SpotifyConnect: {
             code: string;
@@ -2162,9 +2691,13 @@ export interface components {
         };
         UploadIntentRequest: {
             /** @enum {string} */
-            purpose: "submission";
-            /** @enum {string} */
-            mime_type: "image/jpeg" | "image/png";
+            purpose: "submission" | "featured_video";
+            /**
+             * @description video/mp4 only for featured_video
+             * @enum {string}
+             */
+            mime_type: "image/jpeg" | "image/png" | "video/mp4";
+            /** @description Photos up to 15 MB, videos up to 100 MB */
             bytes: number;
             sha256?: string;
         };
@@ -2218,6 +2751,69 @@ export interface components {
             activated_at?: string | null;
             my_score?: components["schemas"]["ScoreSummary"] | null;
         };
+        /** @description Which notifications also go to the fan's phones. All on by default; in-app notifications are kept either way. */
+        PushSettings: {
+            /** @description Draw results, seats that open up, delivered tickets. */
+            tickets: boolean;
+            /** @description Presale reminders. */
+            presales: boolean;
+            /** @description Staff notices (staff accounts only). */
+            staff: boolean;
+        };
+        PushDevice: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            platform: "ios" | "android";
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            last_seen_at: string;
+        };
+        ArtistSource: {
+            /** @enum {string} */
+            source: "ticketmaster";
+            external_id: string | null;
+            /** @enum {string|null} */
+            matched_by: "spotify_link" | "staff" | null;
+            /** Format: date-time */
+            checked_at: string;
+            /**
+             * Format: date-time
+             * @description Last time the artist's shows were loaded.
+             */
+            synced_at: string | null;
+        };
+        RedactionReview: {
+            /** Format: uuid */
+            file_id: string;
+            /** Format: uuid */
+            submission_id: string;
+            /** @enum {string} */
+            kind: "ticket" | "merch" | "screenshot" | "concert_photo";
+            artist: components["schemas"]["ArtistRef"];
+            user: components["schemas"]["UserRef"];
+            /** @description Why the worker couldn't finish the file. */
+            note: string | null;
+            /** @description Codes the worker found and blacked out before sending the file to staff. */
+            codes_redacted: number;
+            /** Format: date-time */
+            uploaded_at: string;
+            /**
+             * Format: date-time
+             * @description When the quarantine bucket deletes the original.
+             */
+            deleted_after: string;
+            /** @description The quarantined original (a short-lived signed link). */
+            file: {
+                /** Format: uuid */
+                id: string;
+                mime_type: string;
+                /** Format: uri */
+                url: string;
+                redacted: boolean;
+            };
+        };
         ArtistRef: {
             /** Format: uuid */
             id: string;
@@ -2242,6 +2838,11 @@ export interface components {
                 share: number;
             }[];
         };
+        /**
+         * @description A show. Staff enter some; the rest come from Ticketmaster (`source: ticketmaster`, loaded daily for tracked
+         *     artists), with its ticket link, status, public sale, and presales. A show with a fan allocation keeps the time
+         *     and city staff set even if Ticketmaster changes them.
+         */
         Event: {
             /** Format: uuid */
             id: string;
@@ -2254,9 +2855,45 @@ export interface components {
             city?: string | null;
             region?: string | null;
             country?: string | null;
-            /** Format: date-time */
+            /** @description The hub city's IANA time zone, for showing the show's time and registration window locally. Null without a hub city. */
+            time_zone?: string | null;
+            /**
+             * Format: date-time
+             * @description With `time_tba`, local midnight of the show's date.
+             */
             starts_at: string;
+            /** @description A fan allocation is open or upcoming for this show. */
             tickets_available: boolean;
+            /**
+             * @description Null for shows staff entered.
+             * @enum {string|null}
+             */
+            source: "ticketmaster" | null;
+            /**
+             * Format: uri
+             * @description Where the public buys tickets (Ticketmaster's event page).
+             */
+            ticket_url: string | null;
+            /**
+             * @description Ticketmaster's status; `scheduled` for staff-entered shows.
+             * @enum {string}
+             */
+            status: "scheduled" | "onsale" | "offsale" | "cancelled" | "postponed" | "rescheduled";
+            /** @description Only the date is known. */
+            time_tba: boolean;
+            /** Format: date-time */
+            public_sale_starts_at: string | null;
+            /** Format: date-time */
+            public_sale_ends_at: string | null;
+            /** @description Presales that haven't ended, earliest first. */
+            presales: {
+                /** @description As Ticketmaster names it, e.g. "Verified Fan Presale". */
+                name: string;
+                /** Format: date-time */
+                starts_at: string;
+                /** Format: date-time */
+                ends_at: string | null;
+            }[];
         };
         EventDetail: {
             event: components["schemas"]["Event"];
@@ -2409,7 +3046,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             /** @enum {string} */
-            kind: "draw_selected" | "draw_not_selected" | "seat_backfilled" | "ticket_delivered" | "staff_report" | "staff_review" | "staff_draw";
+            kind: "draw_selected" | "draw_not_selected" | "seat_backfilled" | "ticket_delivered" | "presale" | "staff_report" | "staff_review" | "staff_draw" | "staff_redaction";
             title: string;
             body: string;
             /** @description App route to open, e.g. /tickets or /show/{id} */
@@ -2565,6 +3202,39 @@ export interface components {
                 /** @description Plays of tracked artists in the last 90 days (play ledger, polled hourly) */
                 plays_last_quarter: number;
             };
+            journal: {
+                logs: number;
+                /** @description Distinct albums */
+                albums_logged: number;
+                relistens: number;
+                reviews: number;
+                ratings: number;
+                lists: number;
+                comments: number;
+            };
+            /** @description Verified submissions only. */
+            proof: {
+                tickets: number;
+                merch: number;
+                screenshots: number;
+            };
+            ledger_points: number;
+        };
+        /** @description A fan's fandom stats as their followers see them. Listening counts stay private. */
+        ProfileStats: {
+            /** @description Best percentile first. */
+            artists: {
+                artist: components["schemas"]["ArtistRef"];
+                raw_score: number;
+                percentile: number;
+                /** @description Among the artist's scored fans; ties share the better rank */
+                rank: number;
+                /** @description Scored fans of the artist */
+                fans: number;
+                is_estimated: boolean;
+                /** Format: date-time */
+                computed_at: string;
+            }[];
             journal: {
                 logs: number;
                 /** @description Distinct albums */
@@ -2913,10 +3583,10 @@ export interface components {
             /** @description The shuffle key this page used; send it back with `cursor`. */
             seed: string;
         };
-        /** @description `type` says which payload is set: `photo`, `log`, `grab_bag`, `concert`, `registration`, or `stat`. */
+        /** @description `type` says which payload is set: `photo`, `log`, `grab_bag`, `concert`, `registration`, `stat`, or `prompt_answer`. */
         FeedItem: {
             /** @enum {string} */
-            type: "photo" | "album_log" | "grab_bag" | "concert" | "registration" | "stat";
+            type: "photo" | "album_log" | "grab_bag" | "concert" | "registration" | "stat" | "prompt_answer";
             /**
              * Format: uuid
              * @description The submission, album log, grab-bag song, show, or registration id; a stable id for a stat.
@@ -2941,6 +3611,19 @@ export interface components {
             registration?: components["schemas"]["RegistrationCard"] | null;
             /** @description A number from a followed fan. */
             stat?: components["schemas"]["FeedStat"] | null;
+            /** @description Emoji reactions, for posts (photo, album_log, prompt_answer); null for other items. */
+            reactions?: components["schemas"]["ReactionCount"][] | null;
+            /** @description An answer to a music prompt from the last week (everyone's public ones; followers-only from people the caller follows). */
+            prompt_answer?: {
+                /** Format: uuid */
+                prompt_id: string;
+                prompt_text: string;
+                /** Format: date */
+                day: string;
+                body: string;
+                /** @enum {string} */
+                visibility: "public" | "followers";
+            } | null;
             photo?: {
                 /** @enum {string} */
                 kind: "merch" | "concert_photo";
@@ -3063,6 +3746,119 @@ export interface components {
             following: number;
             /** @description Songs in their grab bags */
             songs: number;
+        };
+        ReactionCount: {
+            reaction: components["schemas"]["Reaction"];
+            count: number;
+            /** @description The caller reacted with this emoji */
+            mine: boolean;
+        };
+        /**
+         * @description An emoji by key: fire 🔥, heart ❤️, laugh 😂, rock 🤘, wow 😮, clap 👏.
+         * @enum {string}
+         */
+        Reaction: "fire" | "heart" | "laugh" | "rock" | "wow" | "clap";
+        Prompt: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date */
+            day: string;
+            text: string;
+            /** @enum {string} */
+            source: "staff" | "library";
+            /** @description It is the prompt's day */
+            open: boolean;
+            answer_count: number;
+        };
+        PromptAnswer: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            prompt_id: string;
+            user: components["schemas"]["UserRef"];
+            body: string;
+            /** @enum {string} */
+            visibility: "public" | "followers";
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            mine: boolean;
+            /** @description The caller follows its author */
+            following: boolean;
+        };
+        PromptToday: {
+            prompt: components["schemas"]["Prompt"];
+            my_answer: components["schemas"]["PromptAnswer"] | null;
+            /** @description Answers from people the caller follows, once the caller has answered */
+            following_answers: components["schemas"]["PromptAnswer"][];
+        };
+        /**
+         * @description Fans of the same artist share the day's question. `answer_index`, `correct`, `points_earned`, and `results` are
+         *     only set once the fan has answered.
+         */
+        TriviaQuestion: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date */
+            day: string;
+            artist: components["schemas"]["ArtistRef"];
+            /** @enum {string} */
+            kind: "track_album" | "release_year";
+            prompt: string;
+            options: string[];
+            answered: boolean;
+            chosen_index: number | null;
+            /** @description Only once answered */
+            answer_index: number | null;
+            correct: boolean | null;
+            points_for_right: number;
+            /** @description Once answered: 0, or the points a right answer earned */
+            points_earned: number | null;
+            /** @description How the shared question went so far, once the fan has answered */
+            results: {
+                /** @description Fans who answered it (the caller included) */
+                answered: number;
+                right: number;
+                percent_right: number;
+                /** @description Up to two people the caller follows who got it right, first to answer first */
+                following_right: components["schemas"]["UserRef"][];
+            } | null;
+        };
+        FeaturedArtist: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date */
+            week_start: string;
+            /** Format: date */
+            week_end: string;
+            artist: components["schemas"]["ArtistRef"];
+            headline: string | null;
+            video: {
+                /** @enum {string} */
+                kind: "upload" | "youtube" | "tiktok";
+                /**
+                 * Format: uri
+                 * @description The link to open (a signed link for an upload)
+                 */
+                url: string;
+                /**
+                 * Format: uri
+                 * @description Plays inside a page (iframe or video element)
+                 */
+                embed_url: string | null;
+                /** Format: uri */
+                thumbnail_url: string | null;
+            };
+            song: {
+                spotify_track_id: string;
+                title: string;
+                album_title: string | null;
+                /** Format: uri */
+                cover_url: string | null;
+                /** Format: uri */
+                spotify_url: string;
+            };
         };
         GrabBagPut: {
             spotify_track_id: string;
@@ -3188,10 +3984,10 @@ export interface components {
         };
         ReportCreate: {
             /**
-             * @description photo: a shared submission; log: an album log
+             * @description photo: a shared submission; log: an album log; prompt_answer: an answer to a music prompt
              * @enum {string}
              */
-            target_type: "photo" | "log";
+            target_type: "photo" | "log" | "prompt_answer";
             /** Format: uuid */
             target_id: string;
             /** @enum {string} */
@@ -3205,11 +4001,17 @@ export interface components {
         /** @description One reported post with its open reports. */
         ReportedPost: {
             /** @enum {string} */
-            target_type: "photo" | "log";
+            target_type: "photo" | "log" | "prompt_answer";
             /** Format: uuid */
             target_id: string;
             author: components["schemas"]["UserRef"];
-            artist: components["schemas"]["ArtistRef"];
+            /** @description Null for a prompt answer. */
+            artist: components["schemas"]["ArtistRef"] | null;
+            prompt_answer?: {
+                prompt_text: string;
+                body: string;
+                visibility: string;
+            } | null;
             photo?: {
                 kind: components["schemas"]["SubmissionKind"];
                 caption?: string | null;
@@ -3245,7 +4047,7 @@ export interface components {
         };
         ModerationDecision: {
             /** @enum {string} */
-            target_type: "photo" | "log";
+            target_type: "photo" | "log" | "prompt_answer";
             /** Format: uuid */
             target_id: string;
             /** @enum {string} */
@@ -3707,13 +4509,24 @@ export interface operations {
     };
     syncSpotify: {
         parameters: {
-            query?: never;
+            query?: {
+                background?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
+            /** @description Background sync not needed now; the current status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpotifyStatus"];
+                };
+            };
             /** @description Sync queued. Poll `GET /me/spotify` for `sync_state`. */
             202: {
                 headers: {
@@ -5178,6 +5991,557 @@ export interface operations {
             };
         };
     };
+    reorderGrabBag: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    slots: (string | null)[];
+                };
+            };
+        };
+        responses: {
+            /** @description The grab bag in its new order */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrabBag"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getTodaysTrivia: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Today's question, or none */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        question: components["schemas"]["TriviaQuestion"] | null;
+                    };
+                };
+            };
+        };
+    };
+    answerTrivia: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                questionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Index of the picked option */
+                    choice: number;
+                };
+            };
+        };
+        responses: {
+            /** @description The answered question with the right answer and the points earned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriviaQuestion"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Already answered (`code: trivia_answered`), or another day's question (`code: trivia_expired`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    addReaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                targetType: "photo" | "log" | "prompt_answer";
+                targetId: string;
+                reaction: components["schemas"]["Reaction"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The post's reactions after the change */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        reactions: components["schemas"]["ReactionCount"][];
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    removeReaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                targetType: "photo" | "log" | "prompt_answer";
+                targetId: string;
+                reaction: components["schemas"]["Reaction"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The post's reactions after the change */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        reactions: components["schemas"]["ReactionCount"][];
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getTodaysPrompt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The prompt, the caller's answer, and answers from people they follow */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptToday"];
+                };
+            };
+        };
+    };
+    answerPrompt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                promptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    body: string;
+                    /**
+                     * @default public
+                     * @enum {string}
+                     */
+                    visibility?: "public" | "followers";
+                };
+            };
+        };
+        responses: {
+            /** @description The prompt with the caller's answer */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptToday"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Not the prompt's day (`code: prompt_closed`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    withdrawPromptAnswer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                promptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No answer */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Not the prompt's day (`code: prompt_closed`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listPromptAnswers: {
+        parameters: {
+            query?: {
+                limit?: components["parameters"]["Limit"];
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                promptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of answers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["PromptAnswer"][];
+                        next_cursor: string | null;
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    listPrompts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Prompts, latest day first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Prompt"][];
+                    };
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    schedulePrompt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                day: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    text: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The prompt */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Prompt"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    unschedulePrompt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                day: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No prompt that day */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getFeaturedArtist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The pick, or none */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        featured: components["schemas"]["FeaturedArtist"] | null;
+                    };
+                };
+            };
+        };
+    };
+    getFeaturedVideo: {
+        parameters: {
+            query: {
+                exp: number;
+                sig: string;
+            };
+            header?: never;
+            path: {
+                uploadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The MP4 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "video/mp4": string;
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listFeaturedArtists: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Picks */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["FeaturedArtist"][];
+                    };
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    putFeaturedArtist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The Monday the week starts on */
+                weekStart: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    artist_id: string;
+                    headline?: string | null;
+                    /** Format: uri */
+                    video_url?: string;
+                    /** Format: uuid */
+                    video_upload_id?: string;
+                    spotify_track: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The pick */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeaturedArtist"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            /** @description Spotify does not know this track (`code: spotify_track_not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["SpotifyUnavailable"];
+        };
+    };
+    deleteFeaturedArtist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The Monday the week starts on */
+                weekStart: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No pick that week */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getUserStats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: components["parameters"]["Handle"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Stats */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileStats"];
+                };
+            };
+            /** @description The caller does not follow this fan (`code: followers_only`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listUserPromptAnswers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: components["parameters"]["Handle"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Answers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            answer: components["schemas"]["PromptAnswer"];
+                            prompt_text: string;
+                            /** Format: date */
+                            day: string;
+                        }[];
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
     getUserGrabBag: {
         parameters: {
             query?: never;
@@ -5632,6 +6996,55 @@ export interface operations {
                         items: components["schemas"]["MyRegistration"][];
                     };
                 };
+            };
+        };
+    };
+    registerPushDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    token: string;
+                    /** @enum {string} */
+                    platform: "ios" | "android";
+                };
+            };
+        };
+        responses: {
+            /** @description Registered */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushDevice"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    removePushDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -6193,7 +7606,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                targetType: "photo" | "log";
+                targetType: "photo" | "log" | "prompt_answer";
                 targetId: string;
             };
             cookie?: never;
@@ -6220,6 +7633,142 @@ export interface operations {
             };
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    listArtistSources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artistId: components["parameters"]["ArtistId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The artist's sources */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ArtistSource"][];
+                    };
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    linkArtistSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artistId: components["parameters"]["ArtistId"];
+                source: "ticketmaster";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    external_id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Linked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtistSource"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    unlinkArtistSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artistId: components["parameters"]["ArtistId"];
+                source: "ticketmaster";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listRedactionReviews: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Files waiting for a decision */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["RedactionReview"][];
+                    };
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    decideRedaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fileId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    action: "archive" | "discard";
+                };
+            };
+        };
+        responses: {
+            /** @description Decision recorded */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
         };
     };

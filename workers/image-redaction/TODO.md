@@ -1,20 +1,37 @@
 # TODO — Redaction and archive worker
 
-Use `- [x]` only after the task is implemented and verified. Adapt this checklist to existing code; do not duplicate working functionality.
+Use `- [x]` only after the task is implemented and verified.
 
 ## Implementation checklist
-- [ ] Accept only submissions that have reached the approved verified/archive-eligible state.
-- [ ] Use a documented method to locate and redact ticket barcodes and QR codes; flag uncertain cases for manual review.
-- [ ] Verify that redaction completed and the resulting file is readable before archive transfer.
-- [ ] Never treat OCR-only detection as a guarantee that all sensitive codes were removed.
-- [ ] Move the redacted file to the archive tier and set redacted=true only after verification.
-- [ ] Enforce the database/storage rule that unredacted files cannot enter archive.
-- [ ] Define failure handling that keeps originals quarantined and private.
-- [ ] Apply retention and deletion policies to original and redacted objects.
-- [ ] Add tests with synthetic fixtures, missed-code scenarios, and failed-transfer scenarios.
+- [x] Accept only verified submissions that weren't taken down. (`RedactSubmissionJob`; RedactionJobTests.)
+- [x] Locate and redact ticket barcodes and QR codes with a documented method (ZXing.Net over sections and rotations,
+      padded black boxes, rescans; `README.md`); flag uncertain cases for staff (`needs_review`). Verified 2026-10-26:
+      RedactionJobTests (5 code types incl. a tilted barcode and off-centre Aztec/Data Matrix).
+- [x] Verify that redaction completed (a final scan finds nothing) and the redacted copy reads back before the archive
+      write.
+- [x] Never treat a clean scan as proof: tickets and screenshots with no code found go to staff.
+- [x] Move the redacted file to the archive tier and set redacted=true only after those checks, in one transaction
+      with the upload slot.
+- [x] Archive verified proof within 30 days of upload. Hourly `redaction.sweep` re-queues missed work and warns at 25
+      days; Terraform alert `redaction_overdue` emails on that warning (validated, not applied).
+- [x] Enforce that unredacted files can't enter the archive (`submission_files_check`, and
+      `submission_files_archive_consistent` from migration 0029; invariants).
+- [x] Failure handling keeps originals quarantined and private (RedactionJobTests failed-write case).
+- [x] Retention: originals are queued for deletion when archived (0027); rejected and taken-down files go after 30
+      days (`storage.cleanup`).
+- [x] Staff decisions: `GET /v1/admin/redactions`, `POST /v1/admin/redactions/{fileId}/decision` (archive or
+      discard), the app's Photo redaction screen, and a `staff_redaction` notice.
+- [ ] Hide printed order numbers too (OCR), if staff find them on tickets often.
+- [ ] Let staff draw boxes themselves on a file the scanner can't settle (today they can only archive or discard).
+- [ ] Run redaction in its own `redaction` deployment once the Cloud Storage file store exists (only it may read
+      quarantine; ADR 0002).
+- [ ] Try the scanner on real ticket photos (phone shots, glare, angles) and tune the passes. David is adding a set
+      of real photos (2026-10-26); keep them out of the repo since they hold real order details.
 
 ## Verification
-- [ ] Add or update automated tests for the behavior above.
-- [ ] Run the relevant tests and record actual results.
-- [ ] Update the feature README with setup, interfaces, dependencies, and known limitations.
-- [ ] Update `PROJECT_TODO.md` when this feature reaches a verified milestone.
+- [x] Automated tests: `RedactionJobTests.cs` (7), `RedactionApiTests.cs` (1), invariants for 0029, the proof feed
+      test runs the real job. `dotnet test` 266/266 on 2026-10-26.
+- [x] Worker image: built with `docker build --target worker` and run against a scratch database on 2026-10-26; it
+      archived a synthetic ticket with its QR code blacked out (SkiaSharp's native library loads in the chiseled
+      image).
+- [x] README with interfaces, behavior, and limits.

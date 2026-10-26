@@ -59,3 +59,16 @@ test('staff take a post down with a note, or dismiss its reports', async () => {
     body: { action: 'dismiss' },
   });
 });
+
+test('a reported prompt answer shows the prompt and the answer, with no artist', async () => {
+  const answer = {
+    ...base, artist: null, target_type: 'prompt_answer', target_id: 'pa1', photo: null, log: null,
+    prompt_answer: { prompt_text: "What's your best hypothetical band name?", body: 'Rude band name', visibility: 'public' },
+    report_count: 1, reasons: [{ reason: 'abuse', count: 1 }], details: [],
+  };
+  mockApi.GET.mockResolvedValue(ok({ items: [answer], next_cursor: null }));
+  render(<ModerationScreen />);
+  expect(await screen.findByText('Prompt answer · @author')).toBeTruthy();
+  expect(screen.getByText('“Rude band name”')).toBeTruthy();
+  expect(screen.getByText("What's your best hypothetical band name?")).toBeTruthy();
+});

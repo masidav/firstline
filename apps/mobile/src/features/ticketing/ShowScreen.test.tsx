@@ -17,7 +17,7 @@ const standing = (likely: boolean, extra: Partial<Standing> = {}): Standing => (
 
 const detail = {
   event: { id: 'ev-1', artist_id: 'ar-1', name: 'Geese at the Metro', venue: 'Metro', city_id: 'us-il-chicago', city: 'Chicago',
-           region: 'IL', country: 'US', starts_at: '2026-12-01T02:00:00Z', tickets_available: true },
+           region: 'IL', country: 'US', starts_at: '2026-12-01T02:00:00Z', tickets_available: true, source: null, ticket_url: null, status: 'scheduled', time_tba: false, public_sale_starts_at: null, public_sale_ends_at: null, presales: [] },
   allocations: [{ id: 'al-1', event_id: 'ev-1', name: 'Fan allocation', tickets: 100, face_value_cents: 4500, currency: 'USD',
                   min_raw_score: 5.56, registration_opens_at: '2026-10-20T00:00:00Z', registration_closes_at: '2026-11-20T00:00:00Z',
                   status: 'open', published_at: '2026-10-19T00:00:00Z', cancelled_at: null, selected_at: null, seats_left: null }],

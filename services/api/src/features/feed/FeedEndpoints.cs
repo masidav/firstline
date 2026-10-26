@@ -58,16 +58,20 @@ public static partial class FeedEndpoints
     /// <c>Type</c> says which of the payloads is set. <c>User</c> is null for a show; <c>Artist</c> is null for a stat
     /// that isn't about one artist. <c>Following</c>: the caller follows the item's user.
     /// </summary>
+    /// <summary>An answer to a music prompt (migration 0025): the prompt it answers and the answer.</summary>
+    public sealed record FeedPromptAnswer(Guid PromptId, string PromptText, DateOnly Day, string Body, string Visibility);
+
     public sealed record FeedItem(
         string Type, Guid Id, DateTime At, SubmissionEndpoints.UserRef? User, ScoringEndpoints.ArtistRef? Artist, bool Following,
         FeedPhoto? Photo, FeedLog? Log, GrabBagEndpoints.GrabBagSong? GrabBag, FeedShow? Concert,
-        AllocationEndpoints.RegistrationCard? Registration, FeedStat? Stat);
+        AllocationEndpoints.RegistrationCard? Registration, FeedStat? Stat, FeedPromptAnswer? PromptAnswer = null,
+        IReadOnlyList<Reactions.ReactionEndpoints.ReactionCount>? Reactions = null);
 
     public sealed record FeedPage(IReadOnlyList<FeedItem> Items, string? NextCursor, string Seed);
 
     private static async Task<IResult> GetAsync(
         ClaimsPrincipal user, int? limit, string? cursor, string? seed, HttpRequest request, NpgsqlDataSource db, SignedUrls urls,
-        IConfiguration configuration, TimeProvider time, CancellationToken cancellationToken)
+        IConfiguration configuration, TimeProvider time, StandingSnapshots standings, CancellationToken cancellationToken)
     {
         var errors = new List<FieldError>();
         if (limit is < 1 or > 100)
@@ -122,7 +126,8 @@ public static partial class FeedEndpoints
         var logs = await LoadLogsAsync(connection, Ids(page, "album_log"));
         var songs = await LoadSongsAsync(connection, Ids(page, "grab_bag"));
         var shows = await LoadShowsAsync(connection, me, Ids(page, "concert"));
-        var registrations = await LoadRegistrationsAsync(connection, me, Ids(page, "registration"), configuration);
+        var registrations = await LoadRegistrationsAsync(connection, me, Ids(page, "registration"), configuration, standings);
+        var answers = await LoadPromptAnswersAsync(connection, Ids(page, "prompt_answer"));
 
         var items = new List<FeedItem>(page.Count);
         foreach (var row in page)
@@ -137,6 +142,7 @@ public static partial class FeedEndpoints
                 "grab_bag" when songs.TryGetValue(row.Id, out var song) => Item(row, userRef, artist, userRow) with { GrabBag = song },
                 "concert" when shows.TryGetValue(row.Id, out var show) => Item(row, userRef, artist, userRow) with { Concert = show },
                 "registration" when registrations.TryGetValue(row.Id, out var card) => Item(row, userRef, artist, userRow) with { Registration = card },
+                "prompt_answer" when answers.TryGetValue(row.Id, out var answer) => Item(row, userRef, artist, userRow) with { PromptAnswer = answer },
                 "stat" => Item(row, userRef, artist, userRow) with
                 {
                     Stat = new FeedStat(row.StatKind!, row.StatValue ?? 0, row.StatPercentile, row.StatRank, row.StatFans, row.StatIsEstimated),
@@ -146,6 +152,20 @@ public static partial class FeedEndpoints
             if (item is not null)
             {
                 items.Add(item);
+            }
+        }
+
+        // Emoji reactions on posts (photos, album logs, prompt answers; migration 0026). Other items have none.
+        var reactionTypes = new Dictionary<string, string> { ["photo"] = "photo", ["album_log"] = "log", ["prompt_answer"] = "prompt_answer" };
+        foreach (var (itemType, targetType) in reactionTypes)
+        {
+            var counts = await Reactions.ReactionEndpoints.LoadAsync(connection, me, targetType, [.. items.Where(i => i.Type == itemType).Select(i => i.Id)]);
+            for (var i = 0; i < items.Count; i++)
+            {
+                if (items[i].Type == itemType)
+                {
+                    items[i] = items[i] with { Reactions = counts.GetValueOrDefault(items[i].Id) ?? [] };
+                }
             }
         }
 
@@ -169,6 +189,8 @@ public static partial class FeedEndpoints
              FROM submissions s JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
              JOIN artists a ON a.id = s.artist_id AND a.status = 'active'
             WHERE s.shared_at IS NOT NULL AND s.status = 'verified'
+              -- Only once every file is redacted and archived (migration 0029): no barcode reaches the feed.
+              AND NOT EXISTS (SELECT 1 FROM submission_files f WHERE f.submission_id = s.id AND f.redaction_state <> 'archived')
             ORDER BY s.shared_at DESC LIMIT @pool)
           UNION ALL
           (SELECT 'album_log', l.id, l.created_at, l.user_id, al.artist_id, NULL, NULL, NULL, NULL, NULL, NULL
@@ -180,6 +202,13 @@ public static partial class FeedEndpoints
                    OR (l.visibility = 'followers' AND (l.user_id = @me OR l.user_id IN (SELECT followee_id FROM my_follows))))
             ORDER BY l.created_at DESC LIMIT @pool)
           UNION ALL
+          (SELECT 'prompt_answer', pa.id, pa.created_at, pa.user_id, NULL::uuid, NULL, NULL, NULL, NULL, NULL, NULL
+             FROM prompt_answers pa JOIN prompts p ON p.id = pa.prompt_id
+             JOIN users u ON u.id = pa.user_id AND u.deleted_at IS NULL
+            WHERE pa.deleted_at IS NULL AND pa.removed_at IS NULL AND p.day >= (now() AT TIME ZONE 'UTC')::date - 7
+              AND (pa.visibility = 'public' OR pa.user_id = @me OR pa.user_id IN (SELECT followee_id FROM my_follows))
+            ORDER BY pa.created_at DESC LIMIT @pool)
+          UNION ALL
           (SELECT 'grab_bag', g.id, g.added_at, g.user_id, g.artist_id, NULL, NULL, NULL, NULL, NULL, NULL
              FROM grab_bag_songs g JOIN users u ON u.id = g.user_id AND u.deleted_at IS NULL
              JOIN artists a ON a.id = g.artist_id AND a.status IN ('onboarding', 'active')
@@ -188,7 +217,7 @@ public static partial class FeedEndpoints
           UNION ALL
           (SELECT 'concert', e.id, e.starts_at, NULL::uuid, e.artist_id, NULL, NULL, NULL, NULL, NULL, NULL
              FROM events e JOIN artists a ON a.id = e.artist_id AND a.status = 'active'
-            WHERE e.starts_at > now() AND e.starts_at < now() + make_interval(days => @horizonDays)
+            WHERE e.starts_at > now() AND e.starts_at < now() + make_interval(days => @horizonDays) AND e.status <> 'cancelled'
               AND (EXISTS (SELECT 1 FROM user_artist_scores sc WHERE sc.user_id = @me AND sc.artist_id = e.artist_id)
                    OR EXISTS (SELECT 1 FROM user_hub_cities h WHERE h.user_id = @me AND h.city_id = e.city_id))
             ORDER BY e.starts_at LIMIT @pool)
@@ -241,7 +270,8 @@ public static partial class FeedEndpoints
                c.stat_value AS StatValue, c.stat_percentile AS StatPercentile, c.stat_rank AS StatRank, c.stat_fans AS StatFans,
                c.stat_is_estimated AS StatIsEstimated
         FROM hashed c
-        JOIN (VALUES ('photo', 2), ('album_log', 3), ('grab_bag', 2), ('concert', 1), ('registration', 1), ('stat', 2)) w (type, weight)
+        JOIN (VALUES ('photo', 2), ('album_log', 3), ('grab_bag', 2), ('concert', 1), ('registration', 1), ('stat', 2),
+                     ('prompt_answer', 2)) w (type, weight)
           ON w.type = c.type
         ORDER BY (row_number() OVER (PARTITION BY c.type ORDER BY c.h, c.id) - 1 + (c.h & 1023) / 1024.0) / w.weight, c.type, c.id
         LIMIT @take OFFSET @offset
@@ -314,9 +344,9 @@ public static partial class FeedEndpoints
             return [];
         }
 
-        var shows = await connection.QueryAsync<AllocationEndpoints.Show>(
+        var shows = await AllocationEndpoints.WithPresalesAsync(connection, await connection.QueryAsync<AllocationEndpoints.Show>(
             $"SELECT {AllocationEndpoints.EventColumns} FROM events e LEFT JOIN cities c ON c.id = e.city_id WHERE e.id = ANY(@ids)",
-            new { ids });
+            new { ids }));
         var allocations = (await connection.QueryAsync<AllocationEndpoints.Allocation>(
                 $"""
                  SELECT DISTINCT ON (a.event_id) {AllocationEndpoints.AllocationColumns} FROM allocations a
@@ -333,7 +363,7 @@ public static partial class FeedEndpoints
     }
 
     private static async Task<Dictionary<Guid, AllocationEndpoints.RegistrationCard>> LoadRegistrationsAsync(
-        NpgsqlConnection connection, Guid me, Guid[] ids, IConfiguration configuration)
+        NpgsqlConnection connection, Guid me, Guid[] ids, IConfiguration configuration, StandingSnapshots standings)
     {
         var cards = new Dictionary<Guid, AllocationEndpoints.RegistrationCard>();
         if (ids.Length == 0)
@@ -345,13 +375,30 @@ public static partial class FeedEndpoints
             "SELECT id, allocation_id FROM allocation_registrations WHERE id = ANY(@ids) AND user_id = @me", new { ids, me });
         foreach (var (id, allocationId) in rows)
         {
-            if (await AllocationEndpoints.LoadRegistrationCardAsync(connection, me, allocationId, configuration) is { } card)
+            if (await AllocationEndpoints.LoadRegistrationCardAsync(connection, me, allocationId, configuration, standings) is { } card)
             {
                 cards[id] = card;
             }
         }
 
         return cards;
+    }
+
+    private static async Task<Dictionary<Guid, FeedPromptAnswer>> LoadPromptAnswersAsync(NpgsqlConnection connection, Guid[] ids)
+    {
+        if (ids.Length == 0)
+        {
+            return [];
+        }
+
+        var rows = await connection.QueryAsync<(Guid Id, Guid PromptId, string PromptText, DateOnly Day, string Body, string Visibility)>(
+            """
+            SELECT pa.id, p.id, p.text, p.day, pa.body, pa.visibility::text
+            FROM prompt_answers pa JOIN prompts p ON p.id = pa.prompt_id
+            WHERE pa.id = ANY(@ids) AND pa.deleted_at IS NULL AND pa.removed_at IS NULL
+            """,
+            new { ids });
+        return rows.ToDictionary(r => r.Id, r => new FeedPromptAnswer(r.PromptId, r.PromptText, r.Day, r.Body, r.Visibility));
     }
 
     private static string? Excerpt(string? review) =>

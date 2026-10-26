@@ -68,7 +68,7 @@ public static partial class AllocationEndpoints
 
     /// <summary>The fan's live registration for an allocation with its show and standing, or null if there is none.</summary>
     internal static async Task<RegistrationCard?> LoadRegistrationCardAsync(
-        NpgsqlConnection connection, Guid userId, Guid allocationId, IConfiguration configuration)
+        NpgsqlConnection connection, Guid userId, Guid allocationId, IConfiguration configuration, StandingSnapshots standings)
     {
         var registration = await LoadRegistrationAsync(connection, userId, allocationId);
         if (registration is null)
@@ -79,7 +79,7 @@ public static partial class AllocationEndpoints
         var detail = await LoadEventAsync(connection, registration.EventId, includeDrafts: true);
         var allocation = detail.Allocations.Single(a => a.Id == allocationId);
         var standing = allocation.Status is "upcoming" or "open"
-            ? await LoadStandingAsync(connection, userId, allocation, false,
+            ? await LoadStandingAsync(connection, standings, userId, allocation, false,
                 configuration.GetValue("Allocations:LikelyMarginSeats", DefaultLikelyMarginSeats))
             : null;
         return new RegistrationCard(registration, allocation, detail.Event, standing);
@@ -88,7 +88,7 @@ public static partial class AllocationEndpoints
     // plus_one: for a fan who hasn't registered yet, whether to count a +1 in the standing.
     private static async Task<IResult> GetEligibilityAsync(
         ClaimsPrincipal user, Guid allocationId, [Microsoft.AspNetCore.Mvc.FromQuery(Name = "plus_one")] bool? plusOne,
-        NpgsqlDataSource db, IConfiguration configuration, CancellationToken cancellationToken)
+        NpgsqlDataSource db, IConfiguration configuration, StandingSnapshots standings, CancellationToken cancellationToken)
     {
         var userId = user.UserId();
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
@@ -107,7 +107,7 @@ public static partial class AllocationEndpoints
             """,
             new { userId, allocationId });
         var standing = allocation.Status is "upcoming" or "open" && (reason is null || registration is not null)
-            ? await LoadStandingAsync(connection, userId, allocation, plusOne ?? false,
+            ? await LoadStandingAsync(connection, standings, userId, allocation, plusOne ?? false,
                 configuration.GetValue("Allocations:LikelyMarginSeats", DefaultLikelyMarginSeats))
             : null;
         return Results.Ok(new Eligibility(allocationId, reason is null, reason, allocation.MinRawScore, current?.RawScore,
@@ -119,47 +119,38 @@ public static partial class AllocationEndpoints
 
     // Ranks the fan like the draw does (hub fans first, then raw score), but counts equal scores as ahead of them,
     // since the draw's tiebreak is random. A registered fan is ranked by their snapshot; otherwise by today's score.
+    // The other fans come from a snapshot a few seconds old at most (StandingSnapshots), so this stays cheap when
+    // everyone refreshes the show page at once.
     private static async Task<Standing?> LoadStandingAsync(
-        NpgsqlConnection connection, Guid userId, Allocation allocation, bool plusOneIfNew, int marginSeats)
+        NpgsqlConnection connection, StandingSnapshots standings, Guid userId, Allocation allocation, bool plusOneIfNew, int marginSeats)
     {
-        var row = await connection.QuerySingleOrDefaultAsync<StandingRow>(
+        var me = await connection.QuerySingleOrDefaultAsync<StandingMe>(
             """
-            WITH me AS (
-              SELECT CASE WHEN r.id IS NOT NULL THEN r.hub_match IS NOT NULL ELSE h.position IS NOT NULL END AS local,
-                     COALESCE(r.raw_score, s.raw_score) AS raw_score,
-                     COALESCE(r.plus_one, @plusOneIfNew) AS plus_one
-                FROM allocations a JOIN events ev ON ev.id = a.event_id
-                LEFT JOIN allocation_registrations r ON r.allocation_id = a.id AND r.user_id = @userId AND r.withdrawn_at IS NULL
-                LEFT JOIN user_artist_scores s ON s.artist_id = ev.artist_id AND s.user_id = @userId
-                LEFT JOIN user_hub_cities h ON h.user_id = @userId AND h.city_id = ev.city_id
-               WHERE a.id = @allocationId
-            ), others AS (
-              SELECT o.raw_score, o.plus_one, o.hub_match IS NOT NULL AS local
-                FROM allocation_registrations o
-               WHERE o.allocation_id = @allocationId AND o.withdrawn_at IS NULL AND o.user_id <> @userId
-            )
-            SELECT me.local AS Local, me.plus_one AS PlusOne,
-                   (SELECT count(*)::int FROM others) AS Others,
-                   (SELECT count(*)::int FROM others o
-                     WHERE o.local > me.local OR (o.local = me.local AND o.raw_score >= me.raw_score)) AS Ahead,
-                   (SELECT COALESCE(sum(CASE WHEN o.plus_one THEN 2 ELSE 1 END), 0)::int FROM others o
-                     WHERE o.local > me.local OR (o.local = me.local AND o.raw_score >= me.raw_score)) AS SeatsAhead
-              FROM me WHERE me.raw_score IS NOT NULL
+            SELECT CASE WHEN r.id IS NOT NULL THEN r.hub_match IS NOT NULL ELSE h.position IS NOT NULL END AS Local,
+                   COALESCE(r.raw_score, s.raw_score) AS RawScore,
+                   COALESCE(r.plus_one, @plusOneIfNew) AS PlusOne
+              FROM allocations a JOIN events ev ON ev.id = a.event_id
+              LEFT JOIN allocation_registrations r ON r.allocation_id = a.id AND r.user_id = @userId AND r.withdrawn_at IS NULL
+              LEFT JOIN user_artist_scores s ON s.artist_id = ev.artist_id AND s.user_id = @userId
+              LEFT JOIN user_hub_cities h ON h.user_id = @userId AND h.city_id = ev.city_id
+             WHERE a.id = @allocationId
             """,
             new { userId, allocationId = allocation.Id, plusOneIfNew });
-        if (row is null)
+        if (me?.RawScore is not { } rawScore)
         {
             return null;
         }
 
-        var registrants = row.Others + 1;
-        var rank = row.Ahead + 1;
-        var seatsNeeded = row.PlusOne ? 2 : 1;
-        return new Standing(rank, registrants, (int)Math.Ceiling(100.0 * rank / registrants), row.SeatsAhead, seatsNeeded,
-            allocation.Tickets, marginSeats, row.Local, row.SeatsAhead + seatsNeeded <= allocation.Tickets - marginSeats);
+        var snapshot = await standings.GetAsync(allocation.Id);
+        var (others, ahead, seatsAhead) = snapshot.Rank(userId, me.Local, rawScore);
+        var registrants = others + 1;
+        var rank = ahead + 1;
+        var seatsNeeded = me.PlusOne ? 2 : 1;
+        return new Standing(rank, registrants, (int)Math.Ceiling(100.0 * rank / registrants), seatsAhead, seatsNeeded,
+            allocation.Tickets, marginSeats, me.Local, seatsAhead + seatsNeeded <= allocation.Tickets - marginSeats);
     }
 
-    private sealed record StandingRow(bool Local, bool PlusOne, int Others, int Ahead, int SeatsAhead);
+    private sealed record StandingMe(bool Local, decimal? RawScore, bool PlusOne);
 
     // Registers (201), or updates the +1 on an existing registration (200): while registration is open the +1 can be
     // turned on or off; after being selected it can be added if a seat is free.
