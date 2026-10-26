@@ -111,6 +111,7 @@ public static class NotificationEndpoints
             "ticket_delivered" => ("Your ticket is here", $"Your ticket for {show}{on} has been delivered. Open Tickets to show it at the door.", "/tickets"),
             "staff_report" => ("A post was reported", $"A {(Text("target_type") == "photo" ? "photo" : "album log")} was reported ({Text("reason")}).", "/moderation"),
             "staff_review" => ("Proof to review", $"@{Text("handle")} sent {Text("kind").Replace('_', ' ')} for {Text("artist_name")}.", "/review"),
+            "staff_redaction" => ("A photo needs a redaction check", Text("note") is { Length: > 0 } note ? note : "The redaction worker couldn't finish a file.", "/redactions"),
             "staff_draw" => ("A fan draw ran", $"{show}: {Number("selected_fans")} of {Number("registrations")} fans selected, {Number("seats_assigned")} of {Number("tickets")} seats assigned.", $"/show/{Text("event_id")}"),
             _ => ("Update", "Something changed.", "/home"),
         };

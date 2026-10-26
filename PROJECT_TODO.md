@@ -155,10 +155,21 @@ Details: [Album journal API](services/api/src/features/album-journal/TODO.md) ·
       Files of rejected submissions and taken-down photos go 30 days after the rejection or takedown (migration 0028
       stamps `rejected_at`; the row, status, and points stay). Verified 2026-10-25: `dotnet build` 0 warnings,
       `dotnet test` 258/258 (StorageCleanupJobTests 6, invariants for 0027 and 0028), worker image builds.*
-- [ ] Redact sensitive barcodes/QR codes before archival.
-- [ ] Enforce archive safety and retention policies.
+- [x] Redact sensitive barcodes/QR codes before archival. *Done 2026-10-26 (migration 0029,
+      `workers/image-redaction`): verified proof is scanned with ZXing.Net (whole image, sections, rotations), codes are
+      blacked out and rescanned, and the copy moves to `archive/`. Tickets and screenshots with no code found,
+      leftover codes, and unreadable images go to staff (`/v1/admin/redactions`, app Photo redaction screen,
+      `staff_redaction` notice). Shared photos reach the feed only once archived. Hourly `redaction.sweep` warns at
+      25 days; Terraform alert on it. Verified: `dotnet test` 266/266, worker image run end to end.*
+- [x] Enforce archive safety and retention policies. (Database refuses unredacted or misplaced archive rows;
+      originals deleted after archiving; rejected and taken-down files after 30 days; quarantine expiry 30 days.)
+- [ ] Hide printed order numbers on tickets (OCR) if staff find them often; let staff draw their own boxes.
 
 Details: [Submissions API](services/api/src/features/submissions/TODO.md) · [Submission UI](apps/mobile/src/features/submissions/TODO.md) · [Verification](services/api/src/features/verification/TODO.md) · [Verification worker](workers/submission-verification/TODO.md) · [Redaction worker](workers/image-redaction/TODO.md)
+
+- [ ] Keep receipts out of the scroll feed (requested 2026-10-26): a "merch" photo that is really a receipt or
+      order confirmation shouldn't be shareable. Options: a separate `receipt` proof kind that is never shared (like
+      tickets), a staff "not shareable" flag at review, or both. Needs a decision.
 
 Fans can share verified merch and concert photos to the home feed (`PUT /submissions/{id}/share`); tickets and
 screenshots are never shared. The home feed (`GET /feed`) is one vertical scroll mixing, at random, shared photos

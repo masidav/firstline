@@ -9,6 +9,11 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [x] Keep production secrets in the chosen secret manager and out of source control and logs. (Secret Manager, mounted as files; `Secrets__Directory`. Values are added with gcloud, never through Terraform except the database connection string.)
 - [x] Configure persistent storage and access policies for quarantine and archive objects. (Terraform `storage.tf`: quarantine readable only by `redaction`, 30-day deletion; archive versioned, redaction writes, API reads. Application code for uploads is still the submissions feature's work.)
 - [ ] Configure background worker execution, graceful shutdown, retry policies, and dead-letter/failure visibility. (Worker Deployment with a 60 s grace period; retries and failure visibility are in the queue, `workers/README.md`. No dead-letter alert yet.)
+- [ ] Run redaction (`submissions.redact`, `redaction.sweep`, and `storage.cleanup`'s quarantine deletes) in a
+      separate `redaction` Deployment with the `redaction` service account once the Cloud Storage file store exists:
+      only it may read and delete quarantine objects. Today they run in the shared worker on local disk.
+- [x] Alert when verified proof is still unarchived 25 days after upload (`monitoring.tf` `redaction_overdue`, a
+      log-match alert on the sweep's warning). `terraform validate` (beta) 2026-10-26; not applied.
 - [ ] Add health checks and basic application, worker, database, and queue monitoring. (API probes, uptime check, and alert exist; no worker or queue metrics yet.)
 - [x] Document database backup and restore procedures. (`README.md`, Backups and restore. Restore not rehearsed yet.)
 - [x] Document deployment, migration, rollback, and recovery procedures. (`README.md`.)

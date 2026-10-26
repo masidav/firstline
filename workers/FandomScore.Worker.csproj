@@ -11,6 +11,11 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.KeyPerFile" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
     <PackageReference Include="Npgsql.DependencyInjection" Version="10.0.3" />
+    <!-- Image redaction (workers/image-redaction): decoding/drawing and barcode/QR detection. -->
+    <PackageReference Include="SkiaSharp" Version="4.153.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.153.1" />
+    <PackageReference Include="ZXing.Net" Version="0.16.11" />
+    <PackageReference Include="ZXing.Net.Bindings.SkiaSharp" Version="0.16.24" />
   </ItemGroup>
 
   <ItemGroup>

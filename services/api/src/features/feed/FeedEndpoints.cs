@@ -189,6 +189,8 @@ public static partial class FeedEndpoints
              FROM submissions s JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
              JOIN artists a ON a.id = s.artist_id AND a.status = 'active'
             WHERE s.shared_at IS NOT NULL AND s.status = 'verified'
+              -- Only once every file is redacted and archived (migration 0029): no barcode reaches the feed.
+              AND NOT EXISTS (SELECT 1 FROM submission_files f WHERE f.submission_id = s.id AND f.redaction_state <> 'archived')
             ORDER BY s.shared_at DESC LIMIT @pool)
           UNION ALL
           (SELECT 'album_log', l.id, l.created_at, l.user_id, al.artist_id, NULL, NULL, NULL, NULL, NULL, NULL

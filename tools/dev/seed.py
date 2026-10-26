@@ -382,12 +382,15 @@ def generate(fans, artists, shows, seed, catalog_source=None):
                 continue
             file_id = new_id()
             png = placeholder_png(rng)
-            key = f"quarantine/seed-{file_id}.png"
+            # Already redacted and archived (migration 0029): the placeholders have no codes, and the feed only shows
+            # shared photos whose files are archived.
+            key = f"archive/seed-{file_id}.png"
             files.append((key, png))
             file_values.append(f"({lit(file_id)}, {lit(submission[0])}, {lit(key)}, decode({lit(hashlib.sha256(png).hexdigest())}, 'hex'), "
-                               f"'image/png', {len(png)}, {lit(submission[4])})")
+                               f"'image/png', {len(png)}, {lit(submission[4])}, 'archive', true, now(), 'archived', 0)")
         if file_values:
-            sql.append("INSERT INTO submission_files (id, submission_id, storage_key, sha256, mime_type, bytes, uploaded_at) VALUES\n  "
+            sql.append("INSERT INTO submission_files (id, submission_id, storage_key, sha256, mime_type, bytes, uploaded_at,\n"
+                       "                              tier, redacted, archived_at, redaction_state, codes_redacted) VALUES\n  "
                        + ",\n  ".join(file_values) + ";")
 
     # --- follows and grab bags (0018) ----------------------------------------------------------------------------

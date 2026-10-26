@@ -2,6 +2,7 @@ using FandomScore.Worker.AccountRetention;
 using FandomScore.Worker.Hosting;
 using FandomScore.Worker.ArtistOnboarding;
 using FandomScore.Worker.GrabBag;
+using FandomScore.Worker.ImageRedaction;
 using FandomScore.Spotify;
 using FandomScore.Storage;
 using FandomScore.Worker.Jobs;
@@ -37,6 +38,8 @@ builder.Services.AddFileStore(builder.Configuration, builder.Environment.Content
 builder.Services.AddSingleton<IJobHandler, PruneJobsJob>();
 builder.Services.AddSingleton<IJobHandler, PurgeDeletedAccountsJob>();
 builder.Services.AddSingleton<IJobHandler, StorageCleanupJob>();
+builder.Services.AddSingleton<IJobHandler, RedactSubmissionJob>();
+builder.Services.AddSingleton<IJobHandler, RedactionSweepJob>();
 builder.Services.AddSingleton<IJobHandler, SpotifySyncJob>();
 builder.Services.AddSingleton<IJobHandler, ScheduleSpotifySyncsJob>();
 builder.Services.AddSingleton<IJobHandler, PollPlaysJob>();

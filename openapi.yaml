@@ -1200,7 +1200,8 @@ paths:
       operationId: getFeed
       summary: Home feed
       description: |
-        One vertical scroll mixing, at random: shared photos (verified merch and concert photos) and public album
+        One vertical scroll mixing, at random: shared photos (verified merch and concert photos, once every file is
+        redacted and archived) and public album
         logs from every fan; from the fans the caller follows, their followers-only logs, grab-bag songs, and top
         fandom stats; upcoming shows (within 120 days) of artists the caller has a score for or in their hub cities,
         with the fan allocation to register for; and the caller's own live registrations with their standing.
@@ -2650,6 +2651,54 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+  /admin/redactions:
+    get:
+      tags: [Admin]
+      operationId: listRedactionReviews
+      summary: Files the redaction worker sent to staff
+      description: |
+        Verified proof is scanned for barcodes and QR codes, which are blacked out before the file moves to the
+        archive. A file comes here when the scanner can't settle it: a ticket or screenshot with no code found, codes
+        still found after redacting, or an image that can't be read. Oldest first, at most 100. The quarantine bucket
+        deletes the original at `deleted_after`.
+      responses:
+        '200':
+          description: Files waiting for a decision
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/RedactionReview'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/redactions/{fileId}/decision:
+    post:
+      tags: [Admin]
+      operationId: decideRedaction
+      summary: Archive a file staff checked, or discard it
+      description: |
+        `archive`: staff looked and nothing sensitive is left. The worker still blacks out any code it finds, then
+        archives the file. `discard`: the file is deleted now; the submission keeps its status and points.
+      parameters:
+        - {name: fileId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: {type: string, enum: [archive, discard]}
+      responses:
+        '204': {description: Decision recorded}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
   /admin/artists:
     post:
       tags: [Admin]
@@ -3138,6 +3187,28 @@ components:
         tracked_at: {type: string, format: date-time}
         activated_at: {type: [string, 'null'], format: date-time}
         my_score: {oneOf: [{$ref: '#/components/schemas/ScoreSummary'}, {type: 'null'}]}
+    RedactionReview:
+      type: object
+      required: [file_id, submission_id, kind, artist, user, note, codes_redacted, uploaded_at, deleted_after, file]
+      properties:
+        file_id: {type: string, format: uuid}
+        submission_id: {type: string, format: uuid}
+        kind: {type: string, enum: [ticket, merch, screenshot, concert_photo]}
+        artist: {$ref: '#/components/schemas/ArtistRef'}
+        user: {$ref: '#/components/schemas/UserRef'}
+        note: {type: [string, 'null'], description: Why the worker couldn't finish the file.}
+        codes_redacted: {type: integer, minimum: 0, description: Codes the worker found and blacked out before sending the file to staff.}
+        uploaded_at: {type: string, format: date-time}
+        deleted_after: {type: string, format: date-time, description: When the quarantine bucket deletes the original.}
+        file:
+          type: object
+          description: The quarantined original (a short-lived signed link).
+          required: [id, mime_type, url, redacted]
+          properties:
+            id: {type: string, format: uuid}
+            mime_type: {type: string}
+            url: {type: string, format: uri}
+            redacted: {type: boolean}
     ArtistRef:
       type: object
       required: [id, name]
@@ -3338,7 +3409,7 @@ components:
         id: {type: string, format: uuid}
         kind:
           type: string
-          enum: [draw_selected, draw_not_selected, seat_backfilled, ticket_delivered, staff_report, staff_review, staff_draw]
+          enum: [draw_selected, draw_not_selected, seat_backfilled, ticket_delivered, staff_report, staff_review, staff_draw, staff_redaction]
         title: {type: string}
         body: {type: string}
         link: {type: string, description: 'App route to open, e.g. /tickets or /show/{id}'}

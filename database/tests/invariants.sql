@@ -197,8 +197,8 @@ DO $$ BEGIN
 END $$;
 
 SELECT pg_temp.expect_error(
-  $$INSERT INTO submission_files (submission_id, storage_key, sha256, mime_type, bytes, tier)
-      VALUES ('30000000-0000-0000-0000-000000000001', 'k1', '\x00', 'image/png', 1, 'archive')$$,
+  $$INSERT INTO submission_files (submission_id, storage_key, sha256, mime_type, bytes, tier, archived_at, redaction_state)
+      VALUES ('30000000-0000-0000-0000-000000000001', 'archive/k1', '\x00', 'image/png', 1, 'archive', now(), 'archived')$$,
   'submission_files_check');
 
 -- ------------------------------------------------------------ ledger is append-only
@@ -1965,6 +1965,56 @@ BEGIN
   ASSERT (SELECT rejected_at FROM submissions WHERE id = sub) IS NULL, 'leaving rejected clears the stamp';
   DELETE FROM submissions WHERE id = sub;
 END $$;
+DELETE FROM storage_deletions;
+
+-- ------------------------------------------------------------ redaction and archive (0029)
+-- Verifying queues the redaction once; archive rows are redacted, under archive/, with a time; a file sent to staff
+-- notifies every live staff account once.
+DO $$
+DECLARE sub uuid := '40000000-0000-0000-0000-0000000000c3'; f uuid; staff_count int;
+BEGIN
+  DELETE FROM jobs WHERE kind = 'submissions.redact';
+  INSERT INTO submissions (id, user_id, artist_id, kind)
+    SELECT sub, '00000000-0000-0000-0000-000000000001', id, 'ticket' FROM artists WHERE spotify_artist_id = 'sp-active';
+  INSERT INTO submission_files (submission_id, storage_key, sha256, mime_type, bytes)
+    VALUES (sub, 'quarantine/inv-redact', sha256('r'), 'image/jpeg', 10) RETURNING id INTO f;
+  ASSERT (SELECT redaction_state FROM submission_files WHERE id = f) = 'pending', 'new files wait for redaction';
+  UPDATE submissions SET status = 'verified' WHERE id = sub;
+  UPDATE submissions SET status = 'verified' WHERE id = sub;
+  ASSERT (SELECT count(*) FROM jobs WHERE kind = 'submissions.redact' AND dedupe_key = 'redact:' || sub) = 1,
+         'verifying queues one redaction';
+
+  BEGIN
+    UPDATE submission_files SET tier = 'archive', redacted = true, archived_at = now(), redaction_state = 'archived' WHERE id = f;
+    RAISE EXCEPTION 'an archive row under a quarantine key should fail';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%submission_files_archive_consistent%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE submission_files SET storage_key = 'archive/inv-redact', tier = 'archive', redacted = true, archived_at = now() WHERE id = f;
+    RAISE EXCEPTION 'an archive row not marked archived should fail';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%submission_files_archive_consistent%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE submission_files SET storage_key = 'archive/inv-redact', redaction_state = 'archived' WHERE id = f;
+    RAISE EXCEPTION 'an archived row in the hot tier should fail';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%submission_files_archive_consistent%', SQLERRM;
+  END;
+
+  SELECT count(*) INTO staff_count FROM users WHERE is_staff AND deleted_at IS NULL;
+  UPDATE submission_files SET redaction_state = 'needs_review', redaction_note = 'No code found' WHERE id = f;
+  UPDATE submission_files SET redaction_state = 'approved' WHERE id = f;
+  UPDATE submission_files SET redaction_state = 'needs_review' WHERE id = f;
+  ASSERT (SELECT count(*) FROM notifications WHERE kind = 'staff_redaction' AND subject_id = f) = staff_count,
+         'each staff account hears about a file once';
+
+  UPDATE submission_files SET storage_key = 'archive/inv-redact', tier = 'archive', redacted = true, archived_at = now(),
+                              redaction_state = 'archived' WHERE id = f;
+  ASSERT EXISTS (SELECT 1 FROM storage_deletions WHERE storage_key = 'quarantine/inv-redact'), 'archiving queues the quarantined original';
+  DELETE FROM submissions WHERE id = sub;
+  DELETE FROM notifications WHERE kind = 'staff_redaction';
+  DELETE FROM jobs WHERE kind = 'submissions.redact';
+END $$;
+SELECT pg_temp.expect_error($$UPDATE submission_files SET redaction_state = 'lost'$$, 'submission_files_redaction_state_check');
 DELETE FROM storage_deletions;
 
 \echo ALL INVARIANT TESTS PASSED

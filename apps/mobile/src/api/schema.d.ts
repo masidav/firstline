@@ -910,7 +910,8 @@ export interface paths {
         };
         /**
          * Home feed
-         * @description One vertical scroll mixing, at random: shared photos (verified merch and concert photos) and public album
+         * @description One vertical scroll mixing, at random: shared photos (verified merch and concert photos, once every file is
+         *     redacted and archived) and public album
          *     logs from every fan; from the fans the caller follows, their followers-only logs, grab-bag songs, and top
          *     fandom stats; upcoming shows (within 120 days) of artists the caller has a score for or in their hub cities,
          *     with the fan allocation to register for; and the caller's own live registrations with their standing.
@@ -2250,6 +2251,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/redactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Files the redaction worker sent to staff
+         * @description Verified proof is scanned for barcodes and QR codes, which are blacked out before the file moves to the
+         *     archive. A file comes here when the scanner can't settle it: a ticket or screenshot with no code found, codes
+         *     still found after redacting, or an image that can't be read. Oldest first, at most 100. The quarantine bucket
+         *     deletes the original at `deleted_after`.
+         */
+        get: operations["listRedactionReviews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/redactions/{fileId}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive a file staff checked, or discard it
+         * @description `archive`: staff looked and nothing sensitive is left. The worker still blacks out any code it finds, then
+         *     archives the file. `discard`: the file is deleted now; the submission keeps its status and points.
+         */
+        post: operations["decideRedaction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/artists": {
         parameters: {
             query?: never;
@@ -2591,6 +2636,36 @@ export interface components {
             activated_at?: string | null;
             my_score?: components["schemas"]["ScoreSummary"] | null;
         };
+        RedactionReview: {
+            /** Format: uuid */
+            file_id: string;
+            /** Format: uuid */
+            submission_id: string;
+            /** @enum {string} */
+            kind: "ticket" | "merch" | "screenshot" | "concert_photo";
+            artist: components["schemas"]["ArtistRef"];
+            user: components["schemas"]["UserRef"];
+            /** @description Why the worker couldn't finish the file. */
+            note: string | null;
+            /** @description Codes the worker found and blacked out before sending the file to staff. */
+            codes_redacted: number;
+            /** Format: date-time */
+            uploaded_at: string;
+            /**
+             * Format: date-time
+             * @description When the quarantine bucket deletes the original.
+             */
+            deleted_after: string;
+            /** @description The quarantined original (a short-lived signed link). */
+            file: {
+                /** Format: uuid */
+                id: string;
+                mime_type: string;
+                /** Format: uri */
+                url: string;
+                redacted: boolean;
+            };
+        };
         ArtistRef: {
             /** Format: uuid */
             id: string;
@@ -2782,7 +2857,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             /** @enum {string} */
-            kind: "draw_selected" | "draw_not_selected" | "seat_backfilled" | "ticket_delivered" | "staff_report" | "staff_review" | "staff_draw";
+            kind: "draw_selected" | "draw_not_selected" | "seat_backfilled" | "ticket_delivered" | "staff_report" | "staff_review" | "staff_draw" | "staff_redaction";
             title: string;
             body: string;
             /** @description App route to open, e.g. /tickets or /show/{id} */
@@ -7320,6 +7395,60 @@ export interface operations {
             };
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    listRedactionReviews: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Files waiting for a decision */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["RedactionReview"][];
+                    };
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    decideRedaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fileId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    action: "archive" | "discard";
+                };
+            };
+        };
+        responses: {
+            /** @description Decision recorded */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
         };
     };
