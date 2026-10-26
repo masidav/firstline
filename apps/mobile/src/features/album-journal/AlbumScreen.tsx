@@ -8,7 +8,10 @@ import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { type AlbumDetail, type AlbumLog, describeAlbum, describePoints, formatRating, type LogResult, spotifyAlbumUrl } from './journal';
+import { usePendingLogs, useSyncedLogs } from './journalQueue';
 import { LogForm } from './LogForm';
+import type { PendingLog } from './pendingLogs';
+import { PendingLogCard } from './PendingLogCard';
 import { SpotifyAttribution } from './SpotifyAttribution';
 
 /**
@@ -20,8 +23,10 @@ export function AlbumScreen({ albumId }: { albumId: string }) {
   const [album, setAlbum] = useState<AlbumDetail | null>(null);
   const [community, setCommunity] = useState<AlbumLog[]>([]);
   const [error, setError] = useState<string>();
-  const [form, setForm] = useState<'closed' | 'new' | 'edit'>('closed');
+  const [form, setForm] = useState<'closed' | 'new' | 'edit' | 'pending'>('closed');
+  const [editingPending, setEditingPending] = useState<PendingLog | null>(null);
   const [saved, setSaved] = useState<string>();
+  const pending = usePendingLogs(albumId);
 
   const load = useCallback(async () => {
     setError(undefined);
@@ -48,6 +53,23 @@ export function AlbumScreen({ albumId }: { albumId: string }) {
     void load();
   }
 
+  // A waiting entry for this album reached the API (maybe while this screen was open): show what it earned.
+  useSyncedLogs(
+    useCallback(
+      (entry: PendingLog, result: LogResult) => {
+        if (entry.albumId === albumId) onSaved(result);
+      },
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [albumId, load],
+    ),
+  );
+
+  function onQueued() {
+    setForm('closed');
+    setEditingPending(null);
+    setSaved(undefined);
+  }
+
   if (error && !album) {
     return (
       <Screen>
@@ -61,6 +83,7 @@ export function AlbumScreen({ albumId }: { albumId: string }) {
 
   const mine = album.my_latest_log ?? null;
   const spotifyUrl = spotifyAlbumUrl(album.spotify_album_id);
+  const albumInfo = { title: album.title, artistName: album.artist.name, coverUrl: album.cover_url ?? null };
   return (
     <Screen>
       <Button label="Back" kind="secondary" onPress={back} />
@@ -85,6 +108,18 @@ export function AlbumScreen({ albumId }: { albumId: string }) {
         Your log
       </Text>
       {saved && <Body>{saved}</Body>}
+      {pending.map((entry) =>
+        form === 'pending' && editingPending?.localId === entry.localId ? null : (
+          <PendingLogCard
+            key={entry.localId}
+            entry={entry}
+            onEdit={() => {
+              setEditingPending(entry);
+              setForm('pending');
+            }}
+          />
+        ),
+      )}
       {mine && form !== 'edit' && (
         <View style={styles.log}>
           <Body>
@@ -101,8 +136,13 @@ export function AlbumScreen({ albumId }: { albumId: string }) {
           <Button label={mine ? 'Log again' : 'Log this album'} onPress={() => setForm('new')} />
         </View>
       )}
-      {form === 'new' && <LogForm albumId={album.id} onSaved={onSaved} onCancel={() => setForm('closed')} />}
-      {form === 'edit' && mine && <LogForm albumId={album.id} existing={mine} onSaved={onSaved} onCancel={() => setForm('closed')} />}
+      {form === 'new' && <LogForm albumId={album.id} album={albumInfo} onSaved={onSaved} onQueued={onQueued} onCancel={() => setForm('closed')} />}
+      {form === 'edit' && mine && (
+        <LogForm albumId={album.id} album={albumInfo} existing={mine} onSaved={onSaved} onQueued={onQueued} onCancel={() => setForm('closed')} />
+      )}
+      {form === 'pending' && editingPending && (
+        <LogForm albumId={album.id} album={albumInfo} pending={editingPending} onSaved={onSaved} onQueued={onQueued} onCancel={onQueued} />
+      )}
 
       {album.tracks && album.tracks.length > 0 && (
         <>

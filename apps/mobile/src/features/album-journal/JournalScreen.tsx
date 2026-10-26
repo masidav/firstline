@@ -9,6 +9,8 @@ import { Body, Button, ErrorText, Loading, Screen, Title } from '../../ui/compon
 import { space } from '../../ui/theme';
 import { AlbumRow } from './AlbumRow';
 import { type AlbumLog, formatRating } from './journal';
+import { journalQueue, usePendingLogs, useSyncedLogs } from './journalQueue';
+import { PendingLogCard } from './PendingLogCard';
 
 /** The fan's diary (GET /me/logs), newest listen first, with delete. Tap an entry to open the album and edit. */
 export function JournalScreen() {
@@ -17,6 +19,7 @@ export function JournalScreen() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [error, setError] = useState<string>();
   const [deleting, setDeleting] = useState<string | null>(null);
+  const pending = usePendingLogs();
 
   const load = useCallback(
     async (cursor?: string) => {
@@ -36,6 +39,9 @@ export function JournalScreen() {
     void load();
   }, [load]);
 
+  // An entry that was waiting is now a real log: show it in its place.
+  useSyncedLogs(useCallback(() => void load(), [load]));
+
   async function remove(log: AlbumLog) {
     setDeleting(log.id);
     setError(undefined);
@@ -54,6 +60,17 @@ export function JournalScreen() {
       <Button label="Back to home" kind="secondary" onPress={() => router.replace('/home')} />
       <Title>Your journal</Title>
       <ErrorText>{error}</ErrorText>
+      {pending.length > 0 && (
+        <View style={styles.pending}>
+          <Body>
+            {pending.length === 1 ? '1 entry waiting to sync' : `${pending.length} entries waiting to sync`}
+          </Body>
+          {pending.map((entry) => (
+            <PendingLogCard key={entry.localId} entry={entry} showAlbum />
+          ))}
+          <Button label="Retry now" kind="secondary" onPress={() => void journalQueue.retry()} />
+        </View>
+      )}
       {!logs && !error && <Loading />}
       {logs?.length === 0 && <Body muted>Nothing logged yet. Open an album from one of your artists and log it.</Body>}
       {logs?.map((log) => (
@@ -87,5 +104,6 @@ export function JournalScreen() {
 
 const styles = StyleSheet.create({
   entry: { gap: space.sm },
+  pending: { gap: space.sm, marginBottom: space.sm },
   actions: { alignItems: 'flex-end' },
 });

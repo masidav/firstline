@@ -15,6 +15,8 @@ jest.mock('../../auth/SessionProvider', () => ({
   useSession: () => ({ session: mockSession, state: mockState }),
 }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn(), replace: jest.fn() } }));
+jest.mock('../album-journal/journalQueue', () => ({ usePendingLogs: () => mockPendingLogs }));
+let mockPendingLogs: unknown[] = [];
 
 const geese = {
   id: 'a-1',
@@ -248,4 +250,16 @@ test('a camera button posts a photo, and Alerts shows the unread count', async (
   // While searching, the camera button steps aside.
   fireEvent.changeText(screen.getByLabelText('Search artists'), 'gee');
   expect(screen.queryByRole('button', { name: 'Post a photo' })).toBeNull();
+});
+
+test('journal entries waiting to sync are announced above the feed', async () => {
+  mockPendingLogs = [{ localId: 'p1' }, { localId: 'p2' }];
+  mockApi.GET.mockResolvedValue(ok({ items: [], next_cursor: null }));
+  render(<HomeScreen />);
+
+  fireEvent.press(await screen.findByText('2 journal entries waiting to sync. Tap to see.'));
+
+  const { router } = jest.requireMock('expo-router');
+  expect(router.push).toHaveBeenCalledWith('/journal');
+  mockPendingLogs = [];
 });

@@ -17,27 +17,41 @@ import {
   VISIBILITIES,
   type Visibility,
 } from './journal';
+import { journalQueue } from './journalQueue';
+import { isKnownOffline, isRetryable, type PendingLog } from './pendingLogs';
 
 /**
  * Log an album (POST /logs) or edit an existing log (PATCH /logs/{id}). A new log sends one Idempotency-Key for
  * all its retries, so a flaky connection can't log the album twice. Whether it is a relisten is the server's call.
+ *
+ * Without a connection the entry is kept on the device instead (`journalQueue`) and sent later; `onQueued` says
+ * so. With `pending`, the form edits such a waiting entry in place.
  */
 export function LogForm({
   albumId,
+  album,
   existing,
+  pending,
   onSaved,
+  onQueued,
   onCancel,
 }: {
   albumId: string;
+  /** What to show for the entry while it waits to sync. */
+  album: PendingLog['album'];
   existing?: AlbumLog;
+  pending?: PendingLog;
   onSaved: (result: LogResult) => void;
+  onQueued: (entry: PendingLog) => void;
   onCancel?: () => void;
 }) {
-  const { session } = useSession();
-  const [rating, setRating] = useState<number | null>(existing?.rating ?? null);
-  const [review, setReview] = useState(existing?.review ?? '');
-  const [listenedOn, setListenedOn] = useState(existing?.listened_on ?? todayLocal());
-  const [visibility, setVisibility] = useState<Visibility>(existing?.visibility ?? 'public');
+  const { session, state } = useSession();
+  const userId = state.status === 'signedIn' ? state.me.id : null;
+  const initial = pending?.body ?? existing;
+  const [rating, setRating] = useState<number | null>(initial?.rating ?? null);
+  const [review, setReview] = useState(initial?.review ?? '');
+  const [listenedOn, setListenedOn] = useState(initial?.listened_on ?? todayLocal());
+  const [visibility, setVisibility] = useState<Visibility>(initial?.visibility ?? 'public');
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<{ date?: string; review?: string; form?: string }>({});
   // Fixed for this form's lifetime: a retry after a failure is the same attempt.
@@ -50,8 +64,18 @@ export function LogForm({
     }
     setSaving(true);
     setErrors({});
+    const text = review.trim();
+    const body = { rating, review: text || null, listened_on: listenedOn, visibility };
     try {
-      const text = review.trim();
+      if (pending) {
+        const edited = await journalQueue.edit(pending.localId, body);
+        if (edited) onQueued(edited);
+        return;
+      }
+      if (userId && isKnownOffline()) {
+        onQueued(await queue(userId));
+        return;
+      }
       const result = existing
         ? unwrap(
             await session.api.PATCH('/logs/{logId}', {
@@ -73,6 +97,11 @@ export function LogForm({
           );
       onSaved(result);
     } catch (e) {
+      if (userId && isRetryable(e)) {
+        // No connection (or the API is down): keep the entry here and send it later.
+        onQueued(await queue(userId));
+        return;
+      }
       setErrors(
         e instanceof ApiError
           ? { date: e.fieldError('listened_on'), review: e.fieldError('review'), form: e.problem.errors ? undefined : errorMessage(e) }
@@ -81,6 +110,18 @@ export function LogForm({
     } finally {
       setSaving(false);
     }
+  }
+
+  function queue(owner: string) {
+    return journalQueue.add({
+      userId: owner,
+      key,
+      kind: existing ? 'update' : 'create',
+      ...(existing ? { logId: existing.id } : {}),
+      albumId,
+      album,
+      body: { rating, review: review.trim() || null, listened_on: listenedOn, visibility },
+    });
   }
 
   return (
@@ -127,7 +168,7 @@ export function LogForm({
         ))}
       </View>
       <ErrorText>{errors.form}</ErrorText>
-      <Button label={existing ? 'Save changes' : 'Save log'} onPress={() => void save()} busy={saving} />
+      <Button label={existing || pending ? 'Save changes' : 'Save log'} onPress={() => void save()} busy={saving} />
       {onCancel && <Button label="Cancel" kind="secondary" onPress={onCancel} disabled={saving} />}
     </View>
   );

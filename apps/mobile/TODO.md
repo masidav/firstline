@@ -8,7 +8,8 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [x] Set up typed API client and centralized session handling using the project's existing language conventions. (`src/api`, `src/auth/session.ts`)
 - [ ] Add navigation and screens for the features in the product specification.
 - [x] Implement secure handling of authentication state and avoid storing secrets in plain text. (Keychain on iOS; localStorage on web, with a known limit)
-- [ ] Support offline album-journal writes and a retryable synchronization queue.
+- [x] Support offline album-journal writes and a retryable synchronization queue. *Done 2026-10-26
+      (`src/features/album-journal/journalQueue.ts`); details and verification in the album-journal TODO.*
 - [ ] Add accessibility labels, keyboard handling, and responsive layouts for mobile devices.
 - [ ] Handle API errors, network loss, expired sessions, and background/resume behavior.
 - [ ] Add component and screen tests using the existing test stack.
