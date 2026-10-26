@@ -39,7 +39,8 @@ configMapGenerator:
       - Spotify__ClientId=
       - Spotify__RedirectUris=
       - Cors__AllowedOrigins=
-      # Buckets from terraform output buckets.
+      # Buckets from terraform output buckets: Terraform names them after the project ("<project_id>-quarantine").
+      # These assume the prod project ID fandomscore-prod; set them from the output once the project exists.
       - Storage__QuarantineBucket=fandomscore-prod-quarantine
       - Storage__ArchiveBucket=fandomscore-prod-archive
       - Storage__MediaBucket=fandomscore-prod-media
