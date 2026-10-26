@@ -20,7 +20,7 @@ Expo SDK 57, expo-router, TypeScript. The API client is generated from `openapi.
    npm run web                       # http://localhost:8081
    ```
 3. Sign in with any test name (e.g. `alice`). The first time, choose a handle. The same name signs back in to
-   the same account.
+   the same account. For real Google sign-in, see [Sign in with Google](#sign-in-with-google).
 
 ## Try it on your phone
 **Same Wi-Fi (quickest).** Find your computer's LAN address (e.g. `192.168.1.20`), then:
@@ -35,6 +35,33 @@ for the API and another for port 8081). Put the API tunnel URL in `EXPO_PUBLIC_A
 tunnel URL in `Cors__AllowedOrigins`. Google sign-in will need HTTPS anyway.
 
 Developer sign-in lets anyone who can reach your API sign in as anyone, so only expose a development database.
+
+## Sign in with Google
+The app sends the fan to Google's account chooser and gets an OpenID Connect ID token back in the URL fragment
+(`/google-callback`), which it sends to `POST /v1/auth/sessions`; no Google script runs on the page and no
+library is needed. The API checks the token's signature, audience, and nonce (`docs/adr/0003-authentication.md`).
+1. Google Cloud console → APIs & Services → Credentials → create an OAuth client of type **Web application**.
+   Authorized JavaScript origins: `http://localhost:8081` (and your tunnel origin). Authorized redirect URIs:
+   `http://localhost:8081/google-callback` (and `https://<tunnel>/google-callback`). Google allows plain `http`
+   only for `localhost`, so on a phone use the HTTPS tunnel.
+2. While the OAuth consent screen is in **Testing**, only the test users listed there can sign in (up to 100);
+   anyone else sees "access blocked". Add each tester, or publish the screen as External.
+3. Repo root `.env`: `Auth__Google__ClientIds=<web client ID>`. `apps/mobile/.env.local`:
+   `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=<the same ID>`. Empty hides the button.
+4. Sign-in screen → **Continue with Google**. A new account is asked for a handle (prefilled from the email).
+   An email that already belongs to another account is refused (one email per account, ADR 0003).
+
+The native app uses a separate **iOS** client ID (`EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`): Google's page opens in an
+auth session, returns a code on the reversed-client-ID scheme (`com.googleusercontent.apps.<id>:/oauth2redirect`,
+add that scheme to `app.json`), and the app exchanges it with PKCE (`googleSignIn.native.ts`). List both client
+IDs in `Auth__Google__ClientIds`. Not yet run on a device (no iOS build yet).
+
+## Sign in with Apple
+`expo-apple-authentication` on iOS: Apple's sheet returns an identity token, which goes to the same endpoint with
+the raw nonce (Apple gets its SHA-256). Deleting an Apple account first shows the sheet again and sends the fresh
+authorization code so the API can revoke the sign-in (App Store rule). Needs the Apple Developer Program, the
+bundle ID in `Auth__Apple__ClientIds`, and an iOS build; the button is hidden on the web and Android. Apple's web
+flow (Services ID plus a server-side form post) is not built.
 
 ## Connect Spotify
 Spotify only redirects back to HTTPS addresses or the literal `http://127.0.0.1` (not `localhost`), so for
@@ -65,10 +92,10 @@ Pages and Firebase Hosting do this with a rewrite rule; `python -m http.server` 
 ## Layout
 | Path | Contents |
 | --- | --- |
-| `src/app/` | Routes (expo-router): `index` (routing by session state), `sign-in`, `profile`, `spotify`, `spotify-callback`. |
+| `src/app/` | Routes (expo-router): `index` (routing by session state), `sign-in`, `google-callback`, `profile`, `spotify`, `spotify-callback`. |
 | `src/auth/` | `SessionManager` (tokens, single-flight refresh, sign-in/out, deletion), `SessionProvider`, token storage. |
 | `src/api/` | `schema.d.ts` (generated, don't edit), `client.ts` (typed client, `ApiError`), `errors.ts` (messages). |
-| `src/features/<feature>/` | Feature UI, e.g. `authentication/DevSignInForm`, `settings/ProfileScreen`. |
+| `src/features/<feature>/` | Feature UI, e.g. `authentication/SignInScreen` (Google, Apple, developer sign-in), `settings/ProfileScreen`. |
 | `src/ui/` | Shared components and theme tokens. |
 
 ## Commands
@@ -81,8 +108,8 @@ npm run build:web      # static web build in dist/
 ```
 
 ## How sessions work
-- Access token (15 minutes) in memory; refresh token in `localStorage` on web, the Keychain on iOS
-  (`tokenStore.native.ts`).
+- Access token (15 minutes) in memory; refresh token (and which provider signed in) in `localStorage` on web, the
+  Keychain on iOS (`tokenStore.native.ts`).
 - Every API call goes through `session.api`. On a 401 it refreshes once and retries. Refreshes are
   single-flight, because the API ends the whole session when a refresh token is used twice.
 - Known limit on web: two open tabs can both refresh with the same token, which signs both out.
@@ -90,11 +117,11 @@ npm run build:web      # static web build in dist/
 ## Moving to iOS
 Needs the Apple Developer Program ($99/year). Then:
 1. Pick the bundle ID and add `ios.bundleIdentifier` to `app.json`.
-2. Add Sign in with Apple (`expo-apple-authentication`) next to developer sign-in; on account deletion, get a
-   fresh Apple authorization code and pass it to `session.deleteAccount(code)`.
+2. Sign in with Apple and Google are built (see above); add the Google iOS client's scheme to `app.json` and try
+   both on a device.
 3. Build in the cloud with EAS (`eas build -p ios`), install a development build or ship to TestFlight
    (`eas submit`). No Mac needed. Everything else (screens, session, API client) is shared.
 
 ## Not done yet
-Google sign-in (needs a Google OAuth web client ID), Sign in with Apple (needs the Apple program), Spotify connect
-in the native app, and the feature screens beyond profile and Spotify (artists, scores, journal).
+Sign in with Apple and Google in the native app are written but not run on a device (needs the Apple program and
+an iOS build); Apple's web flow; Spotify connect in the native app.

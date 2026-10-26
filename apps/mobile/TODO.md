@@ -13,8 +13,17 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Handle API errors, network loss, expired sessions, and background/resume behavior.
 - [ ] Add component and screen tests using the existing test stack.
 - [ ] Verify iOS and Android builds and document required configuration. *Web build verified (CI and a Playwright WebKit run at iPhone size, 2026-10-18); iOS waits on the Apple Developer Program.*
-- [ ] Google sign-in on web (needs a Google OAuth web client ID).
-- [ ] Sign in with Apple and Apple re-authentication before account deletion (iOS).
+- [x] Google sign-in on web. *Done 2026-10-26: "Continue with Google" sends the fan to Google (OpenID Connect,
+      ID token in the fragment, no Google script), `/google-callback` checks the state and signs in; a new account
+      chooses a handle. Needs `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` and the redirect URI on the Google client (README).
+      Verified: providerSignIn and SignInScreen tests; in Chrome against a dev API, with a stubbed Google page: new
+      account, returning account, forged state refused, access_denied explained. Not yet tried with the real Google
+      client: the OAuth consent screen is in Testing, so testers must be added as test users (or the screen published).*
+- [x] Sign in with Apple and Apple re-authentication before account deletion (iOS). *Written 2026-10-26
+      (`expo-apple-authentication`, hashed nonce, fresh authorization code before `DELETE /me`); unit-tested with the
+      module mocked. Not run on a device: needs the Apple Developer Program and an iOS build.*
+- [ ] Google sign-in in the native app: written 2026-10-26 (`googleSignIn.native.ts`, PKCE code flow with an iOS
+      client ID, unit-tested), not run on a device. Needs an iOS client ID and its reversed scheme in `app.json`.
 
 ## Home screen concept (requested 2026-10-20, not designed yet)
 - [ ] Main feed scrolls **horizontally, like a music sheet** (a staff the fan moves along).

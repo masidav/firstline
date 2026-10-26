@@ -54,7 +54,7 @@ test('restore resumes a stored session and stores the rotated refresh token', as
   await manager.restore();
 
   expect(manager.getState()).toEqual({ status: 'signedIn', me });
-  expect(store.value).toBe('r2');
+  expect(store.value).toEqual({ refreshToken: 'r2', provider: 'google' });
 });
 
 test('a new account needs a handle, then signs in', async () => {
@@ -69,13 +69,30 @@ test('a new account needs a handle, then signs in', async () => {
   });
   const manager = new SessionManager(BASE, store, api.fetchImpl);
 
-  const error = await manager.signIn('google', 'dev:alice').catch((e: unknown) => e);
+  const error = await manager.signIn({ provider: 'google', idToken: 'dev:alice' }).catch((e: unknown) => e);
   expect(error).toBeInstanceOf(ApiError);
   expect((error as ApiError).fieldError('handle')).toBe('Required to create an account.');
 
-  await expect(manager.signIn('google', 'dev:alice', 'alice')).resolves.toEqual({ isNewUser: true });
+  await expect(manager.signIn({ provider: 'google', idToken: 'dev:alice' }, 'alice')).resolves.toEqual({ isNewUser: true });
   expect(manager.getState()).toEqual({ status: 'signedIn', me });
-  expect(store.value).toBe('r1');
+  expect(manager.provider).toBe('google');
+  expect(store.value).toEqual({ refreshToken: 'r1', provider: 'google' });
+});
+
+test('the nonce the app put in the identity token is sent along for the API to check', async () => {
+  const api = fakeApi({
+    'POST /auth/sessions': async (request) => {
+      expect(await request.json()).toEqual({ provider: 'apple', id_token: 't', nonce: 'n' });
+      return json(200, session('a1', 'r1'));
+    },
+  });
+  const store = memoryTokenStore();
+  const manager = new SessionManager(BASE, store, api.fetchImpl);
+
+  await manager.signIn({ provider: 'apple', idToken: 't', nonce: 'n' });
+
+  expect(manager.provider).toBe('apple');
+  expect(store.value).toEqual({ refreshToken: 'r1', provider: 'apple' });
 });
 
 test('an expired access token is refreshed once for concurrent calls, and the calls are retried', async () => {
@@ -90,14 +107,14 @@ test('an expired access token is refreshed once for concurrent calls, and the ca
       request.headers.get('Authorization') === 'Bearer a2' ? json(200, me) : json(401, { code: 'unauthorized' }),
   });
   const manager = new SessionManager(BASE, store, api.fetchImpl);
-  await manager.signIn('google', 'dev:alice');
+  await manager.signIn({ provider: 'google', idToken: 'dev:alice' });
 
   const [first, second] = await Promise.all([manager.api.GET('/me'), manager.api.GET('/me')]);
 
   expect(first.response.status).toBe(200);
   expect(second.response.status).toBe(200);
   expect(api.calls.filter((call) => call === 'POST /auth/refresh')).toHaveLength(1);
-  expect(store.value).toBe('r2');
+  expect(store.value).toEqual({ refreshToken: 'r2', provider: 'google' });
 });
 
 test('a rejected refresh ends the session', async () => {
@@ -108,7 +125,7 @@ test('a rejected refresh ends the session', async () => {
     'GET /me': () => json(401, { code: 'unauthorized' }),
   });
   const manager = new SessionManager(BASE, store, api.fetchImpl);
-  await manager.signIn('google', 'dev:alice');
+  await manager.signIn({ provider: 'google', idToken: 'dev:alice' });
 
   const result = await manager.api.GET('/me');
 
@@ -126,7 +143,7 @@ test('an unreachable API keeps the stored session for a retry', async () => {
   await manager.restore();
 
   expect(manager.getState()).toEqual({ status: 'unreachable' });
-  expect(store.value).toBe('r1');
+  expect(store.value).toEqual({ refreshToken: 'r1', provider: 'google' });
 });
 
 test('sign-out clears the session even if the API call fails', async () => {
@@ -136,7 +153,7 @@ test('sign-out clears the session even if the API call fails', async () => {
     'DELETE /auth/sessions/current': () => json(500, { code: 'internal_error' }),
   });
   const manager = new SessionManager(BASE, store, api.fetchImpl);
-  await manager.signIn('google', 'dev:alice');
+  await manager.signIn({ provider: 'google', idToken: 'dev:alice' });
 
   await manager.signOut();
 

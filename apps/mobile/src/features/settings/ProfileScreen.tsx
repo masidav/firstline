@@ -7,6 +7,7 @@ import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Field, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
+import { reauthenticateWithApple } from '../authentication/appleSignIn';
 import { cityLabel, formatDay } from '../hub-cities/HubCitiesScreen';
 import { connectErrorMessage, describeStatus } from '../spotify/spotifyConnect';
 
@@ -127,8 +128,18 @@ export function ProfileScreen({ me }: { me: Me }) {
     setDeleting(true);
     setDeleteError(undefined);
     try {
-      // On iOS this will first get a fresh Sign in with Apple code for Apple accounts (App Store rule).
-      await session.deleteAccount();
+      // An Apple account first confirms with Sign in with Apple; the API uses the code to revoke the sign-in
+      // (App Store rule). Deletion still goes ahead if Apple fails, but not if the fan backs out of the sheet.
+      let appleCode: string | undefined;
+      if (session.provider === 'apple') {
+        const reauth = await reauthenticateWithApple();
+        if (reauth === 'cancelled') {
+          setDeleting(false);
+          return;
+        }
+        appleCode = reauth === 'failed' ? undefined : reauth.code;
+      }
+      await session.deleteAccount(appleCode);
     } catch (e) {
       setDeleteError(errorMessage(e));
       setDeleting(false);

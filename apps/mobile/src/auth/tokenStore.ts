@@ -1,4 +1,4 @@
-import { TOKEN_KEY, type TokenStore } from './storage';
+import { asProvider, PROVIDER_KEY, type StoredSession, TOKEN_KEY, type TokenStore } from './storage';
 
 /**
  * Web: localStorage. Any script running on the page can read it, so the site must not load third-party
@@ -7,15 +7,20 @@ import { TOKEN_KEY, type TokenStore } from './storage';
 export const tokenStore: TokenStore = {
   async get() {
     try {
-      return globalThis.localStorage?.getItem(TOKEN_KEY) ?? null;
+      const refreshToken = globalThis.localStorage?.getItem(TOKEN_KEY);
+      return refreshToken ? { refreshToken, provider: asProvider(globalThis.localStorage?.getItem(PROVIDER_KEY)) } : null;
     } catch {
       return null;
     }
   },
-  async set(refreshToken) {
-    globalThis.localStorage?.setItem(TOKEN_KEY, refreshToken);
+  async set(session: StoredSession) {
+    globalThis.localStorage?.setItem(TOKEN_KEY, session.refreshToken);
+    if (session.provider) {
+      globalThis.localStorage?.setItem(PROVIDER_KEY, session.provider);
+    }
   },
   async clear() {
     globalThis.localStorage?.removeItem(TOKEN_KEY);
+    globalThis.localStorage?.removeItem(PROVIDER_KEY);
   },
 };

@@ -17,6 +17,7 @@ jest.mock('../../auth/SessionProvider', () => ({
   useSession: () => ({ session: mockSession }),
 }));
 jest.mock('expo-router', () => ({ router: { replace: jest.fn(), push: jest.fn() } }));
+jest.mock('../authentication/appleSignIn', () => ({ reauthenticateWithApple: jest.fn() }));
 
 const fan = {
   id: 'u-1',
@@ -105,4 +106,33 @@ test('a connected fan can resync Spotify; a second try within 15 minutes is expl
   expect(mockApi.POST).toHaveBeenCalledWith('/me/spotify/sync');
   fireEvent.press(screen.getByRole('button', { name: 'Resync Spotify' }));
   expect(await screen.findByText(/synced in the last 15 minutes/)).toBeTruthy();
+});
+
+test('deleting an Apple account first confirms with Apple and sends the fresh code', async () => {
+  const { reauthenticateWithApple } = jest.requireMock('../authentication/appleSignIn');
+  reauthenticateWithApple.mockResolvedValueOnce('cancelled').mockResolvedValueOnce({ code: 'fresh' });
+  (mockSession as { provider?: string }).provider = 'apple';
+  mockSession.deleteAccount.mockResolvedValue(undefined);
+  render(<ProfileScreen me={fan} />);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Delete account' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Yes, delete my account' }));
+  await waitFor(() => expect(reauthenticateWithApple).toHaveBeenCalledTimes(1));
+  expect(mockSession.deleteAccount).not.toHaveBeenCalled();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Yes, delete my account' }));
+  await waitFor(() => expect(mockSession.deleteAccount).toHaveBeenCalledWith('fresh'));
+});
+
+test('deleting a Google account does not involve Apple', async () => {
+  const { reauthenticateWithApple } = jest.requireMock('../authentication/appleSignIn');
+  (mockSession as { provider?: string }).provider = 'google';
+  mockSession.deleteAccount.mockResolvedValue(undefined);
+  render(<ProfileScreen me={fan} />);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Delete account' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Yes, delete my account' }));
+
+  await waitFor(() => expect(mockSession.deleteAccount).toHaveBeenCalledWith(undefined));
+  expect(reauthenticateWithApple).not.toHaveBeenCalled();
 });
