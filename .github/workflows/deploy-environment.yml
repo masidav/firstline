@@ -13,6 +13,10 @@ on:
         description: Image repository to copy the images from instead of building them
         type: string
         default: ''
+      skip_health_check:
+        description: Skip the public health check after the rollout (first deploy, before DNS and the certificate)
+        type: boolean
+        default: false
     outputs:
       image_repository:
         value: ${{ jobs.deploy.outputs.image_repository }}
@@ -87,4 +91,6 @@ jobs:
             | sudo tar -xz -C /usr/local/bin kustomize
 
       - name: Migrate and roll out
+        env:
+          SKIP_HEALTH_CHECK: ${{ inputs.skip_health_check && '1' || '0' }}
         run: infrastructure/k8s/deploy.sh "${{ inputs.environment }}" "$TAG"

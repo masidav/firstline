@@ -19,6 +19,10 @@ on:
         type: choice
         options: [beta, prod]
         default: beta
+      skip_health_check:
+        description: Don't poll the public health endpoint afterwards (only before DNS and the certificate exist)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -35,6 +39,7 @@ jobs:
     uses: ./.github/workflows/deploy-environment.yml
     with:
       environment: beta
+      skip_health_check: ${{ github.event.inputs.skip_health_check == 'true' }}
 
   # Also gated on PROD_DEPLOY_ENABLED: until the prod project and GitHub environment exist, a push only deploys beta.
   prod:
