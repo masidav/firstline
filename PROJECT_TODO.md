@@ -127,6 +127,9 @@ Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring wo
       `GET /prompts/{id}/answers`, `/admin/prompts/{day}`. Verified: `dotnet test` (PromptApiTests 3, invariants),
       app Jest (Prompts, Feed, Moderation).
 - [ ] Daily blind album rankings (requested 2026-10-25; open questions in `apps/mobile/TODO.md`).
+- [ ] Trivia and prompts on a weekly cadence instead of daily (requested 2026-10-26): trivia on Tuesdays, prompts on
+      Thursdays, so each day has at most one of them. Open: what the other days show in their place (nothing, or
+      the week's unanswered one), and whether the weekly question stays answerable all week.
 
 Details: [Album journal API](services/api/src/features/album-journal/TODO.md) · [Journal UI](apps/mobile/src/features/album-journal/TODO.md) · [Lists API](services/api/src/features/lists/TODO.md) · [Lists UI](apps/mobile/src/features/lists/TODO.md) · [Comments API](services/api/src/features/comments/TODO.md) · [Comments UI](apps/mobile/src/features/comments/TODO.md)
 
