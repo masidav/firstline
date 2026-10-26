@@ -22,6 +22,7 @@ namespace FandomScore.Tests;
 public sealed class NotificationApiTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private static readonly string[] Chicago = ["us-il-chicago"];
+    private static readonly string[] Toronto = ["ca-on-toronto"];
 
     private WebApplicationFactory<Program> _factory = null!;
     private HttpClient _client = null!;
@@ -123,6 +124,86 @@ public sealed class NotificationApiTests(PostgresFixture postgres) : IAsyncLifet
         var tooMany = await JsonAsync(await SendAsync(HttpMethod.Post, "/v1/me/notifications/read", ben,
             new { ids = Enumerable.Range(0, 201).Select(_ => Guid.NewGuid()).ToArray() }), HttpStatusCode.UnprocessableEntity);
         Assert.Equal("ids", tooMany.GetProperty("errors")[0].GetProperty("field").GetString());
+    }
+
+    [Fact]
+    public async Task Fans_with_a_score_in_the_show_city_hear_about_a_presale_once_unless_they_turned_it_off()
+    {
+        var ana = await FanAsync("ana", 90);
+        var ben = await FanAsync("ben", 80);
+        var cara = await SignInAsync("cara");   // Chicago, but no score for Geese
+        await JsonAsync(await SendAsync(HttpMethod.Put, "/v1/me/hub-cities", cara, new { city_ids = Chicago }), HttpStatusCode.OK);
+        var dan = await FanAsync("dan", 70);    // a score, but Toronto
+        await JsonAsync(await SendAsync(HttpMethod.Put, "/v1/me/hub-cities", dan, new { city_ids = Toronto }), HttpStatusCode.OK);
+
+        var me = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me", ben), HttpStatusCode.OK);
+        Assert.True(me.GetProperty("presale_reminders").GetBoolean());
+        var off = await JsonAsync(await SendAsync(HttpMethod.Patch, "/v1/me", ben, new { presale_reminders = false }), HttpStatusCode.OK);
+        Assert.False(off.GetProperty("presale_reminders").GetBoolean());
+        await JsonAsync(await SendAsync(HttpMethod.Patch, "/v1/me", ben, new { presale_reminders = "no" }), HttpStatusCode.UnprocessableEntity);
+
+        Guid eventId;
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            eventId = await connection.ExecuteScalarAsync<Guid>("SELECT id FROM events WHERE name = 'Geese at Metro'");
+            await connection.ExecuteAsync(
+                """
+                INSERT INTO event_presales (event_id, name, starts_at, ends_at) VALUES
+                  (@eventId, 'Verified Fan Presale', now() + interval '5 hours', now() + interval '2 days'),
+                  (@eventId, 'Spotify Presale', now() + interval '3 days', NULL),
+                  (@eventId, 'Old Presale', now() - interval '3 days', now() - interval '1 day');
+                INSERT INTO events (artist_id, name, city_id, starts_at, status)
+                VALUES (@_artistId, 'Cancelled show', 'us-il-chicago', now() + interval '30 days', 'cancelled');
+                INSERT INTO event_presales (event_id, name, starts_at)
+                SELECT id, 'Fan Club Presale', now() + interval '1 hour' FROM events WHERE name = 'Cancelled show';
+                """,
+                new { eventId, _artistId });
+        }
+
+        var job = new PresaleReminderJob(_db, NullLogger<PresaleReminderJob>.Instance);
+        Assert.Equal(("notifications.presales", TimeSpan.FromMinutes(15)), (job.Kind, job.Every));
+        await job.RunAsync(new ClaimedJob(1, job.Kind, "{}", 1, 10), CancellationToken.None);
+
+        // A sync replaces the presale rows; the fan still hears about each presale once.
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            await connection.ExecuteAsync(
+                """
+                CREATE TEMP TABLE kept AS SELECT * FROM event_presales WHERE event_id = @eventId AND name = 'Verified Fan Presale';
+                DELETE FROM event_presales WHERE event_id = @eventId AND name = 'Verified Fan Presale';
+                INSERT INTO event_presales SELECT * FROM kept;
+                DROP TABLE kept;
+                """,
+                new { eventId });
+        }
+
+        await job.RunAsync(new ClaimedJob(2, job.Kind, "{}", 1, 10), CancellationToken.None);
+
+        var anaItems = (await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/notifications", ana), HttpStatusCode.OK))
+            .GetProperty("items").EnumerateArray().ToList();
+        var presale = Assert.Single(anaItems);
+        Assert.Equal(("presale", "Presale: Geese", $"/show/{eventId}"), (presale.GetProperty("kind").GetString(),
+            presale.GetProperty("title").GetString(), presale.GetProperty("link").GetString()));
+        Assert.Equal("Verified Fan Presale for Geese at Metro starts in about 5 hours.", presale.GetProperty("body").GetString());
+        foreach (var other in new[] { ben, cara, dan })
+        {
+            Assert.Empty((await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/notifications", other), HttpStatusCode.OK))
+                .GetProperty("items").EnumerateArray());
+        }
+    }
+
+    [Fact]
+    public void Presale_times_read_relative_to_now()
+    {
+        var now = new DateTime(2026, 10, 26, 12, 0, 0, DateTimeKind.Utc);
+        static JsonElement Data(string starts, string? ends = null) =>
+            JsonDocument.Parse(JsonSerializer.Serialize(new { starts_at = starts, ends_at = ends })).RootElement;
+        Assert.Equal("starts within the hour", FandomScore.Api.Features.Notifications.NotificationEndpoints.PresaleWhen(Data("2026-10-26T12:30:00Z"), now));
+        Assert.Equal("starts in about an hour", FandomScore.Api.Features.Notifications.NotificationEndpoints.PresaleWhen(Data("2026-10-26T13:10:00Z"), now));
+        Assert.Equal("starts in about 22 hours", FandomScore.Api.Features.Notifications.NotificationEndpoints.PresaleWhen(Data("2026-10-27T10:00:00Z"), now));
+        Assert.Equal("starts in 3 days", FandomScore.Api.Features.Notifications.NotificationEndpoints.PresaleWhen(Data("2026-10-29T12:00:00Z"), now));
+        Assert.Equal("is on now", FandomScore.Api.Features.Notifications.NotificationEndpoints.PresaleWhen(Data("2026-10-26T10:00:00Z", "2026-10-27T10:00:00Z"), now));
+        Assert.Equal("has ended", FandomScore.Api.Features.Notifications.NotificationEndpoints.PresaleWhen(Data("2026-10-25T10:00:00Z", "2026-10-26T10:00:00Z"), now));
     }
 
     private async Task<string> FanAsync(string handle, decimal score)

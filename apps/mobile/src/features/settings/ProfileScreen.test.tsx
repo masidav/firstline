@@ -30,6 +30,7 @@ const fan = {
   band_url: null,
   instagram_handle: null,
   x_handle: null,
+  presale_reminders: true,
 };
 const artist = { ...fan, is_artist: true, band_url: 'https://open.spotify.com/artist/abc', instagram_handle: 'the.band', x_handle: 'theband' };
 
@@ -106,6 +107,15 @@ test('a connected fan can resync Spotify; a second try within 15 minutes is expl
   expect(mockApi.POST).toHaveBeenCalledWith('/me/spotify/sync');
   fireEvent.press(screen.getByRole('button', { name: 'Resync Spotify' }));
   expect(await screen.findByText(/synced in the last 15 minutes/)).toBeTruthy();
+});
+
+test('presale reminders switch off and on, saved at once', async () => {
+  mockApi.PATCH.mockResolvedValueOnce(ok({ ...fan, presale_reminders: false }));
+  render(<ProfileScreen me={fan} />);
+
+  fireEvent(screen.getByLabelText('Presale reminders'), 'valueChange', false);
+  await waitFor(() => expect(mockSession.updateMe).toHaveBeenCalledWith({ presale_reminders: false }));
+  expect(mockApi.PATCH).toHaveBeenCalledWith('/me', { body: { presale_reminders: false } });
 });
 
 test('deleting an Apple account first confirms with Apple and sends the fresh code', async () => {

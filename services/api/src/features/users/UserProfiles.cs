@@ -13,7 +13,7 @@ namespace FandomScore.Api.Features.Users;
 /// </remarks>
 public sealed record MeResponse(
     Guid Id, string Handle, string Email, string? DisplayName, string? AvatarUrl, bool IsStaff, DateTime CreatedAt,
-    bool IsArtist, string? BandUrl, string? InstagramHandle, string? XHandle)
+    bool IsArtist, string? BandUrl, string? InstagramHandle, string? XHandle, bool PresaleReminders)
 {
     public SpotifyStatus Spotify { get; init; } = SpotifyStatus.NotConnected;
 
@@ -64,7 +64,8 @@ public static partial class UserProfiles
             """
             SELECT id AS Id, handle::text AS Handle, email::text AS Email, display_name AS DisplayName,
                    avatar_url AS AvatarUrl, is_staff AS IsStaff, created_at AS CreatedAt,
-                   is_artist AS IsArtist, band_url AS BandUrl, instagram_handle AS InstagramHandle, x_handle AS XHandle
+                   is_artist AS IsArtist, band_url AS BandUrl, instagram_handle AS InstagramHandle, x_handle AS XHandle,
+                   presale_reminders AS PresaleReminders
             FROM users WHERE id = @userId AND deleted_at IS NULL
             """,
             new { userId }, transaction);

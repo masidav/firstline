@@ -109,6 +109,9 @@ public static class NotificationEndpoints
             "draw_not_selected" => ("Not this time", $"The fan draw for {show} didn't pick you. If a selected fan returns their seat, it goes to the next in line.", $"/show/{Text("event_id")}"),
             "seat_backfilled" => ("A seat opened up for you", $"A fan returned their seat for {show}{on}, and it's yours: {seats} at face value.", "/tickets"),
             "ticket_delivered" => ("Your ticket is here", $"Your ticket for {show}{on} has been delivered. Open Tickets to show it at the door.", "/tickets"),
+            "presale" => (Text("artist_name") is { Length: > 0 } artist ? $"Presale: {artist}" : "Presale",
+                $"{Text("presale_name")} for {show}{(Text("city") is { Length: > 0 } city ? $" in {city}" : "")} {PresaleWhen(data, DateTime.UtcNow)}.",
+                $"/show/{Text("event_id")}"),
             "staff_report" => ("A post was reported", $"A {(Text("target_type") == "photo" ? "photo" : "album log")} was reported ({Text("reason")}).", "/moderation"),
             "staff_review" => ("Proof to review", $"@{Text("handle")} sent {Text("kind").Replace('_', ' ')} for {Text("artist_name")}.", "/review"),
             "staff_redaction" => ("A photo needs a redaction check", Text("note") is { Length: > 0 } note ? note : "The redaction worker couldn't finish a file.", "/redactions"),
@@ -116,6 +119,38 @@ public static class NotificationEndpoints
             _ => ("Update", "Something changed.", "/home"),
         };
         return new Notification(row.Id, row.Kind, title, body, link, row.CreatedAt, row.Read, data);
+    }
+
+    /// <summary>
+    /// When a presale opens, relative to now ("starts in about 5 hours", "is on now"): the API doesn't know the fan's time
+    /// zone, and the show screen has the exact times.
+    /// </summary>
+    public static string PresaleWhen(JsonElement data, DateTime now)
+    {
+        static DateTime? Time(JsonElement data, string name) =>
+            data.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+            && DateTime.TryParse(value.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var time)
+                ? time
+                : null;
+
+        if (Time(data, "ends_at") is { } ends && ends <= now)
+        {
+            return "has ended";
+        }
+
+        if (Time(data, "starts_at") is not { } starts || starts <= now)
+        {
+            return "is on now";
+        }
+
+        var hours = (starts - now).TotalHours;
+        return hours switch
+        {
+            < 1 => "starts within the hour",
+            < 1.5 => "starts in about an hour",
+            < 36 => $"starts in about {Math.Round(hours)} hours",
+            _ => $"starts in {Math.Round(hours / 24)} days",
+        };
     }
 
     private sealed record Row(Guid Id, string Kind, Guid SubjectId, string Data, DateTime CreatedAt, bool Read);

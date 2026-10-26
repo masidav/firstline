@@ -2545,6 +2545,11 @@ export interface components {
             instagram_handle?: string | null;
             /** @description The band's X handle without the @; the link is `https://x.com/{handle}`. */
             x_handle?: string | null;
+            /**
+             * @description Remind me of presales (a `presale` notification), on by default: once per presale, within a day of it
+             *     opening, for shows by artists the fan has a score for in their hub cities.
+             */
+            presale_reminders: boolean;
             /** @description Same as `GET /me/spotify`. */
             spotify?: components["schemas"]["SpotifyStatus"];
             /** @description Primary first. Empty until the fan chooses them (the app asks right after sign-up). */
@@ -2583,6 +2588,8 @@ export interface components {
             instagram_handle?: string | null;
             /** @description A leading @ is dropped. Null clears it. Needs `is_artist` (422 otherwise). */
             x_handle?: string | null;
+            /** @description Turn presale reminders on or off. */
+            presale_reminders?: boolean;
         };
         SpotifyConnect: {
             code: string;
@@ -2962,7 +2969,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             /** @enum {string} */
-            kind: "draw_selected" | "draw_not_selected" | "seat_backfilled" | "ticket_delivered" | "staff_report" | "staff_review" | "staff_draw" | "staff_redaction";
+            kind: "draw_selected" | "draw_not_selected" | "seat_backfilled" | "ticket_delivered" | "presale" | "staff_report" | "staff_review" | "staff_draw" | "staff_redaction";
             title: string;
             body: string;
             /** @description App route to open, e.g. /tickets or /show/{id} */

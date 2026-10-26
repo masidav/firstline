@@ -12,4 +12,5 @@ Use `- [x]` only after the task is implemented and verified.
 - [ ] Hub cities for suburb venues (Rosemont, Inglewood): give cities coordinates and use the nearest within a radius.
 - [ ] Tell staff when a show with an allocation is rescheduled at the source (`source_starts_at` differs).
 - [ ] Staff screen in the app for linking artists (today: the API only).
-- [ ] Presale reminders as notifications (once push notifications exist).
+- [x] Presale reminders as in-app notifications (migration 0031, `workers/notifications/PresaleReminderJob.cs`).
+      Verified 2026-10-26: NotificationApiTests, invariants. They reach phones once push notifications exist.

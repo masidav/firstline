@@ -49,6 +49,7 @@ export function ProfileScreen({ me }: { me: Me }) {
   const [deleteError, setDeleteError] = useState<string>();
   const [resyncing, setResyncing] = useState(false);
   const [resyncError, setResyncError] = useState<string>();
+  const [remindersError, setRemindersError] = useState<string>();
 
   // Resync now (POST /me/spotify/sync): one manual sync per 15 minutes; the app also syncs quietly when it opens.
   async function resync() {
@@ -64,6 +65,17 @@ export function ProfileScreen({ me }: { me: Me }) {
       );
     } finally {
       setResyncing(false);
+    }
+  }
+
+  // Presale reminders save at once (PATCH /me), like a settings switch.
+  async function setPresaleReminders(on: boolean) {
+    setRemindersError(undefined);
+    try {
+      const updated = unwrap(await session.api.PATCH('/me', { body: { presale_reminders: on } }));
+      session.updateMe({ presale_reminders: updated.presale_reminders });
+    } catch (e) {
+      setRemindersError(errorMessage(e));
     }
   }
 
@@ -219,6 +231,20 @@ export function ProfileScreen({ me }: { me: Me }) {
       <Button label="Save" onPress={() => void save()} busy={saving} disabled={!changed} />
 
       <View style={{ height: 24 }} />
+      <View style={styles.switchRow}>
+        <View style={styles.switchText}>
+          <Body>Presale reminders</Body>
+          <Body muted>A heads-up the day before a presale for artists you listen to, in your hub cities.</Body>
+        </View>
+        <Switch
+          accessibilityLabel="Presale reminders"
+          value={me.presale_reminders}
+          onValueChange={(on) => void setPresaleReminders(on)}
+        />
+      </View>
+      <ErrorText>{remindersError}</ErrorText>
+
+      <View style={{ height: 24 }} />
       <Body>{me.spotify?.connected ? `Spotify: ${describeStatus(me.spotify)}` : 'Spotify: not connected'}</Body>
       {me.spotify?.connected && (
         <Button label="Resync Spotify" kind="secondary" busy={resyncing} onPress={() => void resync()} />
@@ -267,4 +293,5 @@ const styles = StyleSheet.create({
   link: { color: colors.accent, fontSize: 16, fontWeight: '600' },
   switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: space.md },
   switchLabel: { color: colors.text, fontSize: 16 },
+  switchText: { flex: 1, gap: 2, marginRight: space.md },
 });

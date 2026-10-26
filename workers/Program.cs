@@ -55,6 +55,7 @@ builder.Services.AddSingleton<IJobHandler, CatalogRefreshJob>();
 builder.Services.AddSingleton<IJobHandler, ScheduleCatalogRefreshesJob>();
 builder.Services.AddSingleton<IJobHandler, GrabBagRefreshJob>();
 builder.Services.AddSingleton<IJobHandler, TicketDeliveredJob>();
+builder.Services.AddSingleton<IJobHandler, PresaleReminderJob>();
 builder.Services.AddSingleton<IJobHandler, ScoreArtistJob>();
 builder.Services.AddSingleton<IJobHandler, RescoreAllJob>();
 builder.Services.AddSingleton<IJobHandler, ConcertSyncJob>();

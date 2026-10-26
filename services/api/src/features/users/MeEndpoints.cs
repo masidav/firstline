@@ -106,6 +106,19 @@ public static class MeEndpoints
             }
         }
 
+        if (body.TryGetProperty("presale_reminders", out var reminders))
+        {
+            if (reminders.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                sets.Add("presale_reminders = @presale_reminders");
+                parameters.Add("presale_reminders", reminders.GetBoolean());
+            }
+            else
+            {
+                errors.Add(new FieldError("presale_reminders", "Send true or false."));
+            }
+        }
+
         var links = new (string Field, Regex Pattern, string Rule, Func<string, string> Normalize)[]
         {
             ("band_url", UserProfiles.BandUrlPattern(), UserProfiles.BandUrlRule, static v => v),

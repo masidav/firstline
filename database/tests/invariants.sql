@@ -2045,4 +2045,20 @@ END $$;
 SELECT pg_temp.expect_error($$UPDATE events SET status = 'sold_out'$$, 'events_status_check');
 SELECT pg_temp.expect_error($$UPDATE events SET ticket_url = 'http://example.com'$$, 'events_ticket_url_check');
 
+-- ------------------------------------------------------------ presale reminders (0031)
+-- A presale's notification id is stable across syncs (same show, name, and start) and differs otherwise; reminders
+-- default on; 'presale' is a known notification kind.
+DO $$
+DECLARE e uuid := gen_random_uuid();
+BEGIN
+  ASSERT presale_subject_id(e, 'Verified Fan', '2026-11-01T15:00:00Z') = presale_subject_id(e, 'Verified Fan', '2026-11-01T15:00:00Z'),
+         'the same presale gets the same id';
+  ASSERT presale_subject_id(e, 'Verified Fan', '2026-11-01T15:00:00Z') <> presale_subject_id(e, 'Verified Fan', '2026-11-02T15:00:00Z'),
+         'another start is another presale';
+  ASSERT (SELECT presale_reminders FROM users WHERE id = '00000000-0000-0000-0000-000000000001'), 'reminders default on';
+END $$;
+SELECT pg_temp.expect_error(
+  $$INSERT INTO notifications (user_id, kind, subject_id) VALUES ('00000000-0000-0000-0000-000000000001', 'presale_spam', gen_random_uuid())$$,
+  'notifications_kind_check');
+
 \echo ALL INVARIANT TESTS PASSED
