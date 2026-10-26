@@ -8,6 +8,9 @@ resource "google_sql_database_instance" "main" {
   deletion_protection = var.deletion_protection
 
   settings {
+    # Cloud SQL now defaults new PostgreSQL instances to Enterprise Plus, whose tiers are db-perf-optimized-N-*;
+    # the shared-core and custom tiers this project sizes with (sql_tier) belong to the Enterprise edition.
+    edition           = "ENTERPRISE"
     tier              = var.sql_tier
     availability_type = var.sql_high_availability ? "REGIONAL" : "ZONAL"
     disk_autoresize   = true

@@ -3,6 +3,8 @@
 resource "google_compute_global_address" "api" {
   name    = "${local.name}-api"
   project = var.project_id
+
+  depends_on = [google_project_service.apis]
 }
 
 resource "google_certificate_manager_dns_authorization" "api" {
@@ -29,6 +31,8 @@ resource "google_certificate_manager_certificate_map" "api" {
   name    = "${local.name}-api"
   project = var.project_id
   labels  = local.labels
+
+  depends_on = [google_project_service.apis]
 }
 
 resource "google_certificate_manager_certificate_map_entry" "api" {

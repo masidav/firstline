@@ -15,4 +15,8 @@ resource "google_service_account_iam_member" "workload_identity" {
   service_account_id = google_service_account.workload[each.value].name
   role               = "roles/iam.workloadIdentityUser"
   member             = "serviceAccount:${var.project_id}.svc.id.goog[${local.namespace}/${each.value}]"
+
+  # The project's workload identity pool (<project>.svc.id.goog) only exists once the first cluster that uses
+  # Workload Identity has been created; binding to it before that fails with "Identity Pool does not exist".
+  depends_on = [google_container_cluster.main]
 }
