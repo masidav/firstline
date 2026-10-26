@@ -39,6 +39,10 @@ configMapGenerator:
       - Spotify__ClientId=
       - Spotify__RedirectUris=
       - Cors__AllowedOrigins=
+      # Buckets from terraform output buckets.
+      - Storage__QuarantineBucket=fandomscore-prod-quarantine
+      - Storage__ArchiveBucket=fandomscore-prod-archive
+      - Storage__MediaBucket=fandomscore-prod-media
 
 patches:
   - path: serviceaccounts.yaml

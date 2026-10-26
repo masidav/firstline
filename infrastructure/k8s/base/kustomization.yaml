@@ -29,6 +29,7 @@ configMapGenerator:
       # Google Front End ranges that connect to the pods on behalf of the external load balancer.
       - ForwardedHeaders__KnownNetworks=130.211.0.0/22,35.191.0.0/16
       - Jobs__Concurrency=2
-      # Stored files: the API writes them and the worker's storage.cleanup deletes them, so Storage__* settings go
-      # here (both read this ConfigMap) and must point both at the same storage. Local disk (Storage__LocalPath) is
-      # not set up in the cluster; Cloud Storage replaces it (PROJECT_TODO.md Phase 7).
+      # Stored files: the API writes them and the worker's redaction and storage.cleanup read and delete them, so
+      # Storage__* settings go here (both read this ConfigMap). In the cluster files live in Cloud Storage; each
+      # overlay names its buckets (terraform output buckets).
+      - Storage__Provider=gcs

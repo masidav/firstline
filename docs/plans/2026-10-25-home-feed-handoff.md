@@ -64,3 +64,7 @@ another reshuffles; keep that property if the ordering changes.
   `ASPNETCORE_URLS` to apply. `pgrep -f <pattern>` matches the calling shell too; write the pattern as `[a]pi` to
   avoid killing it. To run the API from a clean `main` while another session has uncommitted changes, use
   `git worktree add --detach /tmp/fs-main HEAD`.
+- CI also runs `tools/ci/check_migration_safety.py` on new migrations (rollout safety: no NOT NULL on an existing
+  column, no drops or renames, unless the file says `-- allow-breaking: <why>`). `dotnet test` doesn't run it, so run
+  it on a new migration before pushing. A migration already on `main` can't be edited to add the comment; a reviewed
+  exception goes in `tools/ci/migration_safety_allowances.txt` instead.

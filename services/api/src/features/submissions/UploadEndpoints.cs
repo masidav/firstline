@@ -13,6 +13,9 @@ namespace FandomScore.Api.Features.Submissions;
 /// openapi <c>POST /uploads</c> and the signed links behind it: <c>PUT /uploads/{id}/content</c> takes the bytes and
 /// <c>GET /files/{id}</c> shows a stored file. Both links carry their own short-lived signature (like presigned
 /// storage URLs), so they need no sign-in. Stored files have their metadata stripped (<see cref="ImageMetadata"/>).
+/// Uploads always go through the API, so nothing is stored before the metadata (GPS location included) is gone.
+/// Downloads redirect to a short-lived Cloud Storage link when the store can make one, so the API doesn't stream
+/// the bytes (<see cref="RedirectToStorage"/>).
 /// </summary>
 public static class UploadEndpoints
 {
@@ -28,6 +31,24 @@ public static class UploadEndpoints
 
     private static readonly TimeSpan UploadLifetime = TimeSpan.FromHours(1);
     private static readonly TimeSpan FileLinkLifetime = TimeSpan.FromHours(1);
+
+    /// <summary>How long a redirect to Cloud Storage works; the API's own link (an hour) is the one apps hold on to.</summary>
+    public static readonly TimeSpan StorageLinkLifetime = TimeSpan.FromMinutes(15);
+
+    /// <summary>
+    /// A redirect to the file in storage, or null when the store can't sign links (local disk): then the caller serves
+    /// the bytes. The redirect may be cached for less time than the storage link lives.
+    /// </summary>
+    public static async Task<IResult?> RedirectToStorage(IFileStore files, string key, HttpResponse response, CancellationToken cancellationToken)
+    {
+        if (await files.SignedReadUrlAsync(key, StorageLinkLifetime, cancellationToken) is not { } url)
+        {
+            return null;
+        }
+
+        response.Headers.CacheControl = "private, max-age=600";
+        return Results.Redirect(url.ToString());
+    }
 
     public static IServiceCollection AddUploads(this IServiceCollection services, IConfiguration configuration, IWebHostEnvironment environment)
     {
@@ -185,7 +206,8 @@ public static class UploadEndpoints
                 : throw ApiProblemException.Validation(new FieldError("body", "This isn't a valid MP4 video.")))
             : ImageMetadata.Strip(original, upload.MimeType)
               ?? throw ApiProblemException.Validation(new FieldError("body", $"This isn't a valid {(upload.MimeType == "image/png" ? "PNG" : "JPEG")} image."));
-        var key = $"quarantine/{uploadId}";
+        // Featured videos are staff media, not proof: they live outside quarantine, which deletes everything at 30 days.
+        var key = upload.MimeType == "video/mp4" ? $"media/{uploadId}" : $"quarantine/{uploadId}";
         await files.PutAsync(key, stripped, cancellationToken);
         var updated = await connection.ExecuteAsync(
             """
@@ -213,6 +235,11 @@ public static class UploadEndpoints
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
         var file = await connection.QuerySingleOrDefaultAsync<(string StorageKey, string MimeType)>(
             "SELECT storage_key, mime_type FROM submission_files WHERE id = @fileId", new { fileId });
+        if (file.StorageKey is not null && await RedirectToStorage(files, file.StorageKey, response, cancellationToken) is { } redirect)
+        {
+            return redirect;
+        }
+
         var content = file.StorageKey is null ? null : await files.ReadAsync(file.StorageKey, cancellationToken);
         if (content is null)
         {

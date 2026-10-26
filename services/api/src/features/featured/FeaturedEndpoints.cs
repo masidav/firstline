@@ -6,6 +6,7 @@ using Dapper;
 using FandomScore.Api.Features.Artists;
 using FandomScore.Api.Features.Authentication;
 using FandomScore.Api.Features.Scoring;
+using FandomScore.Api.Features.Submissions;
 using FandomScore.Api.Infrastructure;
 using FandomScore.Storage;
 using FandomScore.Spotify;
@@ -179,6 +180,11 @@ public static partial class FeaturedEndpoints
         var key = await connection.ExecuteScalarAsync<string?>(
             "SELECT u.storage_key FROM uploads u WHERE u.id = @uploadId AND u.purpose = 'featured_video' AND EXISTS (SELECT 1 FROM featured_artists f WHERE f.video_upload_id = u.id)",
             new { uploadId });
+        if (key is not null && await UploadEndpoints.RedirectToStorage(files, key, response, cancellationToken) is { } redirect)
+        {
+            return redirect;   // Cloud Storage answers range requests itself, so players can still seek.
+        }
+
         var content = key is null ? null : await files.ReadAsync(key, cancellationToken);
         if (content is null)
         {

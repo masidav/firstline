@@ -145,9 +145,16 @@ Details: [Album journal API](services/api/src/features/album-journal/TODO.md) ·
       approve/reject with a manual check row, app screen for staff); automated checks (hash, OCR, event match) not yet,
       so every submission goes to `needs_review`.*
 - [x] Award points only after verification; reverse them if a verified item is later rejected. (Existing trigger; covered by ProofApiTests.)
-- [ ] Photo storage for real hosting: the Cloud Storage quarantine bucket (ADR 0002) behind `IFileStore`, with signed
+- [x] Photo storage for real hosting: the Cloud Storage quarantine bucket (ADR 0002) behind `IFileStore`, with signed
       upload and download URLs from the bucket instead of the API, Workload Identity, and limits on size and count.
       Locally, photos are on disk (`services/api/.local-storage/`).
+      *Done 2026-10-26 (`packages/storage/GcsFileStore.cs`, `Storage__Provider=gcs`): quarantine, archive, and a new
+      media bucket, chosen by key prefix; downloads redirect to 15-minute links signed by the API's own identity
+      (Workload Identity, IAM signBlob; no key files); size and count limits were already in place. Uploads still go
+      through the API so photo metadata is stripped before anything is stored (ADR 0002 amended, along with the bucket
+      access the code actually needs). Verified: GcsFileStoreTests 13 against a Cloud Storage emulator (including
+      upload to redirect to download through the API), Terraform validate and Kustomize build for beta and prod. Not
+      yet run against real Cloud Storage: nothing is applied to GCP.*
 - [x] Clean up stored photos: delete upload slots that expired unused (and their files), files of withdrawn or purged
       submissions, and every file of a deleted account when it is purged (30 days, `purge_deleted_user`). Needs a
       worker job with storage access and tests that no file outlives its rows. *Done 2026-10-25: `IFileStore` moved to
