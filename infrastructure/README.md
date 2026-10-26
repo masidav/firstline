@@ -104,6 +104,8 @@ steps with `prod` in place of `beta`.
    ```
    Every secret listed in `k8s/overlays/<env>/secrets.yaml` needs a version, or the pods cannot start
    (`ConnectionStrings__Database` and `Database__ServerCa` already have one, written by Terraform).
+   A provider you have not set up yet still needs a version, and Secret Manager refuses an empty one: add a single
+   space, which the processes treat as unset (`printf ' ' | gcloud secrets versions add Ticketmaster__ApiKey ...`).
    `Spotify__TokenKey` must be the same value for the API and the worker (it is: one secret, two readers).
    Beta and prod use different Spotify apps and Apple keys, so a beta tester never touches prod credentials.
 5. **Overlay.** In `k8s/overlays/<env>/`, set the project id and region (`kustomization.yaml`,

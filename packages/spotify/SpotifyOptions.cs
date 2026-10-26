@@ -121,7 +121,11 @@ public sealed class SpotifyOptions
     public bool IsEnabled => ClientId.Length > 0;
 
     /// <summary>Artist search and lookup need an app token, so the client secret too.</summary>
-    public bool IsCatalogEnabled => IsEnabled && ClientSecret.Length > 0;
+    /// <summary>
+    /// Whitespace counts as unset: on GKE a Secret Manager version cannot be empty, so an unconfigured secret is a
+    /// single space (infrastructure/README.md).
+    /// </summary>
+    public bool IsCatalogEnabled => IsEnabled && !string.IsNullOrWhiteSpace(ClientSecret);
 
     public IReadOnlyList<string> RedirectUriList => Split(RedirectUris);
 

@@ -28,7 +28,8 @@ public sealed class TicketmasterOptions
     /// </summary>
     public int MaxSyncsPerHour { get; set; } = 100;
 
-    public bool IsEnabled => ApiKey.Length > 0;
+    /// <summary>Whitespace counts as unset (a Secret Manager version cannot be empty; infrastructure/README.md).</summary>
+    public bool IsEnabled => !string.IsNullOrWhiteSpace(ApiKey);
 
     public IReadOnlySet<string> CountrySet =>
         Countries.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)

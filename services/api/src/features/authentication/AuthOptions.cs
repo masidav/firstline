@@ -62,5 +62,5 @@ public sealed class AppleOptions : ProviderOptions
     public string PrivateKey { get; set; } = "";
 
     public bool CanRevoke =>
-        ClientIdList.Count > 0 && TeamId.Length > 0 && KeyId.Length > 0 && PrivateKey.Length > 0;
+        ClientIdList.Count > 0 && TeamId.Length > 0 && KeyId.Length > 0 && !string.IsNullOrWhiteSpace(PrivateKey);
 }
