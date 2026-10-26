@@ -25,7 +25,8 @@ Use `- [x]` only after the task is implemented and verified.
 - [ ] Let staff draw boxes themselves on a file the scanner can't settle (today they can only archive or discard).
 - [ ] Run redaction in its own `redaction` deployment once the Cloud Storage file store exists (only it may read
       quarantine; ADR 0002).
-- [ ] Try the scanner on real ticket photos (phone shots, glare, angles) once beta has some, and tune the passes.
+- [ ] Try the scanner on real ticket photos (phone shots, glare, angles) and tune the passes. David is adding a set
+      of real photos (2026-10-26); keep them out of the repo since they hold real order details.
 
 ## Verification
 - [x] Automated tests: `RedactionJobTests.cs` (7), `RedactionApiTests.cs` (1), invariants for 0029, the proof feed

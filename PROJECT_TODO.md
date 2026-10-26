@@ -164,6 +164,9 @@ Details: [Album journal API](services/api/src/features/album-journal/TODO.md) ·
 - [x] Enforce archive safety and retention policies. (Database refuses unredacted or misplaced archive rows;
       originals deleted after archiving; rejected and taken-down files after 30 days; quarantine expiry 30 days.)
 - [ ] Hide printed order numbers on tickets (OCR) if staff find them often; let staff draw their own boxes.
+- [ ] David adds real photos to test redaction (added 2026-10-26): phone shots of real tickets, ticket screenshots,
+      merch, and receipts, with glare, angles, and blur. Run them through the worker and tune the scanner on what it
+      misses (`workers/image-redaction/TODO.md`). Keep them out of the repo: they hold real order details.
 
 Details: [Submissions API](services/api/src/features/submissions/TODO.md) · [Submission UI](apps/mobile/src/features/submissions/TODO.md) · [Verification](services/api/src/features/verification/TODO.md) · [Verification worker](workers/submission-verification/TODO.md) · [Redaction worker](workers/image-redaction/TODO.md)
 
