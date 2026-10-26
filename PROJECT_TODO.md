@@ -263,6 +263,9 @@ Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](servi
       *Registration done 2026-10-21; selection done 2026-10-24 (migration 0017, `POST /v1/admin/allocations/{id}/selection`):
       hub fans first, snapshot raw score, seeded tiebreak, +1 seats. The app shows each fan's standing and says "most likely"
       only inside a 25-seat margin (decided 2026-10-24). Reservations and notifications are next.*
+      *Hardened 2026-10-26 (migration 0033): concurrency tests for duplicate and racing registrations and the draw,
+      a load test (`tools/load`), the standing served from an in-memory snapshot, rules locked once anyone registers,
+      and IANA time zones on cities and shows.*
 - [x] Non-transferable reservation tokens, delayed delivery, and face-value exchange for fans who can't attend.
       *Done 2026-10-25 (migration 0020): the draw (and backfill) gives each selected fan a reservation tied to their
       account; the ticket token is shown only to its holder and only from `delivery_hours_before_show` before the show
@@ -297,6 +300,9 @@ Details: [ADR 0002](docs/adr/0002-hosting-gcp-gke.md) · [Infrastructure](infras
 - [ ] Mobile component tests (Jest + React Native Testing Library) and end-to-end flows (Maestro) in CI.
 - [ ] Promoter dashboard end-to-end tests (Playwright) and accessibility checks.
 - [ ] API contract tests against `openapi.yaml`; load tests for on-sale registration spikes.
+      *Database load test for registration spikes done 2026-10-26 (`tools/load/run.sh`, results in `tools/load/README.md`):
+      registering holds 4,000 to 5,000 a second; the show page's standing was the bottleneck and now uses an in-memory
+      snapshot. Still to do: contract tests, and k6 through the full HTTP path on beta.*
 - [x] Dev environment with synthetic data: `tools/dev/seed.py` (fans, artists, shows, allocations, registrations),
       verified 2026-10-24 against a scratch database and run by CI. The cloud proving ground is **beta** with real
       testers, not a synthetic staging (ADR 0002, amended 2026-10-24); see `infrastructure/README.md`.

@@ -44,7 +44,11 @@ only by the draw (a guard trigger checks a transaction setting), and a selected 
 
 ## Standing ("you'll most likely get a ticket")
 `GET /v1/allocations/{id}/eligibility` includes `standing` while registration is upcoming or open: the fan's rank if
-the draw ran now (ranked like the draw, but equal scores count against the fan), the top percent, and `likely`. It is
+the draw ran now (ranked like the draw, but equal scores count against the fan), the top percent, and `likely`.
+Other fans come from an in-memory snapshot of the allocation's live registrations (`StandingSnapshots`), at most
+`Allocations:StandingSnapshotSeconds` old (5 by default; 0 reads fresh every time) and loaded by one query at a
+time per pod, so fans refreshing the show page during an on-sale don't each count every registration
+(`tools/load/README.md`: about 420 standings a second before, about 16,000 now, at 20,000 registrants). It is
 true only when the seats of everyone ranked ahead plus the fan's own (2 with a +1) fit within `tickets` minus a
 margin, `Allocations:LikelyMarginSeats` (25 to start, decided 2026-10-24), which leaves room for fans who register
 later with higher scores. `?plus_one=true` projects a +1 for a fan who hasn't registered yet. The app shows it on the
@@ -65,6 +69,21 @@ at the allocation's face value, with a 64-hex **token**.
 - Money doesn't move yet: checkout through a primary ticketer is the next Phase 11 item.
 `trg_reservation_guard` keeps all of this: no hand-made rows, no change of holder, price, token, or delivery time,
 returns and cancellations only through their functions, never deleted or truncated.
+
+## Concurrency (tested in `AllocationConcurrencyTests`, measured in `tools/load`)
+- The same registration sent many times at once registers the fan once; two registrations for different
+  allocations of one show at once leave one, and the other gets `already_registered`.
+- The draw locks the allocation `FOR UPDATE`, so it waits for registrations still in flight (they hold it `FOR SHARE`)
+  and counts them; two draws at once record one, with one seed, and `allocation_ranking()` with that seed repeats
+  every stored rank.
+- An allocation's rules lock once registration opens or once anyone has registered, whichever comes first
+  (migration 0033).
+- Registering runs at about 4,000 to 5,000 a second on a 12-core machine and flattens past 50 concurrent clients;
+  the draw takes about 7.7 s for 20,000 registrations (see `tools/load/README.md`).
+
+## Time zones (migration 0033)
+Every hub city has its IANA time zone (`cities.time_zone`, checked against PostgreSQL's zone list for new cities).
+`HubCity.time_zone` and a show's `time_zone` (null without a hub city) let the app show local times.
 
 ## Endpoints
 - Fans: `GET /v1/artists/{id}/events` (upcoming shows, `tickets_available`), `GET /v1/events/{id}` (a show and

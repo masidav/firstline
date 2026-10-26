@@ -35,6 +35,7 @@ if (string.IsNullOrWhiteSpace(connectionString))
 
 builder.Services.AddNpgsqlDataSource(connectionString);
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<StandingSnapshots>();
 builder.Services.AddAuth(builder.Configuration);
 builder.Services.AddSpotify(builder.Configuration);
 builder.Services.AddArtists();

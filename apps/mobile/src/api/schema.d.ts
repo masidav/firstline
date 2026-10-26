@@ -1751,6 +1751,8 @@ export interface paths {
          *     place if the draw ran now, counting equal scores against them. `likely` is true only when the seats of
          *     everyone ahead plus the fan's own fit within `tickets - margin_seats` (25 to start), a buffer for fans who
          *     register later with higher scores, so the app can say "you'll most likely get a ticket" without false hope.
+         *     Other fans' registrations are counted from a snapshot at most a few seconds old, so `registrants` and the
+         *     rank can lag fans who registered in that time.
          */
         get: operations["getEligibility"];
         put?: never;
@@ -2614,6 +2616,8 @@ export interface components {
             region: string;
             /** @description ISO 3166-1 alpha-2 */
             country: string;
+            /** @description IANA time zone, e.g. `America/Chicago`. Show local times with it. */
+            time_zone: string;
         };
         MeUpdate: {
             handle?: string;
@@ -2851,6 +2855,8 @@ export interface components {
             city?: string | null;
             region?: string | null;
             country?: string | null;
+            /** @description The hub city's IANA time zone, for showing the show's time and registration window locally. Null without a hub city. */
+            time_zone?: string | null;
             /**
              * Format: date-time
              * @description With `time_tba`, local midnight of the show's date.

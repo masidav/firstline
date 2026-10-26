@@ -71,7 +71,7 @@ public static partial class FeedEndpoints
 
     private static async Task<IResult> GetAsync(
         ClaimsPrincipal user, int? limit, string? cursor, string? seed, HttpRequest request, NpgsqlDataSource db, SignedUrls urls,
-        IConfiguration configuration, TimeProvider time, CancellationToken cancellationToken)
+        IConfiguration configuration, TimeProvider time, StandingSnapshots standings, CancellationToken cancellationToken)
     {
         var errors = new List<FieldError>();
         if (limit is < 1 or > 100)
@@ -126,7 +126,7 @@ public static partial class FeedEndpoints
         var logs = await LoadLogsAsync(connection, Ids(page, "album_log"));
         var songs = await LoadSongsAsync(connection, Ids(page, "grab_bag"));
         var shows = await LoadShowsAsync(connection, me, Ids(page, "concert"));
-        var registrations = await LoadRegistrationsAsync(connection, me, Ids(page, "registration"), configuration);
+        var registrations = await LoadRegistrationsAsync(connection, me, Ids(page, "registration"), configuration, standings);
         var answers = await LoadPromptAnswersAsync(connection, Ids(page, "prompt_answer"));
 
         var items = new List<FeedItem>(page.Count);
@@ -363,7 +363,7 @@ public static partial class FeedEndpoints
     }
 
     private static async Task<Dictionary<Guid, AllocationEndpoints.RegistrationCard>> LoadRegistrationsAsync(
-        NpgsqlConnection connection, Guid me, Guid[] ids, IConfiguration configuration)
+        NpgsqlConnection connection, Guid me, Guid[] ids, IConfiguration configuration, StandingSnapshots standings)
     {
         var cards = new Dictionary<Guid, AllocationEndpoints.RegistrationCard>();
         if (ids.Length == 0)
@@ -375,7 +375,7 @@ public static partial class FeedEndpoints
             "SELECT id, allocation_id FROM allocation_registrations WHERE id = ANY(@ids) AND user_id = @me", new { ids, me });
         foreach (var (id, allocationId) in rows)
         {
-            if (await AllocationEndpoints.LoadRegistrationCardAsync(connection, me, allocationId, configuration) is { } card)
+            if (await AllocationEndpoints.LoadRegistrationCardAsync(connection, me, allocationId, configuration, standings) is { } card)
             {
                 cards[id] = card;
             }

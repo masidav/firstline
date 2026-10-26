@@ -583,7 +583,7 @@ SELECT pg_temp.expect_error(
 SELECT pg_temp.expect_error($$SELECT set_hub_cities('00000000-0000-0000-0000-0000000000a1', '{us-xx-atlantis}')$$, 'unknown city');
 SELECT pg_temp.expect_error($$INSERT INTO user_hub_cities VALUES ('00000000-0000-0000-0000-0000000000a1', 4, 'us-il-chicago')$$,
   'user_hub_cities_position_check');
-SELECT pg_temp.expect_error($$INSERT INTO cities (id, name, region, country) VALUES ('Chicago', 'Chicago', 'IL', 'US')$$,
+SELECT pg_temp.expect_error($$INSERT INTO cities (id, name, region, country, time_zone) VALUES ('Chicago', 'Chicago', 'IL', 'US', 'America/Chicago')$$,
   'cities_id_check');
 
 DO $$
@@ -2085,5 +2085,43 @@ END $$;
 SELECT pg_temp.expect_error(
   $$INSERT INTO push_devices (user_id, token, platform) VALUES ('00000000-0000-0000-0000-000000000001', 'fcm:abc', 'android')$$,
   'push_devices_token_check');
+
+-- ------------------------------------------------------------ city time zones and the rules lock (0033)
+-- Every hub city has a zone PostgreSQL knows; a new or changed city must too.
+DO $$
+BEGIN
+  ASSERT NOT EXISTS (SELECT 1 FROM cities WHERE time_zone NOT IN (SELECT name FROM pg_timezone_names)),
+         'every city has a known time zone';
+  ASSERT (SELECT time_zone FROM cities WHERE id = 'us-tx-el-paso') = 'America/Denver', 'El Paso is on Mountain time';
+  ASSERT (SELECT time_zone FROM cities WHERE id = 'us-tn-knoxville') = 'America/New_York', 'Knoxville is on Eastern time';
+END $$;
+SELECT pg_temp.expect_error($$UPDATE cities SET time_zone = 'America/Atlantis' WHERE id = 'us-il-chicago'$$, 'not a known time zone');
+SELECT pg_temp.expect_error($$INSERT INTO cities (id, name, region, country) VALUES ('us-xx-nowhere', 'Nowhere', 'XX', 'US')$$, 'time_zone');
+
+-- An allocation with a registration is locked even while its window hasn't opened (a registration can only get in
+-- early by an insert outside register_for_allocation(); the lock no longer depends on the clock alone).
+DO $$
+DECLARE ev uuid; al uuid;
+BEGIN
+  INSERT INTO events (artist_id, name, city_id, city, country, starts_at)
+  VALUES ('40000000-0000-0000-0000-000000000001', 'Lock show', 'us-il-chicago', 'Chicago', 'US', now() + interval '14 days')
+  RETURNING id INTO ev;
+  INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at, published_at)
+  VALUES (ev, 10, 4500, now() + interval '1 day', now() + interval '5 days', now())
+  RETURNING id INTO al;
+  UPDATE allocations SET tickets = 12 WHERE id = al;
+  ASSERT (SELECT tickets FROM allocations WHERE id = al) = 12, 'rules editable before opening with nobody registered';
+
+  INSERT INTO allocation_registrations (allocation_id, event_id, user_id, hub_city_ids, hub_match, percentile, raw_score,
+                                        is_estimated, baseline_weight, score_computed_at)
+  VALUES (al, ev, '00000000-0000-0000-0000-000000000001', '{us-il-chicago}', 1, 90, 50, false, 0.2, now());
+  BEGIN
+    UPDATE allocations SET tickets = 5 WHERE id = al;
+    RAISE EXCEPTION 'changing an allocation someone registered for should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%rules are locked%', SQLERRM;
+  END;
+  -- Cancelling still works.
+  UPDATE allocations SET cancelled_at = now() WHERE id = al;
+END $$;
 
 \echo ALL INVARIANT TESTS PASSED

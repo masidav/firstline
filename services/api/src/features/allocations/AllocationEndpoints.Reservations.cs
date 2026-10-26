@@ -115,7 +115,7 @@ public static partial class AllocationEndpoints
                 g.handle::text AS GuestHandle, res.token AS Token, now() < e.starts_at AS BeforeShow, al.name AS AllocationName,
                 ar.id AS ArtistId, ar.name AS ArtistName, ar.image_url AS ArtistImageUrl,
                 e.name AS Name, e.venue AS Venue, e.city_id AS CityId, COALESCE(c.name, e.city) AS City, c.region AS Region,
-                COALESCE(c.country, e.country) AS Country, e.starts_at AS StartsAt,
+                COALESCE(c.country, e.country) AS Country, e.starts_at AS StartsAt, c.time_zone AS TimeZone,
                 EXISTS (SELECT 1 FROM allocations x WHERE x.event_id = e.id AND x.published_at IS NOT NULL
                           AND x.cancelled_at IS NULL AND x.registration_closes_at > now()) AS TicketsAvailable
          FROM reservations res
@@ -143,7 +143,8 @@ public static partial class AllocationEndpoints
             r.FaceValueCents, r.Currency, r.DeliverAt, r.CreatedAt, r.ReturnedAt, r.CancelledAt, r.CancelledReason, r.HolderHandle,
             r.GuestHandle, holder && r.Status is "held" or "delivered" && r.BeforeShow,
             holder && r.Status == "delivered" ? new Ticket(r.Token, r.HolderHandle, r.GuestHandle) : null,
-            new Show(r.EventId, r.ArtistId, r.Name, r.Venue, r.CityId, r.City, r.Region, r.Country, r.StartsAt, r.TicketsAvailable),
+            new Show(r.EventId, r.ArtistId, r.Name, r.Venue, r.CityId, r.City, r.Region, r.Country, r.StartsAt, r.TicketsAvailable,
+                TimeZone: r.TimeZone),
             new ScoringEndpoints.ArtistRef(r.ArtistId, r.ArtistName, r.ArtistImageUrl), r.AllocationName);
     }
 
@@ -183,5 +184,6 @@ public static partial class AllocationEndpoints
         public string? Country { get; set; }
         public DateTime StartsAt { get; set; }
         public bool TicketsAvailable { get; set; }
+        public string? TimeZone { get; set; }
     }
 }

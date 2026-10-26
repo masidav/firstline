@@ -42,12 +42,13 @@ public static partial class AllocationEndpoints
 
     /// <summary>
     /// A show. Staff-entered shows have <c>Source</c> null and <c>Status</c> scheduled; shows loaded from Ticketmaster
-    /// (migration 0030, workers/concerts) carry its link, status, public sale, and presales.
+    /// (migration 0030, workers/concerts) carry its link, status, public sale, and presales. <c>TimeZone</c> is the hub
+    /// city's IANA zone (migration 0033), null for a show without a hub city.
     /// </summary>
     public sealed record Show(
         Guid Id, Guid ArtistId, string Name, string? Venue, string? CityId, string? City, string? Region, string? Country,
         DateTime StartsAt, bool TicketsAvailable, string? Source = null, string? TicketUrl = null, string Status = "scheduled",
-        bool TimeTba = false, DateTime? PublicSaleStartsAt = null, DateTime? PublicSaleEndsAt = null)
+        bool TimeTba = false, DateTime? PublicSaleStartsAt = null, DateTime? PublicSaleEndsAt = null, string? TimeZone = null)
     {
         /// <summary>Presales that haven't ended, earliest first.</summary>
         public IReadOnlyList<Presale> Presales { get; init; } = [];
@@ -317,7 +318,7 @@ public static partial class AllocationEndpoints
         EXISTS (SELECT 1 FROM allocations a WHERE a.event_id = e.id AND a.published_at IS NOT NULL
                   AND a.cancelled_at IS NULL AND a.registration_closes_at > now()) AS TicketsAvailable,
         e.external_source AS Source, e.ticket_url AS TicketUrl, e.status AS Status, e.time_tba AS TimeTba,
-        e.public_sale_starts_at AS PublicSaleStartsAt, e.public_sale_ends_at AS PublicSaleEndsAt
+        e.public_sale_starts_at AS PublicSaleStartsAt, e.public_sale_ends_at AS PublicSaleEndsAt, c.time_zone AS TimeZone
         """;
 
     /// <summary>Adds each show's presales that haven't ended (migration 0030).</summary>
