@@ -12,6 +12,8 @@ export const SPOTIFY_SCOPES = [
   'playlist-read-private',
   'playlist-read-collaborative',
   'user-follow-read',
+  'user-read-playback-state',
+  'user-modify-playback-state',
 ];
 
 /** Scopes a connection must have for every signal to count; older connections may lack newer ones. */

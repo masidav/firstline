@@ -78,6 +78,14 @@ Details: [Artists](services/api/src/features/artists/TODO.md) · [Artist search 
       2026-10-22 with a faked Spotify (`SpotifySyncJobTests`) and in the fan app tests. "On Repeat" cannot be read
       by development-mode apps since Spotify's November 2024 API changes, so top artists are the source.
 
+- [x] Now-playing bar and play buttons (requested 2026-10-26): a bar along the bottom of every screen shows what the
+      fan's Spotify is playing, with play/pause, next, and previous; songs in the feed, bouncer door, featured artist,
+      and fan profiles get a Play button. Spotify plays in the fan's own Spotify app (Spotify Connect); without
+      Premium or with Spotify closed everywhere, the song opens in Spotify instead. New scopes
+      `user-read-playback-state`, `user-modify-playback-state` (existing fans connect again); playback is never stored.
+      `/me/spotify/player` (ADR 0005 amended). Verified: `dotnet test` 309/309 with contract checks (SpotifyPlayerApiTests 5), app Jest
+      260/260 (NowPlaying 7), typecheck. Not yet tried against real Spotify or seen on a phone.
+
 Details: [Spotify API feature](services/api/src/features/spotify-sync/TODO.md) · [Spotify integration](packages/spotify/TODO.md) · [Spotify mobile UI](apps/mobile/src/features/spotify/TODO.md) · [Sync worker](workers/spotify-sync/TODO.md)
 
 ## Phase 5 — Scores and ranking

@@ -16,10 +16,16 @@ public sealed class SpotifyRequestException(int status, string? error)
 {
     public int Status { get; } = status;
 
-    /// <summary>Spotify's OAuth <c>error</c> code, when it sent one.</summary>
+    /// <summary>Spotify's OAuth <c>error</c> code, or a player command's <c>reason</c>, when it sent one.</summary>
     public string? Error { get; } = error;
 
     public bool IsForbidden => Status == 403;
+
+    /// <summary>A player command needs Spotify Premium.</summary>
+    public bool IsPremiumRequired => Status == 403 && Error == "PREMIUM_REQUIRED";
+
+    /// <summary>A player command found no active device (Spotify isn't open anywhere, or has gone idle).</summary>
+    public bool IsNoActiveDevice => Status == 404;
 }
 
 /// <summary>Spotify is down, slow, or rate limiting us. Try again later.</summary>

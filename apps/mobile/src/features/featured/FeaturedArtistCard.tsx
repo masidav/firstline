@@ -4,6 +4,7 @@ import { Image, Linking, Platform, Pressable, StyleSheet, Text, View } from 'rea
 import { type components, unwrap } from '../../api/client';
 import { useSession } from '../../auth/SessionProvider';
 import { colors, space } from '../../ui/theme';
+import { PlayButton } from '../spotify/NowPlaying';
 
 export type FeaturedArtist = components['schemas']['FeaturedArtist'];
 
@@ -67,14 +68,17 @@ export function FeaturedArtistCard() {
           <Text style={styles.watch}>{watchLabel}</Text>
         </Pressable>
       )}
-      <Pressable accessibilityRole="link" accessibilityLabel={`Listen to ${song.title} on Spotify`} onPress={() => void Linking.openURL(song.spotify_url)}
-        style={styles.songRow}>
-        {song.cover_url ? <Image source={{ uri: song.cover_url }} style={styles.cover} accessibilityIgnoresInvertColors /> : <View style={styles.cover} />}
-        <View style={styles.grow}>
-          <Text style={styles.song} numberOfLines={1}>{song.title}</Text>
-          <Text style={styles.muted} numberOfLines={1}>{song.album_title ? `${song.album_title} · ` : ''}Listen on Spotify</Text>
-        </View>
-      </Pressable>
+      <View style={styles.songLine}>
+        <Pressable accessibilityRole="link" accessibilityLabel={`Listen to ${song.title} on Spotify`} onPress={() => void Linking.openURL(song.spotify_url)}
+          style={[styles.songRow, styles.grow]}>
+          {song.cover_url ? <Image source={{ uri: song.cover_url }} style={styles.cover} accessibilityIgnoresInvertColors /> : <View style={styles.cover} />}
+          <View style={styles.grow}>
+            <Text style={styles.song} numberOfLines={1}>{song.title}</Text>
+            <Text style={styles.muted} numberOfLines={1}>{song.album_title ? `${song.album_title} · ` : ''}Listen on Spotify</Text>
+          </View>
+        </Pressable>
+        <PlayButton spotifyTrackId={song.spotify_track_id} spotifyUrl={song.spotify_url} title={song.title} />
+      </View>
     </View>
   );
 }
@@ -93,6 +97,7 @@ const styles = StyleSheet.create({
   triangle: { width: 0, height: 0, marginLeft: 6, borderTopWidth: 12, borderBottomWidth: 12, borderLeftWidth: 20, borderTopColor: 'transparent', borderBottomColor: 'transparent', borderLeftColor: '#fff' },
   watch: { position: 'absolute', bottom: space.sm, color: '#fff', fontSize: 14, fontWeight: '700' },
   songRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  songLine: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   cover: { width: 48, height: 48, borderRadius: 6, backgroundColor: colors.background },
   song: { color: colors.text, fontSize: 16, fontWeight: '700' },
   muted: { color: colors.muted, fontSize: 14 },

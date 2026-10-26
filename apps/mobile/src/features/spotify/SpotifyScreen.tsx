@@ -108,14 +108,17 @@ export function SpotifyScreen() {
       <Body muted>
         We read your saved tracks and albums, top artists and tracks, recent plays, the artists you follow, and your
         own playlists to measure how much you listen to the artists we track, and we check your recent plays hourly.
-        Your top artists are added to the tracked list automatically; nothing about other artists is stored. We never
-        post or change anything.
+        Your top artists are added to the tracked list automatically; nothing about other artists is stored. The bar at
+        the bottom shows what Spotify is playing, and Play buttons start songs on your phone or computer; that is the
+        only thing the app ever does in your Spotify, and only when you press a button. We never post anything or
+        change your library.
       </Body>
 
       {status && <Body>{describeStatus(status)}</Body>}
       {outdated && (
         <Body muted>
-          We now also count the artists you follow. Connect again to give the app that permission; your synced data stays.
+          Connect again to let the app count the artists you follow, show what's playing, and play songs from the
+          feed. Your synced data stays.
         </Body>
       )}
       <ErrorText>{error}</ErrorText>

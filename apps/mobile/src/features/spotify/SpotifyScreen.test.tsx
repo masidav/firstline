@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { SpotifyScreen } from './SpotifyScreen';
+import { SPOTIFY_SCOPES } from './spotifyConnect';
 
 const ok = (data: unknown, status = 200) => ({ data, response: { ok: true, status } });
 const problem = (status: number, code: string) => ({ error: { code }, response: { ok: false, status } });
@@ -124,7 +125,15 @@ test('a connection made without the follow permission asks to connect again', as
   );
   render(<SpotifyScreen />);
 
-  expect(await screen.findByText(/We now also count the artists you follow/)).toBeTruthy();
+  expect(await screen.findByText(/count the artists you follow, show what's playing/)).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Connect again' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Sync now' })).toBeNull();
+});
+
+test('a connection made before the playback permissions asks to connect again', async () => {
+  const before = SPOTIFY_SCOPES.filter((s) => !s.includes('playback'));
+  mockApi.GET.mockResolvedValue(ok({ connected: true, sync_state: 'idle', scopes: before, last_synced_at: '2026-10-18T12:00:00Z' }));
+  render(<SpotifyScreen />);
+
+  expect(await screen.findByRole('button', { name: 'Connect again' })).toBeTruthy();
 });

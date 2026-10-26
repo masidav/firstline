@@ -1,7 +1,11 @@
 namespace FandomScore.Spotify;
 
 /// <summary>From the token endpoint. <see cref="RefreshToken"/> is null when a refresh keeps the old one.</summary>
-public sealed record SpotifyTokens(string AccessToken, string? RefreshToken, IReadOnlyList<string> Scopes);
+public sealed record SpotifyTokens(string AccessToken, string? RefreshToken, IReadOnlyList<string> Scopes)
+{
+    /// <summary>How long the access token is good for (Spotify says one hour).</summary>
+    public TimeSpan ExpiresIn { get; init; } = TimeSpan.FromHours(1);
+}
 
 public sealed record SpotifyUser(string Id);
 
@@ -70,3 +74,12 @@ public sealed record SpotifyTrackArtist(string Id, string Name);
 public sealed record SpotifyTrackDetail(
     string Id, string Name, IReadOnlyList<SpotifyTrackArtist> Artists, string? AlbumId, string? AlbumName, string? CoverUrl,
     string SpotifyUrl);
+
+/// <summary>A device the fan's Spotify can play on. <see cref="Id"/> is null for devices Spotify won't let apps target.</summary>
+public sealed record SpotifyDevice(string? Id, string Name, string Type, bool IsActive, bool IsRestricted);
+
+/// <summary>
+/// What the fan's Spotify is doing right now. <see cref="Track"/> is null for podcasts, ads, and local files.
+/// Held in memory only and shown to the fan; never stored.
+/// </summary>
+public sealed record SpotifyPlayback(bool IsPlaying, int? ProgressMs, int? DurationMs, SpotifyTrackDetail? Track, SpotifyDevice? Device);

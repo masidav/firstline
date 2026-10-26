@@ -381,6 +381,77 @@ paths:
               schema: {$ref: '#/components/schemas/SpotifyStatus'}
         '409': {$ref: '#/components/responses/Conflict'}
         '429': {$ref: '#/components/responses/RateLimited'}
+  /me/spotify/player:
+    get:
+      tags: [Me]
+      operationId: getSpotifyPlayer
+      summary: What the fan's Spotify is playing
+      description: |
+        The fan's own Spotify playback, for the app's now-playing bar (requested 2026-10-26). Read from Spotify on
+        request (at most once every 3 seconds per fan) and never stored; it may be any artist, tracked or not, and
+        is only ever shown to the fan. Never an error for the connection's state: `not_connected` without a
+        connection, `reconnect_needed` when the connection lacks the playback scopes (made before 2026-10-26) or
+        Spotify no longer accepts it. `503 spotify_unavailable` while Spotify is down or a sync of this fan is
+        renewing the authorization (`Retry-After`).
+      responses:
+        '200':
+          description: The playback state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SpotifyPlayer'}
+        '503': {$ref: '#/components/responses/SpotifyUnavailable'}
+  /me/spotify/player/play:
+    put:
+      tags: [Me]
+      operationId: playSpotify
+      summary: Play a song, or resume
+      description: |
+        Plays `spotify_track_id` from the start on the fan's Spotify, or resumes without it. Spotify plays on the
+        device the fan has Spotify open on; when none is active, the fan's phone, computer, or tablet that Spotify
+        lists is used (never a speaker or TV). Errors (`409`): `spotify_not_connected`; `spotify_reauth_required`
+        (connect again, also when the connection lacks the playback scopes); `spotify_no_device` (Spotify isn't
+        open anywhere: the app opens the song in Spotify instead); `spotify_premium_required` (Spotify only lets
+        apps control playback for Premium accounts); `spotify_player_refused` (any other refusal).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SpotifyPlay'}
+      responses:
+        '204': {description: Spotify accepted it. Read `GET /me/spotify/player` for the new state.}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '503': {$ref: '#/components/responses/SpotifyUnavailable'}
+  /me/spotify/player/pause:
+    put:
+      tags: [Me]
+      operationId: pauseSpotify
+      summary: Pause
+      description: Same errors as `PUT /me/spotify/player/play`.
+      responses:
+        '204': {description: Spotify accepted it.}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '503': {$ref: '#/components/responses/SpotifyUnavailable'}
+  /me/spotify/player/next:
+    post:
+      tags: [Me]
+      operationId: skipSpotifyNext
+      summary: Skip to the next song
+      description: Same errors as `PUT /me/spotify/player/play`.
+      responses:
+        '204': {description: Spotify accepted it.}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '503': {$ref: '#/components/responses/SpotifyUnavailable'}
+  /me/spotify/player/previous:
+    post:
+      tags: [Me]
+      operationId: skipSpotifyPrevious
+      summary: Go back to the previous song
+      description: Same errors as `PUT /me/spotify/player/play`.
+      responses:
+        '204': {description: Spotify accepted it.}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '503': {$ref: '#/components/responses/SpotifyUnavailable'}
   /me/devices/{deviceId}:
     parameters:
       - name: deviceId
@@ -3091,6 +3162,9 @@ components:
             - spotify_reauth_required
             - spotify_in_use
             - spotify_unavailable
+            - spotify_no_device
+            - spotify_premium_required
+            - spotify_player_refused
             - duplicate_submission
             - score_not_ready
             - upload_expired
@@ -3267,7 +3341,9 @@ components:
           items: {type: string}
           description: |
             Scopes the connection was made with. A connection made before `user-follow-read` was required lacks it;
-            the sync then skips followed artists, and the app should ask the fan to connect again.
+            the sync then skips followed artists, and the app should ask the fan to connect again. Connections made
+            before 2026-10-26 also lack `user-read-playback-state` and `user-modify-playback-state`, which the
+            now-playing bar and play buttons need (`GET /me/spotify/player` says `reconnect_needed`).
         connected_at: {type: [string, 'null'], format: date-time}
         last_synced_at: {type: [string, 'null'], format: date-time}
         sync_state:
@@ -3289,6 +3365,53 @@ components:
             Artists from the fan's Spotify top artists that the last sync added to the tracked list because nobody
             tracked them yet. They start `onboarding` (list them with `GET /artists?added_by_me=true&status=onboarding`)
             and count toward the fan's score on the sync that follows their activation.
+    SpotifyPlayer:
+      type: object
+      required: [status, track, progress_ms, device]
+      properties:
+        status:
+          type: string
+          enum: [playing, paused, nothing_playing, reconnect_needed, not_connected]
+          description: '`nothing_playing` also covers podcasts, ads, and local files.'
+        track:
+          description: Set when `playing` or `paused`.
+          oneOf:
+            - type: object
+              required: [spotify_track_id, title, artists, album_title, cover_url, spotify_url, duration_ms]
+              properties:
+                spotify_track_id: {type: string}
+                title: {type: string}
+                artists:
+                  type: array
+                  description: In credit order.
+                  items:
+                    type: object
+                    required: [spotify_artist_id, name]
+                    properties:
+                      spotify_artist_id: {type: string}
+                      name: {type: string}
+                album_title: {type: [string, 'null']}
+                cover_url: {type: [string, 'null'], format: uri, description: Spotify album art, shown unaltered.}
+                spotify_url: {type: string, format: uri, description: Opens the song on Spotify.}
+                duration_ms: {type: [integer, 'null']}
+            - {type: 'null'}
+        progress_ms: {type: [integer, 'null'], description: Position in the song when Spotify was asked.}
+        device:
+          description: Where Spotify is playing, when known.
+          oneOf:
+            - type: object
+              required: [name, type]
+              properties:
+                name: {type: string}
+                type: {type: string, description: 'Spotify''s device type, e.g. Smartphone, Computer, Speaker.'}
+            - {type: 'null'}
+    SpotifyPlay:
+      type: object
+      properties:
+        spotify_track_id:
+          type: [string, 'null']
+          pattern: '^[0-9A-Za-z]{22}$'
+          description: The song to play from the start. Leave it out to resume.
     DeviceRegistration:
       type: object
       required: [push_token, platform]

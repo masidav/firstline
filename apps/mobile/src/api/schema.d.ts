@@ -229,6 +229,116 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/spotify/player": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What the fan's Spotify is playing
+         * @description The fan's own Spotify playback, for the app's now-playing bar (requested 2026-10-26). Read from Spotify on
+         *     request (at most once every 3 seconds per fan) and never stored; it may be any artist, tracked or not, and
+         *     is only ever shown to the fan. Never an error for the connection's state: `not_connected` without a
+         *     connection, `reconnect_needed` when the connection lacks the playback scopes (made before 2026-10-26) or
+         *     Spotify no longer accepts it. `503 spotify_unavailable` while Spotify is down or a sync of this fan is
+         *     renewing the authorization (`Retry-After`).
+         */
+        get: operations["getSpotifyPlayer"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/spotify/player/play": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Play a song, or resume
+         * @description Plays `spotify_track_id` from the start on the fan's Spotify, or resumes without it. Spotify plays on the
+         *     device the fan has Spotify open on; when none is active, the fan's phone, computer, or tablet that Spotify
+         *     lists is used (never a speaker or TV). Errors (`409`): `spotify_not_connected`; `spotify_reauth_required`
+         *     (connect again, also when the connection lacks the playback scopes); `spotify_no_device` (Spotify isn't
+         *     open anywhere: the app opens the song in Spotify instead); `spotify_premium_required` (Spotify only lets
+         *     apps control playback for Premium accounts); `spotify_player_refused` (any other refusal).
+         */
+        put: operations["playSpotify"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/spotify/player/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Pause
+         * @description Same errors as `PUT /me/spotify/player/play`.
+         */
+        put: operations["pauseSpotify"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/spotify/player/next": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Skip to the next song
+         * @description Same errors as `PUT /me/spotify/player/play`.
+         */
+        post: operations["skipSpotifyNext"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/spotify/player/previous": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Go back to the previous song
+         * @description Same errors as `PUT /me/spotify/player/play`.
+         */
+        post: operations["skipSpotifyPrevious"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me/devices/{deviceId}": {
         parameters: {
             query?: never;
@@ -2509,7 +2619,7 @@ export interface components {
              * @description Stable machine-readable code.
              * @enum {string}
              */
-            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "reservation_unavailable" | "trivia_answered" | "trivia_expired" | "prompt_closed" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_track_not_found" | "followers_only" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
+            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "reservation_unavailable" | "trivia_answered" | "trivia_expired" | "prompt_closed" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_track_not_found" | "followers_only" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "spotify_no_device" | "spotify_premium_required" | "spotify_player_refused" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
             errors?: {
                 field?: string;
                 message?: string;
@@ -2659,7 +2769,9 @@ export interface components {
             connected: boolean;
             /**
              * @description Scopes the connection was made with. A connection made before `user-follow-read` was required lacks it;
-             *     the sync then skips followed artists, and the app should ask the fan to connect again.
+             *     the sync then skips followed artists, and the app should ask the fan to connect again. Connections made
+             *     before 2026-10-26 also lack `user-read-playback-state` and `user-modify-playback-state`, which the
+             *     now-playing bar and play buttons need (`GET /me/spotify/player` says `reconnect_needed`).
              */
             scopes?: string[];
             /** Format: date-time */
@@ -2685,6 +2797,47 @@ export interface components {
              *     and count toward the fan's score on the sync that follows their activation.
              */
             top_artists_added?: number;
+        };
+        SpotifyPlayer: {
+            /**
+             * @description `nothing_playing` also covers podcasts, ads, and local files.
+             * @enum {string}
+             */
+            status: "playing" | "paused" | "nothing_playing" | "reconnect_needed" | "not_connected";
+            /** @description Set when `playing` or `paused`. */
+            track: {
+                spotify_track_id: string;
+                title: string;
+                /** @description In credit order. */
+                artists: {
+                    spotify_artist_id: string;
+                    name: string;
+                }[];
+                album_title: string | null;
+                /**
+                 * Format: uri
+                 * @description Spotify album art
+                 */
+                cover_url: string | null;
+                /**
+                 * Format: uri
+                 * @description Opens the song on Spotify.
+                 */
+                spotify_url: string;
+                duration_ms: number | null;
+            } | null;
+            /** @description Position in the song when Spotify was asked. */
+            progress_ms: number | null;
+            /** @description Where Spotify is playing, when known. */
+            device: {
+                name: string;
+                /** @description Spotify's device type, e.g. Smartphone, Computer, Speaker. */
+                type: string;
+            } | null;
+        };
+        SpotifyPlay: {
+            /** @description The song to play from the start. Leave it out to resume. */
+            spotify_track_id?: string | null;
         };
         DeviceRegistration: {
             push_token: string;
@@ -4541,6 +4694,112 @@ export interface operations {
             };
             409: components["responses"]["Conflict"];
             429: components["responses"]["RateLimited"];
+        };
+    };
+    getSpotifyPlayer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The playback state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpotifyPlayer"];
+                };
+            };
+            503: components["responses"]["SpotifyUnavailable"];
+        };
+    };
+    playSpotify: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SpotifyPlay"];
+            };
+        };
+        responses: {
+            /** @description Spotify accepted it. Read `GET /me/spotify/player` for the new state. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["SpotifyUnavailable"];
+        };
+    };
+    pauseSpotify: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Spotify accepted it. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: components["responses"]["Conflict"];
+            503: components["responses"]["SpotifyUnavailable"];
+        };
+    };
+    skipSpotifyNext: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Spotify accepted it. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: components["responses"]["Conflict"];
+            503: components["responses"]["SpotifyUnavailable"];
+        };
+    };
+    skipSpotifyPrevious: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Spotify accepted it. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: components["responses"]["Conflict"];
+            503: components["responses"]["SpotifyUnavailable"];
         };
     };
     registerDevice: {

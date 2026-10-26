@@ -8,6 +8,7 @@ import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { fanName } from '../follows/follows';
+import { PlayButton } from '../spotify/NowPlaying';
 
 export type BouncerDoor = components['schemas']['BouncerDoor'];
 
@@ -61,14 +62,17 @@ export function BouncerDoorScreen() {
               </Text>
             </View>
           </View>
-          <Pressable
-            accessibilityRole="link"
-            accessibilityLabel={`Open ${song.title} on Spotify`}
-            onPress={() => void Linking.openURL(song.spotify_url)}
-            hitSlop={8}
-          >
-            <Text style={styles.link}>Open in Spotify</Text>
-          </Pressable>
+          <View style={styles.songActions}>
+            <PlayButton spotifyTrackId={song.spotify_track_id} spotifyUrl={song.spotify_url} title={song.title} />
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel={`Open ${song.title} on Spotify`}
+              onPress={() => void Linking.openURL(song.spotify_url)}
+              hitSlop={8}
+            >
+              <Text style={styles.link}>Open in Spotify</Text>
+            </Pressable>
+          </View>
         </View>
       )}
       {draw && !song && draw.following === 0 && (
@@ -95,4 +99,5 @@ const styles = StyleSheet.create({
   title: { color: colors.text, fontSize: 20, fontWeight: '700' },
   muted: { color: colors.muted, fontSize: 14 },
   link: { color: colors.accent, fontSize: 16, fontWeight: '600' },
+  songActions: { flexDirection: 'row', alignItems: 'center', gap: space.md },
 });

@@ -21,7 +21,8 @@ public sealed class FakeSpotify : HttpMessageHandler
 
     public static readonly string AllScopes = string.Join(' ', SpotifyOptions.RequiredScopes);
 
-    public sealed record Request(string Method, string Path, string Query, IReadOnlyDictionary<string, string> Form, string? Bearer);
+    public sealed record Request(
+        string Method, string Path, string Query, IReadOnlyDictionary<string, string> Form, string? Bearer, string? Body = null);
 
     public ConcurrentQueue<Request> Calls { get; } = new();
 
@@ -141,6 +142,43 @@ public sealed class FakeSpotify : HttpMessageHandler
         artists = new[] { new { id = "sp-whoever", name = "Whoever" } },
     };
 
+    /// <summary>The fan's playback (<c>me/player</c>, see <see cref="Playing"/>); null answers 204 (nothing playing).</summary>
+    public object? Playback { get; set; }
+
+    /// <summary>The fan's devices (<c>me/player/devices</c>, see <see cref="Device"/>).</summary>
+    public List<object> Devices { get; } = [];
+
+    public static object Device(string id, string name, string type, bool active = false) =>
+        new { id, name, type, is_active = active, is_restricted = false, volume_percent = 50 };
+
+    public static object Playing(TrackDetail track, bool isPlaying = true, int progressMs = 42_000) => new
+    {
+        is_playing = isPlaying,
+        progress_ms = progressMs,
+        currently_playing_type = "track",
+        device = Device("phone-1", "Fan's iPhone", "Smartphone", active: true),
+        item = new
+        {
+            id = track.Id,
+            name = track.Name,
+            type = "track",
+            is_local = false,
+            duration_ms = 200_000,
+            external_urls = new { spotify = $"https://open.spotify.com/track/{track.Id}" },
+            album = new
+            {
+                id = track.AlbumId,
+                name = track.AlbumName,
+                images = new[] { new { url = $"https://i.scdn.co/{track.AlbumId}-640", width = 640, height = 640 } },
+            },
+            artists = track.Artists.Select(a => new { id = a.Id, name = a.Name }).ToArray(),
+        },
+    };
+
+    /// <summary>A player command's error, as Spotify sends it.</summary>
+    public static HttpResponseMessage PlayerError(HttpStatusCode status, string reason) =>
+        new(status) { Content = JsonContent.Create(new { error = new { status = (int)status, message = "Player command failed", reason } }) };
+
     /// <summary>Served once each, in order, before the normal response for that path.</summary>
     public ConcurrentQueue<(string Path, Func<HttpResponseMessage> Response)> Interruptions { get; } = new();
 
@@ -190,7 +228,8 @@ public sealed class FakeSpotify : HttpMessageHandler
                 .ToDictionary(pair => Uri.UnescapeDataString(pair[0]), pair => Uri.UnescapeDataString(pair[1].Replace('+', ' ')))
             : [];
         var path = uri.Host == "accounts.spotify.com" ? "token" : uri.AbsolutePath["/v1/".Length..];
-        Calls.Enqueue(new Request(request.Method.Method, path, uri.Query, form, request.Headers.Authorization?.Parameter));
+        var requestBody = request.Content is { } other and not FormUrlEncodedContent ? await other.ReadAsStringAsync(cancellationToken) : null;
+        Calls.Enqueue(new Request(request.Method.Method, path, uri.Query, form, request.Headers.Authorization?.Parameter, requestBody));
         if (OnRequest is not null)
         {
             await OnRequest(path);
@@ -219,6 +258,18 @@ public sealed class FakeSpotify : HttpMessageHandler
         if (ApiStatus != HttpStatusCode.OK)
         {
             return new HttpResponseMessage(ApiStatus) { Content = JsonContent.Create(new { error = new { status = (int)ApiStatus } }) };
+        }
+
+        switch (path)
+        {
+            case "me/player" when Playback is null:
+                return new HttpResponseMessage(HttpStatusCode.NoContent);
+            case "me/player":
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(Playback) };
+            case "me/player/devices":
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { devices = Devices }) };
+            case "me/player/play" or "me/player/pause" or "me/player/next" or "me/player/previous":
+                return new HttpResponseMessage(HttpStatusCode.NoContent);
         }
 
         var query = System.Web.HttpUtility.ParseQueryString(uri.Query);

@@ -317,7 +317,10 @@ public sealed partial class SpotifyClient(
     {
         var tokens = await RequestTokenAsync(form, label, cancellationToken);
         return new SpotifyTokens(tokens.AccessToken!, tokens.RefreshToken,
-            (tokens.Scope ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries));
+            (tokens.Scope ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            ExpiresIn = TimeSpan.FromSeconds(tokens.ExpiresIn is > 0 ? tokens.ExpiresIn.Value : 3600),
+        };
     }
 
     private async Task<TokenDto> RequestTokenAsync(
@@ -555,7 +558,7 @@ public sealed partial class SpotifyClient(
 
     private sealed record TrackDto(
         string? Id, string? Name, string? Type, bool? IsLocal, int? DiscNumber, int? TrackNumber, AlbumDto? Album,
-        IReadOnlyList<ArtistDto>? Artists, ExternalUrlsDto? ExternalUrls = null);
+        IReadOnlyList<ArtistDto>? Artists, ExternalUrlsDto? ExternalUrls = null, int? DurationMs = null);
 
     private sealed record SavedTrackDto(DateTimeOffset? AddedAt, TrackDto? Track);
 

@@ -12,6 +12,7 @@ import { standingMessage } from '../ticketing/standing';
 import { type FeedItem, formatWhen, stars, statSentence, ticketsLine } from './feedText';
 import { ReactionBar } from './ReactionBar';
 import { ReportForm } from './ReportForm';
+import { PlayButton } from '../spotify/NowPlaying';
 
 export type FeedCardProps = {
   item: FeedItem;
@@ -161,14 +162,17 @@ function GrabBagCard(props: FeedCardProps) {
           </Text>
         </View>
       </View>
-      <Pressable
-        accessibilityRole="link"
-        accessibilityLabel={`Open ${song.title} on Spotify`}
-        onPress={() => void Linking.openURL(song.spotify_url)}
-        hitSlop={8}
-      >
-        <Text style={styles.link}>Open in Spotify</Text>
-      </Pressable>
+      <View style={styles.songActions}>
+        <PlayButton spotifyTrackId={song.spotify_track_id} spotifyUrl={song.spotify_url} title={song.title} />
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel={`Open ${song.title} on Spotify`}
+          onPress={() => void Linking.openURL(song.spotify_url)}
+          hitSlop={8}
+        >
+          <Text style={styles.link}>Open in Spotify</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -288,6 +292,7 @@ const styles = StyleSheet.create({
   link: { color: colors.accent, fontSize: 15, fontWeight: '600' },
   photo: { width: '100%', aspectRatio: 4 / 3, borderRadius: 8, backgroundColor: colors.surface },
   row: { flexDirection: 'row', gap: space.md, alignItems: 'center' },
+  songActions: { flexDirection: 'row', gap: space.md, alignItems: 'center' },
   cover: { width: 56, height: 56, borderRadius: 6, backgroundColor: colors.surface },
   rowText: { flex: 1, gap: 2 },
   report: { color: colors.muted, fontSize: 13, textDecorationLine: 'underline', alignSelf: 'flex-end' },

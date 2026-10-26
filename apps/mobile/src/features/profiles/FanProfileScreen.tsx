@@ -10,6 +10,7 @@ import { colors, space } from '../../ui/theme';
 import { stars } from '../feed/feedText';
 import { FollowButton } from '../follows/FollowButton';
 import { setFollowing } from '../follows/follows';
+import { PlayButton } from '../spotify/NowPlaying';
 
 export type UserPublic = components['schemas']['UserPublic'];
 type ProfileStats = components['schemas']['ProfileStats'];
@@ -166,14 +167,17 @@ export function FanProfileScreen({ handle }: { handle: string }) {
       {bag && bag.items.length > 0 && (
         <Section title="Grab bag">
           {bag.items.map((song) => (
-            <Pressable key={song.id} accessibilityRole="link" accessibilityLabel={`Open ${song.title} on Spotify`}
-              onPress={() => void Linking.openURL(song.spotify_url)} style={styles.row}>
-              {song.cover_url ? <Image source={{ uri: song.cover_url }} style={styles.cover} /> : <View style={styles.cover} />}
-              <View style={styles.grow}>
-                <Text style={styles.strong} numberOfLines={1}>{song.title}</Text>
-                <Text style={styles.muted} numberOfLines={1}>{song.artist.name}</Text>
-              </View>
-            </Pressable>
+            <View key={song.id} style={styles.row}>
+              <Pressable accessibilityRole="link" accessibilityLabel={`Open ${song.title} on Spotify`}
+                onPress={() => void Linking.openURL(song.spotify_url)} style={[styles.row, styles.grow]}>
+                {song.cover_url ? <Image source={{ uri: song.cover_url }} style={styles.cover} /> : <View style={styles.cover} />}
+                <View style={styles.grow}>
+                  <Text style={styles.strong} numberOfLines={1}>{song.title}</Text>
+                  <Text style={styles.muted} numberOfLines={1}>{song.artist.name}</Text>
+                </View>
+              </Pressable>
+              <PlayButton spotifyTrackId={song.spotify_track_id} spotifyUrl={song.spotify_url} title={song.title} />
+            </View>
           ))}
         </Section>
       )}

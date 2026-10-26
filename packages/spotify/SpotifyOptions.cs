@@ -21,6 +21,8 @@ public sealed class SpotifyOptions
         "playlist-read-private",       // the user's private playlists
         "playlist-read-collaborative", // playlists they collaborate on
         FollowScope,                   // artists they follow
+        PlaybackReadScope,             // what's playing, and on which device
+        PlaybackControlScope,          // play, pause, skip when the fan presses a button
     ];
 
     /// <summary>
@@ -28,6 +30,15 @@ public sealed class SpotifyOptions
     /// then skips follows and the app asks the fan to connect again.
     /// </summary>
     public const string FollowScope = "user-follow-read";
+
+    /// <summary>
+    /// Scopes for the app's now-playing bar and play buttons, added 2026-10-26. Connections made before lack them:
+    /// the player reports <c>reconnect_needed</c> and the app asks the fan to connect again.
+    /// </summary>
+    public const string PlaybackReadScope = "user-read-playback-state";
+
+    /// <inheritdoc cref="PlaybackReadScope"/>
+    public const string PlaybackControlScope = "user-modify-playback-state";
 
     /// <summary>Client ID of the app in the Spotify developer dashboard. Not a secret. Empty disables Spotify.</summary>
     public string ClientId { get; set; } = "";
@@ -100,6 +111,12 @@ public sealed class SpotifyOptions
 
     /// <summary>Releases loaded per artist, in the order Spotify lists them (10 per request).</summary>
     public int MaxCatalogAlbums { get; set; } = 500;
+
+    /// <summary>
+    /// How long a player request waits for a running sync of the same fan to finish before answering 503. Both
+    /// refresh the fan's token, which Spotify may rotate, so they never run together.
+    /// </summary>
+    public TimeSpan PlayerLockWait { get; set; } = TimeSpan.FromSeconds(5);
 
     public bool IsEnabled => ClientId.Length > 0;
 
