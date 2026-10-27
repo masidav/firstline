@@ -38,8 +38,11 @@ import urllib.parse
 import urllib.request
 import webbrowser
 
-# Same as SpotifyOptions.RequiredScopes.
-SCOPES = "user-library-read user-top-read user-read-recently-played playlist-read-private playlist-read-collaborative"
+# Same as SpotifyOptions.RequiredScopes (packages/spotify/SpotifyOptions.cs): the API rejects a connection missing any.
+SCOPES = " ".join([
+    "user-library-read", "user-top-read", "user-read-recently-played", "playlist-read-private",
+    "playlist-read-collaborative", "user-follow-read", "user-read-playback-state", "user-modify-playback-state",
+])
 DEFAULT_REDIRECT = "http://127.0.0.1:8888/callback"
 COMPOSE_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "infrastructure", "docker-compose.yml")
 
