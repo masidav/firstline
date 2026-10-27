@@ -10,12 +10,20 @@
     <PackageReference Include="Dapper" Version="2.1.89" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
     <PackageReference Include="Npgsql.DependencyInjection" Version="10.0.3" />
+    <!-- Score cards (src/features/sharing): drawing the PNG. Same versions as the worker's redaction. -->
+    <PackageReference Include="SkiaSharp" Version="4.153.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.153.1" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\packages\spotify\FandomScore.Spotify.csproj" />
     <ProjectReference Include="..\..\packages\storage\FandomScore.Storage.csproj" />
     <ProjectReference Include="..\..\packages\notifications\FandomScore.Notifications.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Lato (SIL Open Font License, fonts/OFL.txt): the runtime image has no fonts. -->
+    <EmbeddedResource Include="src\features\sharing\fonts\*.ttf" LogicalName="fonts/%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>

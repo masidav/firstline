@@ -9,6 +9,8 @@ const mockApi = { GET: jest.fn(), POST: jest.fn() };
 const mockSession = { api: mockApi };
 jest.mock('../../auth/SessionProvider', () => ({ useSession: () => ({ session: mockSession, state: { status: 'signedIn' } }) }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn(), replace: jest.fn(), back: jest.fn(), canGoBack: () => false } }));
+jest.mock('../sharing/shareCard', () => ({ shareScoreCard: jest.fn() }));
+const mockShare = jest.requireMock('../sharing/shareCard').shareScoreCard as jest.Mock;
 
 const artist = { id: 'ar-1', name: 'Geese', spotify_artist_id: 'sp-geese', status: 'active', tracked_at: '2026-10-20T12:00:00Z', image_url: null };
 
@@ -59,6 +61,17 @@ test('a ready score shows the percentile, the estimate label, and the signals be
 
   fireEvent.press(screen.getByRole('button', { name: 'Albums' }));
   expect(jest.requireMock('expo-router').router.push).toHaveBeenCalledWith('/artist/ar-1/albums');
+});
+
+test('a ready score can be shared as a card, and a web download says so', async () => {
+  serve(ready);
+  mockShare.mockResolvedValueOnce('shared').mockResolvedValueOnce('downloaded');
+  render(<ScoreScreen artistId="ar-1" />);
+
+  fireEvent.press(await screen.findByRole('button', { name: 'Share my score card' }));
+  await waitFor(() => expect(mockShare).toHaveBeenCalledWith(mockApi, 'ar-1'));
+  fireEvent.press(screen.getByRole('button', { name: 'Share my score card' }));
+  expect(await screen.findByText('Saved your score card as an image.')).toBeTruthy();
 });
 
 test('a final score has no estimate label', async () => {

@@ -73,6 +73,8 @@ tags:
   - name: Webhooks
   - name: Admin
   - name: Meta
+  - name: Sharing
+    description: Score cards a fan shares outside the app.
 
 paths:
   /health:
@@ -1567,6 +1569,44 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/GrabBag'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+  /me/scores/{artistId}/card:
+    parameters:
+      - {$ref: '#/components/parameters/ArtistId'}
+    get:
+      tags: [Sharing]
+      operationId: getScoreCard
+      summary: A shareable card of my fandom score for an artist
+      description: |
+        A short-lived signed link (an hour) to a 1080x1080 PNG ("Top 3% of fans of Geese", the fan's handle, the date,
+        and an "Estimated" note when the percentile is an estimate), and the sentence for the share sheet. The image is
+        drawn when fetched, from the current score. Nothing else about the fan is on it. `404` without a score, or when
+        the artist isn't active.
+      responses:
+        '200':
+          description: The card's link and share text
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ScoreCardLink'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /score-cards/{userId}/{artistId}.png:
+    parameters:
+      - {name: userId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {$ref: '#/components/parameters/ArtistId'}
+      - {name: exp, in: query, required: true, schema: {type: integer}}
+      - {name: sig, in: query, required: true, schema: {type: string}}
+    get:
+      tags: [Sharing]
+      operationId: getScoreCardImage
+      summary: The score card image (signed link, no sign-in)
+      security: []
+      responses:
+        '200':
+          description: The PNG
+          content:
+            image/png:
+              schema: {type: string, format: binary}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /me/trivia:
     get:
       tags: [Social]
@@ -3900,6 +3940,15 @@ components:
         tracked_at: {type: string, format: date-time}
         activated_at: {type: [string, 'null'], format: date-time}
         my_score: {oneOf: [{$ref: '#/components/schemas/ScoreSummary'}, {type: 'null'}]}
+    ScoreCardLink:
+      type: object
+      required: [image_url, share_text, top_label, is_estimated, expires_at]
+      properties:
+        image_url: {type: string, format: uri, description: Signed; works without sign-in until expires_at.}
+        share_text: {type: string, description: 'e.g. "I''m in the top 3% of Geese fans on Fandom Score."'}
+        top_label: {type: string, description: '"Top 3%", as on the card.'}
+        is_estimated: {type: boolean}
+        expires_at: {type: string, format: date-time}
     PushSettings:
       type: object
       description: Which notifications also go to the fan's phones. All on by default; in-app notifications are kept either way.

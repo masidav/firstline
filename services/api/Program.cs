@@ -15,6 +15,7 @@ using FandomScore.Api.Features.Prompts;
 using FandomScore.Api.Features.Reactions;
 using FandomScore.Api.Features.Redaction;
 using FandomScore.Api.Features.Scoring;
+using FandomScore.Api.Features.Sharing;
 using FandomScore.Api.Features.SpotifyPlayer;
 using FandomScore.Api.Features.SpotifySync;
 using FandomScore.Api.Features.Stats;
@@ -93,6 +94,7 @@ v1.MapPrompts();
 v1.MapReactions();
 v1.MapRedaction();
 v1.MapConcertSources();
+v1.MapScoreCards();
 
 app.Run();
 

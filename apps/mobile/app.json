@@ -23,7 +23,8 @@
           "cameraPermission": false,
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "ios": {
       "usesAppleSignIn": true

@@ -7,6 +7,7 @@ import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
+import { shareScoreCard } from '../sharing/shareCard';
 import { describeEstimate, describePercentile, type Score, type SignalGroup, type SignalRow, signalRows } from './score';
 
 /** While a score is computing, ask again every few seconds, a few times. */
@@ -27,6 +28,8 @@ export function ScoreScreen({ artistId }: { artistId: string }) {
   const [error, setError] = useState<string>();
   const [gone, setGone] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [shareNote, setShareNote] = useState<string>();
   const polls = useRef(0);
 
   const load = useCallback(async () => {
@@ -72,6 +75,21 @@ export function ScoreScreen({ artistId }: { artistId: string }) {
     }
   }
 
+  // A picture of the percentile for the share sheet (Instagram, X, Messages); on the web, the browser's share or a download.
+  async function share() {
+    setSharing(true);
+    setShareNote(undefined);
+    try {
+      const outcome = await shareScoreCard(session.api, artistId);
+      if (outcome === 'downloaded') setShareNote('Saved your score card as an image.');
+      if (outcome === 'unavailable') setShareNote("Sharing isn't available on this device.");
+    } catch (e) {
+      setShareNote(errorMessage(e));
+    } finally {
+      setSharing(false);
+    }
+  }
+
   const back = () => (router.canGoBack() ? router.back() : router.replace('/home'));
 
   if (gone) {
@@ -96,6 +114,12 @@ export function ScoreScreen({ artistId }: { artistId: string }) {
       )}
       {!score && !error && <Loading />}
       {score && <ScoreBody score={score} refreshing={refreshing} onRefresh={() => void refresh()} />}
+      {score?.status === 'ready' && (
+        <>
+          <Button label="Share my score card" busy={sharing} onPress={() => void share()} />
+          {shareNote && <Body muted>{shareNote}</Body>}
+        </>
+      )}
       <View style={styles.links}>
         <Button label="Albums" kind="secondary" onPress={() => router.push(`/artist/${artistId}/albums`)} />
         <Button label="Upcoming shows" kind="secondary" onPress={() => router.push(`/artist/${artistId}/shows`)} />

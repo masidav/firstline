@@ -1294,6 +1294,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/scores/{artistId}/card": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artistId: components["parameters"]["ArtistId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * A shareable card of my fandom score for an artist
+         * @description A short-lived signed link (an hour) to a 1080x1080 PNG ("Top 3% of fans of Geese", the fan's handle, the date,
+         *     and an "Estimated" note when the percentile is an estimate), and the sentence for the share sheet. The image is
+         *     drawn when fetched, from the current score. Nothing else about the fan is on it. `404` without a score, or when
+         *     the artist isn't active.
+         */
+        get: operations["getScoreCard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/score-cards/{userId}/{artistId}.png": {
+        parameters: {
+            query: {
+                exp: number;
+                sig: string;
+            };
+            header?: never;
+            path: {
+                userId: string;
+                artistId: components["parameters"]["ArtistId"];
+            };
+            cookie?: never;
+        };
+        /** The score card image (signed link, no sign-in) */
+        get: operations["getScoreCardImage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me/trivia": {
         parameters: {
             query?: never;
@@ -3257,6 +3305,20 @@ export interface components {
             /** Format: date-time */
             activated_at?: string | null;
             my_score?: components["schemas"]["ScoreSummary"] | null;
+        };
+        ScoreCardLink: {
+            /**
+             * Format: uri
+             * @description Signed; works without sign-in until expires_at.
+             */
+            image_url: string;
+            /** @description e.g. "I'm in the top 3% of Geese fans on Fandom Score." */
+            share_text: string;
+            /** @description "Top 3%", as on the card. */
+            top_label: string;
+            is_estimated: boolean;
+            /** Format: date-time */
+            expires_at: string;
         };
         /** @description Which notifications also go to the fan's phones. All on by default; in-app notifications are kept either way. */
         PushSettings: {
@@ -6670,6 +6732,57 @@ export interface operations {
                 };
             };
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getScoreCard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artistId: components["parameters"]["ArtistId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The card's link and share text */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScoreCardLink"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getScoreCardImage: {
+        parameters: {
+            query: {
+                exp: number;
+                sig: string;
+            };
+            header?: never;
+            path: {
+                userId: string;
+                artistId: components["parameters"]["ArtistId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The PNG */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": string;
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     getTodaysTrivia: {

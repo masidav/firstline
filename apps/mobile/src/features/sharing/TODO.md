@@ -3,12 +3,13 @@
 Use `- [x]` only after the task is implemented and verified. Adapt this checklist to existing code; do not duplicate working functionality.
 
 ## Implementation checklist
-- [ ] Build a share-score-card preview.
-- [ ] Show artist name, score, percentile, and estimated label where applicable.
-- [ ] Use the native share sheet and platform-supported X/Instagram flows.
-- [ ] Handle user cancellation and unavailable share targets gracefully.
-- [ ] Ensure private account details are excluded from the shared payload.
-- [ ] Add tests for share payloads and platform error states.
+- [ ] Show a preview of the card in the app before sharing (today the share sheet shows it).
+- [x] The card shows artist name, top %, and the estimated label where applicable (drawn by the API).
+- [x] Native share sheet on phones (expo-sharing), the browser's share sheet or a download on the web. Direct
+      Instagram Stories / X flows aren't built.
+- [x] Cancellation and no-share devices handled without errors.
+- [x] No private details in the shared image (no email, no breakdown).
+- [x] Tests: shareCard.test.ts (phone, no sharing, web share and cancel, web download), ScoreScreen share button.
 
 ## Verification
 - [ ] Add or update automated tests for the behavior above.

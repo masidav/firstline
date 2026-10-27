@@ -3,13 +3,14 @@
 Use `- [x]` only after the task is implemented and verified. Adapt this checklist to existing code; do not duplicate working functionality.
 
 ## Implementation checklist
-- [ ] Define the score-card payload and ensure it contains only shareable information.
-- [ ] Generate or request hosted score-card images using a documented rendering approach.
-- [ ] Ensure score cards reflect the current score and estimated-percentile label.
-- [ ] Implement secure, non-guessable public share URLs if hosted sharing is used.
-- [ ] Define expiration/revocation behavior if share links can be disabled.
+- [x] Define the score-card payload and ensure it contains only shareable information (artist, top %, handle, date,
+      estimate note).
+- [x] Generate score-card images: drawn by the API with SkiaSharp (README.md).
+- [x] Score cards reflect the current score and the estimated label (drawn on request).
+- [x] Signed, expiring image links (one hour); the image is shared as a file, so no public page yet.
+- [ ] Public share pages with link previews (Open Graph), and whether fans can revoke them.
 - [ ] Track share-card creation and relevant outbound activity without logging unnecessary personal data.
-- [ ] Add tests for payload correctness, privacy, link access, and estimated labels.
+- [x] Tests for payload, link access (tampered, other artist, paused artist), and estimated labels (ScoreCardApiTests).
 
 ## Verification
 - [ ] Add or update automated tests for the behavior above.

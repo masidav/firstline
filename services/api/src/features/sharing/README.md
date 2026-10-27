@@ -1,23 +1,18 @@
-# Sharing and score cards API
+# Score cards (sharing)
 
-## Purpose
-This folder owns the sharing and score cards api responsibilities for Fandom Score.
+A fan shares a picture of their fandom score for an artist: "Top 3% of fans of Geese", their handle, the date, and an
+"Estimated" note while the percentile is an estimate. Nothing else about the fan (no score breakdown, no email).
 
-## Responsibilities
-- Implement the feature's domain behavior and interfaces.
-- Validate inputs and enforce authorization at the correct boundary.
-- Handle expected failures and avoid duplicate effects on retries.
-- Keep implementation and automated tests close to the feature where practical.
+| Route | |
+| --- | --- |
+| `GET /v1/me/scores/{artistId}/card` | A signed link (one hour) to the PNG, the share sentence ("I'm in the top 3% of Geese fans on Fandom Score."), the label, and whether it's an estimate. `404` without a score or when the artist isn't active. |
+| `GET /v1/score-cards/{userId}/{artistId}.png?exp=&sig=` | The 1080×1080 PNG, no sign-in (the signature is the key; the signed purpose names the artist, the id is the fan). Drawn on request from the current score. `403` for a bad or expired link. |
 
-## Dependencies
-Review the corresponding `TODO.md` and the repository's architecture documentation for upstream dependencies, provider choices, database contracts, and unresolved decisions.
+- Drawing: `ScoreCard.cs` with SkiaSharp (same native library as the worker's redaction). Fonts: Lato Regular and Black,
+  SIL Open Font License (`fonts/OFL.txt`), embedded in the API assembly because the runtime image has no fonts.
+- The app (`apps/mobile/src/features/sharing/shareCard.ts`): on a phone it downloads the PNG and opens the share sheet
+  (`expo-sharing`); on the web it uses the browser's share sheet when it can take files, else downloads the image.
+  The button is on the score screen ("Share my score card").
 
-## Development
-1. Inspect existing code and tests before changing files.
-2. Implement tasks in `TODO.md` in dependency order.
-3. Add tests for success, failure, authorization, and edge cases.
-4. Run tests and document actual results.
-5. Update documentation and the root `PROJECT_TODO.md`.
-
-## Scope note
-This README is a starter document. Replace generic details with the real module interfaces and setup instructions once the implementation is inspected.
+Not done: public share links with link previews (the image is shared as a file today), artist photos on the card, and
+counting shares. Tests: `tests/FandomScore.Tests/ScoreCardApiTests.cs`; app `shareCard.test.ts`, `ScoreScreen.test.tsx`.

@@ -210,7 +210,10 @@ upcoming shows of your artists, and your own fan-ticket registrations (2026-10-2
 
 ## Phase 8 — Sharing and commerce
 Lower priority under the new direction: ticket purchases now flow through allocations (Phase 11), not outbound links.
-- [ ] Generate score cards and native sharing flows.
+- [x] Generate score cards and native sharing flows. *Done 2026-10-27: `GET /v1/me/scores/{artistId}/card` gives a
+      signed link to a 1080×1080 PNG drawn by the API (SkiaSharp, embedded Lato fonts); the score screen's "Share my
+      score card" opens the phone's share sheet, or the browser's (or a download) on the web. Verified: ScoreCardApiTests
+      3, app Jest (shareCard 4, ScoreScreen), API image builds. Not yet: public links with previews, artist photos.*
 - [ ] Display artist, ticket, and merch links.
 - [ ] Track outbound clicks without misrepresenting clicks as purchases.
 - [ ] Integrate purchase confirmation only if supported by the selected partner.
