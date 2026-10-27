@@ -45,5 +45,5 @@ module "environment" {
   sql_backup_retention_days = 14
   # Off while beta is torn down between sessions (2026-10-27); the cloud flags already match. Set it back to true
   # once beta is meant to persist with real testers' data.
-  deletion_protection       = false
+  deletion_protection = false
 }
