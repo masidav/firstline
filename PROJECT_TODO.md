@@ -137,7 +137,8 @@ Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring wo
       can be reported, and staff can take them down. No points. `GET /prompts/today`, `PUT /prompts/{id}/answer`,
       `GET /prompts/{id}/answers`, `/admin/prompts/{day}`. Verified: `dotnet test` (PromptApiTests 3, invariants),
       app Jest (Prompts, Feed, Moderation).
-- [ ] Daily blind album rankings (requested 2026-10-25; open questions in `apps/mobile/TODO.md`).
+- [ ] Blind album rankings (requested 2026-10-25): not daily; released on a day without trivia (Tuesday) or a prompt
+      (Thursday) (decided 2026-10-27; which day exactly is open). Other open questions in `apps/mobile/TODO.md`.
 - [x] Trivia and prompts on a weekly cadence instead of daily (requested 2026-10-26): trivia on Tuesdays, prompts on
       Thursdays (UTC). *Done 2026-10-27 (migration 0034): `trivia_week_day()` and `prompt_week_day()`; the API and app
       say "this week's" and when the next one comes; staff schedule prompts by Thursday. Verified: `dotnet test`

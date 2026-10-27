@@ -67,7 +67,8 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       build plays the video in place; phones open it in YouTube, TikTok, or the browser (in-app playback needs
       `expo-video`, not installed yet). Staff screen: Profile, "Featured artist". Verified: FeaturedApiTests (link,
       upload, validation), Featured tests, Chrome.*
-- [ ] **Daily blind album rankings** (requested 2026-10-25): a daily game where fans rank albums without seeing which
+- [ ] **Blind album rankings** (requested 2026-10-25; not daily, decided 2026-10-27: released on a day without trivia
+      or a prompt, so never Tuesday or Thursday; the exact day and how often are open): a game where fans rank albums without seeing which
       artist or title they are (for example by cover art or a short clip), then see the reveal and how their ranking
       compares. Open: what is shown blind (covers alone would give it away for big albums; 30-second previews are no
       longer available to new Spotify apps), whether it earns points, and which albums (the fan's artists or anyone's).
