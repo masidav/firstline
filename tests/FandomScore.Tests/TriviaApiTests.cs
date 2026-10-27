@@ -163,6 +163,55 @@ public sealed class TriviaApiTests(PostgresFixture postgres) : IAsyncLifetime
             .GetProperty("question").ValueKind);
     }
 
+    [Fact]
+    public async Task An_unanswered_question_stays_until_answered_and_its_results_stay_until_the_next_Tuesday()
+    {
+        var ana = await FanAsync("ana", scored: true);
+        Guid old;
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            // Last week's shared question for Geese, and Ana's copy of it, which she never answered.
+            old = await connection.ExecuteScalarAsync<Guid>(
+                """
+                WITH shared AS (
+                  INSERT INTO trivia_daily_questions (day, artist_id, kind, prompt, options, answer_index)
+                  VALUES (trivia_week_day() - 7, @_artistId, 'release_year', 'When did Geese put out Projector?', ARRAY['2021', '2023'], 0)
+                  RETURNING *)
+                INSERT INTO trivia_questions (user_id, day, artist_id, kind, prompt, options, answer_index, daily_question_id)
+                SELECT u.id, s.day, s.artist_id, s.kind, s.prompt, s.options, s.answer_index, s.id
+                FROM users u, shared s WHERE u.handle = 'ana' RETURNING id
+                """,
+                new { _artistId });
+        }
+
+        // Last week's question is still Ana's question, and still answerable, for the same 0.30 points.
+        var carried = (await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/trivia", ana), HttpStatusCode.OK)).GetProperty("question");
+        Assert.Equal((old.ToString(), false), (carried.GetProperty("id").GetString(), carried.GetProperty("answered").GetBoolean()));
+        var answered = await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/me/trivia/{old}/answer", ana, new { choice = 0 }), HttpStatusCode.OK);
+        Assert.Equal((true, 0.30m), (answered.GetProperty("correct").GetBoolean(), answered.GetProperty("points_earned").GetDecimal()));
+
+        // Answered: its results show until the next Tuesday, instead of a new question.
+        var after = (await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/trivia", ana), HttpStatusCode.OK)).GetProperty("question");
+        Assert.Equal((old.ToString(), true), (after.GetProperty("id").GetString(), after.GetProperty("answered").GetBoolean()));
+        Assert.Equal(JsonValueKind.Object, after.GetProperty("results").ValueKind);
+
+        // Once a Tuesday has passed since the answer, this week's question comes.
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            await connection.ExecuteAsync(
+                """
+                ALTER TABLE trivia_questions DISABLE TRIGGER trg_trivia_guard;
+                UPDATE trivia_questions SET answered_at = trivia_week_day()::timestamp AT TIME ZONE 'UTC' - interval '1 day' WHERE id = @old;
+                ALTER TABLE trivia_questions ENABLE TRIGGER trg_trivia_guard;
+                """,
+                new { old });
+        }
+
+        var next = (await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/trivia", ana), HttpStatusCode.OK)).GetProperty("question");
+        Assert.NotEqual(old.ToString(), next.GetProperty("id").GetString());
+        Assert.False(next.GetProperty("answered").GetBoolean());
+    }
+
     private async Task<string> FanAsync(string handle, bool scored)
     {
         var response = await _client.PostAsJsonAsync("/v1/auth/sessions",

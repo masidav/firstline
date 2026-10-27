@@ -1618,15 +1618,11 @@ BEGIN
     RAISE EXCEPTION 'changing a question should fail';
   EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%a question never changes%', SQLERRM;
   END;
-  -- Yesterday's question can't be answered any more.
+  -- An older question stays open until it's answered (0035).
   INSERT INTO trivia_questions (user_id, day, artist_id, kind, prompt, options, answer_index)
-  VALUES (fan, (now() AT TIME ZONE 'UTC')::date - 1, artist, 'track_album', 'Which album?', ARRAY['A', 'B'], 0)
+  VALUES (fan, trivia_week_day() - 14, artist, 'track_album', 'Which album?', ARRAY['A', 'B'], 0)
   RETURNING id INTO old_q;
-  BEGIN
-    PERFORM answer_trivia(fan, old_q, 0);
-    RAISE EXCEPTION 'answering yesterday''s question should fail';
-  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'trivia blocked: expired%', SQLERRM;
-  END;
+  ASSERT answer_trivia(fan, old_q, 1) = false, 'a question from two weeks ago can still be answered';
   BEGIN
     INSERT INTO trivia_questions (user_id, day, artist_id, kind, prompt, options, answer_index)
     VALUES (fan, (now() AT TIME ZONE 'UTC')::date + 1, artist, 'track_album', 'Out of range', ARRAY['A', 'B'], 2);
@@ -2136,6 +2132,29 @@ BEGIN
   END;
   -- Cancelling still works.
   UPDATE allocations SET cancelled_at = now() WHERE id = al;
+END $$;
+
+-- ------------------------------------------------------------ trivia open until answered (0035)
+-- The current question is the unanswered weekly one, else the one answered since this week's Tuesday; a question left
+-- from the daily days is skipped; one answered before this week means it's time for a new one.
+INSERT INTO users (id, handle, email) VALUES ('4c000000-0000-0000-0000-000000000001', 'trivia_open', 'trivia_open@example.test');
+DO $$
+DECLARE fan uuid := '4c000000-0000-0000-0000-000000000001'; artist uuid; weekly uuid; daily uuid;
+BEGIN
+  SELECT id INTO artist FROM artists WHERE spotify_artist_id = 'sp-active';
+  ASSERT current_trivia_question(fan) IS NULL, 'no question yet';
+  INSERT INTO trivia_questions (user_id, day, artist_id, kind, prompt, options, answer_index)
+  VALUES (fan, trivia_week_day() - 7, artist, 'track_album', 'Last week', ARRAY['A', 'B'], 0) RETURNING id INTO weekly;
+  INSERT INTO trivia_questions (user_id, day, artist_id, kind, prompt, options, answer_index)
+  VALUES (fan, trivia_week_day() - 8, artist, 'track_album', 'Daily leftover', ARRAY['A', 'B'], 0) RETURNING id INTO daily;
+  ASSERT current_trivia_question(fan) = weekly, 'last week''s unanswered question is still the current one';
+  PERFORM answer_trivia(fan, weekly, 0);
+  ASSERT current_trivia_question(fan) = weekly, 'answered this week: its results stay until the next Tuesday';
+  ALTER TABLE trivia_questions DISABLE TRIGGER trg_trivia_guard;
+  UPDATE trivia_questions SET answered_at = trivia_week_day()::timestamp AT TIME ZONE 'UTC' - interval '1 hour' WHERE id = weekly;
+  ALTER TABLE trivia_questions ENABLE TRIGGER trg_trivia_guard;
+  ASSERT current_trivia_question(fan) IS NULL, 'answered before this week, with only a daily leftover: a new question is due';
+  DELETE FROM trivia_questions WHERE user_id = fan;
 END $$;
 
 \echo ALL INVARIANT TESTS PASSED

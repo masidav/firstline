@@ -28,7 +28,8 @@ export function pointsLabel(points: number): string {
 }
 
 /**
- * This week's music trivia (GET /me/trivia): one question a week, out on Tuesdays, about one of the fan's artists. Tapping an option answers
+ * Music trivia (GET /me/trivia): one question a week, out on Tuesdays, about one of the fan's artists. It stays until
+ * the fan answers it; then its results show until the next Tuesday. Tapping an option answers
  * it (POST /me/trivia/{id}/answer); the card then shows the right answer and the points a right answer earned (a tenth
  * of logging an album). Hidden when the fan has no artist with enough catalog for a question.
  */
@@ -68,7 +69,7 @@ export function DailyTriviaCard() {
   if (!question) return null;
   return (
     <View style={styles.card}>
-      <Text style={styles.kicker}>This week's trivia · {question.artist.name}</Text>
+      <Text style={styles.kicker}>Trivia · {question.artist.name}</Text>
       <Text style={styles.prompt}>{question.prompt}</Text>
       <View style={styles.options}>
         {question.options.map((option, index) => {

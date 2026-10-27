@@ -10,7 +10,8 @@ namespace FandomScore.Api.Features.Trivia;
 
 /// <summary>
 /// Weekly music trivia (migrations 0022, 0024, and 0034): one question a week per fan about one of their scored artists,
-/// out on Tuesdays (UTC) and open until the next one. Fans of the same artist share the week's question (made from the stored catalog by the first fan who
+/// out on Tuesdays (UTC) and open until the fan answers it (then its results show until the next Tuesday). Fans of the
+/// same artist share the week's question (made from the stored catalog by the first fan who
 /// asks), so once a fan answers they see one or two people they follow who got it right and the percent of fans who
 /// did. A right answer earns <c>trivia_correct</c> (0.30 points, a tenth of logging an album) through
 /// <c>answer_trivia()</c>. Neither the answer nor the results are sent before the fan answers.
@@ -36,8 +37,9 @@ public static class TriviaEndpoints
     public sealed record TriviaResults(int Answered, int Right, int PercentRight, IReadOnlyList<SubmissionEndpoints.UserRef> FollowingRight);
 
     /// <summary>
-    /// This week's question (trivia comes out on Tuesdays, UTC, and stays open until the next one). <c>Question</c> is
-    /// null when the fan has no artist with enough catalog to ask about yet. <c>NextQuestionOn</c>: the next Tuesday.
+    /// The fan's question (trivia comes out on Tuesdays, UTC): an unanswered one stays until it's answered, even past its
+    /// week; an answered one shows its results until the next Tuesday (migration 0035). <c>Question</c> is null when the
+    /// fan has no artist with enough catalog to ask about yet. <c>NextQuestionOn</c>: the next Tuesday.
     /// </summary>
     public sealed record TriviaToday(TriviaQuestion? Question, DateOnly NextQuestionOn);
 
@@ -92,7 +94,7 @@ public static class TriviaEndpoints
                 throw e.MessageText["trivia blocked: ".Length..] switch
                 {
                     "answered" => new ApiProblemException(StatusCodes.Status409Conflict, "trivia_answered", "Already answered",
-                        "You've answered this week's question. A new one comes out on Tuesday."),
+                        "You've answered this question. A new one comes out on Tuesday."),
                     "expired" => new ApiProblemException(StatusCodes.Status409Conflict, "trivia_expired", "Question expired",
                         "That was another week's question. This week's is waiting."),
                     "choice" => ApiProblemException.Validation(new FieldError("choice", "Pick one of the options.")),
@@ -120,7 +122,7 @@ public static class TriviaEndpoints
     private static async Task<TriviaQuestion?> LoadTodayAsync(NpgsqlConnection connection, Guid me)
     {
         var row = await connection.QuerySingleOrDefaultAsync<QuestionRow>(
-            $"{QuestionSelect} WHERE q.user_id = @me AND q.day = trivia_week_day()", new { me });
+            $"{QuestionSelect} WHERE q.id = current_trivia_question(@me)", new { me });
         return row is null ? null : await ToQuestionAsync(connection, me, row);
     }
 

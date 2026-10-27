@@ -1571,8 +1571,9 @@ paths:
       operationId: getTodaysTrivia
       summary: This week's music trivia
       description: |
-        One question a week about one of the fan's scored artists: trivia comes out on Tuesdays (UTC) and stays open
-        until the next Tuesday (`next_question_on`). It is shared by the artist's fans that week (made from the album
+        One question a week about one of the fan's scored artists: trivia comes out on Tuesdays (UTC). A question stays
+        the fan's until they answer it, even past its week; once answered, it shows with its results until the next
+        Tuesday (`next_question_on`), when a new one comes (decided 2026-10-27). It is shared by the artist's fans that week (made from the album
         catalog by the first who asks). Once answered, `results` names up to two people the fan follows who
         got it right and the percent of fans who did. `question` is null when none of the fan's artists has enough catalog yet. The right answer is
         only included once the fan has answered. A right answer earns `trivia_correct` ledger points (0.30, a tenth
@@ -1614,7 +1615,7 @@ paths:
               schema: {$ref: '#/components/schemas/TriviaQuestion'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409':
-          description: 'Already answered (`code: trivia_answered`), or another day''s question (`code: trivia_expired`)'
+          description: 'Already answered (`code: trivia_answered`). (`trivia_expired` is no longer sent: questions stay open until answered.)'
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}

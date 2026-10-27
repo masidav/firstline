@@ -142,10 +142,11 @@ Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring wo
       Thursdays (UTC). *Done 2026-10-27 (migration 0034): `trivia_week_day()` and `prompt_week_day()`; the API and app
       say "this week's" and when the next one comes; staff schedule prompts by Thursday. Verified: `dotnet test`
       317/317, app Jest 260/260, dev seed.*
-- [ ] Weekly trivia and prompt rules set provisionally (2026-10-27), confirm or change: each question **stays open all
-      week**, until the next one comes out; on the other days the home screen shows **the week's question** (or its
-      results once answered); a right trivia answer still earns 0.30 points, so trivia now earns at most 0.30 a week
-      instead of a day.
+- [x] Weekly trivia rules (decided 2026-10-27): a fan's question **stays open for its artist until it's answered**,
+      even past its week; after answering, **its results show until the next Tuesday's question**; points unchanged
+      (0.30). Migration 0035 (`current_trivia_question()`). Verified: TriviaApiTests 4, invariants.
+- [ ] Weekly prompt rule set provisionally (2026-10-27), confirm or change: a prompt **stays open all week**, until the
+      next Thursday's; on the other days the home screen shows the week's prompt.
 
 Details: [Album journal API](services/api/src/features/album-journal/TODO.md) · [Journal UI](apps/mobile/src/features/album-journal/TODO.md) · [Lists API](services/api/src/features/lists/TODO.md) · [Lists UI](apps/mobile/src/features/lists/TODO.md) · [Comments API](services/api/src/features/comments/TODO.md) · [Comments UI](apps/mobile/src/features/comments/TODO.md)
 

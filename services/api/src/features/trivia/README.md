@@ -1,7 +1,8 @@
 # Weekly trivia API
 
 Migrations 0022, 0024, and 0034 (weekly since 2026-10-27). One question a week per fan, out on Tuesdays (UTC) and
-open until the next Tuesday (`trivia_week_day()`; the `day` columns hold that Tuesday), about one of their active scored
+open until the fan answers it, even past its week; then its results show until the next Tuesday (migration 0035,
+`current_trivia_question()`; the `day` columns hold the Tuesday a question came out), about one of their active scored
 artists. Fans of the same artist share the week's question (`trivia_daily_questions`, made from the stored catalog by the
 first fan who asks; a fan joins a question others are already playing when one of their artists has one); each fan's
 copy in `trivia_questions` holds their answer. Kinds (`GET /me/trivia`):
@@ -10,7 +11,7 @@ copy in `trivia_questions` holds their answer. Kinds (`GET /me/trivia`):
   and songs on two albums are skipped so there is exactly one right answer.
 - `release_year`: "What year did {artist} release "{album}"?" with four years around the right one (none in the future).
 
-`POST /me/trivia/{id}/answer` (`answer_trivia()`) takes the fan's pick once, in that week only (`trivia_answered`,
+`POST /me/trivia/{id}/answer` (`answer_trivia()`) takes the fan's pick once, whenever they get to it (`trivia_answered`,
 `trivia_expired` otherwise). A right answer earns `trivia_correct`: 0.30 ledger points, a tenth of `album_logged`, at
 most once a week (one question a week), only for active artists, reversible like every award. The right answer isn't sent until the fan has
 answered. Change the points with `PUT /v1/admin/scoring-rules/trivia_correct`.
