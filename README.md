@@ -2,6 +2,8 @@
 
 This folder contains a starter set of feature-specific `TODO.md` checklists derived from the supplied Fandom Score README. It is intended to be copied into or merged with the project repository.
 
+Useful links (local addresses, beta consoles, CI, provider dashboards, key docs): open `docs/links.html` in a browser.
+
 ## How to use
 1. Review the actual repository before moving or creating files.
 2. Merge these checklists into matching feature folders; do not overwrite existing implementation.

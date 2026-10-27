@@ -312,7 +312,9 @@ Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](servi
       App: `/tickets`. Verified: `dotnet test` 222/222 (ReservationApiTests 3, invariants), app Jest 113/113. Money
       doesn't move yet: checkout through a primary ticketer is the next item.*
 - [ ] Primary ticketing integration (Ticketmaster, AXS, SeatGeek): reserve seats from the pool and hand off checkout.
-- [ ] Promoter web dashboard: set up allocations, monitor registration, export reports.
+- [ ] Promoter web dashboard: set up allocations, monitor registration, export reports. *Built 2026-10-27
+      (`apps/promoter-web`): shows and allocations in the show city's time zone, live registrations, the draw, tickets,
+      CSV export, members. Verified: Vitest 10, Playwright journeys 3 (in CI). Not hosted yet; no eligible-fan preview.*
 - [ ] First-party fan data sharing with artists/promoters, only with explicit fan consent.
 - [ ] Billing: per-event licence fee or take-rate for promoters; fan-side fee if adopted.
 - [ ] Reporting for the pilot case study: sell-through, scalping complaints, empty seats.
@@ -340,7 +342,8 @@ Details: [ADR 0002](docs/adr/0002-hosting-gcp-gke.md) · [Infrastructure](infras
       Google sign-in (stubbed Google), deep-link reloads, logging an album online and offline, registering for an
       allocation, sign-out, and account deletion, against the real API and a seeded database. Verified: 10 passed
       locally, and a reintroduced deep-link bug fails the reload journey. Native flows (Maestro) wait on iOS builds.*
-- [ ] Promoter dashboard end-to-end tests (Playwright) and accessibility checks.
+- [ ] Promoter dashboard end-to-end tests (Playwright) and accessibility checks. *Journeys done 2026-10-27
+      (`apps/promoter-web/e2e`, CI); accessibility checks not yet.*
 - [ ] API contract tests against `openapi.yaml`; load tests for on-sale registration spikes.
       *Database load test for registration spikes done 2026-10-26 (`tools/load/run.sh`, results in `tools/load/README.md`):
       registering holds 4,000 to 5,000 a second; the show page's standing was the bottleneck and now uses an in-memory

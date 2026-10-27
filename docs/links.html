@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fandom Score: useful links</title>
+<!-- Every place worth a bookmark, in one page. Open the file in a browser; no scripts, nothing loaded from elsewhere.
+     Update it when a URL changes (beta project, hostnames, new environments). -->
+<style>
+  :root { --bg: #f6f7f9; --card: #fff; --border: #d9dde3; --text: #16181d; --muted: #5d6573; --accent: #5b4cdb; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0f1115; --card: #181b22; --border: #2c313c; --text: #f2f3f5; --muted: #9aa1ad; --accent: #a59bff; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem 3rem; }
+  h1 { margin: 0 0 0.25rem; font-size: 1.6rem; }
+  .lede { color: var(--muted); margin: 0 0 1.5rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
+  section { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.25rem; }
+  h2 { font-size: 1rem; margin: 0 0 0.6rem; }
+  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.45rem; }
+  a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  a:hover, a:focus { text-decoration: underline; }
+  small { display: block; color: var(--muted); font-weight: 400; }
+  code { font-size: 0.85em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Fandom Score: useful links</h1>
+  <p class="lede">Beta runs in GCP project <code>project-ef36a8a9-d958-4163-b4c</code> ("firstline"), region us-central1.
+    Prod isn't created yet.</p>
+
+  <div class="grid">
+    <section>
+      <h2>Run it locally</h2>
+      <ul>
+        <li><a href="http://localhost:8081">Fan app</a><small><code>cd apps/mobile &amp;&amp; npm run web</code></small></li>
+        <li><a href="http://127.0.0.1:8081">Fan app on 127.0.0.1</a><small>Use this address to connect Spotify</small></li>
+        <li><a href="http://localhost:5173">Promoter dashboard</a><small><code>cd apps/promoter-web &amp;&amp; npm run dev</code></small></li>
+        <li><a href="http://localhost:5271/v1/health">API health</a><small><code>dotnet run --project services/api</code></small></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Beta</h2>
+      <ul>
+        <li><a href="https://api.beta.firstline.com/v1/health">API health</a><small>When beta is running and its DNS record points at the load balancer</small></li>
+        <li><a href="https://console.cloud.google.com/home/dashboard?project=project-ef36a8a9-d958-4163-b4c">Cloud console home</a></li>
+        <li><a href="https://console.cloud.google.com/kubernetes/list/overview?project=project-ef36a8a9-d958-4163-b4c">GKE cluster and workloads</a><small>Cluster <code>fandomscore-beta</code></small></li>
+        <li><a href="https://console.cloud.google.com/logs/query?project=project-ef36a8a9-d958-4163-b4c">Logs</a></li>
+        <li><a href="https://console.cloud.google.com/monitoring/dashboards?project=project-ef36a8a9-d958-4163-b4c">Monitoring dashboards</a><small>And alerts, uptime checks</small></li>
+        <li><a href="https://console.cloud.google.com/sql/instances?project=project-ef36a8a9-d958-4163-b4c">Cloud SQL</a><small>Instance <code>fandomscore-beta</code>, backups</small></li>
+        <li><a href="https://console.cloud.google.com/storage/browser?project=project-ef36a8a9-d958-4163-b4c">Storage buckets</a><small>Quarantine, archive, media, Terraform state</small></li>
+        <li><a href="https://console.cloud.google.com/security/secret-manager?project=project-ef36a8a9-d958-4163-b4c">Secret Manager</a></li>
+        <li><a href="https://console.cloud.google.com/artifacts?project=project-ef36a8a9-d958-4163-b4c">Artifact Registry</a><small>Images and their vulnerability scans</small></li>
+        <li><a href="https://console.cloud.google.com/net-security/securitypolicies/list?project=project-ef36a8a9-d958-4163-b4c">Cloud Armor</a></li>
+        <li><a href="https://console.cloud.google.com/billing">Billing and budgets</a></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Code and CI</h2>
+      <ul>
+        <li><a href="https://github.com/masidav/firstline">Repository</a></li>
+        <li><a href="https://github.com/masidav/firstline/actions/workflows/ci.yml">CI runs</a></li>
+        <li><a href="https://github.com/masidav/firstline/actions/workflows/deploy.yml">Deploy runs</a></li>
+        <li><a href="https://github.com/masidav/firstline/settings/environments">GitHub environments</a><small>Beta and prod deploy settings</small></li>
+        <li><a href="https://github.com/masidav/firstline/settings/variables/actions">Actions variables</a><small><code>DEPLOY_ENABLED</code>, <code>PROD_DEPLOY_ENABLED</code></small></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Sign-in and providers</h2>
+      <ul>
+        <li><a href="https://console.cloud.google.com/auth/audience?project=project-ef36a8a9-d958-4163-b4c">Google OAuth consent screen</a><small>Add beta testers as test users, or publish</small></li>
+        <li><a href="https://console.cloud.google.com/apis/credentials?project=project-ef36a8a9-d958-4163-b4c">Google OAuth clients</a><small>Redirect URIs for the fan app and the dashboard</small></li>
+        <li><a href="https://developer.spotify.com/dashboard">Spotify developer dashboard</a><small>Redirect URIs, allowlisted users (development mode)</small></li>
+        <li><a href="https://developer.apple.com/account">Apple Developer account</a><small>Sign in with Apple, TestFlight</small></li>
+        <li><a href="https://developer.ticketmaster.com/">Ticketmaster developer portal</a><small>Concert data</small></li>
+        <li><a href="https://expo.dev">Expo</a><small>EAS builds for iOS and Android</small></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Plans and decisions</h2>
+      <ul>
+        <li><a href="https://github.com/masidav/firstline/blob/main/PROJECT_TODO.md">Roadmap and open decisions</a></li>
+        <li><a href="https://github.com/masidav/firstline/blob/main/executive_summary.txt">Executive summary</a></li>
+        <li><a href="https://github.com/masidav/firstline/tree/main/docs/adr">Architecture decisions</a></li>
+        <li><a href="https://github.com/masidav/firstline/blob/main/openapi.yaml">API contract</a></li>
+        <li><a href="https://github.com/masidav/firstline/blob/main/CLAUDE.md">How the repo works</a></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Guides</h2>
+      <ul>
+        <li><a href="https://github.com/masidav/firstline/blob/main/docs/DEVELOPMENT.md">Local development</a></li>
+        <li><a href="https://github.com/masidav/firstline/blob/main/apps/mobile/README.md">Fan app</a></li>
+        <li><a href="https://github.com/masidav/firstline/blob/main/apps/promoter-web/README.md">Promoter dashboard</a></li>
+        <li><a href="https://github.com/masidav/firstline/blob/main/infrastructure/README.md">Infrastructure and deploys</a></li>
+        <li><a href="https://github.com/masidav/firstline/blob/main/infrastructure/RUNBOOK.md">On-call runbook</a></li>
+        <li><a href="https://github.com/masidav/firstline/blob/main/tools/load/README.md">Load test results</a></li>
+      </ul>
+    </section>
+  </div>
+</main>
+</body>
+</html>

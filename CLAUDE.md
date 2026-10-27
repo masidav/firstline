@@ -12,6 +12,7 @@ dotnet run --project database                 # apply migrations (needs Connecti
 dotnet run --project services/api             # http://localhost:5271/v1/health
 dotnet run --project workers                  # background jobs (Postgres queue)
 cd apps/mobile && npm run web                 # fan app in the browser (npm test, npm run typecheck)
+cd apps/promoter-web && npm run dev           # promoter dashboard (npm test, npm run typecheck, e2e/run.sh)
 ```
 Local setup: `docs/DEVELOPMENT.md`. If the .NET SDK isn't installed, run these in `mcr.microsoft.com/dotnet/sdk:10.0`.
 
@@ -26,6 +27,7 @@ Local setup: `docs/DEVELOPMENT.md`. If the .NET SDK isn't installed, run these i
 - `tests/FandomScore.Tests`: xUnit tests (migrations, invariants, API).
 - `apps/mobile`: fan app (Expo; web now, iOS later). Its API types are generated from `openapi.yaml`
   (`npm run generate:api`); regenerate them whenever the contract changes.
+- `apps/promoter-web`: promoter dashboard (Vite + React). Same generated types (`npm run generate:api` there too).
 - `openapi.yaml`: the API contract. The API implements it; clients are generated from it.
 - Decisions: `docs/adr/`. Plans: `docs/plans/`.
 
