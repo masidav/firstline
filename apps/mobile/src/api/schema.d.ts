@@ -2615,10 +2615,351 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/organizations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every organization, with members */
+        get: operations["listOrganizations"];
+        put?: never;
+        /**
+         * Create a promoter organization with its first owner
+         * @description Staff create each promoter organization by hand (decided 2026-10-27, no self-serve sign-up), naming its first
+         *     owner by handle; the owner signs in with the account fans use. Every membership change is audit-logged.
+         */
+        post: operations["createOrganization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/organizations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The organizations I belong to */
+        get: operations["listMyOrganizations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{organizationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * An organization and its members
+         * @description Members only. Someone who isn't a member gets `404`, as if it didn't exist. Roles: `owner` (manages members,
+         *     and everything an admin does), `admin` (manages the organization's shows and allocations, queues draws),
+         *     `analyst` (reads them). Every route under `/organizations/{organizationId}` works this way, and a show or
+         *     allocation that isn't the organization's is `404` there.
+         */
+        get: operations["getOrganization"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{organizationId}/members/{handle}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                handle: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Add a member, or change a member's role
+         * @description Owners only. The account must exist. An organization must keep an owner (`409`).
+         */
+        put: operations["putOrganizationMember"];
+        post?: never;
+        /**
+         * Remove a member
+         * @description Owners only. An organization must keep an owner (`409`).
+         */
+        delete: operations["removeOrganizationMember"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{organizationId}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * The organization's shows with their allocations
+         * @description Newest show first, drafts included, at most 200. Any member.
+         */
+        get: operations["listOrganizationEvents"];
+        put?: never;
+        /**
+         * Add a show for the organization
+         * @description Admins and owners. Same rules as `POST /admin/events`; `organization_id` in the body is ignored.
+         */
+        post: operations["createOrganizationEvent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{organizationId}/events/{eventId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        /** One of the organization's shows, drafts included */
+        get: operations["getOrganizationEvent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edit one of the organization's shows
+         * @description Admins and owners. Same rules as `PATCH /admin/events/{eventId}`.
+         */
+        patch: operations["updateOrganizationEvent"];
+        trace?: never;
+    };
+    "/organizations/{organizationId}/events/{eventId}/allocations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a fan allocation to one of the organization's shows
+         * @description Admins and owners. Same rules as `POST /admin/events/{eventId}/allocations`.
+         */
+        post: operations["createOrganizationAllocation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{organizationId}/allocations/{allocationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a draft allocation */
+        delete: operations["deleteOrganizationAllocationDraft"];
+        options?: never;
+        head?: never;
+        /**
+         * Edit an allocation's rules before registration opens
+         * @description Admins and owners. Same rules as `PATCH /admin/allocations/{allocationId}`.
+         */
+        patch: operations["updateOrganizationAllocation"];
+        trace?: never;
+    };
+    "/organizations/{organizationId}/allocations/{allocationId}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish an allocation to fans */
+        post: operations["publishOrganizationAllocation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{organizationId}/allocations/{allocationId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a published allocation (before its draw) */
+        post: operations["cancelOrganizationAllocation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{organizationId}/allocations/{allocationId}/selection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        /** Where the draw stands */
+        get: operations["getOrganizationSelection"];
+        put?: never;
+        /**
+         * Queue the draw
+         * @description Admins and owners. Same as `POST /admin/allocations/{allocationId}/selection`.
+         */
+        post: operations["queueOrganizationSelection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{organizationId}/allocations/{allocationId}/registrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Who registered, in ranking order once the draw has run
+         * @description Fans as handles and registration status only: no scores, hub cities, or contact details (sharing fan data
+         *     with promoters needs the fan's consent, PROJECT_TODO.md Phase 11). Withdrawn registrations last.
+         */
+        get: operations["listOrganizationRegistrations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{organizationId}/allocations/{allocationId}/reservations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Who holds seats
+         * @description Same as `GET /admin/allocations/{allocationId}/reservations` (never a ticket token).
+         */
+        get: operations["listOrganizationReservations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description A promoter organization (migration 0037). */
+        Organization: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @enum {string} */
+            kind: "promoter";
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * @description The caller's role; null for staff who aren't members
+             * @enum {string|null}
+             */
+            my_role: "owner" | "admin" | "analyst" | null;
+            members: components["schemas"]["OrganizationMember"][];
+        };
+        OrganizationMember: {
+            handle: string;
+            display_name: string | null;
+            /** @enum {string} */
+            role: "owner" | "admin" | "analyst";
+            /** Format: date-time */
+            added_at: string;
+        };
+        OrganizationList: {
+            items: components["schemas"]["Organization"][];
+        };
+        /** @description What a promoter sees of a fan's registration. */
+        PromoterRegistration: {
+            handle: string;
+            /** @enum {string} */
+            status: "registered" | "withdrawn" | "selected" | "not_selected" | "returned";
+            /** @description The show's city is one of the fan's hub cities (the draw puts local fans first) */
+            local: boolean;
+            plus_one: boolean;
+            selection_rank: number | null;
+            seats: number | null;
+            /** Format: date-time */
+            registered_at: string;
+            /** Format: date-time */
+            withdrawn_at: string | null;
+        };
         Problem: {
             /** Format: uri-reference */
             type: string;
@@ -3073,6 +3414,11 @@ export interface components {
             city_id: string;
             /** Format: date-time */
             starts_at: string;
+            /**
+             * Format: uuid
+             * @description Staff only (`POST /admin/events`), the promoter organization that manages the show; omit for a staff-managed show. Ignored under `/organizations/{organizationId}`.
+             */
+            organization_id?: string | null;
         };
         EventUpdate: {
             name?: string;
@@ -4346,6 +4692,7 @@ export interface components {
         ArtistId: string;
         EventId: string;
         AllocationId: string;
+        OrganizationId: string;
         AlbumId: string;
         LogId: string;
         CommentId: string;
@@ -8261,6 +8608,526 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    listOrganizations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Organizations by name */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationList"];
+                };
+            };
+        };
+    };
+    createOrganization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    /** @description An existing account's handle */
+                    owner_handle: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Organization"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    listMyOrganizations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description My organizations by name, with my role in each (`my_role`) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationList"];
+                };
+            };
+        };
+    };
+    getOrganization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The organization */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Organization"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    putOrganizationMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    role: "owner" | "admin" | "analyst";
+                };
+            };
+        };
+        responses: {
+            /** @description The organization after the change */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Organization"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    removeOrganizationMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listOrganizationEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Shows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["EventDetail"][];
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createOrganizationEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventCreate"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventDetail"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getOrganizationEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The show */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventDetail"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateOrganizationEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventUpdate"];
+            };
+        };
+        responses: {
+            /** @description The show */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventDetail"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["AllocationLocked"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    createOrganizationAllocation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AllocationCreate"];
+            };
+        };
+        responses: {
+            /** @description Created (a draft) */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Allocation"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    deleteOrganizationAllocationDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    updateOrganizationAllocation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AllocationUpdate"];
+            };
+        };
+        responses: {
+            /** @description The allocation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Allocation"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["AllocationLocked"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    publishOrganizationAllocation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Published */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Allocation"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    cancelOrganizationAllocation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancelled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Allocation"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getOrganizationSelection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The draw's state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrawStatus"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    queueOrganizationSelection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The draw had already run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrawStatus"];
+                };
+            };
+            /** @description The draw is queued (or already queued or running) */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrawStatus"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Registration still open (`code: selection_not_ready`), a draft or cancelled (`conflict`), or the artist isn't active */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listOrganizationRegistrations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Registrations and the draw, if it has run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        selection: components["schemas"]["Selection"] | null;
+                        items: components["schemas"]["PromoterRegistration"][];
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listOrganizationReservations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reservations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            handle: string;
+                            reservation: components["schemas"]["Reservation"];
+                        }[];
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
         };
     };
 }

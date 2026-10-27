@@ -2183,4 +2183,63 @@ BEGIN
   ASSERT allocation_selection_blocker(al) = 'cancelled', 'a cancelled allocation blocks the draw';
 END $$;
 
+-- ------------------------------------------------------------ organizations (0037)
+-- Every membership change is logged with its actor; the log is append-only; an organization keeps an owner, except
+-- that deleting an account always goes through.
+DO $$
+DECLARE org uuid; owner_id uuid; admin_id uuid; staff_id uuid;
+BEGIN
+  INSERT INTO users (handle, email) VALUES ('org_owner', 'org_owner@example.test') RETURNING id INTO owner_id;
+  INSERT INTO users (handle, email) VALUES ('org_admin', 'org_admin@example.test') RETURNING id INTO admin_id;
+  INSERT INTO users (handle, email, is_staff) VALUES ('org_staff', 'org_staff@example.test', true) RETURNING id INTO staff_id;
+  INSERT INTO organizations (name, created_by) VALUES ('Invariant Presents', staff_id) RETURNING id INTO org;
+
+  PERFORM set_config('fandom.actor', staff_id::text, true);
+  INSERT INTO organization_members (organization_id, user_id, role, added_by) VALUES (org, owner_id, 'owner', staff_id);
+  PERFORM set_config('fandom.actor', owner_id::text, true);
+  INSERT INTO organization_members (organization_id, user_id, role, added_by) VALUES (org, admin_id, 'analyst', owner_id);
+  UPDATE organization_members SET role = 'admin' WHERE organization_id = org AND user_id = admin_id;
+  ASSERT (SELECT array_agg(action || ':' || COALESCE(old_role, '-') || '>' || COALESCE(new_role, '-') ORDER BY id)
+            FROM organization_audit WHERE organization_id = org)
+         = ARRAY['member_added:->owner', 'member_added:->analyst', 'role_changed:analyst>admin'], 'membership changes are logged';
+  ASSERT (SELECT actor_id FROM organization_audit WHERE organization_id = org ORDER BY id LIMIT 1) = staff_id, 'the actor is recorded';
+
+  BEGIN
+    UPDATE organization_audit SET action = 'member_removed' WHERE organization_id = org;
+    RAISE EXCEPTION 'editing the audit log should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%never changed or deleted%', SQLERRM;
+  END;
+  BEGIN
+    DELETE FROM organization_audit WHERE organization_id = org;
+    RAISE EXCEPTION 'deleting from the audit log should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%never changed or deleted%', SQLERRM;
+  END;
+
+  BEGIN
+    UPDATE organization_members SET role = 'admin' WHERE organization_id = org AND user_id = owner_id;
+    RAISE EXCEPTION 'demoting the last owner should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%must keep an owner%', SQLERRM;
+  END;
+  BEGIN
+    DELETE FROM organization_members WHERE organization_id = org AND user_id = owner_id;
+    RAISE EXCEPTION 'removing the last owner should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%must keep an owner%', SQLERRM;
+  END;
+
+  -- With a second owner, the first can step down.
+  UPDATE organization_members SET role = 'owner' WHERE organization_id = org AND user_id = admin_id;
+  UPDATE organization_members SET role = 'analyst' WHERE organization_id = org AND user_id = owner_id;
+
+  -- Deleting the (now only) owner's account still goes through and is logged as such.
+  PERFORM set_config('fandom.actor', '', true);
+  UPDATE users SET deleted_at = now() WHERE id = admin_id;
+  ASSERT NOT EXISTS (SELECT 1 FROM organization_members WHERE user_id = admin_id), 'a deleted account leaves its organizations';
+  ASSERT (SELECT action FROM organization_audit WHERE organization_id = org AND user_id = admin_id ORDER BY id DESC LIMIT 1)
+         = 'account_deleted', 'account deletion is logged';
+END $$;
+SELECT pg_temp.expect_error($$INSERT INTO organization_members (organization_id, user_id, role)
+  SELECT id, '00000000-0000-0000-0000-000000000001', 'boss' FROM organizations LIMIT 1$$, 'organization_members_role_check');
+SELECT pg_temp.expect_error($$INSERT INTO organizations (name) VALUES ('invariant presents')$$, 'organizations_name_uidx');
+SELECT pg_temp.expect_error($$INSERT INTO organizations (name, kind) VALUES ('Label Co', 'label')$$, 'organizations_kind_check');
+
 \echo ALL INVARIANT TESTS PASSED

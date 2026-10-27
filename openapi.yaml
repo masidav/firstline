@@ -68,6 +68,8 @@ tags:
   - name: Social
   - name: Allocations
     description: Shows and their fan allocations (face-value tickets set aside for top fans).
+  - name: Organizations
+    description: Promoter organizations and the shows they manage (members only).
   - name: Webhooks
   - name: Admin
   - name: Meta
@@ -3046,6 +3048,366 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
 
+  # ------------------------------------------------------------------ Organizations
+  /admin/organizations:
+    post:
+      tags: [Admin, Organizations]
+      operationId: createOrganization
+      summary: Create a promoter organization with its first owner
+      description: |
+        Staff create each promoter organization by hand (decided 2026-10-27, no self-serve sign-up), naming its first
+        owner by handle; the owner signs in with the account fans use. Every membership change is audit-logged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, owner_handle]
+              properties:
+                name: {type: string, maxLength: 200}
+                owner_handle: {type: string, description: An existing account's handle}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Organization'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+    get:
+      tags: [Admin, Organizations]
+      operationId: listOrganizations
+      summary: Every organization, with members
+      responses:
+        '200':
+          description: Organizations by name
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrganizationList'}
+  /me/organizations:
+    get:
+      tags: [Organizations]
+      operationId: listMyOrganizations
+      summary: The organizations I belong to
+      responses:
+        '200':
+          description: My organizations by name, with my role in each (`my_role`)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrganizationList'}
+  /organizations/{organizationId}:
+    parameters:
+      - {$ref: '#/components/parameters/OrganizationId'}
+    get:
+      tags: [Organizations]
+      operationId: getOrganization
+      summary: An organization and its members
+      description: |
+        Members only. Someone who isn't a member gets `404`, as if it didn't exist. Roles: `owner` (manages members,
+        and everything an admin does), `admin` (manages the organization's shows and allocations, queues draws),
+        `analyst` (reads them). Every route under `/organizations/{organizationId}` works this way, and a show or
+        allocation that isn't the organization's is `404` there.
+      responses:
+        '200':
+          description: The organization
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Organization'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /organizations/{organizationId}/members/{handle}:
+    parameters:
+      - {$ref: '#/components/parameters/OrganizationId'}
+      - {name: handle, in: path, required: true, schema: {type: string}}
+    put:
+      tags: [Organizations]
+      operationId: putOrganizationMember
+      summary: Add a member, or change a member's role
+      description: Owners only. The account must exist. An organization must keep an owner (`409`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: {type: string, enum: [owner, admin, analyst]}
+      responses:
+        '200':
+          description: The organization after the change
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Organization'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+    delete:
+      tags: [Organizations]
+      operationId: removeOrganizationMember
+      summary: Remove a member
+      description: Owners only. An organization must keep an owner (`409`).
+      responses:
+        '204': {description: Removed}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /organizations/{organizationId}/events:
+    parameters:
+      - {$ref: '#/components/parameters/OrganizationId'}
+    get:
+      tags: [Organizations, Allocations]
+      operationId: listOrganizationEvents
+      summary: The organization's shows with their allocations
+      description: Newest show first, drafts included, at most 200. Any member.
+      responses:
+        '200':
+          description: Shows
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/EventDetail'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      tags: [Organizations, Allocations]
+      operationId: createOrganizationEvent
+      summary: Add a show for the organization
+      description: Admins and owners. Same rules as `POST /admin/events`; `organization_id` in the body is ignored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EventCreate'}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EventDetail'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /organizations/{organizationId}/events/{eventId}:
+    parameters:
+      - {$ref: '#/components/parameters/OrganizationId'}
+      - {$ref: '#/components/parameters/EventId'}
+    get:
+      tags: [Organizations, Allocations]
+      operationId: getOrganizationEvent
+      summary: One of the organization's shows, drafts included
+      responses:
+        '200':
+          description: The show
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EventDetail'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      tags: [Organizations, Allocations]
+      operationId: updateOrganizationEvent
+      summary: Edit one of the organization's shows
+      description: Admins and owners. Same rules as `PATCH /admin/events/{eventId}`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EventUpdate'}
+      responses:
+        '200':
+          description: The show
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EventDetail'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/AllocationLocked'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /organizations/{organizationId}/events/{eventId}/allocations:
+    parameters:
+      - {$ref: '#/components/parameters/OrganizationId'}
+      - {$ref: '#/components/parameters/EventId'}
+    post:
+      tags: [Organizations, Allocations]
+      operationId: createOrganizationAllocation
+      summary: Add a fan allocation to one of the organization's shows
+      description: Admins and owners. Same rules as `POST /admin/events/{eventId}/allocations`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AllocationCreate'}
+      responses:
+        '201':
+          description: Created (a draft)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Allocation'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /organizations/{organizationId}/allocations/{allocationId}:
+    parameters:
+      - {$ref: '#/components/parameters/OrganizationId'}
+      - {$ref: '#/components/parameters/AllocationId'}
+    patch:
+      tags: [Organizations, Allocations]
+      operationId: updateOrganizationAllocation
+      summary: Edit an allocation's rules before registration opens
+      description: Admins and owners. Same rules as `PATCH /admin/allocations/{allocationId}`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AllocationUpdate'}
+      responses:
+        '200':
+          description: The allocation
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Allocation'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/AllocationLocked'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+    delete:
+      tags: [Organizations, Allocations]
+      operationId: deleteOrganizationAllocationDraft
+      summary: Delete a draft allocation
+      responses:
+        '204': {description: Deleted}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /organizations/{organizationId}/allocations/{allocationId}/publish:
+    parameters:
+      - {$ref: '#/components/parameters/OrganizationId'}
+      - {$ref: '#/components/parameters/AllocationId'}
+    post:
+      tags: [Organizations, Allocations]
+      operationId: publishOrganizationAllocation
+      summary: Publish an allocation to fans
+      responses:
+        '200':
+          description: Published
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Allocation'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /organizations/{organizationId}/allocations/{allocationId}/cancel:
+    parameters:
+      - {$ref: '#/components/parameters/OrganizationId'}
+      - {$ref: '#/components/parameters/AllocationId'}
+    post:
+      tags: [Organizations, Allocations]
+      operationId: cancelOrganizationAllocation
+      summary: Cancel a published allocation (before its draw)
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Allocation'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /organizations/{organizationId}/allocations/{allocationId}/selection:
+    parameters:
+      - {$ref: '#/components/parameters/OrganizationId'}
+      - {$ref: '#/components/parameters/AllocationId'}
+    post:
+      tags: [Organizations, Allocations]
+      operationId: queueOrganizationSelection
+      summary: Queue the draw
+      description: Admins and owners. Same as `POST /admin/allocations/{allocationId}/selection`.
+      responses:
+        '202':
+          description: The draw is queued (or already queued or running)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DrawStatus'}
+        '200':
+          description: The draw had already run
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DrawStatus'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: 'Registration still open (`code: selection_not_ready`), a draft or cancelled (`conflict`), or the artist isn''t active'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+    get:
+      tags: [Organizations, Allocations]
+      operationId: getOrganizationSelection
+      summary: Where the draw stands
+      responses:
+        '200':
+          description: The draw's state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DrawStatus'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /organizations/{organizationId}/allocations/{allocationId}/registrations:
+    parameters:
+      - {$ref: '#/components/parameters/OrganizationId'}
+      - {$ref: '#/components/parameters/AllocationId'}
+    get:
+      tags: [Organizations, Allocations]
+      operationId: listOrganizationRegistrations
+      summary: Who registered, in ranking order once the draw has run
+      description: |
+        Fans as handles and registration status only: no scores, hub cities, or contact details (sharing fan data
+        with promoters needs the fan's consent, PROJECT_TODO.md Phase 11). Withdrawn registrations last.
+      responses:
+        '200':
+          description: Registrations and the draw, if it has run
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [selection, items]
+                properties:
+                  selection: {oneOf: [{$ref: '#/components/schemas/Selection'}, {type: 'null'}]}
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/PromoterRegistration'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /organizations/{organizationId}/allocations/{allocationId}/reservations:
+    parameters:
+      - {$ref: '#/components/parameters/OrganizationId'}
+      - {$ref: '#/components/parameters/AllocationId'}
+    get:
+      tags: [Organizations, Allocations]
+      operationId: listOrganizationReservations
+      summary: Who holds seats
+      description: Same as `GET /admin/allocations/{allocationId}/reservations` (never a ticket token).
+      responses:
+        '200':
+          description: Reservations
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [handle, reservation]
+                      properties:
+                        handle: {type: string}
+                        reservation: {$ref: '#/components/schemas/Reservation'}
+        '404': {$ref: '#/components/responses/NotFound'}
 components:
   securitySchemes:
     bearerAuth:
@@ -3077,6 +3439,8 @@ components:
       {name: eventId, in: path, required: true, schema: {type: string, format: uuid}}
     AllocationId:
       {name: allocationId, in: path, required: true, schema: {type: string, format: uuid}}
+    OrganizationId:
+      {name: organizationId, in: path, required: true, schema: {type: string, format: uuid}}
     AlbumId:
       {name: albumId, in: path, required: true, schema: {type: string, format: uuid}}
     LogId:
@@ -3139,6 +3503,47 @@ components:
           schema: {$ref: '#/components/schemas/Problem'}
 
   schemas:
+    Organization:
+      type: object
+      description: A promoter organization (migration 0037).
+      required: [id, name, kind, created_at, my_role, members]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        kind: {type: string, enum: [promoter]}
+        created_at: {type: string, format: date-time}
+        my_role: {type: [string, 'null'], enum: [owner, admin, analyst, null], description: The caller's role; null for staff who aren't members}
+        members:
+          type: array
+          items: {$ref: '#/components/schemas/OrganizationMember'}
+    OrganizationMember:
+      type: object
+      required: [handle, display_name, role, added_at]
+      properties:
+        handle: {type: string}
+        display_name: {type: [string, 'null']}
+        role: {type: string, enum: [owner, admin, analyst]}
+        added_at: {type: string, format: date-time}
+    OrganizationList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Organization'}
+    PromoterRegistration:
+      type: object
+      description: What a promoter sees of a fan's registration.
+      required: [handle, status, local, plus_one, selection_rank, seats, registered_at, withdrawn_at]
+      properties:
+        handle: {type: string}
+        status: {type: string, enum: [registered, withdrawn, selected, not_selected, returned]}
+        local: {type: boolean, description: The show's city is one of the fan's hub cities (the draw puts local fans first)}
+        plus_one: {type: boolean}
+        selection_rank: {type: [integer, 'null']}
+        seats: {type: [integer, 'null']}
+        registered_at: {type: string, format: date-time}
+        withdrawn_at: {type: [string, 'null'], format: date-time}
     Problem:
       type: object
       required: [type, title, status, code]
@@ -3636,6 +4041,10 @@ components:
         venue: {type: [string, 'null'], maxLength: 200}
         city_id: {type: string}
         starts_at: {type: string, format: date-time}
+        organization_id:
+          type: [string, 'null']
+          format: uuid
+          description: Staff only (`POST /admin/events`), the promoter organization that manages the show; omit for a staff-managed show. Ignored under `/organizations/{organizationId}`.
     EventUpdate:
       type: object
       properties:

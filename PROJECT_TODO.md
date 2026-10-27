@@ -275,7 +275,11 @@ Details: [Notifications](services/api/src/features/notifications/TODO.md) · [Mo
 Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](services/api/src/integrations/apple-music/TODO.md)
 
 ## Phase 11 — Promoter allocation platform (B2B)
-- [ ] Promoter and artist organizations with staff roles and permissions.
+- [ ] Promoter and artist organizations with staff roles and permissions. *Promoter organizations done 2026-10-27
+      (migration 0037, `services/api/src/features/organizations`): owner, admin, and analyst roles; staff create the
+      organization and its first owner; members manage their own shows and allocations under `/v1/organizations/{id}`
+      and see fans as handles and status only; membership changes are audit-logged. Verified: OrganizationApiTests 5,
+      invariants. Artist and management organizations later.*
 - [x] Events and allocation pools: share of inventory, eligibility thresholds, registration window. Staff-managed
       for now (`/v1/admin/events`, `tools/dev/allocations.py`); verified 2026-10-21, AllocationApiTests 16/16.
 - [ ] Fan registration for an allocation and a fair, auditable selection: ranked by fandom score among fans
@@ -469,6 +473,9 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
 - [ ] Choose an email provider for staff notifications (and later fan email), e.g. a transactional email API.
 - [ ] Decide on the fan-side fee and whether App Store / Google Play payment rules apply to it.
 - [ ] Choose the first pilot artist(s) and promoter.
+- [x] Promoter organizations for the pilot (decided 2026-10-27): staff create each organization and its first owner
+      by hand, no self-serve sign-up; promoters sign in with the same Google or Apple accounts as fans; promoters see
+      fans as handles and registration status only, not emails, scores, or hub cities.
 - [x] Concert data source (decided 2026-10-20): **concert APIs** for shows and sale dates (candidates:
       Ticketmaster Discovery, SeatGeek, Bandsintown, Songkick), plus possibly a **scraper for news and presale
       announcements**, including artists' X/Twitter and Instagram posts.

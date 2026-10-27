@@ -11,8 +11,8 @@ namespace FandomScore.Api.Features.Allocations;
 
 /// <summary>
 /// Shows and their fan allocations (migration 0013). Fans read published allocations (<c>/artists/{id}/events</c>,
-/// <c>/events/{id}</c>); staff create and edit shows and allocations under <c>/admin</c> until promoter
-/// organizations exist. An allocation starts as a draft, is published to fans, and its rules lock once registration
+/// <c>/events/{id}</c>); staff create and edit shows and allocations under <c>/admin</c>, and promoter organizations
+/// their own under <c>/organizations/{id}</c> (migration 0037, AllocationEndpoints.Organizations.cs). An allocation starts as a draft, is published to fans, and its rules lock once registration
 /// opens (database triggers enforce that, the show's time and city, and the publishing preconditions).
 /// </summary>
 public static partial class AllocationEndpoints
@@ -38,6 +38,7 @@ public static partial class AllocationEndpoints
         admin.MapPost("/allocations/{allocationId:guid}/cancel", CancelAsync);
         admin.MapDelete("/allocations/{allocationId:guid}", DeleteDraftAsync);
         MapSelection(admin);
+        MapOrganizationShows(v1);
     }
 
     /// <summary>
@@ -128,10 +129,15 @@ public static partial class AllocationEndpoints
         return Results.Ok(await LoadEventAsync(connection, eventId, includeDrafts: true));
     }
 
+    // Under /organizations/{id} the show is the organization's; staff may name an organization (organization_id) or
+    // leave the show staff-managed.
     private static async Task<IResult> CreateEventAsync(
-        ClaimsPrincipal user, JsonElement body, NpgsqlDataSource db, CancellationToken cancellationToken)
+        ClaimsPrincipal user, HttpContext http, JsonElement body, NpgsqlDataSource db, CancellationToken cancellationToken)
     {
         var input = new BodyReader(body);
+        var organizationId = http.GetRouteValue("organizationId") is string route
+            ? Guid.Parse(route)
+            : input.Guid("organization_id", required: false);
         var artistId = input.Guid("artist_id", required: true);
         var name = input.Text("name", 200, required: true);
         var venue = input.Text("venue", 200, required: false, nullable: true);
@@ -147,13 +153,20 @@ public static partial class AllocationEndpoints
         }
 
         await RequireCityAsync(connection, cityId!);
+        if (organizationId is not null && !await connection.ExecuteScalarAsync<bool>(
+                "SELECT EXISTS (SELECT 1 FROM organizations WHERE id = @organizationId)", new { organizationId }))
+        {
+            throw ApiProblemException.Validation(new FieldError("organization_id", "No organization has this id."));
+        }
+
         var eventId = await connection.ExecuteScalarAsync<Guid>(
             """
-            INSERT INTO events (artist_id, name, venue, city_id, city, country, starts_at, created_by)
-            SELECT @artistId, @name, @venue, c.id, c.name, c.country, @startsAt, @createdBy FROM cities c WHERE c.id = @cityId
+            INSERT INTO events (artist_id, name, venue, city_id, city, country, starts_at, created_by, organization_id)
+            SELECT @artistId, @name, @venue, c.id, c.name, c.country, @startsAt, @createdBy, @organizationId
+            FROM cities c WHERE c.id = @cityId
             RETURNING id
             """,
-            new { artistId, name, venue = venue.Value, cityId, startsAt, createdBy = user.UserId() });
+            new { artistId, name, venue = venue.Value, cityId, startsAt, createdBy = user.UserId(), organizationId });
         return Results.Created($"/v1/events/{eventId}", await LoadEventAsync(connection, eventId, includeDrafts: true));
     }
 
