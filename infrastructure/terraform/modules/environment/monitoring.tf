@@ -112,13 +112,14 @@ resource "google_monitoring_alert_policy" "api_down" {
 }
 
 # --- Worker and queue: the worker serves no traffic, so its failures are only visible in its logs. Two log-based
-# metrics count them (workers/jobs/JobRunner.cs writes the messages), and alerts watch those.
+# metrics count them (workers/jobs/JobRunner.cs writes the messages), and alerts watch those. The worker image runs
+# as two Deployments (worker, and redaction for the jobs that touch submission files); both are watched.
 
 locals {
   worker_logs = <<-EOT
     resource.type="k8s_container"
     resource.labels.namespace_name="${local.namespace}"
-    resource.labels.container_name="worker"
+    resource.labels.container_name=("worker" OR "redaction")
   EOT
 }
 
@@ -405,7 +406,7 @@ resource "google_monitoring_alert_policy" "api_errors" {
 }
 
 # Verified proof must be redacted and archived before the quarantine bucket deletes it at 30 days (storage.tf). The
-# worker's hourly redaction.sweep logs "Redaction overdue: ..." while any verified file is still in quarantine 25 days
+# redaction deployment's hourly redaction.sweep logs "Redaction overdue: ..." while any verified file is still in quarantine 25 days
 # after upload (workers/image-redaction/RedactionSweepJob.cs); this alert emails at most once every 6 hours.
 resource "google_monitoring_alert_policy" "redaction_overdue" {
   display_name = "Proof photos about to be lost (${var.environment})"
@@ -415,7 +416,7 @@ resource "google_monitoring_alert_policy" "redaction_overdue" {
   conditions {
     display_name = "Verified files still in quarantine after 25 days"
     condition_matched_log {
-      filter = "resource.type = \"k8s_container\" AND resource.labels.container_name = \"worker\" AND jsonPayload.Message =~ \"^Redaction overdue\""
+      filter = "resource.type = \"k8s_container\" AND resource.labels.container_name = \"redaction\" AND jsonPayload.Message =~ \"^Redaction overdue\""
     }
   }
 

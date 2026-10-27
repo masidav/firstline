@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploys one cloud environment: Cloud SQL backup, migrations (Kubernetes Job), then the API and worker.
+# Deploys one cloud environment: Cloud SQL backup, migrations (Kubernetes Job), then the API, worker, and redaction.
 #
 #   infrastructure/k8s/deploy.sh <beta|prod> <image-tag>
 #
@@ -60,6 +60,7 @@ echo "== Rollout"
 kustomize build . | kubectl apply -f -
 kubectl rollout status deployment/api -n "$namespace" --timeout=10m
 kubectl rollout status deployment/worker -n "$namespace" --timeout=10m
+kubectl rollout status deployment/redaction -n "$namespace" --timeout=10m
 
 if [ "${SKIP_HEALTH_CHECK:-0}" != 1 ] && [ -n "$hostname" ]; then
   echo "== Health check https://${hostname}/v1/health"

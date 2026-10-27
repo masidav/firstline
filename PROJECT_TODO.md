@@ -169,6 +169,11 @@ Details: [Album journal API](services/api/src/features/album-journal/TODO.md) ·
       access the code actually needs). Verified: GcsFileStoreTests 13 against a Cloud Storage emulator (including
       upload to redirect to download through the API), Terraform validate and Kustomize build for beta and prod. Not
       yet run against real Cloud Storage: nothing is applied to GCP.*
+      *2026-10-27: redaction, `redaction.sweep`, and `storage.cleanup` run in their own `redaction` Deployment (same
+      worker image, `Jobs__OnlyKinds`) under the `redaction` identity, which alone among the workers has bucket access;
+      the API keeps its quarantine access for staff review and the fan's pending photo (ADR 0002 "Files"). Verified:
+      `dotnet test` 329/329, a smoke run of the worker image as both Deployments against a throwaway PostgreSQL (redaction started with 3 job kinds and no Spotify secret, worker with 18) (JobQueueTests 12 with 3 new for the kind filters), `terraform validate`, `kustomize build`, worker and
+      api images build. Applying it to beta is open (`infrastructure/TODO.md`).*
 - [x] Clean up stored photos: delete upload slots that expired unused (and their files), files of withdrawn or purged
       submissions, and every file of a deleted account when it is purged (30 days, `purge_deleted_user`). Needs a
       worker job with storage access and tests that no file outlives its rows. *Done 2026-10-25: `IFileStore` moved to
@@ -315,7 +320,7 @@ built, images built locally). Nothing is applied to a GCP project yet; `infrastr
 - [x] Containerize the API, migrator, and workers; publish images to Artifact Registry. (`Dockerfile`; publishing is the deploy workflow's first step, not run yet.)
 - [x] Deploy with Kubernetes manifests (Kustomize overlays per environment); run migrations as a pre-deploy Job. (`infrastructure/k8s`; not run against a cluster yet.)
 - [ ] Use Workload Identity for all pod access to GCP; no service-account key files. (Configured; verify on first deploy.)
-- [ ] Restrict the quarantine bucket to the redaction workload only. (Configured; verify on first deploy.)
+- [ ] Restrict the quarantine bucket to the redaction workload only. (2026-10-27: among the workers only the `redaction` Deployment can reach it; the API still reads it for staff review and fans' pending photos, ADR 0002 "Files". Apply to beta and verify.)
 - [ ] Put the API behind Gateway API with managed TLS and Cloud Armor (WAF, bot and rate limiting). (Configured; verify on first deploy. Forwarded headers done and tested.)
 - [ ] Plan for on-sale traffic spikes: autoscaling, pre-scaling before scheduled on-sales, and load tests. (HPA and procedure written; no load test yet.)
 - [ ] Set up CI/CD, logging, monitoring, alerting, backups with point-in-time recovery, and a tested restore. (Workflow, uptime alert, and PITR configured; restore not rehearsed. 2026-10-25: dashboard, alerts for the API, pods, worker, and database, a worker liveness endpoint, and `infrastructure/RUNBOOK.md`; CI now validates the Terraform and manifests and builds the images.)

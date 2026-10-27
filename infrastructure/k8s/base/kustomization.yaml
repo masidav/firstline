@@ -18,6 +18,7 @@ resources:
   - api-hpa.yaml
   - api-pdb.yaml
   - worker-deployment.yaml
+  - redaction-deployment.yaml
   - gateway.yaml
 
 # Non-secret settings shared by the API and worker. Overlays merge their own values into it.
@@ -29,7 +30,7 @@ configMapGenerator:
       # Google Front End ranges that connect to the pods on behalf of the external load balancer.
       - ForwardedHeaders__KnownNetworks=130.211.0.0/22,35.191.0.0/16
       - Jobs__Concurrency=2
-      # Stored files: the API writes them and the worker's redaction and storage.cleanup read and delete them, so
-      # Storage__* settings go here (both read this ConfigMap). In the cluster files live in Cloud Storage; each
+      # Stored files: the API writes them and the redaction Deployment (redaction, storage.cleanup) reads and deletes
+      # them, so Storage__* settings go here (every Deployment reads this ConfigMap). In the cluster files live in Cloud Storage; each
       # overlay names its buckets (terraform output buckets).
       - Storage__Provider=gcs

@@ -2,6 +2,8 @@
 # hands it to the next poll, and handlers are idempotent, so the grace period only needs to cover the common case.
 # The worker serves no traffic; its only port is the liveness endpoint (workers/hosting/WorkerHealthServer.cs):
 # 503 once a job loop has been silent for Health__StaleAfter (10 min), and the pod restarts.
+# The jobs that touch submission files run in the redaction Deployment instead (redaction-deployment.yaml), under an
+# identity that can reach the buckets; this one has no bucket access.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -38,6 +40,9 @@ spec:
           env:
             - name: Health__Port
               value: "8081"
+            # Run by the redaction Deployment (its Jobs__OnlyKinds); keep the two lists in step.
+            - name: Jobs__ExceptKinds
+              value: submissions.redact,redaction.sweep,storage.cleanup
           envFrom:
             - configMapRef:
                 name: app-config

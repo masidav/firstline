@@ -132,6 +132,64 @@ public sealed class JobQueueTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Claims_skip_kinds_this_process_does_not_run()
+    {
+        var record = (await _queue.EnqueueAsync("test.record"))!.Value;
+        var fail = (await _queue.EnqueueAsync("test.fail"))!.Value;
+        var redaction = NewQueue(new JobOptions { OnlyKinds = "test.fail, test.other" });
+        var worker = NewQueue(new JobOptions { ExceptKinds = "test.fail" });
+
+        Assert.Equal(fail, (await redaction.ClaimAsync(CancellationToken.None))?.Id);
+        Assert.Null(await redaction.ClaimAsync(CancellationToken.None));
+        Assert.Equal(record, (await worker.ClaimAsync(CancellationToken.None))?.Id);
+        Assert.Null(await worker.ClaimAsync(CancellationToken.None));
+
+        // An abandoned job is reclaimed only by a process that runs its kind.
+        await ExecuteAsync("UPDATE jobs SET locked_until = now() - interval '1 second'");
+        Assert.Equal(record, (await worker.ClaimAsync(CancellationToken.None))?.Id);
+        Assert.Null(await worker.ClaimAsync(CancellationToken.None));
+        Assert.Equal(fail, (await redaction.ClaimAsync(CancellationToken.None))?.Id);
+    }
+
+    [Fact]
+    public async Task A_runner_registers_schedules_only_for_kinds_it_runs()
+    {
+        var options = Options.Create(new JobOptions { ExceptKinds = "test.elsewhere", PollInterval = TimeSpan.FromMilliseconds(50) });
+        using var runner = new JobRunner(new JobQueue(_db, options), [new ScheduledHandler("test.elsewhere"), new ScheduledHandler("test.here")],
+            options, TimeProvider.System, NullLogger<JobRunner>.Instance);
+
+        await runner.StartAsync(CancellationToken.None);
+        try
+        {
+            // Schedules are registered before the loops start; the loop then fires and runs test.here.
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            while (await ScalarAsync<int>("SELECT count(*)::int FROM jobs WHERE kind = 'test.here' AND status = 'succeeded'") == 0)
+            {
+                Assert.True(DateTime.UtcNow < deadline, "test.here never ran");
+                await Task.Delay(50);
+            }
+        }
+        finally
+        {
+            await runner.StopAsync(CancellationToken.None);
+        }
+
+        Assert.Equal(["test.here"], (await QueryAsync<string>("SELECT kind FROM job_schedules WHERE kind LIKE 'test.%' ORDER BY kind")).ToArray());
+    }
+
+    [Fact]
+    public void Kind_filters_reject_typos_and_mixed_settings()
+    {
+        IJobHandler[] handlers = [new RecordingHandler(), new FailingHandler()];
+
+        Assert.Equal(["test.record"], JobRunner.Select(handlers, JobKindFilter.Parse("test.record", null)).Keys);
+        Assert.Equal(["test.fail"], JobRunner.Select(handlers, JobKindFilter.Parse(null, "test.record")).Keys);
+        Assert.Equal(2, JobRunner.Select(handlers, JobKindFilter.Parse("", " ")).Count);
+        Assert.Throws<InvalidOperationException>(() => JobRunner.Select(handlers, JobKindFilter.Parse("test.recrod", null)));
+        Assert.Throws<InvalidOperationException>(() => JobKindFilter.Parse("test.record", "test.fail"));
+    }
+
+    [Fact]
     public async Task Deleted_accounts_are_purged_after_30_days_only()
     {
         await ExecuteAsync(
@@ -160,7 +218,7 @@ public sealed class JobQueueTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal(Guid.Parse("00000000-0000-0000-0000-0000000000a1"), Assert.Single(purged));
     }
 
-    private JobQueue NewQueue() => new(_db, Options.Create(new JobOptions()));
+    private JobQueue NewQueue(JobOptions? options = null) => new(_db, Options.Create(options ?? new JobOptions()));
 
     private JobRunner Runner(IJobHandler handler) =>
         new(_queue, [handler], Options.Create(new JobOptions()), TimeProvider.System, NullLogger<JobRunner>.Instance);
@@ -185,6 +243,18 @@ public sealed class JobQueueTests(PostgresFixture postgres) : IAsyncLifetime
         await connection.ExecuteAsync(sql, parameters);
     }
 
+    private async Task<T> ScalarAsync<T>(string sql)
+    {
+        await using var connection = await _db.OpenConnectionAsync();
+        return await connection.ExecuteScalarAsync<T>(sql) ?? throw new InvalidOperationException("No value.");
+    }
+
+    private async Task<IEnumerable<T>> QueryAsync<T>(string sql)
+    {
+        await using var connection = await _db.OpenConnectionAsync();
+        return await connection.QueryAsync<T>(sql);
+    }
+
     public sealed record JobRow(string Status, int Attempts, string? LastError, double RetryInSeconds);
 
     private sealed class RecordingHandler : IJobHandler
@@ -198,6 +268,15 @@ public sealed class JobQueueTests(PostgresFixture postgres) : IAsyncLifetime
             Payloads.Enqueue(job.Payload);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class ScheduledHandler(string kind) : IJobHandler
+    {
+        public string Kind => kind;
+
+        public TimeSpan? Every => TimeSpan.FromHours(1);
+
+        public Task RunAsync(ClaimedJob job, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class FailingHandler : IJobHandler

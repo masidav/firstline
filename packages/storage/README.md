@@ -1,6 +1,7 @@
 # Storage (`FandomScore.Storage`)
 
-Stored files behind one seam, shared by the API (uploads, downloads) and the worker (redaction, `storage.cleanup`).
+Stored files behind one seam, shared by the API (uploads, downloads) and the worker image (redaction,
+`storage.cleanup`; in the cluster these run in the separate `redaction` Deployment, `infrastructure/README.md`).
 
 | File | Contents |
 | --- | --- |
@@ -22,7 +23,9 @@ is `services/api/.local-storage/`; set `Storage__LocalPath` to that absolute pat
 | `Storage__QuarantineBucket`, `Storage__ArchiveBucket`, `Storage__MediaBucket` | Bucket names (`terraform output buckets`). |
 | `Storage__EmulatorHost` | Optional, for tests and local runs: an emulator such as `http://localhost:4443`. |
 
-On GKE the store uses the pod's Workload Identity service account (Application Default Credentials; no key files).
+On GKE the store uses the pod's Workload Identity service account (Application Default Credentials; no key files):
+the API's, or the `redaction` Deployment's for redaction and `storage.cleanup`. The general `worker` identity has no
+bucket access, so a job that uses `IFileStore` must be listed in the redaction Deployment's `Jobs__OnlyKinds`.
 Download links are signed by that account through the IAM API, which needs `roles/iam.serviceAccountTokenCreator` on
 itself (Terraform grants it to the API). Credentials that can't sign, like a developer's own gcloud login, still work:
 the API then serves the bytes itself instead of redirecting.

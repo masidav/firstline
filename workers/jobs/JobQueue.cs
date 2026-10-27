@@ -26,6 +26,40 @@ public sealed class JobOptions
     public TimeSpan KeepSucceeded { get; set; } = TimeSpan.FromDays(7);
 
     public TimeSpan KeepFailed { get; set; } = TimeSpan.FromDays(30);
+
+    /// <summary>
+    /// Comma-separated job kinds this process runs; empty runs every kind. Lets the one worker image run as several
+    /// deployments with different identities: the <c>redaction</c> deployment runs only the kinds that touch
+    /// submission files, and the main worker excludes them with <see cref="ExceptKinds"/>.
+    /// </summary>
+    public string OnlyKinds { get; set; } = "";
+
+    /// <summary>Comma-separated job kinds this process never claims (another deployment runs them).</summary>
+    public string ExceptKinds { get; set; } = "";
+
+    public JobKindFilter KindFilter() => JobKindFilter.Parse(OnlyKinds, ExceptKinds);
+}
+
+/// <summary>Which job kinds a worker process claims (<see cref="JobOptions.OnlyKinds"/>, <see cref="JobOptions.ExceptKinds"/>).</summary>
+public sealed record JobKindFilter(string[] Only, string[] Except)
+{
+    public static JobKindFilter Parse(string? only, string? except)
+    {
+        var filter = new JobKindFilter(Split(only), Split(except));
+        if (filter.Only.Length > 0 && filter.Except.Length > 0)
+        {
+            throw new InvalidOperationException("Set Jobs:OnlyKinds or Jobs:ExceptKinds, not both.");
+        }
+
+        return filter;
+    }
+
+    public bool Runs(string kind) =>
+        (Only.Length == 0 || Only.Contains(kind, StringComparer.Ordinal)) && !Except.Contains(kind, StringComparer.Ordinal);
+
+    private static string[] Split(string? kinds) =>
+        (kinds ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.Ordinal).ToArray();
 }
 
 /// <summary>
@@ -39,6 +73,7 @@ public sealed class JobQueue(NpgsqlDataSource db, IOptions<JobOptions> options)
     private static readonly TimeSpan MaxRetry = TimeSpan.FromHours(1);
 
     private readonly JobOptions _options = options.Value;
+    private readonly JobKindFilter _kinds = options.Value.KindFilter();
 
     public string WorkerId { get; } = $"{Environment.MachineName}/{Environment.ProcessId}/{Guid.NewGuid():N}";
 
@@ -52,7 +87,10 @@ public sealed class JobQueue(NpgsqlDataSource db, IOptions<JobOptions> options)
             new { kind, payload = JsonSerializer.Serialize(payload ?? new { }), dedupeKey, runAt, maxAttempts });
     }
 
-    /// <summary>Claims the oldest ready job, or one whose worker's lease ran out. Null when none is ready.</summary>
+    /// <summary>
+    /// Claims the oldest ready job, or one whose worker's lease ran out, among the kinds this process runs
+    /// (<see cref="JobOptions.OnlyKinds"/>, <see cref="JobOptions.ExceptKinds"/>). Null when none is ready.
+    /// </summary>
     public async Task<ClaimedJob?> ClaimAsync(CancellationToken cancellationToken)
     {
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
@@ -61,7 +99,9 @@ public sealed class JobQueue(NpgsqlDataSource db, IOptions<JobOptions> options)
             UPDATE jobs j SET status = 'running', attempts = j.attempts + 1,
                               locked_by = @WorkerId, locked_until = now() + @leaseSeconds * interval '1 second'
             FROM (SELECT id FROM jobs
-                  WHERE (status = 'queued' AND run_at <= now()) OR (status = 'running' AND locked_until < now())
+                  WHERE ((status = 'queued' AND run_at <= now()) OR (status = 'running' AND locked_until < now()))
+                    AND (cardinality(@only::text[]) = 0 OR kind = ANY(@only::text[]))
+                    AND NOT (kind = ANY(@except::text[]))
                   ORDER BY run_at
                   LIMIT 1
                   FOR UPDATE SKIP LOCKED) ready
@@ -69,7 +109,7 @@ public sealed class JobQueue(NpgsqlDataSource db, IOptions<JobOptions> options)
             RETURNING j.id AS Id, j.kind AS Kind, j.payload::text AS Payload, j.attempts AS Attempts,
                       j.max_attempts AS MaxAttempts
             """,
-            new { WorkerId, leaseSeconds = _options.Lease.TotalSeconds });
+            new { WorkerId, leaseSeconds = _options.Lease.TotalSeconds, only = _kinds.Only, except = _kinds.Except });
     }
 
     public async Task CompleteAsync(long jobId)

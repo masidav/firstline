@@ -17,7 +17,7 @@ manifests describe the workloads; GitHub Actions builds images and deploys.
 | `terraform/modules/environment` | Everything one cloud environment needs (network, cluster, database, registry, secrets, buckets, edge, CI identity, alerts). |
 | `terraform/envs/{beta,prod}` | Root module per cloud environment: sizes, protection, budget. |
 | `terraform/bootstrap.sh` | One-time project setup: billing link, base APIs, Terraform state bucket. |
-| `k8s/base` | Namespace, service accounts, migrate Job, API and worker Deployments, HPA, PDB, Gateway. |
+| `k8s/base` | Namespace, service accounts, migrate Job, API, worker, and redaction Deployments, HPA, PDB, Gateway. |
 | `k8s/overlays/{beta,prod}` | Project, images, hostnames, secrets list, replica counts. |
 | `k8s/deploy.sh` | Backup, migrations, rollout, health check. Used by CI and by hand. |
 | `RUNBOOK.md` | On-call: what each alert means and what to do; first-five-minutes checklist; common actions. |
@@ -69,8 +69,17 @@ use it, then approve prod.
   server CA as the secret `Database__ServerCa`, mounted next to the connection string, which refers to it
   (`SSL Mode=VerifyCA;Root Certificate=/secrets/Database__ServerCa`). Npgsql validates the certificate, so a
   connection string without the CA fails against Cloud SQL's per-instance CA.
-- Only the `redaction` identity can read the quarantine bucket; the API can only write to it and read the
-  archive. The archive keeps versions. Nothing uses service-account key files.
+- Bucket access (`storage.tf`, ADR 0002 "Files"). The worker image runs as two Deployments: `redaction` runs only
+  `submissions.redact`, `redaction.sweep`, and `storage.cleanup` (`Jobs__OnlyKinds`) under the `redaction`
+  identity, which reads, writes, and deletes in the quarantine, archive, and media buckets; `worker` runs every
+  other job (`Jobs__ExceptKinds`, the same three kinds) and has no bucket access at all, so the jobs that call
+  Spotify, Ticketmaster, and Expo can't reach a single photo. The API reads, writes, and deletes in quarantine and
+  media and reads the archive. The archive keeps versions. Nothing uses service-account key files.
+- Trade-off, chosen to keep the app as it is: the API still reads quarantine, because staff review unredacted
+  proof and fans see their own pending photo through it (`GET /v1/files/{id}`, a redirect to a link the API signs).
+  So "only redaction can read quarantine" holds among the workers, not for the API. Taking it from the API would
+  need staff review and the pending-photo preview to go through another service (or links signed by the redaction
+  identity); not worth it while the API is also where uploads arrive.
 
 ## Set up a cloud environment (once per environment)
 
@@ -134,7 +143,8 @@ steps with `prod` in place of `beta`.
 
 `deploy.sh <beta|prod> <tag>` sets the three image tags in the overlay, takes the Cloud SQL backup, applies
 everything except the Deployments, deletes the previous `migrate` Job and creates a new one, waits for it to
-complete (prints its log, fails the deploy if it fails), applies the Deployments, waits for both rollouts, and
+complete (prints its log, fails the deploy if it fails), applies the Deployments, waits for the api, worker, and
+redaction rollouts, and
 polls the public health endpoint. Migrations run once per commit before any new API pod receives traffic; the
 Job's image is the same commit as the API.
 
@@ -146,7 +156,7 @@ Job's image is the same commit as the API.
   in the registry; the migrate Job finds nothing to do; `SKIP_BACKUP=1` is fine, nothing migrates), or for an
   immediate stop-gap `kubectl rollout undo deployment/api -n fandomscore`.
 - **A migration broke data.** Restore the `pre-deploy <sha>` backup. A restore replaces the instance's data, so
-  stop the API and worker first (`kubectl scale deployment/api deployment/worker --replicas=0 -n fandomscore`),
+  stop the API and workers first (`kubectl scale deployment/api deployment/worker deployment/redaction --replicas=0 -n fandomscore`),
   then `gcloud sql backups list --instance fandomscore-beta` and `gcloud sql backups restore <id> --restore-instance
   fandomscore-beta`, redeploy the previous commit, and scale back up. Writes made after the backup are lost;
   for a narrower window, clone to a point in time instead (Backups and restore). On prod, prefer the clone.
@@ -212,10 +222,12 @@ drift, so update `sql.tf` or import the clone). Rehearse this on beta and record
   fields that `validate` cannot check; confirm each chart has data and each alert can fire on beta.
 - The worker's liveness probe only catches a loop that stops iterating. A loop that keeps erroring (database
   unreachable) stays "alive" on purpose; the "worker cannot reach the queue" alert covers that.
-- Stored photos have no cluster storage yet. `Storage__LocalPath` (local disk) is for development; in the cluster the
-  root filesystem is read-only and the API and worker pods share no volume. Both processes must use the **same**
-  storage, because the API writes files and the worker's `storage.cleanup` job deletes them: put any `Storage__*`
-  setting in the shared `app-config` ConfigMap, not one Deployment, until the Cloud Storage `IFileStore` replaces it.
+- Stored files are in Cloud Storage (`Storage__Provider=gcs`); the API and the redaction Deployment must name the
+  same buckets, so `Storage__*` settings live in the shared `app-config` ConfigMap, not one Deployment.
+- The kinds the redaction Deployment runs are listed twice, `Jobs__OnlyKinds` in `redaction-deployment.yaml` and
+  `Jobs__ExceptKinds` in `worker-deployment.yaml`; change both. A kind in neither runs in both (harmless: claims
+  never overlap), a kind in both runs nowhere and queues up. A new job that touches stored files belongs in both
+  lists, or it fails with a permission error in the worker.
 - The `SecretProviderClass` lists in each overlay duplicate the `secret_readers` map in Terraform; change both.
 - The migration safety check is a pattern match, not a parser: it knows the common breaking statements and
   ignores function bodies. Slow-but-additive migrations (indexes on big tables) are on the author.

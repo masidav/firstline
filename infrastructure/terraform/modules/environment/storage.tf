@@ -1,4 +1,5 @@
-# Submission files. Quarantine holds unredacted uploads briefly; only the redaction workload can read them.
+# Submission files. Quarantine holds unredacted uploads briefly; the redaction workload and the API (staff review,
+# a fan's own pending photo) can read them, the general worker can't.
 # Its expiry rule (30 days, decided 2026-10-25) deletes every quarantined file, verified proof included, so the
 # redaction workload must move proof to the archive within that window. Rejected and taken-down files are also kept
 # 30 days in the app (storage.cleanup), so the rule only catches what the app missed.
@@ -52,12 +53,16 @@ resource "google_storage_bucket" "media" {
   labels                      = local.labels
 }
 
-# Access follows what each workload's code does (ADR 0002, amended 2026-10-26):
+# Access follows what each workload's code does (ADR 0002, amended 2026-10-26 and 2026-10-27):
 # - The API stores uploads in quarantine and reads them back for staff review and for the fan's own pending photos,
 #   and deletes them when a fan withdraws or staff discard one; it reads redacted files from the archive; it stores
 #   and serves featured videos in media.
-# - The worker runs redaction (reads quarantine, writes the archive, deletes originals) and storage.cleanup
-#   (deletes from all three).
+# - The redaction deployment (worker image with Jobs__OnlyKinds, infrastructure/k8s/base/redaction-deployment.yaml)
+#   runs submissions.redact (reads quarantine, writes the archive, deletes a half-written archive file),
+#   redaction.sweep, and storage.cleanup (deletes from all three buckets), so it reads, writes, and deletes in all
+#   three. objectUser rather than objectCreator on the archive: a retried redaction overwrites its own file, which
+#   needs delete.
+# - The general worker (Spotify, Ticketmaster, push, scoring, ...) touches no bucket and gets no access.
 resource "google_storage_bucket_iam_member" "api_quarantine" {
   bucket = google_storage_bucket.quarantine.name
   role   = "roles/storage.objectUser"
@@ -76,7 +81,7 @@ resource "google_storage_bucket_iam_member" "api_media" {
   member = google_service_account.workload["api"].member
 }
 
-resource "google_storage_bucket_iam_member" "worker" {
+resource "google_storage_bucket_iam_member" "redaction" {
   for_each = {
     quarantine = google_storage_bucket.quarantine.name
     archive    = google_storage_bucket.archive.name
@@ -85,7 +90,7 @@ resource "google_storage_bucket_iam_member" "worker" {
 
   bucket = each.value
   role   = "roles/storage.objectUser"
-  member = google_service_account.workload["worker"].member
+  member = google_service_account.workload["redaction"].member
 }
 
 # The API signs short-lived download links as itself (IAM signBlob; no key files), so its own account needs the
@@ -94,18 +99,4 @@ resource "google_service_account_iam_member" "api_signs_links" {
   service_account_id = google_service_account.workload["api"].name
   role               = "roles/iam.serviceAccountTokenCreator"
   member             = google_service_account.workload["api"].member
-}
-
-# A separate redaction deployment (ADR 0002) would read quarantine and write the archive under its own identity.
-# Until it exists, redaction runs in the worker (workers/image-redaction) and these bindings are unused.
-resource "google_storage_bucket_iam_member" "redaction_quarantine" {
-  bucket = google_storage_bucket.quarantine.name
-  role   = "roles/storage.objectAdmin"
-  member = google_service_account.workload["redaction"].member
-}
-
-resource "google_storage_bucket_iam_member" "redaction_archive_write" {
-  bucket = google_storage_bucket.archive.name
-  role   = "roles/storage.objectCreator"
-  member = google_service_account.workload["redaction"].member
 }

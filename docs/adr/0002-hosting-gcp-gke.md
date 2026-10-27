@@ -13,8 +13,8 @@
 | Workloads | `api` (Deployment), `worker` (Deployment), `redaction` (Deployment), `migrate` (Job before each rollout), `promoter-web` (Deployment) | Matches ADR 0001: one codebase, separate processes. |
 | Images | **Artifact Registry** with vulnerability scanning | One registry per environment project or a shared one with per-environment access. |
 | Secrets | **Secret Manager**, mounted with the GKE Secret Manager add-on | Matches the environment-variable-only configuration already in the API. |
-| GCP access from pods | **Workload Identity Federation for GKE**, one Google service account per workload | No key files. Only `redaction` can read the quarantine bucket. *Amended 2026-10-26, see Files below.* |
-| Files | **Cloud Storage**: `quarantine` (short retention, redaction only) and `archive` (redacted files only) | Enforces the schema's "never archive unredacted files" rule at the access level too. *Amended 2026-10-26, see Files below.* |
+| GCP access from pods | **Workload Identity Federation for GKE**, one Google service account per workload | No key files. Only `redaction` can read the quarantine bucket. *Amended 2026-10-26 and 2026-10-27, see Files below.* |
+| Files | **Cloud Storage**: `quarantine` (short retention, redaction only) and `archive` (redacted files only) | Enforces the schema's "never archive unredacted files" rule at the access level too. *Amended 2026-10-26 and 2026-10-27, see Files below.* |
 | Ingress | **Gateway API** with Google-managed certificates (Certificate Manager) | Standard Kubernetes ingress model on GKE. |
 | Edge protection | **Cloud Armor** (WAF rules, rate limiting, bot management), optionally reCAPTCHA Enterprise on registration | Bots are the product's main adversary; on-sale registration must be defended at the edge. |
 | Cache/queue | Memorystore for Redis only if the job library or rate limiting needs it | Postgres-backed jobs may make it unnecessary (ADR 0001 open item). |
@@ -43,12 +43,15 @@ only), and `media/` (staff-published media such as featured videos, which must o
 Access follows what the code does, which differs from the table above:
 - Staff review unredacted proof and fans see their own pending photos, both through the API, and the API deletes
   quarantined files when a fan withdraws or staff discard one. So the API reads, writes, and deletes in quarantine.
-- Redaction runs inside the worker (`workers/image-redaction`), not a separate deployment, so the worker reads
-  quarantine and writes the archive. It also runs `storage.cleanup`, which deletes from all three buckets.
-- So "only redaction can read quarantine" doesn't hold today: the API and the worker both can. The schema still
-  refuses unredacted archive rows (migration 0029), the archive is written only by redaction code, and the API can
-  only read it. Splitting redaction into its own deployment with its own identity would restore the stricter rule;
-  the `redaction` service account and its bindings are kept for that.
+- *Amended 2026-10-27:* redaction has its own deployment. The worker image runs as two Deployments: `redaction`
+  (`Jobs__OnlyKinds=submissions.redact,redaction.sweep,storage.cleanup`, the `redaction` identity) and `worker`
+  (every other kind, `Jobs__ExceptKinds`). The redaction identity reads, writes, and deletes in all three buckets
+  (`storage.cleanup` deletes from each; a retried redaction overwrites its archive file). The worker identity has
+  no bucket access.
+- So "only redaction can read quarantine" holds among the workers but not for the API, which keeps its quarantine
+  access for staff review and the fan's pending photo. Removing it would mean moving those reads out of the API;
+  not worth it while the API also receives the uploads. The schema still refuses unredacted archive rows (migration
+  0029), the archive is written only by redaction code, and the API can only read it.
 
 Uploads go through the API, not straight to the bucket: the API strips photo metadata (GPS location included) before
 anything is stored. Downloads keep the API's signed link, which redirects to a 15-minute Cloud Storage link signed

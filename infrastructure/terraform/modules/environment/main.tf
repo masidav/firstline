@@ -23,7 +23,7 @@ locals {
     api       = ["ConnectionStrings__Database", "Database__ServerCa", "Auth__SigningKey", "Auth__Apple__PrivateKey", "Spotify__ClientSecret", "Spotify__TokenKey"]
     worker    = ["ConnectionStrings__Database", "Database__ServerCa", "Spotify__ClientSecret", "Spotify__TokenKey", "Ticketmaster__ApiKey"]
     migrate   = ["ConnectionStrings__Database", "Database__ServerCa"]
-    redaction = []
+    redaction = ["ConnectionStrings__Database", "Database__ServerCa"]
   }
   secret_bindings = {
     for pair in flatten([
