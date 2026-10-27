@@ -28,7 +28,7 @@ export function pointsLabel(points: number): string {
 }
 
 /**
- * Today's music trivia (GET /me/trivia): one question a day about one of the fan's artists. Tapping an option answers
+ * This week's music trivia (GET /me/trivia): one question a week, out on Tuesdays, about one of the fan's artists. Tapping an option answers
  * it (POST /me/trivia/{id}/answer); the card then shows the right answer and the points a right answer earned (a tenth
  * of logging an album). Hidden when the fan has no artist with enough catalog for a question.
  */
@@ -68,7 +68,7 @@ export function DailyTriviaCard() {
   if (!question) return null;
   return (
     <View style={styles.card}>
-      <Text style={styles.kicker}>Daily trivia · {question.artist.name}</Text>
+      <Text style={styles.kicker}>This week's trivia · {question.artist.name}</Text>
       <Text style={styles.prompt}>{question.prompt}</Text>
       <View style={styles.options}>
         {question.options.map((option, index) => {
@@ -92,8 +92,8 @@ export function DailyTriviaCard() {
       {question.answered && (
         <Text style={[styles.result, question.correct ? styles.good : styles.muted]}>
           {question.correct
-            ? `Right! ${pointsLabel(question.points_earned ?? question.points_for_right)} for ${question.artist.name}. Back tomorrow for another.`
-            : 'Not this time. A new question tomorrow.'}
+            ? `Right! ${pointsLabel(question.points_earned ?? question.points_for_right)} for ${question.artist.name}. New trivia every Tuesday.`
+            : 'Not this time. New trivia every Tuesday.'}
         </Text>
       )}
       {question.answered && question.results && (

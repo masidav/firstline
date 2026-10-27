@@ -9,8 +9,8 @@ using Npgsql;
 namespace FandomScore.Api.Features.Trivia;
 
 /// <summary>
-/// Daily music trivia (migrations 0022 and 0024, decided 2026-10-25): one question a day per fan about one of their
-/// scored artists. Fans of the same artist share the day's question (made from the stored catalog by the first fan who
+/// Weekly music trivia (migrations 0022, 0024, and 0034): one question a week per fan about one of their scored artists,
+/// out on Tuesdays (UTC) and open until the next one. Fans of the same artist share the week's question (made from the stored catalog by the first fan who
 /// asks), so once a fan answers they see one or two people they follow who got it right and the percent of fans who
 /// did. A right answer earns <c>trivia_correct</c> (0.30 points, a tenth of logging an album) through
 /// <c>answer_trivia()</c>. Neither the answer nor the results are sent before the fan answers.
@@ -35,8 +35,11 @@ public static class TriviaEndpoints
     /// </summary>
     public sealed record TriviaResults(int Answered, int Right, int PercentRight, IReadOnlyList<SubmissionEndpoints.UserRef> FollowingRight);
 
-    /// <summary><c>Question</c> is null when the fan has no artist with enough catalog to ask about yet.</summary>
-    public sealed record TriviaToday(TriviaQuestion? Question);
+    /// <summary>
+    /// This week's question (trivia comes out on Tuesdays, UTC, and stays open until the next one). <c>Question</c> is
+    /// null when the fan has no artist with enough catalog to ask about yet. <c>NextQuestionOn</c>: the next Tuesday.
+    /// </summary>
+    public sealed record TriviaToday(TriviaQuestion? Question, DateOnly NextQuestionOn);
 
     public sealed record AnswerRequest(int? Choice);
 
@@ -44,15 +47,16 @@ public static class TriviaEndpoints
     {
         var me = user.UserId();
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        var next = await connection.ExecuteScalarAsync<DateOnly>("SELECT trivia_week_day() + 7");
         var existing = await LoadTodayAsync(connection, me);
         if (existing is not null)
         {
-            return Results.Ok(new TriviaToday(existing));
+            return Results.Ok(new TriviaToday(existing, next));
         }
 
         if (await SharedQuestionAsync(connection, me) is not { } shared)
         {
-            return Results.Ok(new TriviaToday(null));
+            return Results.Ok(new TriviaToday(null, next));
         }
 
         // The fan's copy of the shared question. Two requests at once: the first insert wins and both read it back.
@@ -63,7 +67,7 @@ public static class TriviaEndpoints
             ON CONFLICT ON CONSTRAINT trivia_questions_one_a_day DO NOTHING
             """,
             new { me, shared });
-        return Results.Ok(new TriviaToday(await LoadTodayAsync(connection, me)));
+        return Results.Ok(new TriviaToday(await LoadTodayAsync(connection, me), next));
     }
 
     private static async Task<IResult> AnswerAsync(
@@ -88,9 +92,9 @@ public static class TriviaEndpoints
                 throw e.MessageText["trivia blocked: ".Length..] switch
                 {
                     "answered" => new ApiProblemException(StatusCodes.Status409Conflict, "trivia_answered", "Already answered",
-                        "You've answered today's question. Come back tomorrow."),
+                        "You've answered this week's question. A new one comes out on Tuesday."),
                     "expired" => new ApiProblemException(StatusCodes.Status409Conflict, "trivia_expired", "Question expired",
-                        "That was another day's question. Today's is waiting."),
+                        "That was another week's question. This week's is waiting."),
                     "choice" => ApiProblemException.Validation(new FieldError("choice", "Pick one of the options.")),
                     _ => new ApiProblemException(StatusCodes.Status404NotFound, "not_found", "Not found", "No question of yours has this id."),
                 };
@@ -116,7 +120,7 @@ public static class TriviaEndpoints
     private static async Task<TriviaQuestion?> LoadTodayAsync(NpgsqlConnection connection, Guid me)
     {
         var row = await connection.QuerySingleOrDefaultAsync<QuestionRow>(
-            $"{QuestionSelect} WHERE q.user_id = @me AND q.day = (now() AT TIME ZONE 'UTC')::date", new { me });
+            $"{QuestionSelect} WHERE q.user_id = @me AND q.day = trivia_week_day()", new { me });
         return row is null ? null : await ToQuestionAsync(connection, me, row);
     }
 
@@ -154,7 +158,7 @@ public static class TriviaEndpoints
         return new TriviaResults(answered, right, answered == 0 ? 0 : (int)Math.Round(100.0 * right / answered), [.. following]);
     }
 
-    // Today's shared question for one of the fan's active scored artists: the one another fan already started for
+    // This week's shared question for one of the fan's active scored artists: the one another fan already started for
     // that artist, or a new one made from the catalog (the first insert wins). Artists are tried in random order;
     // null when none has enough catalog.
     private static async Task<Guid?> SharedQuestionAsync(NpgsqlConnection connection, Guid me)
@@ -164,7 +168,7 @@ public static class TriviaEndpoints
             SELECT d.id FROM trivia_daily_questions d
             JOIN user_artist_scores s ON s.artist_id = d.artist_id AND s.user_id = @me
             JOIN artists a ON a.id = d.artist_id AND a.status = 'active'
-            WHERE d.day = (now() AT TIME ZONE 'UTC')::date
+            WHERE d.day = trivia_week_day()
             """,
             new { me });
         // Prefer joining a question other fans are already playing: that is what makes the results worth seeing.
@@ -181,12 +185,12 @@ public static class TriviaEndpoints
         await connection.ExecuteAsync(
             """
             INSERT INTO trivia_daily_questions (day, artist_id, kind, prompt, options, answer_index)
-            VALUES ((now() AT TIME ZONE 'UTC')::date, @ArtistId, @Kind, @Prompt, @Options, @AnswerIndex)
+            VALUES (trivia_week_day(), @ArtistId, @Kind, @Prompt, @Options, @AnswerIndex)
             ON CONFLICT ON CONSTRAINT trivia_daily_one_per_artist DO NOTHING
             """,
             new { made.ArtistId, made.Kind, made.Prompt, Options = made.Options.ToArray(), made.AnswerIndex });
         return await connection.ExecuteScalarAsync<Guid>(
-            "SELECT id FROM trivia_daily_questions WHERE day = (now() AT TIME ZONE 'UTC')::date AND artist_id = @ArtistId",
+            "SELECT id FROM trivia_daily_questions WHERE day = trivia_week_day() AND artist_id = @ArtistId",
             new { made.ArtistId });
     }
 

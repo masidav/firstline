@@ -1718,12 +1718,13 @@ BEGIN
 END $$;
 
 -- ------------------------------------------------------------ music prompts (0025)
--- One prompt a day (staff or library); one answer per fan, written or changed only on its day; takedowns stay down.
+-- One prompt a week (staff or library, out on Thursdays since 0034); one answer per fan, written or changed only in its
+-- week; takedowns stay down.
 INSERT INTO users (id, handle, email) VALUES
   ('4a000000-0000-0000-0000-000000000001', 'prompt_fan', 'prompt_fan@example.test'),
   ('4a000000-0000-0000-0000-000000000002', 'prompt_two', 'prompt_two@example.test');
 DO $$
-DECLARE fan uuid := '4a000000-0000-0000-0000-000000000001'; today date := (now() AT TIME ZONE 'UTC')::date;
+DECLARE fan uuid := '4a000000-0000-0000-0000-000000000001'; today date := prompt_week_day();
         p prompts; again prompts; old_p uuid; ans uuid;
 BEGIN
   p := prompt_for_day(today);
@@ -1731,8 +1732,8 @@ BEGIN
   ASSERT p.id = again.id AND p.source = 'library', 'the library fills a day without a staff prompt, once';
   ASSERT (SELECT text FROM prompt_library ORDER BY position OFFSET ((today - date '2026-01-01') % 30 + 30) % 30 LIMIT 1) = p.text,
          'the library rotates by day';
-  INSERT INTO prompts (day, text, source) VALUES (today + 1, 'Staff prompt', 'staff');
-  ASSERT (prompt_for_day(today + 1)).text = 'Staff prompt', 'a staff prompt wins';
+  INSERT INTO prompts (day, text, source) VALUES (today + 7, 'Staff prompt', 'staff');
+  ASSERT (prompt_for_day(today + 7)).text = 'Staff prompt', 'a staff prompt wins';
 
   INSERT INTO prompt_answers (prompt_id, user_id, body) VALUES (p.id, fan, 'The Velvet Ropes') RETURNING id INTO ans;
   BEGIN
@@ -1751,9 +1752,9 @@ BEGIN
   EXCEPTION WHEN check_violation THEN NULL;
   END;
   BEGIN
-    INSERT INTO prompt_answers (prompt_id, user_id, body) VALUES ((prompt_for_day(today + 1)).id, fan, 'Too early');
-    RAISE EXCEPTION 'answering tomorrow''s prompt should fail';
-  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%only on the prompt''s day%', SQLERRM;
+    INSERT INTO prompt_answers (prompt_id, user_id, body) VALUES ((prompt_for_day(today + 7)).id, fan, 'Too early');
+    RAISE EXCEPTION 'answering next week''s prompt should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%only in the prompt''s week%', SQLERRM;
   END;
   BEGIN
     UPDATE prompts SET text = 'Changed' WHERE id = p.id;
@@ -1771,13 +1772,26 @@ BEGIN
   INSERT INTO reports (reporter_id, target_type, target_id, reason) VALUES ('4a000000-0000-0000-0000-000000000002', 'prompt_answer', ans, 'spam');
   INSERT INTO moderation_actions (staff_id, target_type, target_id, action, reports) VALUES (NULL, 'prompt_answer', ans, 'take_down', 1);
 
-  -- Yesterday's answers are fixed.
-  INSERT INTO prompts (day, text, source) VALUES (today - 1, 'Yesterday', 'staff') RETURNING id INTO old_p;
+  -- Last week's answers are fixed.
+  INSERT INTO prompts (day, text, source) VALUES (today - 7, 'Last week', 'staff') RETURNING id INTO old_p;
   BEGIN
     INSERT INTO prompt_answers (prompt_id, user_id, body) VALUES (old_p, fan, 'Late');
-    RAISE EXCEPTION 'answering yesterday''s prompt should fail';
-  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%only on the prompt''s day%', SQLERRM;
+    RAISE EXCEPTION 'answering last week''s prompt should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%only in the prompt''s week%', SQLERRM;
   END;
+END $$;
+
+-- ------------------------------------------------------------ weekly trivia and prompts (0034)
+-- Trivia comes out on Tuesdays and prompts on Thursdays: every day of a week maps to that week's day.
+DO $$
+BEGIN
+  ASSERT trivia_week_day('2026-10-27') = '2026-10-27', 'a Tuesday is its own trivia day';
+  ASSERT trivia_week_day('2026-11-02') = '2026-10-27', 'the Monday after still belongs to that Tuesday';
+  ASSERT trivia_week_day('2026-10-26') = '2026-10-20', 'the Monday before belongs to the week before';
+  ASSERT prompt_week_day('2026-10-29') = '2026-10-29', 'a Thursday is its own prompt day';
+  ASSERT prompt_week_day('2026-11-04') = '2026-10-29', 'the Wednesday after still belongs to that Thursday';
+  ASSERT prompt_week_day('2026-10-28') = '2026-10-22', 'the Wednesday before belongs to the week before';
+  ASSERT extract(isodow FROM trivia_week_day()) = 2 AND extract(isodow FROM prompt_week_day()) = 4, 'today maps to a Tuesday and a Thursday';
 END $$;
 
 -- ------------------------------------------------------------ emoji reactions (0026)

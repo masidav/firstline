@@ -191,7 +191,7 @@ export function ProfileScreen({ me }: { me: Me }) {
       {me.is_staff && <Button label="Reported posts" kind="secondary" onPress={() => router.push('/moderation')} />}
       {me.is_staff && <Button label="Photo redaction" kind="secondary" onPress={() => router.push('/redactions')} />}
       {me.is_staff && <Button label="Featured artist" kind="secondary" onPress={() => router.push('/featured-admin')} />}
-      {me.is_staff && <Button label="Daily prompts" kind="secondary" onPress={() => router.push('/prompts-admin')} />}
+      {me.is_staff && <Button label="Weekly prompts" kind="secondary" onPress={() => router.push('/prompts-admin')} />}
 
       <Field label="Handle" value={handle} onChangeText={edit(setHandle)} error={errors.handle} />
       <Field

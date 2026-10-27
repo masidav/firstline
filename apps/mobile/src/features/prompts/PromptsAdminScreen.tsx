@@ -16,14 +16,20 @@ export function dayFrom(offset: number, now = new Date()): string {
   return day.toISOString().slice(0, 10);
 }
 
+/** This week's prompt Thursday (UTC; prompts come out on Thursdays), `weeks` weeks on, as YYYY-MM-DD. */
+export function thursdayFrom(weeks: number, now = new Date()): string {
+  const sinceThursday = (now.getUTCDay() - 4 + 7) % 7;
+  return dayFrom(7 * weeks - sinceThursday, now);
+}
+
 /**
- * Staff: schedule music prompts (PUT /admin/prompts/{day}). Days without one get the next prompt from the built-in
- * library. A prompt fans have answered can't change.
+ * Staff: schedule music prompts (PUT /admin/prompts/{day}). Prompts come out on Thursdays and stay open for the week;
+ * weeks without one get the next prompt from the built-in library. A prompt fans have answered can't change.
  */
 export function PromptsAdminScreen() {
   const { session } = useSession();
   const [prompts, setPrompts] = useState<Prompt[]>([]);
-  const [day, setDay] = useState(dayFrom(1));
+  const [day, setDay] = useState(thursdayFrom(1));
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -69,25 +75,28 @@ export function PromptsAdminScreen() {
   return (
     <Screen>
       <Button label="Back" kind="secondary" onPress={() => (router.canGoBack() ? router.back() : router.replace('/home'))} />
-      <Title>Daily prompts</Title>
-      <Body muted>One prompt a day for every fan. Days you leave empty get one from the built-in list.</Body>
+      <Title>Weekly prompts</Title>
+      <Body muted>
+        One prompt a week for every fan, out on Thursdays and open until the next one. Weeks you leave empty get one from
+        the built-in list.
+      </Body>
       <View style={styles.row}>
-        <Button label="Today" kind={day === dayFrom(0) ? 'primary' : 'secondary'} onPress={() => setDay(dayFrom(0))} />
-        <Button label="Tomorrow" kind={day === dayFrom(1) ? 'primary' : 'secondary'} onPress={() => setDay(dayFrom(1))} />
+        <Button label="This week" kind={day === thursdayFrom(0) ? 'primary' : 'secondary'} onPress={() => setDay(thursdayFrom(0))} />
+        <Button label="Next week" kind={day === thursdayFrom(1) ? 'primary' : 'secondary'} onPress={() => setDay(thursdayFrom(1))} />
       </View>
-      <Field label="Day (YYYY-MM-DD, UTC)" value={day} onChangeText={setDay} maxLength={10} />
+      <Field label="Thursday (YYYY-MM-DD, UTC)" value={day} onChangeText={setDay} maxLength={10} />
       <Field label="Prompt" value={text} onChangeText={setText} maxLength={200} autoCapitalize="sentences" placeholder="What's your best hypothetical band name?" />
       <ErrorText>{error}</ErrorText>
       {saved && <Body>{saved}</Body>}
       <Button label="Schedule" busy={busy} disabled={!text.trim()} onPress={() => void save()} />
 
-      <Text accessibilityRole="header" style={styles.section}>Last week and coming up</Text>
+      <Text accessibilityRole="header" style={styles.section}>Last week and the coming weeks</Text>
       {prompts.length === 0 && <Body muted>Nothing scheduled.</Body>}
       {prompts.map((prompt) => (
         <View key={prompt.id} style={styles.card}>
           <Text style={styles.muted}>{prompt.day} · {prompt.source === 'staff' ? 'staff' : 'library'} · {prompt.answer_count} answers</Text>
           <Text style={styles.text}>{prompt.text}</Text>
-          {prompt.answer_count === 0 && prompt.day >= dayFrom(0) && (
+          {prompt.answer_count === 0 && prompt.day >= thursdayFrom(0) && (
             <Button label="Remove" accessibilityLabel={`Remove the prompt for ${prompt.day}`} kind="secondary" onPress={() => void remove(prompt.day)} />
           )}
         </View>

@@ -1302,9 +1302,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Today's music trivia
-         * @description One question a day (UTC) about one of the fan's scored artists, shared by the artist's fans that day (made from
-         *     the album catalog by the first who asks). Once answered, `results` names up to two people the fan follows who
+         * This week's music trivia
+         * @description One question a week about one of the fan's scored artists: trivia comes out on Tuesdays (UTC) and stays open
+         *     until the next Tuesday (`next_question_on`). It is shared by the artist's fans that week (made from the album
+         *     catalog by the first who asks). Once answered, `results` names up to two people the fan follows who
          *     got it right and the percent of fans who did. `question` is null when none of the fan's artists has enough catalog yet. The right answer is
          *     only included once the fan has answered. A right answer earns `trivia_correct` ledger points (0.30, a tenth
          *     of logging an album; decided 2026-10-25).
@@ -1377,8 +1378,9 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Today's music prompt
-         * @description One open question a day (UTC) for everyone, from staff or the built-in library, for example "What's your best
+         * This week's music prompt
+         * @description One open question a week for everyone: prompts come out on Thursdays (UTC) and stay open until the next Thursday
+         *     (`next_prompt_on`), from staff or the built-in library, for example "What's your best
          *     hypothetical band name?". `following_answers` (up to three answers from people the caller follows) is only
          *     filled once the caller has answered.
          */
@@ -1470,8 +1472,8 @@ export interface paths {
         };
         get?: never;
         /**
-         * Set a day's prompt
-         * @description Today or later. Refused once fans have answered that day's prompt.
+         * Set a week's prompt
+         * @description A Thursday (prompts come out on Thursdays), this week's or later. Refused once fans have answered that week's prompt.
          */
         put: operations["schedulePrompt"];
         post?: never;
@@ -3917,12 +3919,15 @@ export interface components {
         Prompt: {
             /** Format: uuid */
             id: string;
-            /** Format: date */
+            /**
+             * Format: date
+             * @description The Thursday it came out (a day before weekly prompts
+             */
             day: string;
             text: string;
             /** @enum {string} */
             source: "staff" | "library";
-            /** @description It is the prompt's day */
+            /** @description It is the prompt's week, so answers can be written */
             open: boolean;
             answer_count: number;
         };
@@ -3945,12 +3950,17 @@ export interface components {
         };
         PromptToday: {
             prompt: components["schemas"]["Prompt"];
+            /**
+             * Format: date
+             * @description The next Thursday.
+             */
+            next_prompt_on: string;
             my_answer: components["schemas"]["PromptAnswer"] | null;
             /** @description Answers from people the caller follows, once the caller has answered */
             following_answers: components["schemas"]["PromptAnswer"][];
         };
         /**
-         * @description Fans of the same artist share the day's question. `answer_index`, `correct`, `points_earned`, and `results` are
+         * @description Fans of the same artist share the week's question (`day` is the Tuesday it came out). `answer_index`, `correct`, `points_earned`, and `results` are
          *     only set once the fan has answered.
          */
         TriviaQuestion: {
@@ -6297,7 +6307,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Today's question, or none */
+            /** @description This week's question, or none */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -6305,6 +6315,11 @@ export interface operations {
                 content: {
                     "application/json": {
                         question: components["schemas"]["TriviaQuestion"] | null;
+                        /**
+                         * Format: date
+                         * @description The next Tuesday.
+                         */
+                        next_question_on: string;
                     };
                 };
             };

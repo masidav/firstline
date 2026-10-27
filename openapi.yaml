@@ -1569,24 +1569,26 @@ paths:
     get:
       tags: [Social]
       operationId: getTodaysTrivia
-      summary: Today's music trivia
+      summary: This week's music trivia
       description: |
-        One question a day (UTC) about one of the fan's scored artists, shared by the artist's fans that day (made from
-        the album catalog by the first who asks). Once answered, `results` names up to two people the fan follows who
+        One question a week about one of the fan's scored artists: trivia comes out on Tuesdays (UTC) and stays open
+        until the next Tuesday (`next_question_on`). It is shared by the artist's fans that week (made from the album
+        catalog by the first who asks). Once answered, `results` names up to two people the fan follows who
         got it right and the percent of fans who did. `question` is null when none of the fan's artists has enough catalog yet. The right answer is
         only included once the fan has answered. A right answer earns `trivia_correct` ledger points (0.30, a tenth
         of logging an album; decided 2026-10-25).
       responses:
         '200':
-          description: Today's question, or none
+          description: This week's question, or none
           content:
             application/json:
               schema:
                 type: object
-                required: [question]
+                required: [question, next_question_on]
                 properties:
                   question:
                     oneOf: [{$ref: '#/components/schemas/TriviaQuestion'}, {type: 'null'}]
+                  next_question_on: {type: string, format: date, description: The next Tuesday.}
   /me/trivia/{questionId}/answer:
     parameters:
       - {name: questionId, in: path, required: true, schema: {type: string, format: uuid}}
@@ -1666,9 +1668,10 @@ paths:
     get:
       tags: [Social]
       operationId: getTodaysPrompt
-      summary: Today's music prompt
+      summary: This week's music prompt
       description: |
-        One open question a day (UTC) for everyone, from staff or the built-in library, for example "What's your best
+        One open question a week for everyone: prompts come out on Thursdays (UTC) and stay open until the next Thursday
+        (`next_prompt_on`), from staff or the built-in library, for example "What's your best
         hypothetical band name?". `following_answers` (up to three answers from people the caller follows) is only
         filled once the caller has answered.
       responses:
@@ -1772,8 +1775,8 @@ paths:
     put:
       tags: [Admin]
       operationId: schedulePrompt
-      summary: Set a day's prompt
-      description: Today or later. Refused once fans have answered that day's prompt.
+      summary: Set a week's prompt
+      description: A Thursday (prompts come out on Thursdays), this week's or later. Refused once fans have answered that week's prompt.
       requestBody:
         required: true
         content:
@@ -4510,10 +4513,10 @@ components:
       required: [id, day, text, source, open, answer_count]
       properties:
         id: {type: string, format: uuid}
-        day: {type: string, format: date}
+        day: {type: string, format: date, description: The Thursday it came out (a day before weekly prompts, for older ones).}
         text: {type: string}
         source: {type: string, enum: [staff, library]}
-        open: {type: boolean, description: It is the prompt's day, so answers can be written}
+        open: {type: boolean, description: "It is the prompt's week, so answers can be written"}
         answer_count: {type: integer, minimum: 0}
     PromptAnswer:
       type: object
@@ -4530,9 +4533,10 @@ components:
         following: {type: boolean, description: The caller follows its author}
     PromptToday:
       type: object
-      required: [prompt, my_answer, following_answers]
+      required: [prompt, my_answer, following_answers, next_prompt_on]
       properties:
         prompt: {$ref: '#/components/schemas/Prompt'}
+        next_prompt_on: {type: string, format: date, description: The next Thursday.}
         my_answer:
           oneOf: [{$ref: '#/components/schemas/PromptAnswer'}, {type: 'null'}]
         following_answers:
@@ -4543,7 +4547,7 @@ components:
     TriviaQuestion:
       type: object
       description: |
-        Fans of the same artist share the day's question. `answer_index`, `correct`, `points_earned`, and `results` are
+        Fans of the same artist share the week's question (`day` is the Tuesday it came out). `answer_index`, `correct`, `points_earned`, and `results` are
         only set once the fan has answered.
       required: [id, day, artist, kind, prompt, options, answered, chosen_index, answer_index, correct, points_for_right, points_earned,
                  results]

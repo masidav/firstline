@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
 
 import { DailyPromptCard } from './DailyPromptCard';
 import { PromptAnswersScreen } from './PromptAnswersScreen';
-import { dayFrom, PromptsAdminScreen } from './PromptsAdminScreen';
+import { dayFrom, PromptsAdminScreen, thursdayFrom } from './PromptsAdminScreen';
 
 const ok = (data: unknown, status = 200) => ({ data, response: { ok: true, status } });
 const mockApi = { GET: jest.fn(), POST: jest.fn(), PUT: jest.fn(), DELETE: jest.fn() };
@@ -74,12 +74,16 @@ test('all answers list yours first and others can be reported', async () => {
 
 test('staff schedule a prompt for tomorrow', async () => {
   mockApi.GET.mockResolvedValue(ok({ items: [] }));
-  mockApi.PUT.mockResolvedValue(ok({ ...prompt, day: dayFrom(1), source: 'staff', open: false }));
+  mockApi.PUT.mockResolvedValue(ok({ ...prompt, day: thursdayFrom(1), source: 'staff', open: false }));
   render(<PromptsAdminScreen />);
   expect(await screen.findByText('Nothing scheduled.')).toBeTruthy();
   fireEvent.changeText(screen.getByLabelText('Prompt'), 'Best tour merch ever?');
   fireEvent.press(screen.getByRole('button', { name: 'Schedule' }));
-  expect(await screen.findByText(`Scheduled for ${dayFrom(1)}.`)).toBeTruthy();
-  expect(mockApi.PUT).toHaveBeenCalledWith('/admin/prompts/{day}', { params: { path: { day: dayFrom(1) } }, body: { text: 'Best tour merch ever?' } });
+  expect(await screen.findByText(`Scheduled for ${thursdayFrom(1)}.`)).toBeTruthy();
+  expect(mockApi.PUT).toHaveBeenCalledWith('/admin/prompts/{day}', { params: { path: { day: thursdayFrom(1) } }, body: { text: 'Best tour merch ever?' } });
   expect(dayFrom(1, new Date('2026-12-31T23:00:00Z'))).toBe('2027-01-01');
+  // Prompts come out on Thursdays: Tuesday the 27th's week is Thursday the 22nd's; a Thursday is its own.
+  expect(thursdayFrom(0, new Date('2026-10-27T12:00:00Z'))).toBe('2026-10-22');
+  expect(thursdayFrom(1, new Date('2026-10-27T12:00:00Z'))).toBe('2026-10-29');
+  expect(thursdayFrom(0, new Date('2026-10-29T00:30:00Z'))).toBe('2026-10-29');
 });

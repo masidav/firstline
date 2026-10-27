@@ -10,9 +10,10 @@ using Npgsql;
 namespace FandomScore.Api.Features.Prompts;
 
 /// <summary>
-/// Music prompts (migration 0025, requested 2026-10-25): one open question a day ("What's your best hypothetical band
-/// name?"), from staff or a built-in library. Fans answer once (editable that day); answers show on the feed, public
-/// to everyone or followers-only, and can be reported like logs and photos. No points.
+/// Music prompts (migrations 0025 and 0034): one open question a week ("What's your best hypothetical band name?"),
+/// out on Thursdays (UTC) and open until the next one, from staff or a built-in library. Fans answer once (editable that
+/// week); answers show on the feed, public to everyone or followers-only, and can be reported like logs and photos.
+/// No points.
 /// </summary>
 public static class PromptEndpoints
 {
@@ -39,7 +40,12 @@ public static class PromptEndpoints
         bool Mine, bool Following);
 
     /// <summary><c>FollowingAnswers</c>: up to three answers from people the caller follows, once the caller has answered.</summary>
-    public sealed record PromptToday(Prompt Prompt, PromptAnswer? MyAnswer, IReadOnlyList<PromptAnswer> FollowingAnswers);
+    /// <summary>This week's prompt (prompts come out on Thursdays, UTC, and stay open until the next one).</summary>
+    public sealed record PromptToday(Prompt Prompt, PromptAnswer? MyAnswer, IReadOnlyList<PromptAnswer> FollowingAnswers)
+    {
+        /// <summary>The next Thursday.</summary>
+        public DateOnly NextPromptOn => Prompt.Day.AddDays(7);
+    }
 
     public sealed record AnswerPage(IReadOnlyList<PromptAnswer> Items, string? NextCursor);
 
@@ -58,11 +64,11 @@ public static class PromptEndpoints
     {
         var me = user.UserId();
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
-        var promptId = await connection.ExecuteScalarAsync<Guid>("SELECT (prompt_for_day((now() AT TIME ZONE 'UTC')::date)).id");
+        var promptId = await connection.ExecuteScalarAsync<Guid>("SELECT (prompt_for_day(prompt_week_day())).id");
         return Results.Ok(await LoadTodayAsync(connection, me, promptId));
     }
 
-    // Writes or rewrites the caller's answer to today's prompt.
+    // Writes or rewrites the caller's answer to this week's prompt.
     private static async Task<IResult> AnswerAsync(
         ClaimsPrincipal user, Guid promptId, AnswerRequest? request, NpgsqlDataSource db, CancellationToken cancellationToken)
     {
@@ -180,7 +186,7 @@ public static class PromptEndpoints
     {
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
         var rows = await connection.QueryAsync<Prompt>(
-            $"{PromptSelect} WHERE p.day BETWEEN (now() AT TIME ZONE 'UTC')::date - 7 AND (now() AT TIME ZONE 'UTC')::date + 28 ORDER BY p.day DESC");
+            $"{PromptSelect} WHERE p.day BETWEEN prompt_week_day() - 7 AND prompt_week_day() + 56 ORDER BY p.day DESC");
         return Results.Ok(new PromptList([.. rows]));
     }
 
@@ -195,9 +201,14 @@ public static class PromptEndpoints
         }
 
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
-        if (date < DateOnly.FromDateTime(DateTime.UtcNow))
+        if (date.DayOfWeek != DayOfWeek.Thursday)
         {
-            throw ApiProblemException.Validation(new FieldError("day", "Schedule today or a later day."));
+            throw ApiProblemException.Validation(new FieldError("day", "Prompts come out on Thursdays: pick a Thursday."));
+        }
+
+        if (date < await connection.ExecuteScalarAsync<DateOnly>("SELECT prompt_week_day()"))
+        {
+            throw ApiProblemException.Validation(new FieldError("day", "Schedule this week's Thursday or a later one."));
         }
 
         try
@@ -212,7 +223,7 @@ public static class PromptEndpoints
         catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.RaiseException && e.MessageText.Contains("have answered", StringComparison.Ordinal))
         {
             throw new ApiProblemException(StatusCodes.Status409Conflict, "conflict", "Already answered",
-                "Fans have answered this day's prompt, so it can't change.");
+                "Fans have answered this week's prompt, so it can't change.");
         }
 
         return Results.Ok(await connection.QuerySingleAsync<Prompt>($"{PromptSelect} WHERE p.day = @day", new { day = date }));
@@ -254,9 +265,10 @@ public static class PromptEndpoints
 
     private static async Task RequireOpenAsync(NpgsqlConnection connection, Guid promptId)
     {
-        var day = await connection.ExecuteScalarAsync<DateOnly?>("SELECT day FROM prompts WHERE id = @promptId", new { promptId })
-                  ?? throw NotFound();
-        if (day != DateOnly.FromDateTime(DateTime.UtcNow))
+        var open = await connection.ExecuteScalarAsync<bool?>(
+                       "SELECT day = prompt_week_day() FROM prompts WHERE id = @promptId", new { promptId })
+                   ?? throw NotFound();
+        if (!open)
         {
             throw Closed();
         }
@@ -268,7 +280,7 @@ public static class PromptEndpoints
             : throw ApiProblemException.Validation(new FieldError("day", "Use a date as YYYY-MM-DD."));
 
     private static ApiProblemException Closed() =>
-        new(StatusCodes.Status409Conflict, "prompt_closed", "Prompt closed", "Answers are written on the prompt's day. Today's prompt is waiting.");
+        new(StatusCodes.Status409Conflict, "prompt_closed", "Prompt closed", "Answers are written in the prompt's week. This week's prompt is waiting.");
 
     private static ApiProblemException NotFound() =>
         new(StatusCodes.Status404NotFound, "not_found", "Not found", "No prompt has this id.");
@@ -282,7 +294,7 @@ public static class PromptEndpoints
 
     private const string PromptSelect =
         """
-        SELECT p.id AS Id, p.day AS Day, p.text AS Text, p.source AS Source, p.day = (now() AT TIME ZONE 'UTC')::date AS Open,
+        SELECT p.id AS Id, p.day AS Day, p.text AS Text, p.source AS Source, p.day = prompt_week_day() AS Open,
                (SELECT count(*)::int FROM prompt_answers a JOIN users au ON au.id = a.user_id AND au.deleted_at IS NULL
                  WHERE a.prompt_id = p.id AND a.deleted_at IS NULL AND a.removed_at IS NULL) AS AnswerCount
         FROM prompts p

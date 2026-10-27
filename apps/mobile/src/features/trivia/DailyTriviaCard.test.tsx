@@ -24,7 +24,7 @@ test('answering right shows the points; the options lock', async () => {
   expect(await screen.findByText('What year did Geese release "3D Country"?')).toBeTruthy();
   expect(screen.getByText('Answer right for +0.3 points toward your Geese score.')).toBeTruthy();
   fireEvent.press(screen.getByRole('button', { name: '2023' }));
-  expect(await screen.findByText('Right! +0.3 points for Geese. Back tomorrow for another.')).toBeTruthy();
+  expect(await screen.findByText('Right! +0.3 points for Geese. New trivia every Tuesday.')).toBeTruthy();
   expect(screen.getByText('Ben and @cat got it right. 60% of fans did.')).toBeTruthy();
   expect(mockApi.POST).toHaveBeenCalledWith('/me/trivia/{questionId}/answer', { params: { path: { questionId: 'q1' } }, body: { choice: 2 } });
   expect(screen.getByRole('button', { name: '2023, the right answer' })).toBeDisabled();
@@ -35,7 +35,7 @@ test('a wrong answer marks the pick and the right one', async () => {
   mockApi.POST.mockResolvedValue(ok({ ...question, answered: true, chosen_index: 0, answer_index: 2, correct: false, points_earned: 0 }));
   render(<DailyTriviaCard />);
   fireEvent.press(await screen.findByRole('button', { name: '2021' }));
-  expect(await screen.findByText('Not this time. A new question tomorrow.')).toBeTruthy();
+  expect(await screen.findByText('Not this time. New trivia every Tuesday.')).toBeTruthy();
   expect(screen.getByRole('button', { name: '2021, your answer' })).toBeTruthy();
   expect(screen.getByRole('button', { name: '2023, the right answer' })).toBeTruthy();
 });

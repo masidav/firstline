@@ -24,8 +24,13 @@ public sealed class PromptApiTests(PostgresFixture postgres) : IAsyncLifetime
     private HttpClient _client = null!;
     private NpgsqlDataSource _db = null!;
 
-    private static string Day(int offset) =>
-        DateOnly.FromDateTime(DateTime.UtcNow).AddDays(offset).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    /// <summary>This week's prompt Thursday (prompts come out on Thursdays, migration 0034), <paramref name="weeks"/> weeks on.</summary>
+    private static string Day(int weeks)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var thursday = today.AddDays(-(((int)today.DayOfWeek - (int)DayOfWeek.Thursday + 7) % 7));
+        return thursday.AddDays(7 * weeks).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    }
 
     public async Task InitializeAsync()
     {
@@ -146,10 +151,15 @@ public sealed class PromptApiTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal(("staff", false), (scheduled.GetProperty("source").GetString(), scheduled.GetProperty("open").GetBoolean()));
         Assert.Equal("day", (await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/admin/prompts/{Day(-1)}", staff, new { text = "Past" }), HttpStatusCode.UnprocessableEntity))
             .GetProperty("errors")[0].GetProperty("field").GetString());
+        var friday = DateOnly.ParseExact(Day(1), "yyyy-MM-dd", CultureInfo.InvariantCulture).AddDays(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var notThursday = await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/admin/prompts/{friday}", staff, new { text = "Friday" }), HttpStatusCode.UnprocessableEntity);
+        Assert.Contains("Thursday", notThursday.GetProperty("errors")[0].GetProperty("message").GetString(), StringComparison.Ordinal);
 
         // Today's prompt can be replaced until someone answers it.
         var replaced = await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/admin/prompts/{Day(0)}", staff, new { text = "Staff pick today?" }), HttpStatusCode.OK);
-        var today = (await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/prompts/today", fan), HttpStatusCode.OK)).GetProperty("prompt");
+        var week = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/prompts/today", fan), HttpStatusCode.OK);
+        Assert.Equal(Day(1), week.GetProperty("next_prompt_on").GetString());
+        var today = week.GetProperty("prompt");
         Assert.Equal(("Staff pick today?", replaced.GetProperty("id").GetString()), (today.GetProperty("text").GetString(), today.GetProperty("id").GetString()));
         await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/prompts/{today.GetProperty("id").GetString()}/answer", fan, new { body = "Mine" }), HttpStatusCode.OK);
         Assert.Equal(HttpStatusCode.Conflict, (await SendAsync(HttpMethod.Put, $"/v1/admin/prompts/{Day(0)}", staff, new { text = "Too late" })).StatusCode);

@@ -1,6 +1,7 @@
 # Music prompts API
 
-Migration 0025 (requested 2026-10-25). One open question a day (UTC) for every fan, for example "What's your best
+Migrations 0025 and 0034 (weekly since 2026-10-27). One open question a week for every fan, out on Thursdays (UTC)
+and open until the next Thursday (`prompt_week_day()`; `prompts.day` holds that Thursday), for example "What's your best
 hypothetical band name?".
 
 ## Where things live
@@ -16,7 +17,7 @@ hypothetical band name?".
   only once the caller has answered.
 - `PUT /prompts/{id}/answer` (`body`, `visibility`), `DELETE /prompts/{id}/answer`: on the day only (`prompt_closed`).
 - `GET /prompts/{id}/answers`: the caller's first, then people they follow, then everyone's public ones.
-- Staff: `GET /admin/prompts`, `PUT /admin/prompts/{day}` (today or later), `DELETE /admin/prompts/{day}`.
+- Staff: `GET /admin/prompts`, `PUT /admin/prompts/{day}` (a Thursday, this week's or later), `DELETE /admin/prompts/{day}`.
 
 Answers from the last week are a feed item (`prompt_answer`), reportable (`POST /reports` with `target_type:
 prompt_answer`) and taken down from the staff queue like logs and photos. No points: answers are opinions, and points

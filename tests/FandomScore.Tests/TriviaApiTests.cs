@@ -63,6 +63,11 @@ public sealed class TriviaApiTests(PostgresFixture postgres) : IAsyncLifetime
         var ana = await FanAsync("ana", scored: true);
         var today = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/trivia", ana), HttpStatusCode.OK);
         var question = today.GetProperty("question");
+        // Weekly since 0034: the question is this week's Tuesday's, and the next one comes a week later.
+        var day = DateOnly.Parse(question.GetProperty("day").GetString()!, System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Equal(DayOfWeek.Tuesday, day.DayOfWeek);
+        Assert.InRange(DateOnly.FromDateTime(DateTime.UtcNow).DayNumber - day.DayNumber, 0, 6);
+        Assert.Equal(day.AddDays(7).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), today.GetProperty("next_question_on").GetString());
         Assert.Equal("Geese", question.GetProperty("artist").GetProperty("name").GetString());
         Assert.Contains(question.GetProperty("kind").GetString(), Kinds);
         Assert.InRange(question.GetProperty("options").GetArrayLength(), 2, 4);

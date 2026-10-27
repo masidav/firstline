@@ -13,7 +13,7 @@ What you get, all deterministic for a given --seed:
     generated placeholder photo written to the API's local storage so the feed shows an image), and a fandom score
     per followed artist;
   - follows between fans (2 to 6 each), grab bags (up to five favourite songs by the artists they listen to), and
-    answers to today's music prompt from about a third of fans, which fill the home feed;
+    answers to this week's music prompt from about a third of fans, which fill the home feed;
   - active artists with albums and tracks. With Spotify credentials (Spotify__ClientId and Spotify__ClientSecret,
     from the environment or the repo's .env) these are REAL artists fetched from Spotify with the app token: real
     names, Spotify ids, photos, album covers, and track lists, so covers, Spotify links, song search, and the
@@ -418,7 +418,7 @@ def generate(fans, artists, shows, seed, catalog_source=None):
                                   now - datetime.timedelta(days=rng.uniform(0, 60))))
     sql.append(insert("follows", ["follower_id", "followee_id", "created_at"], follow_rows))
 
-    # --- today's music prompt (0025): about a third of fans have answered it -------------------------------------
+    # --- this week's music prompt (0025, weekly since 0034): about a third of fans have answered it -------------------------------------
     answers = ["The Velvet Ropes", "Face Value Riot", "Encore Envy", "The Soundcheck Saints", "Front Row Ghosts",
                "B-Side Bandits", "Merch Table Prophets", "The Setlist Society", "Lost in the Pit", "Feedback Loop Club",
                "The Green Room Kids", "Second Encore", "Wristband Theory", "Late Night Liner Notes", "Static Hearts"]
@@ -426,11 +426,11 @@ def generate(fans, artists, shows, seed, catalog_source=None):
         f"({lit(user_id)}::uuid, {lit(rng.choice(answers))}, {lit('followers' if rng.random() < 0.2 else 'public')})"
         for user_id in fan_ids if rng.random() < 0.33)
     if answer_values:
-        sql.append("-- Today's prompt is the band-name one (as staff would schedule it), and answers to it.\n"
-                   "INSERT INTO prompts (day, text, source, created_by) VALUES ((now() AT TIME ZONE 'UTC')::date, "
+        sql.append("-- This week's prompt (Thursday's) is the band-name one, as staff would schedule it, and answers to it.\n"
+                   "INSERT INTO prompts (day, text, source, created_by) VALUES (prompt_week_day(), "
                    f"'What''s your best hypothetical band name?', 'staff', {lit(staff_id)});\n"
                    "INSERT INTO prompt_answers (prompt_id, user_id, body, visibility)\n"
-                   "SELECT (prompt_for_day((now() AT TIME ZONE 'UTC')::date)).id, a.u, a.body, a.v::visibility FROM (VALUES\n  "
+                   "SELECT (prompt_for_day(prompt_week_day())).id, a.u, a.body, a.v::visibility FROM (VALUES\n  "
                    + answer_values + ") AS a (u, body, v);")
     if song_rows:
         sql.append(insert("grab_bag_songs", ["user_id", "position", "spotify_track_id", "title", "artist_id", "album_title", "cover_url",
@@ -537,7 +537,7 @@ UNION ALL SELECT 'follows', count(*) FROM follows
 UNION ALL SELECT 'grab-bag songs', count(*) FROM grab_bag_songs
 UNION ALL SELECT 'shared photos', count(*) FROM submissions WHERE shared_at IS NOT NULL
 UNION ALL SELECT 'photo files', count(*) FROM submission_files
-UNION ALL SELECT 'prompt answers today', count(*) FROM prompt_answers;""")
+UNION ALL SELECT 'prompt answers this week', count(*) FROM prompt_answers;""")
     examples = [u[1] for u in users[1:6]]
     return "\n\n".join(sql) + "\n", examples, files
 
