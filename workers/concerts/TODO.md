@@ -9,7 +9,8 @@ Use `- [x]` only after the task is implemented and verified.
       attractions list Spotify links and tune matching if most don't.
 - [ ] SeatGeek, Bandsintown, and Songkick as further sources (decided 2026-10-26: all four). One show listed by
       several sources should become one event: match by date and venue.
-- [ ] Tell staff when a show with an allocation is rescheduled at the source (`source_starts_at` differs).
-- [ ] Staff screen in the app for linking artists (today: the API only).
+- [x] Tell staff when a show with an allocation is moved, cancelled, postponed, or rescheduled at the source
+      (`staff_show_changed`, migration 0036; once per change). Verified 2026-10-27: ConcertSyncJobTests, invariants.
+- [x] Staff screen in the app for linking artists: Profile → Concert sources (`/concert-sources`). Verified: Jest.
 - [x] Presale reminders as in-app notifications (migration 0031, `workers/notifications/PresaleReminderJob.cs`).
       Verified 2026-10-26: NotificationApiTests, invariants. They reach phones once push notifications exist.

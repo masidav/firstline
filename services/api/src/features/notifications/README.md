@@ -14,6 +14,7 @@ with the worker so a push reads like its in-app row.
 | `staff_report` | staff | trigger on `reports`, first open report on a post only |
 | `staff_review` | staff | trigger on `submissions` reaching `needs_review` |
 | `staff_redaction` | staff | trigger on a submission file reaching `needs_review` (migration 0029) |
+| `staff_show_changed` | staff | trigger on `events` when Ticketmaster moves, cancels, postpones, or reschedules a show with a live allocation (migration 0036) |
 | `presale` | fans with a score for the artist, in the show's hub city | worker `notifications.presales`, `notify_presales()` (migration 0031) |
 
 One row per person, kind, and subject (`notifications_once`), so retries never notify twice. Only `read_at` changes

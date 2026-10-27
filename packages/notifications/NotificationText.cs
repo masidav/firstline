@@ -44,10 +44,26 @@ public static class NotificationText
             "staff_report" => ("A post was reported", $"A {(Text("target_type") == "photo" ? "photo" : "album log")} was reported ({Text("reason")}).", "/moderation"),
             "staff_review" => ("Proof to review", $"@{Text("handle")} sent {Text("kind").Replace('_', ' ')} for {Text("artist_name")}.", "/review"),
             "staff_redaction" => ("A photo needs a redaction check", Text("note") is { Length: > 0 } note ? note : "The redaction worker couldn't finish a file.", "/redactions"),
+            "staff_show_changed" => ("A show with fan tickets changed", ShowChanged(show, Text("status"), data), $"/show/{Text("event_id")}"),
             "staff_draw" => ("A fan draw ran", $"{show}: {Number("selected_fans")} of {Number("registrations")} fans selected, {Number("seats_assigned")} of {Number("tickets")} seats assigned.", $"/show/{Text("event_id")}"),
             _ => ("Update", "Something changed.", "/home"),
         };
         return new NotificationMessage(title, body, link);
+    }
+
+    /// <summary>What Ticketmaster changed about a show with a fan allocation (migration 0036), times in UTC.</summary>
+    private static string ShowChanged(string show, string status, JsonElement data)
+    {
+        static string At(DateTime? time) => time is { } t ? t.ToString("MMM d, HH:mm 'UTC'", CultureInfo.InvariantCulture) : "an unknown time";
+        var moved = data.ValueKind == JsonValueKind.Object && data.TryGetProperty("moved", out var m) && m.ValueKind == JsonValueKind.True;
+        var what = status switch
+        {
+            "cancelled" => $"Ticketmaster lists {show} as cancelled.",
+            "postponed" => $"Ticketmaster lists {show} as postponed.",
+            _ when moved => $"Ticketmaster moved {show} to {At(Time(data, "source_starts_at"))}.",
+            _ => $"Ticketmaster lists {show} as rescheduled.",
+        };
+        return $"{what} Its fan allocation still uses {At(Time(data, "starts_at"))}: update the fans or the allocation.";
     }
 
     /// <summary>When a presale opens, relative to <paramref name="now"/> ("starts in about 5 hours", "is on now").</summary>

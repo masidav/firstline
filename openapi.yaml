@@ -4178,7 +4178,7 @@ components:
         id: {type: string, format: uuid}
         kind:
           type: string
-          enum: [draw_selected, draw_not_selected, seat_backfilled, ticket_delivered, presale, staff_report, staff_review, staff_draw, staff_redaction]
+          enum: [draw_selected, draw_not_selected, seat_backfilled, ticket_delivered, presale, staff_report, staff_review, staff_draw, staff_redaction, staff_show_changed]
         title: {type: string}
         body: {type: string}
         link: {type: string, description: 'App route to open, e.g. /tickets or /show/{id}'}

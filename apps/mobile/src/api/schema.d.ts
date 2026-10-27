@@ -3558,7 +3558,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             /** @enum {string} */
-            kind: "draw_selected" | "draw_not_selected" | "seat_backfilled" | "ticket_delivered" | "presale" | "staff_report" | "staff_review" | "staff_draw" | "staff_redaction";
+            kind: "draw_selected" | "draw_not_selected" | "seat_backfilled" | "ticket_delivered" | "presale" | "staff_report" | "staff_review" | "staff_draw" | "staff_redaction" | "staff_show_changed";
             title: string;
             body: string;
             /** @description App route to open, e.g. /tickets or /show/{id} */

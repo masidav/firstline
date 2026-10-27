@@ -13,7 +13,8 @@ Upcoming shows, sale dates, and presales for tracked artists, loaded into `event
 - The worker searches Ticketmaster's attractions by the artist's name and links **only** an attraction whose
   `externalLinks.spotify` lists the artist's Spotify page (`matched_by = spotify_link`). Same-named bands are never
   guessed. No match is recorded (`external_id` null) and looked up again weekly.
-- Staff link the rest: `PUT /v1/admin/artists/{id}/sources/ticketmaster` with the Discovery attraction id (from the
+- Staff link the rest in the app (Profile → Concert sources) or with `PUT /v1/admin/artists/{id}/sources/ticketmaster`,
+  using the Discovery attraction id (from the
   Discovery API or its explorer; not the number in a ticketmaster.com URL). `DELETE` removes a wrong link.
 
 ## What a show gets
@@ -25,7 +26,8 @@ Upcoming shows, sale dates, and presales for tracked artists, loaded into `event
 - `status` (onsale, offsale, cancelled, postponed, rescheduled), `ticket_url`, the public sale window, and presales
   (replaced on every sync). Cancelled shows stay listed but leave the feed.
 - A show with an allocation keeps the time and city staff locked (`trg_event_lock`); Ticketmaster's time goes to
-  `source_starts_at` so a mismatch can be spotted.
+  `source_starts_at`. A new source time, or the show turning cancelled, postponed, or rescheduled, sends staff a
+  `staff_show_changed` notice (migration 0036), once per change.
 - A co-headline show already loaded for another artist stays with that artist.
 - Shows Ticketmaster stops listing are left as they are (they may carry allocations).
 

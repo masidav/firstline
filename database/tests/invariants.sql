@@ -2242,4 +2242,27 @@ SELECT pg_temp.expect_error($$INSERT INTO organization_members (organization_id,
 SELECT pg_temp.expect_error($$INSERT INTO organizations (name) VALUES ('invariant presents')$$, 'organizations_name_uidx');
 SELECT pg_temp.expect_error($$INSERT INTO organizations (name, kind) VALUES ('Label Co', 'label')$$, 'organizations_kind_check');
 
+-- ------------------------------------------------------------ show change alerts (0036)
+-- A source change to a show with a live allocation notifies staff once per change; other shows notify nobody.
+DO $$
+DECLARE e_alloc uuid; e_plain uuid; artist uuid; staff_count int; n int;
+BEGIN
+  SELECT id INTO artist FROM artists WHERE spotify_artist_id = 'sp-active';
+  SELECT count(*) INTO staff_count FROM users WHERE is_staff AND deleted_at IS NULL;
+  ASSERT staff_count > 0, 'the fixtures have a staff account';
+  INSERT INTO events (artist_id, name, city_id, starts_at, source_starts_at) VALUES
+    (artist, 'Alloc show', 'us-il-chicago', now() + interval '60 days', now() + interval '60 days') RETURNING id INTO e_alloc;
+  INSERT INTO events (artist_id, name, city_id, starts_at) VALUES (artist, 'Plain show', 'us-il-chicago', now() + interval '60 days')
+    RETURNING id INTO e_plain;
+  INSERT INTO allocations (event_id, tickets, face_value_cents, min_raw_score, registration_opens_at, registration_closes_at)
+    VALUES (e_alloc, 5, 3000, 0, now() + interval '1 day', now() + interval '2 days');
+  UPDATE events SET source_starts_at = now() + interval '61 days', status = 'rescheduled' WHERE id IN (e_alloc, e_plain);
+  UPDATE events SET status = 'rescheduled' WHERE id = e_alloc;   -- no change: no second notice
+  SELECT count(*) INTO n FROM notifications WHERE kind = 'staff_show_changed';
+  ASSERT n = staff_count, format('one notice per staff account for the allocated show (%s, expected %s)', n, staff_count);
+  DELETE FROM notifications WHERE kind = 'staff_show_changed';
+  DELETE FROM allocations WHERE event_id = e_alloc;
+  DELETE FROM events WHERE id IN (e_alloc, e_plain);
+END $$;
+
 \echo ALL INVARIANT TESTS PASSED

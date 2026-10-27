@@ -116,6 +116,10 @@ public sealed class ConcertSyncJobTests(PostgresFixture postgres) : IAsyncLifeti
         var other = await ScoringSetup.ActiveArtistAsync(_db, "1111111111111111111111", "Other Band", releases: 1);
         await using (var connection = await _db.OpenConnectionAsync())
         {
+            await connection.ExecuteAsync("INSERT INTO users (handle, email, is_staff) VALUES ('staffer', 'staffer@example.test', true)");
+        }
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
             await connection.ExecuteAsync(
                 """
                 INSERT INTO allocations (event_id, tickets, face_value_cents, min_raw_score, registration_opens_at, registration_closes_at)
@@ -137,6 +141,21 @@ public sealed class ConcertSyncJobTests(PostgresFixture postgres) : IAsyncLifeti
             "SELECT starts_at, source_starts_at, status FROM events WHERE external_id = 'ev-chicago'");
         Assert.Equal((new DateTime(2026, 12, 5, 1, 0, 0, DateTimeKind.Utc), new DateTime(2026, 12, 6, 1, 0, 0, DateTimeKind.Utc), "rescheduled"), chicago);
         Assert.Equal(other, await QueryOneAsync<Guid>("SELECT artist_id FROM events WHERE external_id = 'ev-shared'"));
+
+        // Staff hear about the move once (migration 0036), and again when Ticketmaster cancels the show.
+        const string Notices = "SELECT data->>'status' FROM notifications WHERE kind = 'staff_show_changed' ORDER BY created_at";
+        Assert.Equal(["rescheduled"], await QueryAsync<string>(Notices));
+        await SyncAsync();
+        Assert.Equal(["rescheduled"], await QueryAsync<string>(Notices));
+        _tm.Events[GeeseAttraction][0] = Event("ev-chicago", "Geese", "2026-12-06T01:00:00Z", "Metro", "Chicago", "IL", "US", status: "cancelled");
+        await SyncAsync();
+        Assert.Equal(["rescheduled", "cancelled"], await QueryAsync<string>(Notices));
+        var data = await QueryOneAsync<string>("SELECT data::text FROM notifications WHERE kind = 'staff_show_changed' AND data->>'status' = 'rescheduled'");
+        using var json = System.Text.Json.JsonDocument.Parse(data);
+        var message = FandomScore.Notifications.NotificationText.Describe("staff_show_changed", json.RootElement, DateTime.UtcNow);
+        Assert.Equal(("A show with fan tickets changed",
+            "Ticketmaster moved Geese to Dec 6, 01:00 UTC. Its fan allocation still uses Dec 5, 01:00 UTC: update the fans or the allocation."),
+            (message.Title, message.Body));
         Assert.Null(await QueryOneAsync<string?>("SELECT venue FROM events WHERE external_id = 'ev-shared'"));
     }
 
