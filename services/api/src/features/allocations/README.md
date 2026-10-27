@@ -34,8 +34,14 @@ guest needs an account, which can come later: the fan names it by handle (`PUT .
 (`name_plus_one_guest()`). A guest can't be the fan, registered for the same show, or another fan's guest for it, and a
 named guest can't register for that show.
 
-## The draw (migration 0017)
-Staff run it after registration closes (`POST /v1/admin/allocations/{id}/selection`; `run_allocation_selection()`).
+## The draw (migration 0017; a worker job since 0036)
+Staff queue it after registration closes (`POST /v1/admin/allocations/{id}/selection`, `202`) and poll
+`GET .../selection` until `status` is `done`; the worker runs `run_allocation_selection()`
+(`workers/allocations/SelectAllocationJob.cs`, job `allocations.select`, one queued per allocation). It runs in the
+background because a draw is linear in the registrations (about 0.4 ms each, `tools/load/README.md`) and nothing
+depends on how soon it runs: the snapshots and the stored seed fix the ranking. `allocation_selection_blocker()`
+gives staff the refusals (still open, cancelled, artist paused) at once; a failed job is queued again by the next
+`POST`.
 `allocation_ranking(allocation, seed)` orders live registrations: hub fans (the show's city in their three hub cities)
 first, then the rest; each by snapshot raw score; ties by `md5(seed || registration id)`. Seats go down the ranking,
 two for a +1; with one seat left, a fan with a +1 gets it alone (provisional). The seed and counts are stored once in
@@ -79,7 +85,9 @@ returns and cancellations only through their functions, never deleted or truncat
 - An allocation's rules lock once registration opens or once anyone has registered, whichever comes first
   (migration 0033).
 - Registering runs at about 4,000 to 5,000 a second on a 12-core machine and flattens past 50 concurrent clients;
-  the draw takes about 7.7 s for 20,000 registrations (see `tools/load/README.md`).
+  the draw takes about 7.7 s for 20,000 registrations (see `tools/load/README.md`), in the worker since 0036 so a
+  very large one can't outlast a request timeout (the job lease is 5 minutes, about 750,000 registrations; a
+  re-claimed job waits on the allocation lock and finds the recorded draw).
 
 ## Time zones (migration 0033)
 Every hub city has its IANA time zone (`cities.time_zone`, checked against PostgreSQL's zone list for new cities).
@@ -91,7 +99,7 @@ Every hub city has its IANA time zone (`cities.time_zone`, checked against Postg
   `PUT /v1/allocations/{id}/registration/guest`, `GET /v1/me/registrations`, `GET /v1/me/reservations`,
   `GET /v1/reservations/{id}`, `POST /v1/reservations/{id}/return`.
 - Staff (`/v1/admin`, staff policy, until promoter organizations exist): create and edit shows, create and edit
-  allocations (including `delivery_hours_before_show`), publish, cancel, delete drafts, run the draw, list
+  allocations (including `delivery_hours_before_show`), publish, cancel, delete drafts, queue the draw and read its state, list
   registrations in ranking order, and list who holds seats (`GET /admin/allocations/{id}/reservations`).
 
 Locally, `tools/dev/allocations.py` creates a show with a published allocation as a dev staff user, and can close

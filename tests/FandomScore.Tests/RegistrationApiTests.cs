@@ -244,11 +244,24 @@ public sealed class RegistrationApiTests(PostgresFixture postgres) : IAsyncLifet
         Assert.Equal(HttpStatusCode.Forbidden, (await SendAsync(HttpMethod.Post, $"/v1/admin/allocations/{allocationId}/selection", local)).StatusCode);
 
         await CloseRegistrationAsync(allocationId);
-        var selection = await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/allocations/{allocationId}/selection", staff), HttpStatusCode.Created);
+        // Staff queue the draw; the worker runs it. Queuing again meanwhile changes nothing.
+        var queued = await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/allocations/{allocationId}/selection", staff), HttpStatusCode.Accepted);
+        Assert.Equal("queued", queued.GetProperty("status").GetString());
+        var stillQueued = await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/allocations/{allocationId}/selection", staff), HttpStatusCode.Accepted);
+        Assert.Equal("queued", stillQueued.GetProperty("status").GetString());
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            Assert.Equal(1, await connection.ExecuteScalarAsync<int>("SELECT count(*)::int FROM jobs WHERE kind = 'allocations.select'"));
+        }
+
+        await Draws.RunQueuedAsync(_db);
+        var done = await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/admin/allocations/{allocationId}/selection", staff), HttpStatusCode.OK);
+        Assert.Equal("done", done.GetProperty("status").GetString());
+        var selection = done.GetProperty("selection");
         Assert.Equal((3, 3, 2, 3), (selection.GetProperty("tickets").GetInt32(), selection.GetProperty("registrations").GetInt32(),
             selection.GetProperty("selected_fans").GetInt32(), selection.GetProperty("seats_assigned").GetInt32()));
         var again = await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/allocations/{allocationId}/selection", staff), HttpStatusCode.OK);
-        Assert.Equal(selection.GetProperty("seed").GetString(), again.GetProperty("seed").GetString());
+        Assert.Equal(selection.GetProperty("seed").GetString(), again.GetProperty("selection").GetProperty("seed").GetString());
 
         var list = await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/admin/allocations/{allocationId}/registrations", staff), HttpStatusCode.OK);
         Assert.Equal([("local_top", "selected", 2), ("local_second", "selected", 1), ("far_top", "not_selected", 0)],
@@ -281,7 +294,8 @@ public sealed class RegistrationApiTests(PostgresFixture postgres) : IAsyncLifet
         var fan = await FanAsync("late_plus", score: 70, "us-il-chicago");
         await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{allocationId}/registration", fan), HttpStatusCode.Created);
         await CloseRegistrationAsync(allocationId);
-        await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/allocations/{allocationId}/selection", staff), HttpStatusCode.Created);
+        await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/allocations/{allocationId}/selection", staff), HttpStatusCode.Accepted);
+        await Draws.RunQueuedAsync(_db);
 
         var added = await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{allocationId}/registration", fan,
             new { plus_one = true }), HttpStatusCode.OK);

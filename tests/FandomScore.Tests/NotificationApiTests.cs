@@ -71,7 +71,8 @@ public sealed class NotificationApiTests(PostgresFixture postgres) : IAsyncLifet
         var ben = await FanAsync("ben", 80);
         var staff = await StaffAsync("staffer");
         await Task.Delay(TimeSpan.FromSeconds(2.5));   // registration closes
-        await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/allocations/{_allocationId}/selection", staff), HttpStatusCode.Created);
+        await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/allocations/{_allocationId}/selection", staff), HttpStatusCode.Accepted);
+        await Draws.RunQueuedAsync(_db);
 
         var anaPage = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/notifications", ana), HttpStatusCode.OK);
         var won = Assert.Single(anaPage.GetProperty("items").EnumerateArray());

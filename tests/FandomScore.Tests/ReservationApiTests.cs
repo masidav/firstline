@@ -191,7 +191,8 @@ public sealed class ReservationApiTests(PostgresFixture postgres) : IAsyncLifeti
     {
         await Task.Delay(TimeSpan.FromSeconds(2.5));   // registration closes
         var staff = await StaffAsync("drawer");
-        await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/allocations/{_allocationId}/selection", staff), HttpStatusCode.Created);
+        await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/allocations/{_allocationId}/selection", staff), HttpStatusCode.Accepted);
+        await Draws.RunQueuedAsync(_db);
     }
 
     private async Task<string> FanAsync(string handle, decimal score, bool plusOne = false)

@@ -2274,15 +2274,22 @@ export interface paths {
             };
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Where the draw stands
+         * @description Whether the draw is not run, queued, running, failed (with why), or done (with the recorded draw).
+         */
+        get: operations["getSelection"];
         put?: never;
         /**
-         * Run the draw
+         * Queue the draw
          * @description After registration closes. Fans whose hub cities include the show's city come first, then everyone else;
          *     each group is ranked by the raw score in their registration snapshot, and equal scores are ordered by a
          *     random seed that is stored, so the draw can be repeated. Each selected fan takes one seat, two with a +1;
-         *     when only one seat is left for a fan with a +1, they get it without the +1. Runs once: calling again
-         *     returns the recorded draw (`200`). A selected allocation can't be cancelled.
+         *     when only one seat is left for a fan with a +1, they get it without the +1.
+         *     The draw runs in the background (it is linear in the registrations, and nothing depends on how soon it
+         *     runs): this queues it and answers `202` with its state; poll `GET` here until `status` is `done`. Calling
+         *     again while it is queued or running changes nothing; after it has run, `200` with the recorded draw. A
+         *     failed draw is queued again. A selected allocation can't be cancelled.
          */
         post: operations["runSelection"];
         delete?: never;
@@ -3301,6 +3308,25 @@ export interface components {
             /** Format: date-time */
             registration_closes_at?: string;
             delivery_hours_before_show?: number;
+        };
+        /** @description Where an allocation's draw stands. It runs as a background job once staff queue it. */
+        DrawStatus: {
+            /** Format: uuid */
+            allocation_id: string;
+            /**
+             * @description `failed`: the worker gave up (`error` says why); queue it again to retry. `done`: see `selection`.
+             * @enum {string}
+             */
+            status: "not_run" | "queued" | "running" | "failed" | "done";
+            /**
+             * Format: date-time
+             * @description When the current job was queued; null when not_run or done.
+             */
+            queued_at: string | null;
+            /** @description The last error */
+            error: string | null;
+            /** @description The recorded draw, when `done`. */
+            selection: components["schemas"]["Selection"] | null;
         };
         /** @description A recorded draw. With the registrations' snapshots, `seed` is enough to repeat it. */
         Selection: {
@@ -7726,6 +7752,30 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    getSelection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The draw's state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrawStatus"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     runSelection: {
         parameters: {
             query?: never;
@@ -7737,24 +7787,24 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The draw had already run */
+            /** @description The draw had already run (`status` is `done`) */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Selection"];
+                    "application/json": components["schemas"]["DrawStatus"];
                 };
             };
-            /** @description Draw run */
-            201: {
+            /** @description The draw is queued (or already queued or running) */
+            202: {
                 headers: {
-                    /** @description `/v1/admin/allocations/{allocationId}/registrations` */
+                    /** @description `/v1/admin/allocations/{allocationId}/selection`, to poll */
                     Location?: string;
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Selection"];
+                    "application/json": components["schemas"]["DrawStatus"];
                 };
             };
             403: components["responses"]["Forbidden"];

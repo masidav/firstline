@@ -2157,4 +2157,30 @@ BEGIN
   DELETE FROM trivia_questions WHERE user_id = fan;
 END $$;
 
+-- ------------------------------------------------------------ the draw as a job (0036)
+-- allocation_selection_blocker() says why the draw can't run, with the same rules as run_allocation_selection().
+DO $$
+DECLARE ev uuid; al uuid;
+BEGIN
+  INSERT INTO events (artist_id, name, city_id, city, country, starts_at)
+  VALUES ('40000000-0000-0000-0000-000000000001', 'Blocker show', 'us-il-chicago', 'Chicago', 'US', now() + interval '14 days')
+  RETURNING id INTO ev;
+  INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at)
+  VALUES (ev, 10, 4500, now() - interval '1 day', now() + interval '5 days') RETURNING id INTO al;
+  ASSERT allocation_selection_blocker(al) = 'not_found', 'a draft is not found';
+  ASSERT allocation_selection_blocker(gen_random_uuid()) = 'not_found', 'an unknown allocation is not found';
+  UPDATE allocations SET published_at = now() WHERE id = al;
+  ASSERT allocation_selection_blocker(al) = 'registration_open', 'open registration blocks the draw';
+  ALTER TABLE allocations DISABLE TRIGGER trg_allocation_check;
+  UPDATE allocations SET registration_closes_at = now() - interval '1 minute' WHERE id = al;
+  ALTER TABLE allocations ENABLE TRIGGER trg_allocation_check;
+  ASSERT allocation_selection_blocker(al) IS NULL, 'closed registration lets the draw run';
+  PERFORM run_allocation_selection(al, NULL);
+  ASSERT allocation_selection_blocker(al) IS NULL, 'a draw that has run is not blocked (the API answers with it)';
+  INSERT INTO allocations (event_id, tickets, face_value_cents, registration_opens_at, registration_closes_at, published_at)
+  VALUES (ev, 10, 4500, now() - interval '1 day', now() + interval '5 days', now()) RETURNING id INTO al;
+  UPDATE allocations SET cancelled_at = now() WHERE id = al;
+  ASSERT allocation_selection_blocker(al) = 'cancelled', 'a cancelled allocation blocks the draw';
+END $$;
+
 \echo ALL INVARIANT TESTS PASSED

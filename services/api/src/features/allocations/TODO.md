@@ -38,8 +38,12 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       concurrency. Measured with `tools/load/run.sh` (pgbench, 20,000 fans): registering runs at 4,000 to 5,000 a
       second with no failures; the show page's standing was the real bottleneck (about 420 a second, growing with
       registrants) and now comes from `StandingSnapshots` (about 16,000 a second).*
-- [ ] Run the draw as a job for very large allocations: it takes about 7.7 s for 20,000 registrations inside the
+- [x] Run the draw as a job for very large allocations: it takes about 7.7 s for 20,000 registrations inside the
       staff request and grows linearly, so past about 75,000 registrants it would outlast a 30 s load-balancer timeout.
+      *Done 2026-10-27 (migration 0036, `workers/allocations/SelectAllocationJob.cs`): `POST .../selection` checks the
+      rules and queues `allocations.select` (`202`, one per allocation); `GET .../selection` reports not_run, queued,
+      running, failed, or done with the draw. Verified: SelectAllocationJobTests 3, RegistrationApiTests, invariants
+      (0036), `tools/dev/allocations.py draw` polls.*
 - [x] Test eligibility edges, duplicate registrations, selection reproducibility, token expiry, and transfer attempts.
       *Eligibility edges and transfer attempts were covered (RegistrationApiTests, invariants 0020); reservations have
       no expiry by design (they live until the show, a return, or deletion; delivery time is tested in

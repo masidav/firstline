@@ -22,6 +22,7 @@ import datetime
 import json
 import os
 import sys
+import time
 import urllib.parse
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -100,7 +101,20 @@ def main():
         print(f"Registration for {args.allocation_id} is closed. Run `draw` next.")
         return
     if args.command == "draw":
-        selection = call("POST", args.api, f"/v1/admin/allocations/{args.allocation_id}/selection", token)
+        # The draw runs in the worker (allocations.select): queue it, then poll until it is done.
+        draw = call("POST", args.api, f"/v1/admin/allocations/{args.allocation_id}/selection", token)
+        waited = 0
+        while draw["status"] != "done":
+            if draw["status"] == "failed":
+                sys.exit(f"The draw failed: {draw['error']}. Run `draw` again to retry.")
+            if waited == 0:
+                print("Draw queued; waiting for the worker (dotnet run --project workers) ...")
+            if waited > 120:
+                sys.exit("The worker hasn't run the draw in two minutes. Is it running?")
+            time.sleep(2)
+            waited += 2
+            draw = call("GET", args.api, f"/v1/admin/allocations/{args.allocation_id}/selection", token)
+        selection = draw["selection"]
         print(f"Draw (seed {selection['seed']}): {selection['selected_fans']} fans selected, "
               f"{selection['seats_assigned']}/{selection['tickets']} seats")
         for item in call("GET", args.api, f"/v1/admin/allocations/{args.allocation_id}/registrations", token)["items"]:

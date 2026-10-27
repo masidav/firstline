@@ -286,7 +286,8 @@ Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](servi
       only inside a 25-seat margin (decided 2026-10-24). Reservations and notifications are next.*
       *Hardened 2026-10-26 (migration 0033): concurrency tests for duplicate and racing registrations and the draw,
       a load test (`tools/load`), the standing served from an in-memory snapshot, rules locked once anyone registers,
-      and IANA time zones on cities and shows.*
+      and IANA time zones on cities and shows. The draw runs as a worker job since 2026-10-27 (migration 0036): staff
+      queue it and poll its state, so a very large allocation can't time out a request.*
 - [x] Non-transferable reservation tokens, delayed delivery, and face-value exchange for fans who can't attend.
       *Done 2026-10-25 (migration 0020): the draw (and backfill) gives each selected fan a reservation tied to their
       account; the ticket token is shown only to its holder and only from `delivery_hours_before_show` before the show

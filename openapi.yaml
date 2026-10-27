@@ -2644,26 +2644,29 @@ paths:
     post:
       tags: [Admin, Allocations]
       operationId: runSelection
-      summary: Run the draw
+      summary: Queue the draw
       description: |
         After registration closes. Fans whose hub cities include the show's city come first, then everyone else;
         each group is ranked by the raw score in their registration snapshot, and equal scores are ordered by a
         random seed that is stored, so the draw can be repeated. Each selected fan takes one seat, two with a +1;
-        when only one seat is left for a fan with a +1, they get it without the +1. Runs once: calling again
-        returns the recorded draw (`200`). A selected allocation can't be cancelled.
+        when only one seat is left for a fan with a +1, they get it without the +1.
+        The draw runs in the background (it is linear in the registrations, and nothing depends on how soon it
+        runs): this queues it and answers `202` with its state; poll `GET` here until `status` is `done`. Calling
+        again while it is queued or running changes nothing; after it has run, `200` with the recorded draw. A
+        failed draw is queued again. A selected allocation can't be cancelled.
       responses:
-        '201':
-          description: Draw run
+        '202':
+          description: The draw is queued (or already queued or running)
           headers:
-            Location: {schema: {type: string}, description: '`/v1/admin/allocations/{allocationId}/registrations`'}
+            Location: {schema: {type: string}, description: '`/v1/admin/allocations/{allocationId}/selection`, to poll'}
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/Selection'}
+              schema: {$ref: '#/components/schemas/DrawStatus'}
         '200':
-          description: The draw had already run
+          description: The draw had already run (`status` is `done`)
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/Selection'}
+              schema: {$ref: '#/components/schemas/DrawStatus'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409':
@@ -2671,6 +2674,19 @@ paths:
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
+    get:
+      tags: [Admin, Allocations]
+      operationId: getSelection
+      summary: Where the draw stands
+      description: Whether the draw is not run, queued, running, failed (with why), or done (with the recorded draw).
+      responses:
+        '200':
+          description: The draw's state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DrawStatus'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /admin/allocations/{allocationId}/registrations:
     parameters:
       - {$ref: '#/components/parameters/AllocationId'}
@@ -3840,6 +3856,21 @@ components:
         registration_opens_at: {type: string, format: date-time}
         registration_closes_at: {type: string, format: date-time}
         delivery_hours_before_show: {type: integer, minimum: 0, maximum: 720}
+    DrawStatus:
+      type: object
+      description: Where an allocation's draw stands. It runs as a background job once staff queue it.
+      required: [allocation_id, status, queued_at, error, selection]
+      properties:
+        allocation_id: {type: string, format: uuid}
+        status:
+          type: string
+          enum: [not_run, queued, running, failed, done]
+          description: '`failed`: the worker gave up (`error` says why); queue it again to retry. `done`: see `selection`.'
+        queued_at: {type: [string, 'null'], format: date-time, description: When the current job was queued; null when not_run or done.}
+        error: {type: [string, 'null'], description: The last error, when `failed`.}
+        selection:
+          oneOf: [{$ref: '#/components/schemas/Selection'}, {type: 'null'}]
+          description: The recorded draw, when `done`.
     Selection:
       type: object
       description: A recorded draw. With the registrations' snapshots, `seed` is enough to repeat it.

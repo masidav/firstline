@@ -1,4 +1,5 @@
 using FandomScore.Worker.AccountRetention;
+using FandomScore.Worker.Allocations;
 using FandomScore.Worker.Hosting;
 using FandomScore.Worker.ArtistOnboarding;
 using FandomScore.Worker.Concerts;
@@ -66,6 +67,7 @@ builder.Services.AddSingleton<IJobHandler, CatalogRefreshJob>();
 builder.Services.AddSingleton<IJobHandler, ScheduleCatalogRefreshesJob>();
 builder.Services.AddSingleton<IJobHandler, GrabBagRefreshJob>();
 builder.Services.AddSingleton<IJobHandler, TicketDeliveredJob>();
+builder.Services.AddSingleton<IJobHandler, SelectAllocationJob>();
 builder.Services.AddSingleton<IJobHandler, PresaleReminderJob>();
 builder.Services.AddSingleton<IJobHandler, PushNotificationJob>();
 builder.Services.AddSingleton<IJobHandler, PushReceiptsJob>();

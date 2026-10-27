@@ -18,6 +18,7 @@ dotnet run --project workers        # needs ConnectionStrings__Database, like th
 | `concerts/` | `ConcertSyncJob` (`concerts.sync_artist`) and hourly `ScheduleConcertSyncsJob` (`concerts.schedule`): load tracked artists' upcoming shows, sales, and presales from Ticketmaster. See the folder's README. |
 | `image-redaction/` | `RedactSubmissionJob` (`submissions.redact`) and hourly `RedactionSweepJob` (`redaction.sweep`): black out barcodes and QR codes in verified proof and move it to the archive. See the folder's README. |
 | `spotify-sync/` | `SpotifySyncJob` (`spotify.sync`) and hourly `ScheduleSpotifySyncsJob`. See [ADR 0005](../docs/adr/0005-spotify-integration.md). |
+| `allocations/` | `SelectAllocationJob` (`allocations.select`): runs an allocation's draw once staff queue it (`POST /v1/admin/allocations/{id}/selection`). |
 | `grab-bag/` | `GrabBagRefreshJob` (`grab_bag.refresh_songs`, daily): keeps grab-bag song titles and covers current from Spotify. See the folder's README. |
 | `artist-onboarding/` | `ArtistOnboardingJob` (`artist.onboard`), `CatalogRefreshJob` (`catalog.refresh`) and its hourly scheduler, `CatalogLoader`. See [ADR 0006](../docs/adr/0006-album-catalog.md) and the folder's README. |
 | `scoring/`, ... | Planned job handlers (see each `TODO.md`). |
