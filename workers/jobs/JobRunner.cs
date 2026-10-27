@@ -17,14 +17,30 @@ public interface IJobHandler
 /// <summary>
 /// Polls the queue and runs jobs with their handlers, <see cref="JobOptions.Concurrency"/> at a time.
 /// One loop also fires due schedules. Each loop reports to the <see cref="WorkerHeartbeat"/> (when there is one)
-/// every iteration, which is what the pod's liveness probe checks.
+/// every iteration, which is what the pod's liveness probe checks. Handlers for kinds this process doesn't run
+/// (<see cref="JobOptions.OnlyKinds"/>, <see cref="JobOptions.ExceptKinds"/>) are left out: their schedules are not
+/// registered here, and the queue never hands this process their jobs.
 /// </summary>
 public sealed partial class JobRunner(
     JobQueue queue, IEnumerable<IJobHandler> handlers, IOptions<JobOptions> options, TimeProvider time,
     ILogger<JobRunner> logger, WorkerHeartbeat? heartbeat = null) : BackgroundService
 {
-    private readonly Dictionary<string, IJobHandler> _handlers = handlers.ToDictionary(h => h.Kind);
+    private readonly Dictionary<string, IJobHandler> _handlers = Select(handlers, options.Value.KindFilter());
     private readonly JobOptions _options = options.Value;
+
+    /// <summary>The handlers this process runs. Throws when Jobs:OnlyKinds names a kind no handler has (a typo would
+    /// otherwise leave that deployment idle and those jobs unclaimed).</summary>
+    public static Dictionary<string, IJobHandler> Select(IEnumerable<IJobHandler> handlers, JobKindFilter kinds)
+    {
+        var all = handlers.ToDictionary(h => h.Kind);
+        var unknown = kinds.Only.Where(k => !all.ContainsKey(k)).ToList();
+        if (unknown.Count > 0)
+        {
+            throw new InvalidOperationException($"Jobs:OnlyKinds names kinds with no handler: {string.Join(", ", unknown)}.");
+        }
+
+        return all.Values.Where(h => kinds.Runs(h.Kind)).ToDictionary(h => h.Kind);
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {

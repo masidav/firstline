@@ -37,6 +37,14 @@ dotnet run --project workers        # needs ConnectionStrings__Database, like th
 | `Jobs__Lease` | `00:05:00` (jobs must finish or be idempotent within this) |
 | `Jobs__Concurrency` | `2` jobs at a time per process |
 | `Jobs__KeepSucceeded` / `Jobs__KeepFailed` | `7.00:00:00` / `30.00:00:00` |
+| `Jobs__OnlyKinds` | empty = every kind. Comma-separated kinds this process runs; startup fails on a kind with no handler |
+| `Jobs__ExceptKinds` | empty. Comma-separated kinds this process never claims (set one of the two, not both) |
+
+The kind filters let one image run as several Deployments with different identities. In the cluster the
+`redaction` Deployment runs `submissions.redact,redaction.sweep,storage.cleanup` (the jobs that touch stored files)
+and `worker` excludes them (`infrastructure/k8s/base`). Claims skip other kinds and only the kinds a process runs
+get their schedules registered there; due schedules are fired by whichever process polls first. Locally neither is
+set and one worker runs everything.
 
 ## Liveness (`Health` section)
 The worker serves no traffic, so Kubernetes cannot tell a stuck process from a quiet one. Each job loop reports to
@@ -50,7 +58,8 @@ A job that fails on its last attempt is logged at Error (`failed permanently`) a
 status `failed`; on GCP a log-based metric and alert watch for that line (`infrastructure/RUNBOOK.md`).
 
 ## Storage (`Storage` section)
-The worker deletes stored files, so it needs the same storage as the API: `Storage__LocalPath` (default
+The worker reads and deletes stored files (redaction, `storage.cleanup`), so it needs the same storage as the API:
+`Storage__LocalPath` (default
 `.local-storage` under the worker's content root) must name the API's directory. Locally, set it to the absolute
 path of `services/api/.local-storage` for the worker. `packages/storage/README.md`.
 
