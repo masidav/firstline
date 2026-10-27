@@ -55,7 +55,7 @@ public sealed partial class ConcertSyncJob(
         }
 
         var link = await connection.QuerySingleOrDefaultAsync<LinkRow>(
-            "SELECT external_id AS ExternalId, checked_at AS CheckedAt FROM artist_sources WHERE artist_id = @artistId AND source = @Source",
+            "SELECT external_id AS ExternalId, checked_at AS CheckedAt, synced_at AS SyncedAt FROM artist_sources WHERE artist_id = @artistId AND source = @Source",
             new { artistId, Source });
         var attractionId = link?.ExternalId;
         var now = time.GetUtcNow();
@@ -67,6 +67,13 @@ public sealed partial class ConcertSyncJob(
         if (attractionId is null)
         {
             return;
+        }
+
+        // The first load after linking also fills the artist's website from Ticketmaster's homepage link, if staff
+        // haven't set one (migration 0038). Later syncs don't spend a call on it.
+        if (link?.SyncedAt is null)
+        {
+            await FillWebsiteAsync(connection, artistId, attractionId, cancellationToken);
         }
 
         var countries = _options.CountrySet;
@@ -111,6 +118,20 @@ public sealed partial class ConcertSyncJob(
         }
 
         return linked;
+    }
+
+    private async Task FillWebsiteAsync(NpgsqlConnection connection, Guid artistId, string attractionId, CancellationToken cancellationToken)
+    {
+        if (await connection.ExecuteScalarAsync<bool>("SELECT website_url IS NOT NULL FROM artists WHERE id = @artistId", new { artistId }))
+        {
+            return;
+        }
+
+        if ((await ticketmaster.GetAttractionAsync(attractionId, cancellationToken))?.Homepage is { } homepage)
+        {
+            await connection.ExecuteAsync(
+                "UPDATE artists SET website_url = @homepage WHERE id = @artistId AND website_url IS NULL", new { artistId, homepage });
+        }
     }
 
     private static async Task UpsertAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid artistId, TicketmasterEvent show)
@@ -175,7 +196,7 @@ public sealed partial class ConcertSyncJob(
 
     private sealed record ArtistRow(string Name, string SpotifyArtistId);
 
-    private sealed record LinkRow(string? ExternalId, DateTime CheckedAt);
+    private sealed record LinkRow(string? ExternalId, DateTime CheckedAt, DateTime? SyncedAt);
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Ticketmaster is not configured (Ticketmaster__ApiKey); skipping the concert sync.")]
     private static partial void LogDisabled(ILogger logger);

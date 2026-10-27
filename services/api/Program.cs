@@ -7,6 +7,7 @@ using FandomScore.Api.Features.Concerts;
 using FandomScore.Api.Features.Featured;
 using FandomScore.Api.Features.Feed;
 using FandomScore.Api.Features.Follows;
+using FandomScore.Api.Features.Links;
 using FandomScore.Api.Features.GrabBag;
 using FandomScore.Api.Features.Moderation;
 using FandomScore.Api.Features.Notifications;
@@ -95,6 +96,7 @@ v1.MapReactions();
 v1.MapRedaction();
 v1.MapConcertSources();
 v1.MapScoreCards();
+v1.MapLinks();
 
 app.Run();
 

@@ -2469,6 +2469,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/clicks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Count a tap on an outbound link
+         * @description The app calls this when a fan opens an artist's website, merch store, or Spotify page, or a show's ticket link.
+         *     Only the count is kept (no user id). A click is never treated as a purchase.
+         */
+        post: operations["recordLinkClick"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/artists/{artistId}/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artistId: components["parameters"]["ArtistId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Set an artist's website and merch store
+         * @description https links only; null or an empty string clears one; a missing field is left alone. The worker also fills the website from Ticketmaster when it links an artist and none is set.
+         */
+        patch: operations["setArtistLinks"];
+        trace?: never;
+    };
+    "/admin/clicks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Outbound link clicks per artist
+         * @description Taps on artist, merch, Spotify, and ticket links in the last `days`, most first (at most 200 rows). Clicks, not purchases.
+         */
+        get: operations["getLinkClicks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/artists/{artistId}/sources": {
         parameters: {
             query?: never;
@@ -8446,6 +8509,113 @@ export interface operations {
             };
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    recordLinkClick: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    kind: "artist_website" | "artist_merch" | "artist_spotify" | "event_tickets";
+                    /** Format: uuid */
+                    artist_id: string;
+                    /**
+                     * Format: uuid
+                     * @description The show
+                     */
+                    event_id?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Counted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    setArtistLinks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artistId: components["parameters"]["ArtistId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    website_url?: string | null;
+                    merch_url?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description The artist's links now */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        artist_id: string;
+                        /** Format: uri */
+                        website_url: string | null;
+                        /** Format: uri */
+                        merch_url: string | null;
+                    };
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getLinkClicks: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Counts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        days: number;
+                        items: {
+                            /** Format: uuid */
+                            artist_id: string;
+                            artist_name: string;
+                            /** @enum {string} */
+                            kind: "artist_website" | "artist_merch" | "artist_spotify" | "event_tickets";
+                            clicks: number;
+                        }[];
+                    };
+                };
+            };
+            403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
         };
     };

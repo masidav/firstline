@@ -9,6 +9,14 @@ import { Body, Button, ErrorText, Field, Screen, Title } from '../../ui/componen
 import { colors, space } from '../../ui/theme';
 
 type ArtistSource = components['schemas']['ArtistSource'];
+type Clicks = { artist_id: string; artist_name: string; kind: string; clicks: number }[];
+
+const KIND_LABELS: Record<string, string> = {
+  artist_website: 'website',
+  artist_merch: 'merch',
+  artist_spotify: 'Spotify',
+  event_tickets: 'tickets',
+};
 
 const EXPLORER = 'https://developer.ticketmaster.com/api-explorer/v2/';
 
@@ -20,7 +28,8 @@ export function linkLabel(source: ArtistSource | undefined): string {
 }
 
 /**
- * Staff (route /concert-sources): which Ticketmaster artist each tracked artist is. The worker links an artist by itself
+ * Staff (route /concert-sources): an artist's website and merch store (PATCH /admin/artists/{id}/links), link clicks
+ * (GET /admin/clicks), and which Ticketmaster artist each tracked artist is. The worker links an artist by itself
  * only when Ticketmaster lists the artist's Spotify page; staff link the rest with the Ticketmaster attraction id, or
  * remove a wrong link (GET/PUT/DELETE /admin/artists/{id}/sources/ticketmaster).
  */
@@ -34,6 +43,9 @@ export function ConcertSourcesScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [message, setMessage] = useState<string>();
+  const [website, setWebsite] = useState('');
+  const [merch, setMerch] = useState('');
+  const [clicks, setClicks] = useState<Clicks>([]);
 
   const search = useCallback(async () => {
     setError(undefined);
@@ -47,17 +59,43 @@ export function ConcertSourcesScreen() {
     }
   }, [session, query]);
 
-  // Lists artists on open; after that, searching is on demand (not on every keystroke).
+  // Lists artists and recent clicks on open; after that, searching is on demand (not on every keystroke).
   const [searchOnOpen] = useState(() => search);
   useEffect(() => {
     void searchOnOpen();
-  }, [searchOnOpen]);
+    void session.api
+      .GET('/admin/clicks', { params: { query: { days: 30 } } })
+      .then((r) => setClicks(r.data?.items ?? []))
+      .catch(() => undefined);
+  }, [searchOnOpen, session]);
+
+  async function saveLinks() {
+    if (!artist) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      const saved = unwrap(
+        await session.api.PATCH('/admin/artists/{artistId}/links', {
+          params: { path: { artistId: artist.id } },
+          body: { website_url: website.trim() || null, merch_url: merch.trim() || null },
+        }),
+      );
+      setArtist({ ...artist, website_url: saved.website_url, merch_url: saved.merch_url });
+      setMessage('Links saved.');
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function open(next: Artist) {
     setArtist(next);
     setMessage(undefined);
     setError(undefined);
     setAttractionId('');
+    setWebsite(next.website_url ?? '');
+    setMerch(next.merch_url ?? '');
     try {
       const list = unwrap(await session.api.GET('/admin/artists/{artistId}/sources', { params: { path: { artistId: next.id } } }));
       setSource(list.items.find((s) => s.source === 'ticketmaster'));
@@ -109,10 +147,10 @@ export function ConcertSourcesScreen() {
   return (
     <Screen>
       <Button label="Back" kind="secondary" onPress={() => (router.canGoBack() ? router.back() : router.replace('/profile'))} />
-      <Title>Concert sources</Title>
+      <Title>Artist links and sources</Title>
       <Body muted>
-        Shows come from Ticketmaster. Artists are linked by themselves when Ticketmaster lists their Spotify page; link
-        the rest here with the Ticketmaster attraction id.
+        Each artist's website and merch store show on their page. Shows come from Ticketmaster: artists are linked by
+        themselves when Ticketmaster lists their Spotify page; link the rest here with the Ticketmaster attraction id.
       </Body>
       <Field label="Find a tracked artist" value={query} onChangeText={setQuery} onSubmitEditing={() => void search()} />
       <Button label="Search" kind="secondary" onPress={() => void search()} />
@@ -121,6 +159,9 @@ export function ConcertSourcesScreen() {
       {artist ? (
         <View style={styles.card}>
           <Text style={styles.name}>{artist.name}</Text>
+          <Field label="Website (https)" value={website} onChangeText={setWebsite} autoCapitalize="none" placeholder="https://" />
+          <Field label="Merch store (https)" value={merch} onChangeText={setMerch} autoCapitalize="none" placeholder="https://" />
+          <Button label="Save links" kind="secondary" busy={busy} onPress={() => void saveLinks()} />
           <Text style={styles.muted}>Ticketmaster: {linkLabel(source)}</Text>
           {source?.external_id ? <Text style={styles.muted}>Attraction id: {source.external_id}</Text> : null}
           {source?.synced_at ? (
@@ -142,12 +183,25 @@ export function ConcertSourcesScreen() {
           <Button label="Pick another artist" kind="secondary" onPress={() => setArtist(null)} />
         </View>
       ) : (
-        artists.map((a) => (
+        <>
+          {clicks.length > 0 && (
+            <View style={styles.card}>
+              <Text style={styles.name}>Link clicks, last 30 days</Text>
+              <Text style={styles.muted}>Taps on links in the app. Clicks, not purchases.</Text>
+              {clicks.slice(0, 10).map((c) => (
+                <Text key={`${c.artist_id}:${c.kind}`} style={styles.muted}>
+                  {c.artist_name} · {KIND_LABELS[c.kind] ?? c.kind} · {c.clicks} {c.clicks === 1 ? 'click' : 'clicks'}
+                </Text>
+              ))}
+            </View>
+          )}
+          {artists.map((a) => (
           <Pressable key={a.id} accessibilityRole="button" accessibilityLabel={`Open ${a.name}`} onPress={() => void open(a)} style={styles.row}>
             <Text style={styles.name}>{a.name}</Text>
             <Text style={styles.muted}>{a.status}</Text>
           </Pressable>
-        ))
+          ))}
+        </>
       )}
     </Screen>
   );

@@ -3,7 +3,7 @@
 Use `- [x]` only after the task is implemented and verified.
 
 ## Implementation checklist
-- [ ] Display artist metadata and available links from the API.
+- [x] Display available links from the API: Merch, Website, Spotify on the score screen (`features/links/ArtistLinks.tsx`, 2026-10-27).
 - [ ] Show tracked/onboarding/active/paused state appropriately.
 - [ ] Display the current user's score and percentile only when available.
 - [ ] Provide album, journal, event, and sharing navigation where supported.

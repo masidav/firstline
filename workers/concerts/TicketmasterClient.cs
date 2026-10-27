@@ -39,8 +39,8 @@ public sealed class TicketmasterOptions
 /// <summary>Ticketmaster had a problem or asked us to slow down; the job queue retries later.</summary>
 public sealed class TicketmasterUnavailableException(string message) : Exception(message);
 
-/// <summary>A Ticketmaster artist ("attraction") and the Spotify artist ids it links to.</summary>
-public sealed record TicketmasterAttraction(string Id, string Name, IReadOnlyList<string> SpotifyArtistIds);
+/// <summary>A Ticketmaster artist ("attraction"), the Spotify artist ids it links to, and its homepage (https), if any.</summary>
+public sealed record TicketmasterAttraction(string Id, string Name, IReadOnlyList<string> SpotifyArtistIds, string? Homepage = null);
 
 public sealed record TicketmasterPresale(string Name, DateTimeOffset StartsAt, DateTimeOffset? EndsAt);
 
@@ -191,7 +191,15 @@ public sealed class TicketmasterClient(HttpClient http, IOptions<TicketmasterOpt
             }
         }
 
-        return new TicketmasterAttraction(Text(a, "id") ?? "", Text(a, "name") ?? "", spotify);
+        string? homepage = null;
+        if (a.TryGetProperty("externalLinks", out var external) && external.TryGetProperty("homepage", out var pages)
+            && pages.ValueKind == JsonValueKind.Array)
+        {
+            homepage = pages.EnumerateArray().Select(p => Text(p, "url"))
+                .FirstOrDefault(u => u is { Length: <= 500 } && u.StartsWith("https://", StringComparison.Ordinal));
+        }
+
+        return new TicketmasterAttraction(Text(a, "id") ?? "", Text(a, "name") ?? "", spotify, homepage);
     }
 
     /// <summary>The artist id in an open.spotify.com/artist/{id} link (with or without a query or locale prefix).</summary>

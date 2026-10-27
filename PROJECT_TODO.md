@@ -215,8 +215,11 @@ Lower priority under the new direction: ticket purchases now flow through alloca
       signed link to a 1080×1080 PNG drawn by the API (SkiaSharp, embedded Lato fonts); the score screen's "Share my
       score card" opens the phone's share sheet, or the browser's (or a download) on the web. Verified: ScoreCardApiTests
       3, app Jest (shareCard 4, ScoreScreen), API image builds. Not yet: public links with previews, artist photos.*
-- [ ] Display artist, ticket, and merch links.
-- [ ] Track outbound clicks without misrepresenting clicks as purchases.
+- [x] Display artist, ticket, and merch links. *Done 2026-10-27 (migration 0038): staff set website and merch links
+      (the worker fills the website from Ticketmaster); the artist page shows Merch, Website, and Spotify; shows keep
+      "Tickets on Ticketmaster". Verified: LinkApiTests 2, ConcertSyncJobTests, app Jest.*
+- [x] Track outbound clicks without misrepresenting clicks as purchases. *Done 2026-10-27: `POST /v1/clicks`, anonymous
+      counts (no user id), staff summary labelled "Clicks, not purchases" (`GET /v1/admin/clicks`).*
 - [ ] Integrate purchase confirmation only if supported by the selected partner.
 - [x] Load upcoming concerts, presale dates, and general-sale openings for tracked artists. *Ticketmaster done
       2026-10-26 (migration 0030, `workers/concerts`): artists linked by the Spotify page Ticketmaster lists (staff

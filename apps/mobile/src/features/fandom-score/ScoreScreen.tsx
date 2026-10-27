@@ -7,6 +7,7 @@ import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
+import { ArtistLinks } from '../links/ArtistLinks';
 import { shareScoreCard } from '../sharing/shareCard';
 import { describeEstimate, describePercentile, type Score, type SignalGroup, type SignalRow, signalRows } from './score';
 
@@ -120,6 +121,7 @@ export function ScoreScreen({ artistId }: { artistId: string }) {
           {shareNote && <Body muted>{shareNote}</Body>}
         </>
       )}
+      {artist && <ArtistLinks artist={artist} />}
       <View style={styles.links}>
         <Button label="Albums" kind="secondary" onPress={() => router.push(`/artist/${artistId}/albums`)} />
         <Button label="Upcoming shows" kind="secondary" onPress={() => router.push(`/artist/${artistId}/shows`)} />

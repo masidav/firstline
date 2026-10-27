@@ -2866,6 +2866,91 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+  /clicks:
+    post:
+      tags: [Sharing]
+      operationId: recordLinkClick
+      summary: Count a tap on an outbound link
+      description: |
+        The app calls this when a fan opens an artist's website, merch store, or Spotify page, or a show's ticket link.
+        Only the count is kept (no user id). A click is never treated as a purchase.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, artist_id]
+              properties:
+                kind: {type: string, enum: [artist_website, artist_merch, artist_spotify, event_tickets]}
+                artist_id: {type: string, format: uuid}
+                event_id: {type: string, format: uuid, description: The show, for event_tickets only.}
+      responses:
+        '204': {description: Counted}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /admin/artists/{artistId}/links:
+    parameters:
+      - {$ref: '#/components/parameters/ArtistId'}
+    patch:
+      tags: [Admin]
+      operationId: setArtistLinks
+      summary: Set an artist's website and merch store
+      description: https links only; null or an empty string clears one; a missing field is left alone. The worker also fills the website from Ticketmaster when it links an artist and none is set.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                website_url: {type: [string, 'null'], maxLength: 500}
+                merch_url: {type: [string, 'null'], maxLength: 500}
+      responses:
+        '200':
+          description: The artist's links now
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [artist_id, website_url, merch_url]
+                properties:
+                  artist_id: {type: string, format: uuid}
+                  website_url: {type: [string, 'null'], format: uri}
+                  merch_url: {type: [string, 'null'], format: uri}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /admin/clicks:
+    get:
+      tags: [Admin]
+      operationId: getLinkClicks
+      summary: Outbound link clicks per artist
+      description: Taps on artist, merch, Spotify, and ticket links in the last `days`, most first (at most 200 rows). Clicks, not purchases.
+      parameters:
+        - {name: days, in: query, schema: {type: integer, minimum: 1, maximum: 365, default: 30}}
+      responses:
+        '200':
+          description: Counts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [days, items]
+                properties:
+                  days: {type: integer}
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [artist_id, artist_name, kind, clicks]
+                      properties:
+                        artist_id: {type: string, format: uuid}
+                        artist_name: {type: string}
+                        kind: {type: string, enum: [artist_website, artist_merch, artist_spotify, event_tickets]}
+                        clicks: {type: integer, minimum: 1}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
   /admin/artists/{artistId}/sources:
     parameters:
       - {$ref: '#/components/parameters/ArtistId'}

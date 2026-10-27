@@ -61,6 +61,8 @@ public sealed class ConcertSyncJobTests(PostgresFixture postgres) : IAsyncLifeti
         var link = await QueryOneAsync<(string ExternalId, string MatchedBy)>(
             "SELECT external_id, matched_by FROM artist_sources WHERE artist_id = @_geese AND source = 'ticketmaster'");
         Assert.Equal((GeeseAttraction, "spotify_link"), link);
+        // The first load fills the website from Ticketmaster's homepage link (migration 0038).
+        Assert.Equal("https://k8vz917geese.example.com", await QueryOneAsync<string>("SELECT website_url FROM artists WHERE id = @_geese"));
 
         var shows = (await QueryAsync<ShowRow>(
             """
@@ -90,6 +92,7 @@ public sealed class ConcertSyncJobTests(PostgresFixture postgres) : IAsyncLifeti
         Assert.Equal(["Spotify Presale"], await QueryAsync<string>(
             "SELECT p.name FROM event_presales p JOIN events e ON e.id = p.event_id WHERE e.external_id = 'ev-chicago'"));
         Assert.Equal(1, _tm.Calls.Count(c => c.StartsWith("/discovery/v2/attractions.json", StringComparison.Ordinal)));
+        Assert.Equal(1, _tm.Calls.Count(c => c.StartsWith("/discovery/v2/attractions/", StringComparison.Ordinal)));   // homepage looked up once
         Assert.All(_tm.Calls, c => Assert.Contains("apikey=test-key", c, StringComparison.Ordinal));
     }
 
@@ -250,7 +253,11 @@ public sealed class ConcertSyncJobTests(PostgresFixture postgres) : IAsyncLifeti
     private static object AttractionJson(string id, string name, string spotifyId) => new
     {
         id, name, type = "attraction",
-        externalLinks = new { spotify = new[] { new { url = $"https://open.spotify.com/artist/{spotifyId}" } } },
+        externalLinks = new
+        {
+            spotify = new[] { new { url = $"https://open.spotify.com/artist/{spotifyId}" } },
+            homepage = new[] { new { url = $"https://{id.ToLowerInvariant()}.example.com" } },
+        },
     };
 
     private static object Event(
@@ -307,6 +314,9 @@ public sealed class ConcertSyncJobTests(PostgresFixture postgres) : IAsyncLifeti
             object body = uri.AbsolutePath switch
             {
                 "/discovery/v2/attractions.json" => new { _embedded = new { attractions = Attractions }, page = new { totalPages = 1 } },
+                var path when path.StartsWith("/discovery/v2/attractions/", StringComparison.Ordinal) =>
+                    Attractions.FirstOrDefault(a => path.EndsWith($"/{JsonSerializer.SerializeToElement(a).GetProperty("id").GetString()}.json", StringComparison.Ordinal))
+                    ?? new { },
                 "/discovery/v2/events.json" => new
                 {
                     _embedded = new { events = Events.GetValueOrDefault(query["attractionId"] ?? "") ?? [] },

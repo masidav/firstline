@@ -190,7 +190,7 @@ export function ProfileScreen({ me }: { me: Me }) {
       {me.is_staff && <Button label="Review queue" kind="secondary" onPress={() => router.push('/review')} />}
       {me.is_staff && <Button label="Reported posts" kind="secondary" onPress={() => router.push('/moderation')} />}
       {me.is_staff && <Button label="Photo redaction" kind="secondary" onPress={() => router.push('/redactions')} />}
-      {me.is_staff && <Button label="Concert sources" kind="secondary" onPress={() => router.push('/concert-sources')} />}
+      {me.is_staff && <Button label="Artist links and sources" kind="secondary" onPress={() => router.push('/concert-sources')} />}
       {me.is_staff && <Button label="Featured artist" kind="secondary" onPress={() => router.push('/featured-admin')} />}
       {me.is_staff && <Button label="Weekly prompts" kind="secondary" onPress={() => router.push('/prompts-admin')} />}
 

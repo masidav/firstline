@@ -1,12 +1,13 @@
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Linking, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { type components, unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Field, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
+import { openTracked } from '../links/openLink';
 import { saleLines, statusLabel, ticketLink, whenLabel } from './showInfo';
 import { formatPrice, standingMessage } from './standing';
 
@@ -68,7 +69,11 @@ export function ShowScreen({ eventId }: { eventId: string }) {
             </Text>
           ))}
           {ticketLink(show) && (
-            <Button label="Tickets on Ticketmaster" kind="secondary" onPress={() => void Linking.openURL(ticketLink(show)!)} />
+            <Button
+              label="Tickets on Ticketmaster"
+              kind="secondary"
+              onPress={() => openTracked(session.api, 'event_tickets', ticketLink(show)!, { artistId: show.artist_id, eventId: show.id })}
+            />
           )}
           {detail.allocations.length === 0 && <Body muted>No fan tickets for this show yet.</Body>}
           {detail.allocations.map((allocation) => (

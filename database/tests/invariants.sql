@@ -2265,4 +2265,15 @@ BEGIN
   DELETE FROM events WHERE id IN (e_alloc, e_plain);
 END $$;
 
+-- ------------------------------------------------------------ link clicks (0038)
+-- Known kinds; a show only (and always) for ticket clicks; artist links are https.
+SELECT pg_temp.expect_error(
+  $$INSERT INTO link_clicks (kind, artist_id) SELECT 'purchase', id FROM artists WHERE spotify_artist_id = 'sp-active'$$,
+  'link_clicks_kind_check');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO link_clicks (kind, artist_id) SELECT 'event_tickets', id FROM artists WHERE spotify_artist_id = 'sp-active'$$,
+  'link_clicks_event_kind');
+SELECT pg_temp.expect_error($$UPDATE artists SET website_url = 'http://example.com' WHERE spotify_artist_id = 'sp-active'$$, 'artists_website_https');
+SELECT pg_temp.expect_error($$UPDATE artists SET merch_url = 'javascript:alert(1)' WHERE spotify_artist_id = 'sp-active'$$, 'artists_merch_https');
+
 \echo ALL INVARIANT TESTS PASSED

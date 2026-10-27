@@ -13,6 +13,8 @@ Upcoming shows, sale dates, and presales for tracked artists, loaded into `event
 - The worker searches Ticketmaster's attractions by the artist's name and links **only** an attraction whose
   `externalLinks.spotify` lists the artist's Spotify page (`matched_by = spotify_link`). Same-named bands are never
   guessed. No match is recorded (`external_id` null) and looked up again weekly.
+- The first load after linking also fills the artist's website from Ticketmaster's homepage link when staff haven't
+  set one (migration 0038, one extra call per newly linked artist).
 - Staff link the rest in the app (Profile → Concert sources) or with `PUT /v1/admin/artists/{id}/sources/ticketmaster`,
   using the Discovery attraction id (from the
   Discovery API or its explorer; not the number in a ticketmaster.com URL). `DELETE` removes a wrong link.

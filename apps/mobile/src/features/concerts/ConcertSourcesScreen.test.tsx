@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
 import { ConcertSourcesScreen, linkLabel } from './ConcertSourcesScreen';
 
 const ok = (data: unknown) => ({ data, response: { ok: true, status: 200 } });
-const mockApi = { GET: jest.fn(), PUT: jest.fn(), DELETE: jest.fn() };
+const mockApi = { GET: jest.fn(), PUT: jest.fn(), DELETE: jest.fn(), PATCH: jest.fn() };
 const mockSession = { api: mockApi };
 
 jest.mock('../../auth/SessionProvider', () => ({ useSession: () => ({ session: mockSession }) }));
@@ -36,6 +36,31 @@ test('staff find an artist, link it to a Ticketmaster attraction, and can remove
   fireEvent.press(screen.getByRole('button', { name: 'Remove link' }));
   await waitFor(() => expect(mockApi.DELETE).toHaveBeenCalled());
   expect(await screen.findByText('Link removed. Shows already loaded stay.')).toBeTruthy();
+});
+
+test('staff see recent link clicks and save an artist\'s website and merch store', async () => {
+  mockApi.GET.mockImplementation((path: string) =>
+    Promise.resolve(
+      path === '/artists'
+        ? ok({ items: [geese], next_cursor: null })
+        : path === '/admin/clicks'
+          ? ok({ days: 30, items: [{ artist_id: 'a1', artist_name: 'Geese', kind: 'artist_merch', clicks: 12 }] })
+          : ok({ items: [] }),
+    ),
+  );
+  mockApi.PATCH.mockResolvedValue(ok({ artist_id: 'a1', website_url: null, merch_url: 'https://shop.geese.example.com' }));
+  render(<ConcertSourcesScreen />);
+
+  expect(await screen.findByText('Geese · merch · 12 clicks')).toBeTruthy();
+  expect(screen.getByText(/Clicks, not purchases/)).toBeTruthy();
+  fireEvent.press(screen.getByRole('button', { name: 'Open Geese' }));
+  fireEvent.changeText(await screen.findByLabelText('Merch store (https)'), 'https://shop.geese.example.com');
+  fireEvent.press(screen.getByRole('button', { name: 'Save links' }));
+  expect(await screen.findByText('Links saved.')).toBeTruthy();
+  expect(mockApi.PATCH).toHaveBeenCalledWith('/admin/artists/{artistId}/links', {
+    params: { path: { artistId: 'a1' } },
+    body: { website_url: null, merch_url: 'https://shop.geese.example.com' },
+  });
 });
 
 test('link labels', () => {
