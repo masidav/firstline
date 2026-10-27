@@ -17,8 +17,9 @@ Upcoming shows, sale dates, and presales for tracked artists, loaded into `event
   Discovery API or its explorer; not the number in a ticketmaster.com URL). `DELETE` removes a wrong link.
 
 ## What a show gets
-- Name, venue, city, state or province, country, and the hub city when the venue's city is one (`hub_city_for`; a
-  suburb venue like Rosemont has none yet, so it reaches fans through their score, not their hub cities).
+- Name, venue, city, state or province, country, and the hub city when the venue's city is one (`hub_city_for`). A
+  venue outside the hub-city list has none and reaches fans through their score; no suburb mapping is planned
+  (decided 2026-10-27: fans' backup hub cities cover nearby places).
 - `starts_at` from Ticketmaster's UTC time, or its local date and time in the venue's time zone; with only a date it is
   local midnight and `time_tba` is set.
 - `status` (onsale, offsale, cancelled, postponed, rescheduled), `ticket_url`, the public sale window, and presales

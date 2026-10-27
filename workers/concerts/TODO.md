@@ -9,7 +9,6 @@ Use `- [x]` only after the task is implemented and verified.
       attractions list Spotify links and tune matching if most don't.
 - [ ] SeatGeek, Bandsintown, and Songkick as further sources (decided 2026-10-26: all four). One show listed by
       several sources should become one event: match by date and venue.
-- [ ] Hub cities for suburb venues (Rosemont, Inglewood): give cities coordinates and use the nearest within a radius.
 - [ ] Tell staff when a show with an allocation is rescheduled at the source (`source_starts_at` differs).
 - [ ] Staff screen in the app for linking artists (today: the API only).
 - [x] Presale reminders as in-app notifications (migration 0031, `workers/notifications/PresaleReminderJob.cs`).

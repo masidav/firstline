@@ -1,5 +1,7 @@
 # TODO — Album lists API
 
+**Not wanted (decided 2026-10-27): ordered album lists won't be built. Kept for the record.**
+
 Use `- [x]` only after the task is implemented and verified. Adapt this checklist to existing code; do not duplicate working functionality.
 
 ## Implementation checklist

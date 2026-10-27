@@ -117,7 +117,7 @@ Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring wo
       edits made without a connection on the device, with their `Idempotency-Key`, and sends them on reconnect; refused
       entries stay with their reason for the fan to fix or discard. Verified: app Jest (journalQueue 9, AlbumScreen,
       JournalScreen, HomeScreen), Chrome offline/online run.)
-- [ ] Implement ordered album lists.
+- [x] Ordered album lists: not wanted (decided 2026-10-27).
 - [x] Comments replaced by emoji reactions (decided 2026-10-25: no comments). Fans react to shared photos, album logs,
       and prompt answers with 🔥 ❤️ 😂 🤘 😮 👏 (several per post, take back any time, no points); counts show on the
       feed. Migration 0026; `PUT/DELETE /reactions/{type}/{id}/{reaction}`. Verified: `dotnet test` (ReactionApiTests 2,
@@ -448,8 +448,8 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
       +1, they **get the seat alone**; a named guest **can't be changed**; a selected fan **can't drop** their +1 after the
       draw; a +1 can be added after the draw **until the show starts**, first come first served while seats are left.
 - [ ] Presale reminder rules set provisionally in code (2026-10-26), confirm or change: a fan is reminded about a
-      presale for a show by an artist they **have a fandom score for**, **in one of their hub cities** (suburb venues
-      without a hub city remind nobody yet), **once**, **within 24 hours before it opens** (or at once if announced
+      presale for a show by an artist they **have a fandom score for**, **in one of their hub cities** (a venue
+      outside the hub-city list reminds nobody; fans' backup hub cities cover the places they'd travel to), **once**, **within 24 hours before it opens** (or at once if announced
       later), in-app only until push exists; **on by default**, a Profile switch turns them off. Public on-sales
       don't get a reminder.
 - [ ] Reservation rules set provisionally in code (2026-10-25), confirm or change: tickets are delivered **24 hours
