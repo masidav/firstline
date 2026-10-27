@@ -43,5 +43,7 @@ module "environment" {
   sql_tier                  = "db-g1-small"
   sql_high_availability     = false
   sql_backup_retention_days = 14
-  deletion_protection       = true
+  # Off while beta is torn down between sessions (2026-10-27); the cloud flags already match. Set it back to true
+  # once beta is meant to persist with real testers' data.
+  deletion_protection       = false
 }
