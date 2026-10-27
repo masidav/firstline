@@ -180,6 +180,70 @@ jobs:
           echo "live registrations: $live, scores: $scores"
           [ "$live" -gt 0 ] && [ "$scores" -gt 0 ]
 
+  # Critical fan journeys in a real browser: the production web build against the API and a seeded database. Beta
+  # deploys from main, so a journey that breaks here would break for beta testers (apps/mobile/e2e/README.md).
+  e2e:
+    name: End-to-end journeys (browser)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: fandom_e2e
+          POSTGRES_USER: fandom
+          POSTGRES_PASSWORD: ci
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U fandom -d fandom_e2e" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      E2E_DATABASE_URL: postgres://fandom:ci@127.0.0.1:5432/fandom_e2e
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Apply migrations
+        env:
+          ConnectionStrings__Database: Host=127.0.0.1;Port=5432;Database=fandom_e2e;Username=fandom;Password=ci
+        run: dotnet run --project database
+
+      - name: Seed
+        env:
+          PGPASSWORD: ci
+        run: python3 tools/dev/seed.py --fake --sql | psql -h 127.0.0.1 -U fandom -d fandom_e2e -v ON_ERROR_STOP=1 -q
+
+      # Built ahead so the test run's `dotnet run` starts the API well inside its startup timeout.
+      - name: Build the API
+        run: dotnet build services/api
+
+      - name: Install
+        working-directory: apps/mobile
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Journeys
+        working-directory: apps/mobile
+        run: npm run e2e
+
+      - name: Upload report and traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            apps/mobile/e2e/playwright-report/
+            apps/mobile/e2e/test-results/
+          if-no-files-found: ignore
+
   # Terraform and the manifests are applied only on a real GCP project (infrastructure/README.md); until then this
   # is what keeps them valid, and the image build is what the Deploy workflow runs first.
   infrastructure:

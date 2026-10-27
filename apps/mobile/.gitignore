@@ -7,3 +7,8 @@ expo-env.d.ts
 .env
 .env.*
 !.env.example
+
+# End-to-end runs (e2e/README.md)
+e2e/.web/
+e2e/test-results/
+e2e/playwright-report/

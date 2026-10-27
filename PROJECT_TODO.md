@@ -318,6 +318,10 @@ Details: [ADR 0002](docs/adr/0002-hosting-gcp-gke.md) · [Infrastructure](infras
 
 ## Phase 13 — UI testing and launch
 - [ ] Mobile component tests (Jest + React Native Testing Library) and end-to-end flows (Maestro) in CI.
+      *Web end-to-end journeys done 2026-10-27 (`apps/mobile/e2e`, Playwright, CI job "End-to-end journeys"): sign-up,
+      Google sign-in (stubbed Google), deep-link reloads, logging an album online and offline, registering for an
+      allocation, sign-out, and account deletion, against the real API and a seeded database. Verified: 10 passed
+      locally, and a reintroduced deep-link bug fails the reload journey. Native flows (Maestro) wait on iOS builds.*
 - [ ] Promoter dashboard end-to-end tests (Playwright) and accessibility checks.
 - [ ] API contract tests against `openapi.yaml`; load tests for on-sale registration spikes.
       *Database load test for registration spikes done 2026-10-26 (`tools/load/run.sh`, results in `tools/load/README.md`):

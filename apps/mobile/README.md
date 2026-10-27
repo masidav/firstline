@@ -86,7 +86,9 @@ server does the exchange; no Spotify token ever reaches the browser. Code: `src/
 ```bash
 EXPO_PUBLIC_API_URL=https://api.example.com/v1 npm run build:web   # writes dist/
 ```
-`dist/` is a single-page app: the host must serve `index.html` for every path (e.g. `/profile`). Cloudflare
+`build:web` clears Metro's cache first: a cached module can otherwise keep `EXPO_PUBLIC_` values from your local
+dev server and ship them in the build. `dist/` is a single-page app: the host must serve `index.html` for every path
+(e.g. `/profile`). Cloudflare
 Pages and Firebase Hosting do this with a rewrite rule; `python -m http.server` does not.
 
 ## Layout
@@ -105,6 +107,7 @@ npm test               # Jest (jest-expo)
 npm run typecheck      # tsc
 npm run generate:api   # regenerate src/api/schema.d.ts after openapi.yaml changes (CI checks it)
 npm run build:web      # static web build in dist/
+e2e/run.sh             # end-to-end journeys in a browser against the API and a seeded database (e2e/README.md)
 ```
 
 ## How sessions work

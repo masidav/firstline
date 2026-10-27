@@ -12,7 +12,8 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       (`src/features/album-journal/journalQueue.ts`); details and verification in the album-journal TODO.*
 - [ ] Add accessibility labels, keyboard handling, and responsive layouts for mobile devices.
 - [ ] Handle API errors, network loss, expired sessions, and background/resume behavior.
-- [ ] Add component and screen tests using the existing test stack.
+- [ ] Add component and screen tests using the existing test stack. *Plus browser end-to-end journeys since
+      2026-10-27 (`e2e/`, run in CI).*
 - [ ] Verify iOS and Android builds and document required configuration. *Web build verified (CI and a Playwright WebKit run at iPhone size, 2026-10-18); iOS waits on the Apple Developer Program.*
 - [x] Google sign-in on web. *Done 2026-10-26: "Continue with Google" sends the fan to Google (OpenID Connect,
       ID token in the fragment, no Google script), `/google-callback` checks the state and signs in; a new account
