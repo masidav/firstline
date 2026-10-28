@@ -120,6 +120,31 @@ export interface paths {
         patch: operations["updateMe"];
         trace?: never;
     };
+    "/me/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download my data
+         * @description Everything the app holds about the caller, as one JSON file (`Content-Disposition: attachment`), grouped by area.
+         *     Not included: secrets and tokens (Spotify tokens, refresh-token hashes, push tokens, ticket tokens), hashes
+         *     (order references, file checksums), storage keys, other fans' private data, staff notices, and staff-internal
+         *     verification and moderation details. `services/api/src/features/privacy/README.md` lists every field and why.
+         *     Proof file links (`proof.submissions[].files[].url`) are signed and work for an hour. Limited to 3 per hour per
+         *     user (`429 rate_limited`).
+         */
+        get: operations["exportMyData"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me/hub-cities": {
         parameters: {
             query?: never;
@@ -3306,6 +3331,112 @@ export interface components {
             activated_at?: string | null;
             my_score?: components["schemas"]["ScoreSummary"] | null;
         };
+        /** @description One object per row; the fields are listed in the section's description. */
+        ExportRows: {
+            [key: string]: unknown;
+        }[];
+        /**
+         * @description "Download my data" (`GET /me/export`). Timestamps are RFC 3339 UTC. Rows are ordered oldest first unless noted.
+         *     Sections are only ever added within a `format_version`.
+         */
+        DataExport: {
+            /** @constant */
+            format_version: 1;
+            /** Format: date-time */
+            exported_at: string;
+            /** Format: uuid */
+            user_id: string;
+            account: {
+                /** @description id, handle, email, display_name, avatar_url, is_staff, is_artist, band_url, instagram_handle, x_handle, presale_reminders, push {tickets, presales, staff}, hubs_changed_at, created_at. */
+                profile: {
+                    /** Format: uuid */
+                    id: string;
+                    handle: string;
+                    email: string;
+                    created_at: string;
+                } & {
+                    [key: string]: unknown;
+                };
+                /** @description provider (apple, google), created_at, last_used_at. Not the provider's account id. */
+                sign_in_methods: components["schemas"]["ExportRows"];
+                /** @description Newest first. created_at, last_refreshed_at, expires_at, revoked_at, revoked_reason, current. No tokens. */
+                sessions: components["schemas"]["ExportRows"];
+                /** @description position (1 is primary), city_id, name, region, country. */
+                hub_cities: components["schemas"]["ExportRows"];
+                /** @description id, platform, created_at, last_seen_at, disabled_at, disabled_reason. Not the push token. */
+                push_devices: components["schemas"]["ExportRows"];
+                /** @description Promoter organizations the caller belongs to. id, name, kind, role, added_at. */
+                organizations: components["schemas"]["ExportRows"];
+            };
+            spotify: {
+                /** @description Null when Spotify isn't connected. spotify_user_id, scopes, connected_at, last_synced_at, sync_state, sync_error, tracked_artists_found, top_artists_added, plays_polled_at. Never the tokens. */
+                connection: {
+                    [key: string]: unknown;
+                } | null;
+                /** @description Per tracked artist. artist_id, artist_name, liked_tracks, playlist_tracks, distinct_albums, top_artist_rank, top_artist_rank_short, top_artist_rank_long, top_tracks, playlists_featuring, dedicated_playlists, followed, recent_plays, synced_at. */
+                artist_signals: components["schemas"]["ExportRows"];
+                /** @description Tracked artists' tracks liked or on the caller's playlists. spotify_track_id, track_title, album_title, artist_name, source (liked, playlist), saved_at. */
+                saved_tracks: components["schemas"]["ExportRows"];
+                /** @description spotify_album_id, album_title, artist_name, saved_at. */
+                saved_albums: components["schemas"]["ExportRows"];
+                /** @description Newest first; tracked artists only. played_at, spotify_track_id, track_title, artist_name. */
+                plays: components["schemas"]["ExportRows"];
+            };
+            fandom: {
+                /** @description artist_id, artist_name, raw_score, percentile, is_estimated, baseline_weight, breakdown, computed_at. */
+                scores: components["schemas"]["ExportRows"];
+                /** @description The points ledger. id, artist_id, artist_name, rule_key, points, source_type, source_id, awarded_at, reversed_at. */
+                points: components["schemas"]["ExportRows"];
+                /** @description id, artist_name, raw_score, percentile, image_url, shared_to, created_at. */
+                share_cards: components["schemas"]["ExportRows"];
+                /** @description Artists the caller started tracking. id, name, spotify_artist_id, added_via, tracked_at. */
+                artists_added: components["schemas"]["ExportRows"];
+                /** @description artist_name, event_id, kind, partner, clicked_at. */
+                outbound_clicks: components["schemas"]["ExportRows"];
+            };
+            journal: {
+                /** @description Including withdrawn (deleted_at) and taken-down (removed_at) logs. id, album_id, album_title, artist_name, rating (1 to 10 half-stars), review, listened_on, is_relisten, visibility, created_at, updated_at, deleted_at, removed_at. */
+                album_logs: components["schemas"]["ExportRows"];
+                /** @description id, title, description, visibility, created_at, items [{position, album_id, album_title, note}]. */
+                lists: components["schemas"]["ExportRows"];
+                /** @description id, album_log_id, parent_id, body, created_at, edited_at, deleted_at. */
+                comments: components["schemas"]["ExportRows"];
+            };
+            activity: {
+                /** @description id, prompt_day, prompt, body, visibility, created_at, updated_at, deleted_at, removed_at. */
+                prompt_answers: components["schemas"]["ExportRows"];
+                /** @description id, day, artist_name, kind, prompt, options, answer_index (null until answered), chosen_index, correct, answered_at, created_at. */
+                trivia: components["schemas"]["ExportRows"];
+                /** @description Reactions the caller gave. target_type, target_id, reaction, created_at. */
+                reactions: components["schemas"]["ExportRows"];
+                /** @description Reports the caller filed (not reports about them). id, target_type, target_id, reason, details, created_at, resolved_at, resolution. */
+                reports_filed: components["schemas"]["ExportRows"];
+            };
+            proof: {
+                /** @description id, artist_id, artist_name, event_id, event_name, kind, status, caption, concert_date, concert_venue, concert_city, rejection_reason, submitted_at, verified_at, rejected_at, archived_at, shared_at, removed_at, files [{id, mime_type, bytes, uploaded_at, redacted, redaction_state, storage_tier, archived_at, url (signed, an hour)}]. */
+                submissions: components["schemas"]["ExportRows"];
+                /** @description Upload records. id, purpose, mime_type, declared_bytes, bytes, created_at, uploaded_at, expires_at, submission_id. */
+                uploads: components["schemas"]["ExportRows"];
+            };
+            social: {
+                /** @description handle, followed_at. */
+                following: components["schemas"]["ExportRows"];
+                /** @description handle, followed_at. */
+                followers: components["schemas"]["ExportRows"];
+                /** @description position, spotify_track_id, title, artist_name, album_title, cover_url, added_at, refreshed_at. */
+                grab_bag: components["schemas"]["ExportRows"];
+            };
+            tickets: {
+                /** @description id, allocation_id, allocation_name, event_id, event_name, event_starts_at, hub_city_ids, hub_match, percentile, raw_score, is_estimated, baseline_weight, score_computed_at, registered_at, withdrawn_at, withdrawn_reason, plus_one, guest_handle, guest_named_at, outcome, selection_rank, seats. */
+                registrations: components["schemas"]["ExportRows"];
+                /** @description Shows another fan named the caller as their +1 for. event_id, event_name, event_starts_at, host_handle, guest_named_at. */
+                guest_of: components["schemas"]["ExportRows"];
+                /** @description id, registration_id, allocation_id, event_id, event_name, event_starts_at, seats, face_value_cents, currency, deliver_at, created_at, returned_at, cancelled_at, cancelled_reason. Not the ticket token. */
+                reservations: components["schemas"]["ExportRows"];
+            };
+            /** @description Fan notices (not staff notices). id, kind, subject_id, data, created_at, read_at. */
+            notifications: components["schemas"]["ExportRows"];
+        };
         ScoreCardLink: {
             /**
              * Format: uri
@@ -4962,6 +5093,30 @@ export interface operations {
                 };
             };
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    exportMyData: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The export file */
+            200: {
+                headers: {
+                    /** @description `attachment; filename=fandom-score-export-YYYY-MM-DD.json` */
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataExport"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["RateLimited"];
         };
     };
     setHubCities: {

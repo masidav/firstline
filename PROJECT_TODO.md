@@ -267,6 +267,11 @@ Details: [Sharing API](services/api/src/features/sharing/TODO.md) · [Sharing UI
 - [ ] Email staff when something needs them (the same three staff events as the in-app notices). Needs an email
       provider (open decision) and a staff address list; the notification rows are the source to send from.
 - [ ] Complete privacy review, deletion flows, and retention rules.
+      *2026-10-27: "Download my data": `GET /me/export` returns everything the app holds about the fan as one JSON
+      file (secrets, hashes, staff-internal fields, and other fans' private data left out; list in
+      `services/api/src/features/privacy/README.md`), 3 per hour; Profile has the button (web download, phone share
+      sheet). Verified: `dotnet test` (DataExportApiTests), app Jest. Still open: retention rules, log review, and the
+      open questions in that README (provider subject ids, OCR text, staff work records).*
 - [ ] Complete integration, end-to-end, security, and performance testing.
 - [ ] Document deployment, backups, monitoring, and recovery.
 - [ ] Verify current external API terms and app-store requirements before release.

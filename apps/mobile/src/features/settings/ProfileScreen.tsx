@@ -11,6 +11,7 @@ import { reauthenticateWithApple } from '../authentication/appleSignIn';
 import { cityLabel, formatDay } from '../hub-cities/HubCitiesScreen';
 import { unregisterPush } from '../notifications/push';
 import { PushSettingsSection } from '../notifications/PushSettingsSection';
+import { DownloadMyDataButton } from '../privacy/DownloadMyDataButton';
 import { connectErrorMessage, describeStatus } from '../spotify/spotifyConnect';
 
 type Errors = {
@@ -272,6 +273,7 @@ export function ProfileScreen({ me }: { me: Me }) {
       <Button label="Change hub cities" kind="secondary" onPress={() => router.push('/hub-cities')} />
 
       <View style={{ height: 24 }} />
+      <DownloadMyDataButton />
       <Button
         label="Sign out"
         kind="secondary"
