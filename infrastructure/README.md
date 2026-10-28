@@ -13,13 +13,14 @@ manifests describe the workloads; GitHub Actions builds images and deploys.
 
 | Path | What |
 | --- | --- |
-| `../Dockerfile` | One multi-stage build with targets `api`, `worker`, `migrate` (chiseled, non-root). |
+| `../Dockerfile` | One multi-stage build with targets `api`, `worker`, `migrate` (chiseled, non-root), and `web`, `promoter-web` (nginx). |
 | `terraform/modules/environment` | Everything one cloud environment needs (network, cluster, database, registry, secrets, buckets, edge, CI identity, alerts). |
 | `terraform/envs/{beta,prod}` | Root module per cloud environment: sizes, protection, budget. |
 | `terraform/bootstrap.sh` | One-time project setup: billing link, base APIs, Terraform state bucket. |
 | `k8s/base` | Namespace, service accounts, migrate Job, API, worker, and redaction Deployments, HPA, PDB, Gateway. |
 | `k8s/overlays/{beta,prod}` | Project, images, hostnames, secrets list, replica counts. |
 | `k8s/deploy.sh` | Backup, migrations, rollout, health check. Used by CI and by hand. |
+| `k8s/db-shell.sh` | psql on an environment's database from a temporary pod (`db-shell.sh beta`); the password stays in the cluster. |
 | `RUNBOOK.md` | On-call: what each alert means and what to do; first-five-minutes checklist; common actions. |
 | `../.github/workflows/deploy.yml` | Push to `main`: build, deploy beta, promote to prod after approval. |
 | `../tools/ci/check_migration_safety.py` | CI: a new migration must keep the previous release working during the rollout. |
