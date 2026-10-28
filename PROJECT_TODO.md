@@ -139,9 +139,14 @@ Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring wo
       app Jest (Prompts, Feed, Moderation).
 - [ ] Blind album rankings (requested 2026-10-25): not daily; released on a day without trivia (Tuesday) or a prompt
       (Thursday) (decided 2026-10-27; which day exactly is open). Other open questions in `apps/mobile/TODO.md`.
+- [ ] Overall fan level (requested 2026-10-28): a visible "superfan level" across all artists, on profiles and feed
+      cards, for status and fun; it never decides tickets. Built from activity across the app (fandom scores, albums
+      logged, verified proof, trivia, prompts, blind rankings), with "this or that" counting for very little. Open: the
+      levels and their names, the formula, and whether followers-only like other stats.
 - [ ] "This or that" band game (requested 2026-10-28): fans pick between two bands (or songs, albums), on its own day,
       not a trivia, blind-ranking, or prompt day, so each weekly game has a day to itself. Open: which day, what's
-      compared, whether picks earn points, and what results fans see.
+      compared, whether picks earn points, and what results fans see. Playing it adds a little to the overall trust
+      score and fan level (above).
 - [x] Trivia and prompts on a weekly cadence instead of daily (requested 2026-10-26): trivia on Tuesdays, prompts on
       Thursdays (UTC). *Done 2026-10-27 (migration 0034): `trivia_week_day()` and `prompt_week_day()`; the API and app
       say "this week's" and when the next one comes; staff schedule prompts by Thursday. Verified: `dotnet test`
@@ -285,6 +290,11 @@ Details: [Sharing API](services/api/src/features/sharing/TODO.md) · [Sharing UI
 Details: [Notifications](services/api/src/features/notifications/TODO.md) · [Moderation](services/api/src/features/moderation/TODO.md) · [Release tests](tests/TODO.md) · [Infrastructure](infrastructure/TODO.md)
 
 ## Phase 10 — Fan verification and anti-fraud
+- [ ] Overall trust score per fan (requested 2026-10-28), across all artists, used behind the scenes (not shown to
+      fans): for example account age, verified proof, steady listening over time, and good standing (no upheld reports
+      or takedowns). Use: an eligibility gate and/or tie-breaker in ticket draws, and a flag for bot and farm review.
+      Playing "this or that" counts for very little. Open: the signals and weights, the gate threshold, and whether it
+      can lower a fan's chances or only break ties.
 - [ ] Define the eligibility model: which signals count, their weights, and minimum account/history age.
 - [ ] Detect streaming-farm and bot behavior (play patterns, account age, device and payment signals, shared-device clusters).
 - [ ] Add verification sources: Apple Music (MusicKit), direct-to-consumer store purchases, verified attendance history.
