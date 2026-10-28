@@ -65,7 +65,7 @@ public static partial class FeedEndpoints
         string Type, Guid Id, DateTime At, SubmissionEndpoints.UserRef? User, ScoringEndpoints.ArtistRef? Artist, bool Following,
         FeedPhoto? Photo, FeedLog? Log, GrabBagEndpoints.GrabBagSong? GrabBag, FeedShow? Concert,
         AllocationEndpoints.RegistrationCard? Registration, FeedStat? Stat, FeedPromptAnswer? PromptAnswer = null,
-        IReadOnlyList<Reactions.ReactionEndpoints.ReactionCount>? Reactions = null);
+        IReadOnlyList<Reactions.ReactionEndpoints.ReactionCount>? Reactions = null, int? UserLevel = null);
 
     public sealed record FeedPage(IReadOnlyList<FeedItem> Items, string? NextCursor, string Seed);
 
@@ -166,6 +166,24 @@ public static partial class FeedEndpoints
                 {
                     items[i] = items[i] with { Reactions = counts.GetValueOrDefault(items[i].Id) ?? [] };
                 }
+            }
+        }
+
+        // Fan levels (0039) on items by the caller or fans they follow, like other stats.
+        var levels = (await connection.QueryAsync<(Guid UserId, int Level)>(
+                """
+                SELECT fo.user_id, fo.level::int FROM fan_overall_scores fo
+                WHERE fo.user_id = ANY(@ids)
+                  AND (fo.user_id = @me OR EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = @me AND f.followee_id = fo.user_id))
+                """,
+                new { me, ids = page.Where(r => r.UserId is not null).Select(r => r.UserId!.Value).Distinct().ToArray() }))
+            .ToDictionary(l => l.UserId, l => l.Level);
+        var byId = page.Where(r => r.UserId is not null).GroupBy(r => (r.Type, r.Id)).ToDictionary(g => g.Key, g => g.First().UserId!.Value);
+        for (var i = 0; i < items.Count; i++)
+        {
+            if (byId.TryGetValue((items[i].Type, items[i].Id), out var author) && levels.TryGetValue(author, out var level))
+            {
+                items[i] = items[i] with { UserLevel = level };
             }
         }
 

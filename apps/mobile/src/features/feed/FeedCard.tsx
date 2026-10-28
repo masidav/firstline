@@ -53,7 +53,10 @@ function Byline({ item, mine, following, onFollow, children }: FeedCardProps & {
       {handle ? (
         <Pressable accessibilityRole="link" accessibilityLabel={`Open ${fanName(item.user)}'s page`} onPress={() => router.push(`/fans/${handle}`)}
           style={styles.grow}>
-          <Text style={styles.line}>{children}</Text>
+          <Text style={styles.line}>
+            {children}
+            {item.user_level ? <Text style={styles.level}>{` · Lv ${item.user_level}`}</Text> : null}
+          </Text>
         </Pressable>
       ) : (
         <Text style={[styles.line, styles.grow]}>{children}</Text>
@@ -273,6 +276,7 @@ function StatCard(props: FeedCardProps) {
 }
 
 const styles = StyleSheet.create({
+  level: { color: colors.accent, fontWeight: '700' },
   card: { gap: space.sm, padding: space.md, borderRadius: 12, borderWidth: 1, borderColor: colors.border },
   grabBag: { backgroundColor: colors.surface },
   concert: { borderColor: colors.accent },

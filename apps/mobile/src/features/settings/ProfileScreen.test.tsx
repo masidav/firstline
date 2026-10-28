@@ -16,6 +16,7 @@ const mockSession = { api: mockApi, setMe: mockSetMe, updateMe: jest.fn(), signO
 jest.mock('../../auth/SessionProvider', () => ({
   useSession: () => ({ session: mockSession }),
 }));
+jest.mock('../fan-level/FanLevelSection', () => ({ FanLevelSection: () => null }));
 jest.mock('../notifications/push', () => ({
   pushSupported: () => false,
   registerForPush: jest.fn(),

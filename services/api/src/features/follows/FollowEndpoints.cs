@@ -37,7 +37,7 @@ public static class FollowEndpoints
     public sealed record UserPublic(
         string Handle, bool Deleted, string? DisplayName, string? AvatarUrl, bool FollowedByMe, bool FollowsMe, DateTime CreatedAt,
         int LogCount, int ListCount, int FollowerCount, int FollowingCount, bool IsArtist, int GrabBagCount, bool IsMe,
-        bool CanSeeFollowerContent, string? BandUrl, string? InstagramHandle, string? XHandle, int AnswerCount);
+        bool CanSeeFollowerContent, string? BandUrl, string? InstagramHandle, string? XHandle, int AnswerCount, int? FanLevel);
 
     public sealed record UserPage(IReadOnlyList<UserSummary> Items, string? NextCursor);
 
@@ -100,7 +100,10 @@ public static class FollowEndpoints
                     u.band_url AS BandUrl, u.instagram_handle AS InstagramHandle, u.x_handle AS XHandle,
                     (SELECT count(*) FROM prompt_answers pa WHERE pa.user_id = u.id AND pa.deleted_at IS NULL AND pa.removed_at IS NULL
                        AND (pa.visibility = 'public' OR u.id = @me
-                            OR EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = @me AND f.followee_id = u.id)))::int AS AnswerCount
+                            OR EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = @me AND f.followee_id = u.id)))::int AS AnswerCount,
+                    -- Fan level (0039), to the fan and followers like other stats; null before the first refresh.
+                    CASE WHEN u.id = @me OR EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = @me AND f.followee_id = u.id)
+                         THEN (SELECT fo.level FROM fan_overall_scores fo WHERE fo.user_id = u.id)::int END AS FanLevel
              FROM users u WHERE u.handle = @handle AND u.deleted_at IS NULL
              """,
             new { me, handle = CleanHandle(handle) }) ?? throw NotFound();

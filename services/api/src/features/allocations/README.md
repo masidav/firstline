@@ -43,7 +43,8 @@ depends on how soon it runs: the snapshots and the stored seed fix the ranking. 
 gives staff the refusals (still open, cancelled, artist paused) at once; a failed job is queued again by the next
 `POST`.
 `allocation_ranking(allocation, seed)` orders live registrations: hub fans (the show's city in their three hub cities)
-first, then the rest; each by snapshot raw score; ties by `md5(seed || registration id)`. Seats go down the ranking,
+first, then the rest; each by snapshot raw score; ties by the fan's trust when the draw ran (migration 0039, stored in
+`allocation_trust_snapshots`), then by `md5(seed || registration id)`. Seats go down the ranking,
 two for a +1; with one seat left, a fan with a +1 gets it alone (provisional). The seed and counts are stored once in
 `allocation_selections`, so anyone can rerun the ranking and get the same order. Outcomes, ranks, and seats are written
 only by the draw (a guard trigger checks a transaction setting), and a selected allocation can't be cancelled.

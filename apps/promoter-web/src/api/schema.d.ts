@@ -1367,6 +1367,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/level": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My overall fan level
+         * @description Level 1 to 5 from activity across the app, computed now: the average of equally weighted parts, each 0 to 1
+         *     (`fandom`: the three best percentiles; `albums_logged`; `verified_proof`; `trivia`: answered right; `prompts`:
+         *     answered). Level 1 is below 0.2, level 5 is 0.8 and up. It never decides tickets. Provisional (2026-10-28).
+         */
+        get: operations["getMyFanLevel"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me/trivia": {
         parameters: {
             query?: never;
@@ -3150,6 +3172,8 @@ export interface components {
             x_handle: string | null;
             /** @description Prompt answers the caller can see */
             answer_count: number;
+            /** @description The fan's overall level (1 to 5), shown to the fan and their followers like other stats; null otherwise or before it's first computed (hourly). */
+            fan_level: number | null;
         };
         SessionRequest: {
             /** @enum {string} */
@@ -3499,6 +3523,18 @@ export interface components {
             };
             /** @description Fan notices (not staff notices). id, kind, subject_id, data, created_at, read_at. */
             notifications: components["schemas"]["ExportRows"];
+        };
+        FanLevel: {
+            level: number;
+            max_level: number;
+            activity: number;
+            /** @description The activity the next level starts at; null at the top level. */
+            next_level_at: number | null;
+            parts: {
+                /** @enum {string} */
+                key: "fandom" | "albums_logged" | "verified_proof" | "trivia" | "prompts";
+                value: number;
+            }[];
         };
         ScoreCardLink: {
             /**
@@ -4372,6 +4408,8 @@ export interface components {
         };
         /** @description `type` says which payload is set: `photo`, `log`, `grab_bag`, `concert`, `registration`, `stat`, or `prompt_answer`. */
         FeedItem: {
+            /** @description The author's fan level, when the caller is the author or follows them; otherwise absent or null. */
+            user_level?: number | null;
             /** @enum {string} */
             type: "photo" | "album_log" | "grab_bag" | "concert" | "registration" | "stat" | "prompt_answer";
             /**
@@ -7001,6 +7039,26 @@ export interface operations {
             };
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    getMyFanLevel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The level and its parts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FanLevel"];
+                };
+            };
         };
     };
     getTodaysTrivia: {

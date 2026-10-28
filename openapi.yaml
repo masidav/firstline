@@ -1632,6 +1632,21 @@ paths:
               schema: {type: string, format: binary}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /me/level:
+    get:
+      tags: [Me]
+      operationId: getMyFanLevel
+      summary: My overall fan level
+      description: |
+        Level 1 to 5 from activity across the app, computed now: the average of equally weighted parts, each 0 to 1
+        (`fandom`: the three best percentiles; `albums_logged`; `verified_proof`; `trivia`: answered right; `prompts`:
+        answered). Level 1 is below 0.2, level 5 is 0.8 and up. It never decides tickets. Provisional (2026-10-28).
+      responses:
+        '200':
+          description: The level and its parts
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FanLevel'}
   /me/trivia:
     get:
       tags: [Social]
@@ -3772,7 +3787,7 @@ components:
         - $ref: '#/components/schemas/UserRef'
         - type: object
           required: [created_at, log_count, list_count, followed_by_me, follows_me, follower_count, following_count, is_artist,
-                     grab_bag_count, is_me, can_see_follower_content, band_url, instagram_handle, x_handle, answer_count]
+                     grab_bag_count, is_me, can_see_follower_content, band_url, instagram_handle, x_handle, answer_count, fan_level]
           properties:
             created_at: {type: string, format: date-time}
             log_count: {type: integer, description: Logs the caller can see.}
@@ -3791,6 +3806,11 @@ components:
             instagram_handle: {type: [string, 'null']}
             x_handle: {type: [string, 'null']}
             answer_count: {type: integer, description: Prompt answers the caller can see}
+            fan_level:
+              type: [integer, 'null']
+              minimum: 1
+              maximum: 5
+              description: The fan's overall level (1 to 5), shown to the fan and their followers like other stats; null otherwise or before it's first computed (hourly).
 
     SessionRequest:
       type: object
@@ -4200,6 +4220,22 @@ components:
         notifications:
           allOf: [{$ref: '#/components/schemas/ExportRows'}]
           description: Fan notices (not staff notices). id, kind, subject_id, data, created_at, read_at.
+    FanLevel:
+      type: object
+      required: [level, max_level, activity, next_level_at, parts]
+      properties:
+        level: {type: integer, minimum: 1, maximum: 5}
+        max_level: {type: integer}
+        activity: {type: number, minimum: 0, maximum: 1}
+        next_level_at: {type: [number, 'null'], description: The activity the next level starts at; null at the top level.}
+        parts:
+          type: array
+          items:
+            type: object
+            required: [key, value]
+            properties:
+              key: {type: string, enum: [fandom, albums_logged, verified_proof, trivia, prompts]}
+              value: {type: number, minimum: 0, maximum: 1}
     ScoreCardLink:
       type: object
       required: [image_url, share_text, top_label, is_estimated, expires_at]
@@ -5079,6 +5115,11 @@ components:
       description: '`type` says which payload is set: `photo`, `log`, `grab_bag`, `concert`, `registration`, `stat`, or `prompt_answer`.'
       required: [type, id, at, user, artist, following]
       properties:
+        user_level:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 5
+          description: The author's fan level, when the caller is the author or follows them; otherwise absent or null.
         type: {type: string, enum: [photo, album_log, grab_bag, concert, registration, stat, prompt_answer]}
         id:
           type: string

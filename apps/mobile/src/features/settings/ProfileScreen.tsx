@@ -10,6 +10,7 @@ import { colors, space } from '../../ui/theme';
 import { reauthenticateWithApple } from '../authentication/appleSignIn';
 import { cityLabel, formatDay } from '../hub-cities/HubCitiesScreen';
 import { unregisterPush } from '../notifications/push';
+import { FanLevelSection } from '../fan-level/FanLevelSection';
 import { PushSettingsSection } from '../notifications/PushSettingsSection';
 import { DownloadMyDataButton } from '../privacy/DownloadMyDataButton';
 import { connectErrorMessage, describeStatus } from '../spotify/spotifyConnect';
@@ -235,6 +236,7 @@ export function ProfileScreen({ me }: { me: Me }) {
       <Button label="Save" onPress={() => void save()} busy={saving} disabled={!changed} />
 
       <View style={{ height: 24 }} />
+      <FanLevelSection />
       <PushSettingsSection me={me} />
       <View style={styles.switchRow}>
         <View style={styles.switchText}>

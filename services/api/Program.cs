@@ -5,6 +5,7 @@ using FandomScore.Api.Features.Artists;
 using FandomScore.Api.Features.Authentication;
 using FandomScore.Api.Features.Concerts;
 using FandomScore.Api.Features.Featured;
+using FandomScore.Api.Features.FanLevels;
 using FandomScore.Api.Features.Feed;
 using FandomScore.Api.Features.Follows;
 using FandomScore.Api.Features.Links;
@@ -100,6 +101,7 @@ v1.MapConcertSources();
 v1.MapScoreCards();
 v1.MapLinks();
 v1.MapDataExport();
+v1.MapFanLevels();
 
 app.Run();
 

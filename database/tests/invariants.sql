@@ -2276,4 +2276,21 @@ SELECT pg_temp.expect_error(
 SELECT pg_temp.expect_error($$UPDATE artists SET website_url = 'http://example.com' WHERE spotify_artist_id = 'sp-active'$$, 'artists_website_https');
 SELECT pg_temp.expect_error($$UPDATE artists SET merch_url = 'javascript:alert(1)' WHERE spotify_artist_id = 'sp-active'$$, 'artists_merch_https');
 
+-- ------------------------------------------------------------ fan levels and trust (0039)
+-- A stored level always matches its activity; trust snapshots are written only by the draw.
+SELECT pg_temp.expect_error(
+  $$INSERT INTO fan_overall_scores (user_id, trust, trust_parts, activity, activity_parts, level)
+    VALUES ('00000000-0000-0000-0000-000000000001', 0.5, '{}', 0.9, '{}', 2)$$,
+  'fan_overall_scores_level_matches');
+DO $$
+BEGIN
+  ASSERT parts_average('{"a": 1, "b": 0, "c": 0.5}') = 0.5, 'parts weigh equally';
+  ASSERT parts_average('{}') = 0, 'no parts is zero';
+  ASSERT (SELECT count(*) FROM jsonb_object_keys(fan_trust_parts('00000000-0000-0000-0000-000000000001'))) = 4, 'four trust parts';
+  ASSERT (SELECT count(*) FROM jsonb_object_keys(fan_activity_parts('00000000-0000-0000-0000-000000000001'))) = 5, 'five activity parts';
+END $$;
+SELECT pg_temp.expect_error(
+  $$INSERT INTO allocation_trust_snapshots (allocation_id, registration_id, trust) VALUES (gen_random_uuid(), gen_random_uuid(), 1)$$,
+  'written once by the draw');
+
 \echo ALL INVARIANT TESTS PASSED

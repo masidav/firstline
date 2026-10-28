@@ -72,6 +72,12 @@ test('your own page offers Edit profile instead of Follow', async () => {
   expect(screen.queryByRole('button', { name: 'Follow @ana' })).toBeNull();
 });
 
+test('a follower sees the fan level next to the handle; a stranger does not', async () => {
+  serve({ ...profile, can_see_follower_content: true, followed_by_me: true, fan_level: 3 });
+  render(<FanProfileScreen handle="ana" />);
+  expect(await screen.findByText(/@ana · artist · follows you · fan level 3/)).toBeTruthy();
+});
+
 test('helpers: band links and standing', () => {
   expect(profileBandLinks({ ...profile, is_artist: false })).toEqual([]);
   expect(profileBandLinks(profile).map((l) => l.label)).toEqual(['Band page', 'Instagram @anaband']);

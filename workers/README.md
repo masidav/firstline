@@ -16,6 +16,7 @@ dotnet run --project workers        # needs ConnectionStrings__Database, like th
 | `account-retention/` | `PurgeDeletedAccountsJob`: hourly, purges content of accounts deleted 30+ days ago. |
 | `storage-cleanup/` | `StorageCleanupJob` (`storage.cleanup`, hourly): deletes stored files nothing needs (expired upload slots, deleted accounts' files before their purge, files queued in `storage_deletions`). See the folder's README. |
 | `concerts/` | `ConcertSyncJob` (`concerts.sync_artist`) and hourly `ScheduleConcertSyncsJob` (`concerts.schedule`): load tracked artists' upcoming shows, sales, and presales from Ticketmaster. See the folder's README. |
+| `fans/` | `FanScoresJob` (`fans.overall_scores`, hourly): refreshes every fan's trust and fan level (migration 0039; `services/api/src/features/fan-levels/README.md`). |
 | `image-redaction/` | `RedactSubmissionJob` (`submissions.redact`) and hourly `RedactionSweepJob` (`redaction.sweep`): black out barcodes and QR codes in verified proof and move it to the archive. See the folder's README. |
 | `spotify-sync/` | `SpotifySyncJob` (`spotify.sync`) and hourly `ScheduleSpotifySyncsJob`. See [ADR 0005](../docs/adr/0005-spotify-integration.md). |
 | `allocations/` | `SelectAllocationJob` (`allocations.select`): runs an allocation's draw once staff queue it (`POST /v1/admin/allocations/{id}/selection`). |
