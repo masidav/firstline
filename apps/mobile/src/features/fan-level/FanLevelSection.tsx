@@ -16,13 +16,13 @@ const PART_LABELS: Record<FanLevel['parts'][number]['key'], string> = {
   prompts: 'Prompts answered',
 };
 
-/** "Fan level 3 of 5". */
-export const levelLabel = (level: number, max = 5) => `Fan level ${level} of ${max}`;
+/** "Level 4 of 10". */
+export const levelLabel = (level: number, max = 10) => `Level ${level} of ${max}`;
 
-/** "Next level at 60%", or that the fan is at the top. */
-export function nextLevelLine(fanLevel: Pick<FanLevel, 'activity' | 'next_level_at'>): string {
-  if (fanLevel.next_level_at == null) return "You're at the top level.";
-  return `${Math.round(fanLevel.activity * 100)}% now · next level at ${Math.round(fanLevel.next_level_at * 100)}%`;
+/** "30% now · Backstage Pass at 40%", or that the fan is at the top. */
+export function nextLevelLine(fanLevel: Pick<FanLevel, 'activity' | 'next_level_at' | 'next_level_name'>): string {
+  if (fanLevel.next_level_at == null) return "You've reached the top: Superstar.";
+  return `${Math.round(fanLevel.activity * 100)}% now · ${fanLevel.next_level_name ?? 'next level'} at ${Math.round(fanLevel.next_level_at * 100)}%`;
 }
 
 /** Profile: the fan's overall level (GET /me/level) and what goes into it, each part counting the same. */
@@ -40,7 +40,8 @@ export function FanLevelSection() {
   if (!fanLevel) return null;
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>{levelLabel(fanLevel.level, fanLevel.max_level)}</Text>
+      <Text style={styles.title}>{fanLevel.name}</Text>
+      <Body muted>{`Fan ${levelLabel(fanLevel.level, fanLevel.max_level).toLowerCase()}`}</Body>
       <Body muted>{nextLevelLine(fanLevel)}</Body>
       {fanLevel.parts.map((part) => (
         <View key={part.key} style={styles.row} accessibilityLabel={`${PART_LABELS[part.key]}: ${Math.round(part.value * 100)}%`}>

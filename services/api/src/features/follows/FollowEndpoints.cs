@@ -37,7 +37,11 @@ public static class FollowEndpoints
     public sealed record UserPublic(
         string Handle, bool Deleted, string? DisplayName, string? AvatarUrl, bool FollowedByMe, bool FollowsMe, DateTime CreatedAt,
         int LogCount, int ListCount, int FollowerCount, int FollowingCount, bool IsArtist, int GrabBagCount, bool IsMe,
-        bool CanSeeFollowerContent, string? BandUrl, string? InstagramHandle, string? XHandle, int AnswerCount, int? FanLevel);
+        bool CanSeeFollowerContent, string? BandUrl, string? InstagramHandle, string? XHandle, int AnswerCount, int? FanLevel)
+    {
+        /// <summary>The level's name ("Front Row"), when the level is shown.</summary>
+        public string? FanLevelName => FanLevel is { } level ? FanLevels.FanLevelEndpoints.Name(level) : null;
+    }
 
     public sealed record UserPage(IReadOnlyList<UserSummary> Items, string? NextCursor);
 

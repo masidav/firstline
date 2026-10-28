@@ -144,9 +144,11 @@ Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring wo
       0039): Profile shows the level and its parts; fan pages and feed bylines show it to the fan and followers.
       Verified: FanScoresTests, FanLevelApiTests, app Jest.* "This or that" and blind rankings join with a very small
       share once built.
-- [ ] Fan level details set provisionally (2026-10-28), confirm or change: levels are numbered (no names yet), level
-      boundaries every 0.2, part caps (50 albums, 5 proofs, 10 trivia, 10 prompts, best three percentiles), and shown
-      to followers only like other stats.
+- [x] Ten fan levels (decided 2026-10-28), Roadie to Superstar: Roadie, Groupie, Street Team, Front Row, Backstage
+      Pass, Opening Act, Headliner, Gold Record, Platinum, Superstar (the middle names filled in provisionally). Each
+      spans a tenth of activity. Migration 0040.
+- [ ] Fan level details set provisionally (2026-10-28), confirm or change: the middle level names, part caps (50
+      albums, 5 proofs, 10 trivia, 10 prompts, best three percentiles), and shown to followers only like other stats.
 - [ ] "This or that" band game (requested 2026-10-28): fans pick between two bands (or songs, albums), on its own day,
       not a trivia, blind-ranking, or prompt day, so each weekly game has a day to itself. Open: which day, what's
       compared, whether picks earn points, and what results fans see. Playing it adds a little to the overall trust

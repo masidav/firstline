@@ -121,7 +121,7 @@ export function FanProfileScreen({ handle }: { handle: string }) {
             @{profile.handle}
             {profile.is_artist ? ' · artist' : ''}
             {profile.follows_me && !profile.is_me ? ' · follows you' : ''}
-            {profile.fan_level ? ` · fan level ${profile.fan_level}` : ''}
+            {profile.fan_level_name ? ` · ${profile.fan_level_name}` : ''}
           </Text>
         </View>
         {profile.is_me ? (

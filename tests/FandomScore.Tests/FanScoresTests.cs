@@ -79,11 +79,12 @@ public sealed class FanScoresTests(PostgresFixture postgres) : IAsyncLifetime
         await using (var connection = await _db.OpenConnectionAsync())
         {
             Assert.Equal(1, await connection.ExecuteScalarAsync<int>("SELECT fan_level_for(parts_average(fan_activity_parts(@idle)))", new { idle }));
-            // fandom 0.30 (90 of 300), albums ln(4)/ln(51) = 0.35, proof 1, trivia 0, prompts 0: average 0.33, level 2.
+            // fandom 0.30 (90 of 300), albums ln(4)/ln(51) = 0.35, proof 1, trivia 0, prompts 0: average 0.33, level 4.
             var activity = await connection.ExecuteScalarAsync<decimal>("SELECT parts_average(fan_activity_parts(@busy))", new { busy });
             Assert.InRange(activity, 0.32m, 0.34m);
-            Assert.Equal(new short[] { 1, 1, 2, 3, 4, 5, 5 }, (await connection.QueryAsync<short>(
-                "SELECT fan_level_for(x) FROM unnest(ARRAY[0, 0.19, 0.2, 0.5, 0.79, 0.8, 1]::numeric[]) x")).ToArray());
+            // Ten levels (0040), a tenth of activity each.
+            Assert.Equal(new short[] { 1, 1, 2, 6, 8, 9, 10, 10 }, (await connection.QueryAsync<short>(
+                "SELECT fan_level_for(x) FROM unnest(ARRAY[0, 0.09, 0.1, 0.5, 0.79, 0.8, 0.9, 1]::numeric[]) x")).ToArray());
         }
 
         var job = new FanScoresJob(_db, NullLogger<FanScoresJob>.Instance);
@@ -91,7 +92,7 @@ public sealed class FanScoresTests(PostgresFixture postgres) : IAsyncLifetime
         await job.RunAsync(new ClaimedJob(1, job.Kind, "{}", 1, 10), CancellationToken.None);
         await using (var connection = await _db.OpenConnectionAsync())
         {
-            Assert.Equal(new[] { ("busy", (short)2), ("idle", (short)1) }, (await connection.QueryAsync<(string, short)>(
+            Assert.Equal(new[] { ("busy", (short)4), ("idle", (short)1) }, (await connection.QueryAsync<(string, short)>(
                 "SELECT u.handle::text, f.level FROM fan_overall_scores f JOIN users u ON u.id = f.user_id ORDER BY u.handle")).ToArray());
             await connection.ExecuteAsync("UPDATE users SET deleted_at = now() WHERE id = @idle", new { idle });
         }

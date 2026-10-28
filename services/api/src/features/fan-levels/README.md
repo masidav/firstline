@@ -7,7 +7,7 @@ run from 0 to 1 and saturate at a cap. Weights and caps are provisional (PROJECT
 | --- | --- | --- |
 | Used for | Breaking ties in fan ticket draws, nothing else | Status: Profile, fan pages, feed bylines; never tickets |
 | Parts | account age (full at 180 days), verified proof (3), steady listening (weeks with plays, of the last 12), good standing (lowered by posts staff took down in the last year) | fandom (average of the three best percentiles), albums logged (log curve, full at 50), verified proof (5), trivia answered right (10), prompts answered (10) |
-| Result | 0 to 1 | levels 1 to 5: below 0.2 is 1, 0.8 and up is 5 |
+| Result | 0 to 1 | levels 1 to 10 (0040), a tenth of activity each, named Roadie, Groupie, Street Team, Front Row, Backstage Pass, Opening Act, Headliner, Gold Record, Platinum, Superstar (`FanLevelEndpoints.Names`) |
 | Functions | `fan_trust_parts()` | `fan_activity_parts()`, `fan_level_for()` |
 
 - **Draws:** `run_allocation_selection()` computes each live registration's trust fresh and stores it

@@ -77,8 +77,9 @@ public sealed class FanLevelApiTests(PostgresFixture postgres) : IAsyncLifetime
         }
 
         var mine = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/level", ana), HttpStatusCode.OK);
-        Assert.Equal((5, 2), (mine.GetProperty("max_level").GetInt32(), mine.GetProperty("level").GetInt32()));
-        // fandom 100/300, albums ln 2 / ln 51, proof 5/5, trivia 0, prompts 0: average 0.30, level 2.
+        Assert.Equal((10, 4, "Front Row", "Backstage Pass"), (mine.GetProperty("max_level").GetInt32(), mine.GetProperty("level").GetInt32(),
+            mine.GetProperty("name").GetString(), mine.GetProperty("next_level_name").GetString()));
+        // fandom 100/300, albums ln 2 / ln 51, proof 5/5, trivia 0, prompts 0: average 0.30, level 4 (Front Row).
         var parts = mine.GetProperty("parts").EnumerateArray().ToDictionary(p => p.GetProperty("key").GetString()!, p => p.GetProperty("value").GetDecimal());
         Assert.Equal(["albums_logged", "fandom", "prompts", "trivia", "verified_proof"], parts.Keys.Order());
         Assert.Equal((1m, 0m), (parts["verified_proof"], parts["trivia"]));
@@ -90,7 +91,8 @@ public sealed class FanLevelApiTests(PostgresFixture postgres) : IAsyncLifetime
             await connection.ExecuteAsync("SELECT refresh_fan_overall_scores()");
         }
 
-        Assert.Equal(2, (await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/users/ana", ben), HttpStatusCode.OK)).GetProperty("fan_level").GetInt32());
+        var anaForBen = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/users/ana", ben), HttpStatusCode.OK);
+        Assert.Equal((4, "Front Row"), (anaForBen.GetProperty("fan_level").GetInt32(), anaForBen.GetProperty("fan_level_name").GetString()));
         Assert.Equal(JsonValueKind.Null, (await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/users/ana", cara), HttpStatusCode.OK)).GetProperty("fan_level").ValueKind);
 
         static IEnumerable<JsonElement> AnaItems(JsonElement feed) =>
@@ -98,7 +100,7 @@ public sealed class FanLevelApiTests(PostgresFixture postgres) : IAsyncLifetime
                 && u.GetProperty("handle").GetString() == "ana");
         var benFeed = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/feed?limit=100", ben), HttpStatusCode.OK);
         Assert.NotEmpty(AnaItems(benFeed));
-        Assert.All(AnaItems(benFeed), i => Assert.Equal(2, i.GetProperty("user_level").GetInt32()));
+        Assert.All(AnaItems(benFeed), i => Assert.Equal((4, "Front Row"), (i.GetProperty("user_level").GetInt32(), i.GetProperty("user_level_name").GetString())));
         var caraFeed = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/feed?limit=100", cara), HttpStatusCode.OK);
         Assert.All(AnaItems(caraFeed), i => Assert.True(!i.TryGetProperty("user_level", out var l) || l.ValueKind == JsonValueKind.Null));
     }

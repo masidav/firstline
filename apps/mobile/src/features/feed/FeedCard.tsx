@@ -55,7 +55,7 @@ function Byline({ item, mine, following, onFollow, children }: FeedCardProps & {
           style={styles.grow}>
           <Text style={styles.line}>
             {children}
-            {item.user_level ? <Text style={styles.level}>{` · Lv ${item.user_level}`}</Text> : null}
+            {item.user_level_name ? <Text style={styles.level}>{` · ${item.user_level_name}`}</Text> : null}
           </Text>
         </Pressable>
       ) : (

@@ -65,7 +65,11 @@ public static partial class FeedEndpoints
         string Type, Guid Id, DateTime At, SubmissionEndpoints.UserRef? User, ScoringEndpoints.ArtistRef? Artist, bool Following,
         FeedPhoto? Photo, FeedLog? Log, GrabBagEndpoints.GrabBagSong? GrabBag, FeedShow? Concert,
         AllocationEndpoints.RegistrationCard? Registration, FeedStat? Stat, FeedPromptAnswer? PromptAnswer = null,
-        IReadOnlyList<Reactions.ReactionEndpoints.ReactionCount>? Reactions = null, int? UserLevel = null);
+        IReadOnlyList<Reactions.ReactionEndpoints.ReactionCount>? Reactions = null, int? UserLevel = null)
+    {
+        /// <summary>The author's level name ("Front Row"), when the level is shown.</summary>
+        public string? UserLevelName => UserLevel is { } level ? FanLevels.FanLevelEndpoints.Name(level) : null;
+    }
 
     public sealed record FeedPage(IReadOnlyList<FeedItem> Items, string? NextCursor, string Seed);
 

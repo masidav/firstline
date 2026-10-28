@@ -73,9 +73,9 @@ test('your own page offers Edit profile instead of Follow', async () => {
 });
 
 test('a follower sees the fan level next to the handle; a stranger does not', async () => {
-  serve({ ...profile, can_see_follower_content: true, followed_by_me: true, fan_level: 3 });
+  serve({ ...profile, can_see_follower_content: true, followed_by_me: true, fan_level: 3, fan_level_name: 'Street Team' });
   render(<FanProfileScreen handle="ana" />);
-  expect(await screen.findByText(/@ana · artist · follows you · fan level 3/)).toBeTruthy();
+  expect(await screen.findByText(/@ana · artist · follows you · Street Team/)).toBeTruthy();
 });
 
 test('helpers: band links and standing', () => {

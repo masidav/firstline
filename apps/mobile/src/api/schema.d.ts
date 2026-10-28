@@ -1376,9 +1376,11 @@ export interface paths {
         };
         /**
          * My overall fan level
-         * @description Level 1 to 5 from activity across the app, computed now: the average of equally weighted parts, each 0 to 1
+         * @description Level 1 to 10 from activity across the app, computed now: the average of equally weighted parts, each 0 to 1
          *     (`fandom`: the three best percentiles; `albums_logged`; `verified_proof`; `trivia`: answered right; `prompts`:
-         *     answered). Level 1 is below 0.2, level 5 is 0.8 and up. It never decides tickets. Provisional (2026-10-28).
+         *     answered). Each level spans a tenth: level 1 (Roadie) is below 0.1, level 10 (Superstar) is 0.9 and up. Names:
+         *     Roadie, Groupie, Street Team, Front Row, Backstage Pass, Opening Act, Headliner, Gold Record, Platinum,
+         *     Superstar. It never decides tickets.
          */
         get: operations["getMyFanLevel"];
         put?: never;
@@ -3172,8 +3174,10 @@ export interface components {
             x_handle: string | null;
             /** @description Prompt answers the caller can see */
             answer_count: number;
-            /** @description The fan's overall level (1 to 5), shown to the fan and their followers like other stats; null otherwise or before it's first computed (hourly). */
+            /** @description The fan's overall level (1 to 10), shown to the fan and their followers like other stats; null otherwise or before it's first computed (hourly). */
             fan_level: number | null;
+            /** @description The level's name, Roadie (1) to Superstar (10); null when `fan_level` is. */
+            fan_level_name?: string | null;
         };
         SessionRequest: {
             /** @enum {string} */
@@ -3526,6 +3530,10 @@ export interface components {
         };
         FanLevel: {
             level: number;
+            /** @description e.g. "Front Row" */
+            name: string;
+            /** @description The next level's name; null at Superstar. */
+            next_level_name: string | null;
             max_level: number;
             activity: number;
             /** @description The activity the next level starts at; null at the top level. */
@@ -4410,6 +4418,8 @@ export interface components {
         FeedItem: {
             /** @description The author's fan level, when the caller is the author or follows them; otherwise absent or null. */
             user_level?: number | null;
+            /** @description The level's name, e.g. "Front Row". */
+            user_level_name?: string | null;
             /** @enum {string} */
             type: "photo" | "album_log" | "grab_bag" | "concert" | "registration" | "stat" | "prompt_answer";
             /**

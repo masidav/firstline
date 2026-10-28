@@ -9,10 +9,12 @@ jest.mock('../../auth/SessionProvider', () => ({ useSession: () => ({ session: {
 test('the profile shows the level, how far along, and each part', async () => {
   mockApi.GET.mockResolvedValue(
     ok({
-      level: 2,
-      max_level: 5,
+      level: 4,
+      name: 'Front Row',
+      max_level: 10,
       activity: 0.3,
       next_level_at: 0.4,
+      next_level_name: 'Backstage Pass',
       parts: [
         { key: 'fandom', value: 0.33 },
         { key: 'albums_logged', value: 0.18 },
@@ -24,13 +26,14 @@ test('the profile shows the level, how far along, and each part', async () => {
   );
   render(<FanLevelSection />);
 
-  expect(await screen.findByText('Fan level 2 of 5')).toBeTruthy();
-  expect(screen.getByText('30% now · next level at 40%')).toBeTruthy();
+  expect(await screen.findByText('Front Row')).toBeTruthy();
+  expect(screen.getByText('Fan level 4 of 10')).toBeTruthy();
+  expect(screen.getByText('30% now · Backstage Pass at 40%')).toBeTruthy();
   expect(screen.getByLabelText('Verified proof: 100%')).toBeTruthy();
   expect(screen.getByLabelText('Trivia answered right: 0%')).toBeTruthy();
 });
 
 test('labels', () => {
-  expect(levelLabel(5)).toBe('Fan level 5 of 5');
-  expect(nextLevelLine({ activity: 0.9, next_level_at: null })).toBe("You're at the top level.");
+  expect(levelLabel(10)).toBe('Level 10 of 10');
+  expect(nextLevelLine({ activity: 0.95, next_level_at: null, next_level_name: null })).toBe("You've reached the top: Superstar.");
 });

@@ -2293,4 +2293,14 @@ SELECT pg_temp.expect_error(
   $$INSERT INTO allocation_trust_snapshots (allocation_id, registration_id, trust) VALUES (gen_random_uuid(), gen_random_uuid(), 1)$$,
   'written once by the draw');
 
+-- ------------------------------------------------------------ ten fan levels (0040)
+DO $$
+BEGIN
+  ASSERT fan_level_for(0.05) = 1 AND fan_level_for(0.1) = 2 AND fan_level_for(0.95) = 10 AND fan_level_for(1) = 10, 'ten levels, a tenth each';
+END $$;
+SELECT pg_temp.expect_error(
+  $$INSERT INTO fan_overall_scores (user_id, trust, trust_parts, activity, activity_parts, level)
+    VALUES ('00000000-0000-0000-0000-000000000001', 0.5, '{}', 0.95, '{}', 11)$$,
+  'fan_overall_scores_level');
+
 \echo ALL INVARIANT TESTS PASSED
