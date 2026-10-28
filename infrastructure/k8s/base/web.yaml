@@ -1,0 +1,333 @@
+# The two web apps (Dockerfile targets web and promoter-web): static files behind nginx, settings from the ConfigMap
+# web-config at startup, each on its own hostname. infrastructure/README.md, "Web apps".
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels:
+    app.kubernetes.io/component: web
+    fandomscore.app/stage: app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: web
+  strategy:
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: web
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 15
+      securityContext:
+        # nginx-unprivileged's user (Dockerfile target web), by number so runAsNonRoot can verify it.
+        runAsUser: 101
+        runAsGroup: 101
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: web
+          ports:
+            - name: http
+              containerPort: 8080
+          # API_URL and the client IDs for /config.js (infrastructure/web/default.conf.template).
+          envFrom:
+            - configMapRef:
+                name: web-config
+          volumeMounts:
+            # nginx writes its config from the template at startup, and its pid and temp files to /tmp.
+            - name: conf
+              mountPath: /etc/nginx/conf.d
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      volumes:
+        - name: conf
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: web
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  labels:
+    app.kubernetes.io/component: web
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/component: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: web
+  labels:
+    fandomscore.app/stage: app
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: web
+---
+# Served on its own hostname through the same Gateway (and certificate map) as the API.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: web
+spec:
+  parentRefs:
+    - name: api
+      sectionName: https
+  hostnames:
+    - set-by-overlay
+  rules:
+    - backendRefs:
+        - name: web
+          port: 80
+---
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: web
+spec:
+  default:
+    checkIntervalSec: 10
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+    logConfig:
+      enabled: false
+    config:
+      type: HTTP
+      httpHealthCheck:
+        portSpecification: USE_SERVING_PORT
+        requestPath: /healthz
+  targetRef:
+    group: ""
+    kind: Service
+    name: web
+---
+# The same Cloud Armor policy as the API (WAF rules, per-client rate limit).
+apiVersion: networking.gke.io/v1
+kind: GCPBackendPolicy
+metadata:
+  name: web
+spec:
+  default:
+    securityPolicy: set-by-overlay
+    timeoutSec: 30
+    connectionDraining:
+      drainingTimeoutSec: 15
+    logging:
+      enabled: true
+      sampleRate: 100000
+  targetRef:
+    group: ""
+    kind: Service
+    name: web
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: promoter-web
+  labels:
+    app.kubernetes.io/component: promoter-web
+    fandomscore.app/stage: app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: promoter-web
+  strategy:
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: promoter-web
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 15
+      securityContext:
+        # nginx-unprivileged's user (Dockerfile target promoter-web), by number so runAsNonRoot can verify it.
+        runAsUser: 101
+        runAsGroup: 101
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: promoter-web
+          image: promoter-web
+          ports:
+            - name: http
+              containerPort: 8080
+          # API_URL and the client IDs for /config.js (infrastructure/web/default.conf.template).
+          envFrom:
+            - configMapRef:
+                name: web-config
+          volumeMounts:
+            # nginx writes its config from the template at startup, and its pid and temp files to /tmp.
+            - name: conf
+              mountPath: /etc/nginx/conf.d
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      volumes:
+        - name: conf
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: promoter-web
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: promoter-web
+  labels:
+    app.kubernetes.io/component: promoter-web
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/component: promoter-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: promoter-web
+  labels:
+    fandomscore.app/stage: app
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: promoter-web
+---
+# Served on its own hostname through the same Gateway (and certificate map) as the API.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: promoter-web
+spec:
+  parentRefs:
+    - name: api
+      sectionName: https
+  hostnames:
+    - set-by-overlay
+  rules:
+    - backendRefs:
+        - name: promoter-web
+          port: 80
+---
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: promoter-web
+spec:
+  default:
+    checkIntervalSec: 10
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+    logConfig:
+      enabled: false
+    config:
+      type: HTTP
+      httpHealthCheck:
+        portSpecification: USE_SERVING_PORT
+        requestPath: /healthz
+  targetRef:
+    group: ""
+    kind: Service
+    name: promoter-web
+---
+# The same Cloud Armor policy as the API (WAF rules, per-client rate limit).
+apiVersion: networking.gke.io/v1
+kind: GCPBackendPolicy
+metadata:
+  name: promoter-web
+spec:
+  default:
+    securityPolicy: set-by-overlay
+    timeoutSec: 30
+    connectionDraining:
+      drainingTimeoutSec: 15
+    logging:
+      enabled: true
+      sampleRate: 100000
+  targetRef:
+    group: ""
+    kind: Service
+    name: promoter-web

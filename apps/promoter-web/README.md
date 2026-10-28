@@ -53,6 +53,18 @@ npm test               # Vitest component tests
 npm run typecheck
 npm run generate:api   # after openapi.yaml changes (CI checks it)
 npm run build          # static site in dist/ (any static host; serve index.html for every path)
+```
+
+## Hosting
+Beta hosts it at `https://promoters.beta.firstline.com`: the `Dockerfile` target `promoter-web` builds it and serves it
+with nginx (`infrastructure/README.md` "Web apps"). Settings come at startup from `/config.js`, which nginx writes
+from its environment, so the same image serves beta and prod; locally the `VITE_` values apply (`src/config.ts`).
+Google sign-in needs `https://promoters.beta.firstline.com` as an authorized origin of the web client and
+`https://promoters.beta.firstline.com/google-callback` as a redirect URI.
+
+```bash
+docker build --target promoter-web -t promoter-web .
+docker run --rm -p 8082:8080 -e API_URL=http://localhost:5271/v1 -e DEV_SIGN_IN=true promoter-web
 e2e/run.sh             # journeys: throwaway database, migrations, seed, API, a production build, Chrome
 ```
 
@@ -64,5 +76,5 @@ e2e/run.sh             # journeys: throwaway database, migrations, seed, API, a 
   sign-in for a new promoter. The worker's draw is stood in for by the same database function.
 
 ## Not yet
-Hosting (like the fan web app, it isn't deployed to beta yet), an eligible-fan count before opening registration,
-reports beyond the CSV, and fan data sharing with consent.
+An eligible-fan count before opening registration, reports beyond the CSV, and fan data sharing with consent.
+Beta hosting is configured but not live until its DNS records and certificate exist and deploys are turned on.

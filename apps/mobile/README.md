@@ -91,6 +91,11 @@ dev server and ship them in the build. `dist/` is a single-page app: the host mu
 (e.g. `/profile`). Cloudflare
 Pages and Firebase Hosting do this with a rewrite rule; `python -m http.server` does not.
 
+Beta hosts it at `https://app.beta.firstline.com`: the `Dockerfile` target `web` builds it and serves it with nginx
+(`infrastructure/README.md` "Web apps"). That image is built without `EXPO_PUBLIC_` values; the settings come
+at startup from `/config.js`, which nginx writes from its environment, so one image serves beta and prod
+(`src/config.ts`). Locally nothing writes `/config.js` and the build-time values apply.
+
 ## Layout
 | Path | Contents |
 | --- | --- |

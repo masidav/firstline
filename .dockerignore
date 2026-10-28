@@ -1,17 +1,24 @@
-# Build context for the root Dockerfile: only what the .NET projects need.
+# Build context for the root Dockerfile: what the .NET projects and the two web apps need.
 .git
 .github
 .claude
 **/bin
 **/obj
 **/TestResults
-apps
 docs
 tests
 tools
 testScripts
 infrastructure
+!infrastructure/web
 *.md
 *.txt
-.env*
+# Env files anywhere (a developer's local settings must never reach an image), and local build output.
+**/.env*
 **/.local-storage
+apps/*/node_modules
+apps/*/dist
+apps/*/.expo
+apps/*/e2e/.web
+apps/*/e2e/test-results
+apps/*/e2e/playwright-report

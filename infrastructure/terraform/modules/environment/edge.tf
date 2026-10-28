@@ -43,7 +43,43 @@ resource "google_certificate_manager_certificate_map_entry" "api" {
   hostname     = var.api_domain
 }
 
-# Attached to the API backend by GCPBackendPolicy (infrastructure/k8s/base/gateway.yaml).
+# The web apps' hostnames (fan app, promoter dashboard): one Google-managed certificate each, on the same map and
+# address as the API. Each needs the DNS authorization record (output web_certificate_dns_records) and an A record
+# to api_ip_address.
+resource "google_certificate_manager_dns_authorization" "web" {
+  for_each = var.web_domains
+
+  name    = "${local.name}-${each.key}"
+  project = var.project_id
+  domain  = each.value
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_certificate_manager_certificate" "web" {
+  for_each = var.web_domains
+
+  name    = "${local.name}-${each.key}"
+  project = var.project_id
+  labels  = local.labels
+
+  managed {
+    domains            = [each.value]
+    dns_authorizations = [google_certificate_manager_dns_authorization.web[each.key].id]
+  }
+}
+
+resource "google_certificate_manager_certificate_map_entry" "web" {
+  for_each = var.web_domains
+
+  name         = "${local.name}-${each.key}"
+  project      = var.project_id
+  map          = google_certificate_manager_certificate_map.api.name
+  certificates = [google_certificate_manager_certificate.web[each.key].id]
+  hostname     = each.value
+}
+
+# Attached to the API and web backends by GCPBackendPolicy (infrastructure/k8s/base/gateway.yaml, web.yaml).
 resource "google_compute_security_policy" "api" {
   name    = "${local.name}-api"
   project = var.project_id

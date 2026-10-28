@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Deploys one cloud environment: Cloud SQL backup, migrations (Kubernetes Job), then the API, worker, and redaction.
+# Deploys one cloud environment: Cloud SQL backup, migrations (Kubernetes Job), then the API, worker, redaction, and the
+# two web apps (fan web app, promoter dashboard).
 #
 #   infrastructure/k8s/deploy.sh <beta|prod> <image-tag>
 #
@@ -34,7 +35,7 @@ hostname="$(awk '/^kind: HTTPRoute$/ { found = 1 } found && /^    - / { print $2
 
 # Leave the overlay as committed whatever happens (the tag is a deploy-time value).
 trap 'git -C "$overlay" checkout -- kustomization.yaml 2>/dev/null || true' EXIT
-for image in api worker migrate; do
+for image in api worker migrate web promoter-web; do
   kustomize edit set image "${image}=${repository}/${image}:${tag}"
 done
 
@@ -61,6 +62,8 @@ kustomize build . | kubectl apply -f -
 kubectl rollout status deployment/api -n "$namespace" --timeout=10m
 kubectl rollout status deployment/worker -n "$namespace" --timeout=10m
 kubectl rollout status deployment/redaction -n "$namespace" --timeout=10m
+kubectl rollout status deployment/web -n "$namespace" --timeout=10m
+kubectl rollout status deployment/promoter-web -n "$namespace" --timeout=10m
 
 if [ "${SKIP_HEALTH_CHECK:-0}" != 1 ] && [ -n "$hostname" ]; then
   echo "== Health check https://${hostname}/v1/health"
@@ -73,6 +76,16 @@ if [ "${SKIP_HEALTH_CHECK:-0}" != 1 ] && [ -n "$hostname" ]; then
     echo "The API is not healthy after the rollout. Roll back: $0 ${environment} <previous-sha>" >&2
     exit 1
   fi
+fi
+
+# The web apps' hostnames work once their certificates are active and DNS points at the load balancer
+# (infrastructure/README.md, "Web apps"); until then this only warns.
+if [ "${SKIP_HEALTH_CHECK:-0}" != 1 ]; then
+  for web in $(awk '/^  name: (web|promoter-web)$/ { found = 1; next } found && /^    - / { print $2; found = 0 }' gateway.yaml); do
+    curl -fsS --max-time 10 "https://${web}/healthz" >/dev/null \
+      && echo "== https://${web} is up" \
+      || echo "Warning: https://${web}/healthz didn't answer (certificate or DNS not ready yet?)." >&2
+  done
 fi
 
 echo "Deployed ${tag} to ${environment}."

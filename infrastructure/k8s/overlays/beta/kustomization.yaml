@@ -24,8 +24,21 @@ images:
   - name: migrate
     newName: us-central1-docker.pkg.dev/project-ef36a8a9-d958-4163-b4c/fandomscore/migrate
     newTag: latest
+  - name: web
+    newName: us-central1-docker.pkg.dev/project-ef36a8a9-d958-4163-b4c/fandomscore/web
+    newTag: latest
+  - name: promoter-web
+    newName: us-central1-docker.pkg.dev/project-ef36a8a9-d958-4163-b4c/fandomscore/promoter-web
+    newTag: latest
 
 configMapGenerator:
+  - name: web-config
+    behavior: merge
+    literals:
+      - API_URL=https://api.beta.firstline.com/v1
+      # The same Google web client the API accepts (Auth__Google__ClientIds) and Spotify app (Spotify__ClientId).
+      - GOOGLE_WEB_CLIENT_ID=494880048811-14ch6rdq1p4vuatcebg2qq187dkgm4iv.apps.googleusercontent.com
+      - SPOTIFY_CLIENT_ID=
   - name: app-config
     behavior: merge
     literals:
@@ -38,7 +51,8 @@ configMapGenerator:
       - Auth__Google__ClientIds=494880048811-14ch6rdq1p4vuatcebg2qq187dkgm4iv.apps.googleusercontent.com
       - Spotify__ClientId=
       - Spotify__RedirectUris=
-      - Cors__AllowedOrigins=
+      # The two web apps call the API from their own hostnames (gateway.yaml).
+      - Cors__AllowedOrigins=https://app.beta.firstline.com,https://promoters.beta.firstline.com
       # Buckets from terraform output buckets: Terraform names them after the project ("<project_id>-quarantine").
       - Storage__QuarantineBucket=project-ef36a8a9-d958-4163-b4c-quarantine
       - Storage__ArchiveBucket=project-ef36a8a9-d958-4163-b4c-archive

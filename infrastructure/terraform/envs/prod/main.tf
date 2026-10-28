@@ -33,6 +33,7 @@ module "environment" {
   project_id         = var.project_id
   region             = var.region
   api_domain         = var.api_domain
+  web_domains        = var.web_domains
   billing_account_id = var.billing_account_id
   budget_monthly_usd = var.budget_monthly_usd
   alert_email        = var.alert_email

@@ -1,8 +1,10 @@
 # syntax=docker/dockerfile:1.7
-# One build for the three server processes (ADR 0001, ADR 0002). Build from the repo root:
-#   docker build --target api     -t fandomscore-api     .
-#   docker build --target worker  -t fandomscore-worker  .
-#   docker build --target migrate -t fandomscore-migrate .
+# One build for the server processes and the two web apps (ADR 0001, ADR 0002). Build from the repo root:
+#   docker build --target api          -t fandomscore-api          .
+#   docker build --target worker       -t fandomscore-worker       .
+#   docker build --target migrate      -t fandomscore-migrate      .
+#   docker build --target web          -t fandomscore-web          .   # fan web app
+#   docker build --target promoter-web -t fandomscore-promoter-web .   # promoter dashboard
 # Runtime images are Ubuntu "chiseled" (no shell or package manager) and run as the non-root `app` user
 # (by its numeric id, APP_UID=1654, so Kubernetes' runAsNonRoot can verify it).
 
@@ -59,3 +61,34 @@ WORKDIR /app
 COPY --from=build /out/migrate .
 USER $APP_UID
 ENTRYPOINT ["dotnet", "FandomScore.Database.dll"]
+
+# --- Web apps: built once without any environment's settings (they come from /config.js at runtime,
+# infrastructure/web), then served as static files by unprivileged nginx (uid 101) on 8080. ---
+FROM node:22-bookworm-slim AS web-build
+WORKDIR /src
+COPY apps/mobile/package.json apps/mobile/package-lock.json apps/mobile/
+RUN cd apps/mobile && npm ci --no-audit --no-fund
+COPY apps/mobile/ apps/mobile/
+# --clear: no Metro cache can carry another build's EXPO_PUBLIC_ values in (apps/mobile/README.md).
+RUN cd apps/mobile && EXPO_NO_DOTENV=1 EXPO_NO_TELEMETRY=1 CI=1 npx expo export --platform web --clear --output-dir /out/web
+
+FROM node:22-bookworm-slim AS promoter-web-build
+WORKDIR /src
+COPY apps/promoter-web/package.json apps/promoter-web/package-lock.json apps/promoter-web/
+RUN cd apps/promoter-web && npm ci --no-audit --no-fund
+COPY apps/promoter-web/ apps/promoter-web/
+RUN cd apps/promoter-web && npx tsc --noEmit && npx vite build --outDir /out/promoter-web
+
+FROM nginxinc/nginx-unprivileged:1.29-alpine AS web-server
+COPY infrastructure/web/default.conf.template /etc/nginx/templates/default.conf.template
+COPY infrastructure/web/security-headers.conf /etc/nginx/snippets/security-headers.conf
+# Defaults for /config.js; the Kubernetes ConfigMap web-config sets the real ones.
+ENV API_URL="" DEV_SIGN_IN=false GOOGLE_WEB_CLIENT_ID="" SPOTIFY_CLIENT_ID=""
+USER 101
+EXPOSE 8080
+
+FROM web-server AS web
+COPY --from=web-build /out/web /usr/share/nginx/html
+
+FROM web-server AS promoter-web
+COPY --from=promoter-web-build /out/promoter-web /usr/share/nginx/html

@@ -318,9 +318,9 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      - name: Build the api, worker, and migrate images
+      - name: Build the api, worker, migrate, web, and promoter-web images
         run: |
-          for target in api worker migrate; do
+          for target in api worker migrate web promoter-web; do
             docker buildx build --target "$target" --output type=cacheonly \
               --cache-from type=gha --cache-to type=gha,mode=max .
           done

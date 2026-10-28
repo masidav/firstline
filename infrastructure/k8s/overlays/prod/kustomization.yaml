@@ -24,8 +24,22 @@ images:
   - name: migrate
     newName: us-central1-docker.pkg.dev/fandomscore-prod/fandomscore/migrate
     newTag: latest
+  - name: web
+    newName: us-central1-docker.pkg.dev/fandomscore-prod/fandomscore/web
+    newTag: latest
+  - name: promoter-web
+    newName: us-central1-docker.pkg.dev/fandomscore-prod/fandomscore/promoter-web
+    newTag: latest
 
 configMapGenerator:
+  # Placeholders until the prod domain is chosen (same as gateway.yaml).
+  - name: web-config
+    behavior: merge
+    literals:
+      - API_URL=https://api.example.com/v1
+      # The same Google web client the API accepts (Auth__Google__ClientIds) and Spotify app (Spotify__ClientId).
+      - GOOGLE_WEB_CLIENT_ID=
+      - SPOTIFY_CLIENT_ID=
   - name: app-config
     behavior: merge
     literals:
@@ -38,7 +52,8 @@ configMapGenerator:
       - Auth__Google__ClientIds=
       - Spotify__ClientId=
       - Spotify__RedirectUris=
-      - Cors__AllowedOrigins=
+      # The two web apps call the API from their own hostnames (gateway.yaml).
+      - Cors__AllowedOrigins=https://app.example.com,https://promoters.example.com
       # Buckets from terraform output buckets: Terraform names them after the project ("<project_id>-quarantine").
       # These assume the prod project ID fandomscore-prod; set them from the output once the project exists.
       - Storage__QuarantineBucket=fandomscore-prod-quarantine

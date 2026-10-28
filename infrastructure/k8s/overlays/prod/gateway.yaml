@@ -25,3 +25,37 @@ metadata:
 spec:
   default:
     securityPolicy: fandomscore-prod-api
+---
+# The web apps' hostnames: each needs a certificate map entry (terraform variable web_domains) and an A record to the
+# same address as the API.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: web
+spec:
+  hostnames:
+    - app.example.com
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: promoter-web
+spec:
+  hostnames:
+    - promoters.example.com
+---
+apiVersion: networking.gke.io/v1
+kind: GCPBackendPolicy
+metadata:
+  name: web
+spec:
+  default:
+    securityPolicy: fandomscore-prod-api
+---
+apiVersion: networking.gke.io/v1
+kind: GCPBackendPolicy
+metadata:
+  name: promoter-web
+spec:
+  default:
+    securityPolicy: fandomscore-prod-api

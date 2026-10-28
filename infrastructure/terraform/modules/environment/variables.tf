@@ -23,6 +23,12 @@ variable "api_domain" {
   type        = string
 }
 
+variable "web_domains" {
+  description = "The web apps' hostnames by short name (app = fan web app, promoters = promoter dashboard); each gets a certificate on the API's map. Empty: no web apps."
+  type        = map(string)
+  default     = {}
+}
+
 variable "billing_account_id" {
   description = "Billing account that pays for the project (XXXXXX-XXXXXX-XXXXXX); used for the budget alert."
   type        = string

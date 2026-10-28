@@ -20,9 +20,17 @@ resources:
   - worker-deployment.yaml
   - redaction-deployment.yaml
   - gateway.yaml
+  - web.yaml
 
 # Non-secret settings shared by the API and worker. Overlays merge their own values into it.
 configMapGenerator:
+  # What the web apps read at startup (/config.js). Not secrets: the API address and OAuth client IDs. Overlays set them.
+  - name: web-config
+    literals:
+      - API_URL=
+      - DEV_SIGN_IN=false
+      - GOOGLE_WEB_CLIENT_ID=
+      - SPOTIFY_CLIENT_ID=
   - name: app-config
     literals:
       # Secret Manager secrets are mounted here, one file per configuration key (secrets.yaml in the overlay).

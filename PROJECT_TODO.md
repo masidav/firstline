@@ -319,7 +319,8 @@ Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](servi
 - [ ] Primary ticketing integration (Ticketmaster, AXS, SeatGeek): reserve seats from the pool and hand off checkout.
 - [ ] Promoter web dashboard: set up allocations, monitor registration, export reports. *Built 2026-10-27
       (`apps/promoter-web`): shows and allocations in the show city's time zone, live registrations, the draw, tickets,
-      CSV export, members. Verified: Vitest 10, Playwright journeys 3 (in CI). Not hosted yet; no eligible-fan preview.*
+      CSV export, members. Verified: Vitest 10, Playwright journeys 3 (in CI). No eligible-fan preview. Hosting on
+      beta configured 2026-10-28 (`promoters.beta.firstline.com`), not live yet: see Phase 12.*
 - [ ] First-party fan data sharing with artists/promoters, only with explicit fan consent.
 - [ ] Billing: per-event licence fee or take-rate for promoters; fan-side fee if adopted.
 - [ ] Reporting for the pilot case study: sell-through, scalping complaints, empty seats.
@@ -338,6 +339,12 @@ built, images built locally). Nothing is applied to a GCP project yet; `infrastr
 - [ ] Put the API behind Gateway API with managed TLS and Cloud Armor (WAF, bot and rate limiting). (Configured; verify on first deploy. Forwarded headers done and tested.)
 - [ ] Plan for on-sale traffic spikes: autoscaling, pre-scaling before scheduled on-sales, and load tests. (HPA and procedure written; no load test yet.)
 - [ ] Set up CI/CD, logging, monitoring, alerting, backups with point-in-time recovery, and a tested restore. (Workflow, uptime alert, and PITR configured; restore not rehearsed. 2026-10-25: dashboard, alerts for the API, pods, worker, and database, a worker liveness endpoint, and `infrastructure/RUNBOOK.md`; CI now validates the Terraform and manifests and builds the images.)
+
+- [ ] Host the fan web app and the promoter dashboard. (2026-10-28: nginx images with settings from `/config.js` at
+      startup, so beta's image is promoted to prod unchanged; Deployments behind the same Gateway on
+      `app.beta.firstline.com` and `promoters.beta.firstline.com`, certificates in Terraform `web_domains`. Both
+      images passed their Playwright journeys locally. Live once `terraform apply`, the DNS records, the Google
+      OAuth origins, and deploys are done: `infrastructure/README.md` "Web apps".)
 
 Details: [ADR 0002](docs/adr/0002-hosting-gcp-gke.md) · [Infrastructure](infrastructure/TODO.md)
 

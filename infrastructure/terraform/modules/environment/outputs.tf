@@ -35,6 +35,17 @@ output "certificate_dns_record" {
   }
 }
 
+output "web_certificate_dns_records" {
+  description = "DNS records that let Google issue each web app's certificate (create them at the DNS provider)."
+  value = {
+    for key, authorization in google_certificate_manager_dns_authorization.web : key => {
+      name = authorization.dns_resource_record[0].name
+      type = authorization.dns_resource_record[0].type
+      data = authorization.dns_resource_record[0].data
+    }
+  }
+}
+
 output "security_policy" {
   description = "Cloud Armor policy for GCPBackendPolicy.spec.default.securityPolicy."
   value       = google_compute_security_policy.api.name

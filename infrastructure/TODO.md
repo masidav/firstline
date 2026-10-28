@@ -68,8 +68,15 @@ overlays, Docker builds of the three images, `dotnet test`). Not yet applied to 
 - [ ] HorizontalPodAutoscalers, PodDisruptionBudgets, resource requests, and a pre-scale procedure for scheduled on-sales. (Manifests and `README.md` procedure exist; untested against a cluster.)
 - [x] CI/CD with Workload Identity Federation (no long-lived keys); beta deploys automatically, prod needs approval. (First successful beta deploy 2026-10-26 through the Deploy workflow: WIF auth, image build and push, Cloud SQL backup, migrate Job, rollout of api and worker. Earlier attempts the same day fixed: pods must run as the numeric user 1654 (`runAsNonRoot` cannot verify the image's named user), and whitespace-only secret placeholders must count as unset. Prod is gated behind `PROD_DEPLOY_ENABLED` until the prod project exists.)
 - [ ] Cloud Logging and Monitoring dashboards, uptime checks, alerts, and an on-call runbook. (2026-10-25: dashboard in `dashboard.tf`, seven alert policies in `monitoring.tf`, and `RUNBOOK.md`. Uptime check since 2026-10-21. Open until the dashboard shows data and the alerts are exercised on beta.)
-- [x] CI keeps the hosting code valid before it is applied: `terraform fmt -check` and `validate` for beta and prod, `kustomize build` of both overlays, and a build of the three images (`ci.yml`, job `infrastructure`). Added 2026-10-25; the same commands were run locally in Docker (terraform 1.9.8, kustomize 5.6.0, image builds) before the push.
+- [x] CI keeps the hosting code valid before it is applied: `terraform fmt -check` and `validate` for beta and prod, `kustomize build` of both overlays, and a build of the images (`ci.yml`, job `infrastructure`; the web and promoter-web images since 2026-10-28). Added 2026-10-25; the same commands were run locally in Docker (terraform 1.9.8, kustomize 5.6.0, image builds) before the push.
 - [ ] Rehearse a Cloud SQL point-in-time restore and record the result.
+- [ ] Host the fan web app and the promoter dashboard (`README.md` "Web apps"). (2026-10-28: `Dockerfile` targets
+  `web` and `promoter-web` on unprivileged nginx with a read-only root and settings from `/config.js` at startup;
+  `k8s/base/web.yaml`; beta hostnames `app.beta.firstline.com` and `promoters.beta.firstline.com` in the overlay's
+  `gateway.yaml`; certificates via Terraform `web_domains`; deploy, CI, and `deploy.sh` build and roll out both.
+  Verified locally: both images run read-only, and the fan (10) and promoter (3) Playwright journeys pass against
+  them; Terraform validate and both overlays build. Not yet: `terraform apply` on beta, DNS records, Google OAuth
+  origins, a deploy.)
 
 ## Verification
 - [x] Add or update automated tests for the behavior above. (`tests/FandomScore.Tests/ForwardedHeadersTests.cs`.)
