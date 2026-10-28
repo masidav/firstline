@@ -23,6 +23,7 @@ jest.mock('../notifications/push', () => ({
 }));
 jest.mock('expo-router', () => ({ router: { replace: jest.fn(), push: jest.fn() } }));
 jest.mock('../authentication/appleSignIn', () => ({ reauthenticateWithApple: jest.fn() }));
+jest.mock('../privacy/downloadMyData', () => ({ downloadMyData: jest.fn() }));
 
 const fan = {
   id: 'u-1',
@@ -151,4 +152,20 @@ test('deleting a Google account does not involve Apple', async () => {
 
   await waitFor(() => expect(mockSession.deleteAccount).toHaveBeenCalledWith(undefined));
   expect(reauthenticateWithApple).not.toHaveBeenCalled();
+});
+
+test('Download my data saves the export, and says when the hourly limit is reached', async () => {
+  const { downloadMyData } = jest.requireMock('../privacy/downloadMyData');
+  const { ApiError } = jest.requireActual('../../api/client');
+  downloadMyData
+    .mockResolvedValueOnce('downloaded')
+    .mockRejectedValueOnce(new ApiError(429, { code: 'rate_limited', title: 'Too Many Requests' }));
+  render(<ProfileScreen me={fan} />);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Download my data' }));
+  expect(await screen.findByText('Your data was downloaded as a JSON file.')).toBeTruthy();
+  expect(downloadMyData).toHaveBeenCalledWith(mockApi);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Download my data' }));
+  expect(await screen.findByText(/a few times in the last hour/)).toBeTruthy();
 });

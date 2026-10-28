@@ -12,6 +12,7 @@ using FandomScore.Api.Features.GrabBag;
 using FandomScore.Api.Features.Moderation;
 using FandomScore.Api.Features.Notifications;
 using FandomScore.Api.Features.Organizations;
+using FandomScore.Api.Features.Privacy;
 using FandomScore.Api.Features.Prompts;
 using FandomScore.Api.Features.Reactions;
 using FandomScore.Api.Features.Redaction;
@@ -46,6 +47,7 @@ builder.Services.AddSpotify(builder.Configuration);
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<SpotifyPlayerAccess>();
 builder.Services.AddArtists();
+builder.Services.AddDataExport();
 builder.Services.AddUploads(builder.Configuration, builder.Environment);
 builder.Services.AddApiProblems();
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -97,6 +99,7 @@ v1.MapRedaction();
 v1.MapConcertSources();
 v1.MapScoreCards();
 v1.MapLinks();
+v1.MapDataExport();
 
 app.Run();
 

@@ -16,7 +16,7 @@ public static class WebClients
             .WithOrigins(origins)
             .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE")
             .WithHeaders("Authorization", "Content-Type", "Idempotency-Key")
-            .WithExposedHeaders("Retry-After")
+            .WithExposedHeaders("Retry-After", "Content-Disposition")
             .SetPreflightMaxAge(TimeSpan.FromHours(1))));
     }
 }
