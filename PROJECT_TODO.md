@@ -139,6 +139,9 @@ Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring wo
       app Jest (Prompts, Feed, Moderation).
 - [ ] Blind album rankings (requested 2026-10-25): not daily; released on a day without trivia (Tuesday) or a prompt
       (Thursday) (decided 2026-10-27; which day exactly is open). Other open questions in `apps/mobile/TODO.md`.
+- [ ] "This or that" band game (requested 2026-10-28): fans pick between two bands (or songs, albums), on its own day,
+      not a trivia, blind-ranking, or prompt day, so each weekly game has a day to itself. Open: which day, what's
+      compared, whether picks earn points, and what results fans see.
 - [x] Trivia and prompts on a weekly cadence instead of daily (requested 2026-10-26): trivia on Tuesdays, prompts on
       Thursdays (UTC). *Done 2026-10-27 (migration 0034): `trivia_week_day()` and `prompt_week_day()`; the API and app
       say "this week's" and when the next one comes; staff schedule prompts by Thursday. Verified: `dotnet test`

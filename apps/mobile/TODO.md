@@ -72,6 +72,8 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       artist or title they are (for example by cover art or a short clip), then see the reveal and how their ranking
       compares. Open: what is shown blind (covers alone would give it away for big albums; 30-second previews are no
       longer available to new Spotify apps), whether it earns points, and which albums (the fan's artists or anyone's).
+- [ ] **"This or that" band game** (requested 2026-10-28): pick between two bands (or songs, albums), released on a
+      day without trivia, blind rankings, or a prompt. Open: the day, what's compared, points, and the results shown.
 - [x] Sign-up: choose a primary hub city (required), plus up to two backups.
 - [x] Changing hub cities: allowed once a week; warn before saving (next change possible in 7 days, and hub
       cities decide which allocations the fan qualifies for).
