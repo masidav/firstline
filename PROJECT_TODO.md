@@ -445,9 +445,11 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
 - [ ] Enforce authorization and visibility at the API boundary. *Security pass 2026-10-28
       (`docs/security/2026-10-28-api-review.md`): standing route tests (sign-in, staff, contract), simultaneous-request
       tests, fixes for the +1 guest lockout, rate limits, request size, and count leaks. Open items below.*
-- [ ] Security decisions from the 2026-10-28 review: must a named +1 accept before counting; "followers-only" with
-      instant follows (approve follows, private accounts, or relabel); others' prompt answers visible before answering;
-      push tokens move to whoever registers them last; signed photo links outlive a takedown by up to an hour.
+- [x] Security decisions (decided 2026-10-28): a named +1 does **not** have to accept (they can decline before the
+      draw); follows need **no approval**, so followers-only means anyone who follows; others' prompt answers may be
+      seen before answering.
+- [ ] Still open from the 2026-10-28 review: push tokens move to whoever registers them last (by design for now);
+      signed photo links outlive a takedown by up to an hour.
 - [ ] Before deploying: set `AllowedHosts` (or a public origin) and require the sign-in nonce once the app sends it.
 - [ ] Add tests for failure cases, concurrency, and duplicate requests.
 - [ ] Document decisions that remain proposed or open in the source README.

@@ -31,10 +31,12 @@ origin list.
 | Request bodies up to 30 MB on every JSON endpoint | Low | 1 MB, uploads raise it to their declared size |
 | No general limit | Low | 1,200 requests per minute per fan (or IP); follows, unfollows, and clicks 120 per minute |
 
-## Open (decisions or later work; in PROJECT_TODO.md)
-- Guests: should a named +1 have to accept before counting at all? (Decline is the safety net for now.)
-- "Followers-only" means anyone who taps Follow (no approval, no blocking): approve follows, private accounts, or relabel.
-- Others' prompt answers are visible (feed, answers list) before you answer; only the Today card hides them.
+## Decided (2026-10-28)
+- A named +1 doesn't have to accept; declining before the draw is the safety net.
+- Follows need no approval: followers-only content is for anyone who follows.
+- Others' prompt answers may be seen before you answer (feed, answers list); only the Today card hides them.
+
+## Open (later work; in PROJECT_TODO.md)
 - A push token moves to whoever registers it last (by design); a stolen token could receive someone's pushes.
 - A signed photo link copied from the feed works for up to an hour after a takedown.
 - Set `AllowedHosts` (or a configured public origin) for deployed environments; links are built from the Host header.
