@@ -105,7 +105,7 @@ at startup from `/config.js`, which nginx writes from its environment, so one im
 | `src/api/` | `schema.d.ts` (generated, don't edit), `client.ts` (typed client, `ApiError`), `errors.ts` (messages). |
 | `src/features/<feature>/` | Feature UI, e.g. `authentication/SignInScreen` (Google, Apple, developer sign-in), `settings/ProfileScreen`. |
 | `src/ui/` | Shared components and theme tokens. |
-| `app.json`, `app.config.ts` | App config: the static part (name, bundle ID, icon, plugins) and the part that depends on the environment (Google's scheme, EAS project id, local-network exception). |
+| `app.json`, `app.config.ts` | App config: the static part (name, bundle ID, icon, plugins) and the part that depends on the environment (Google's scheme, EAS project id, local-network exception, the personal-team build). |
 | `eas.json` | EAS Build profiles: `development`, `development-simulator`, `beta`, `production`. |
 | `assets/` | Icon and splash image, drawn by `tools/dev/app-icons.mjs` (placeholders until there is a brand). |
 
@@ -117,6 +117,7 @@ npm run typecheck      # tsc
 npm run generate:api   # regenerate src/api/schema.d.ts after openapi.yaml changes (CI checks it)
 npm run build:web      # static web build in dist/
 npm run check:ios      # generates the iOS project (ios/, not committed) and bundles the JS for iOS; CI runs it
+npm run ios:personal   # on a Mac: build and install on a plugged-in iPhone with a free Apple ID (see below)
 e2e/run.sh             # end-to-end journeys in a browser against the API and a seeded database (e2e/README.md)
 ```
 
@@ -152,6 +153,23 @@ as Linux gets. The build itself happens in EAS Build's cloud, so no Mac is neede
    API's `Auth__Google__ClientIds` next to the web client. `app.config.ts` adds the reversed scheme by itself.
 5. Spotify: add `fandomscore://spotify-callback` to the Spotify app's redirect URIs and to the API's
    `Spotify__RedirectUris`; `EXPO_PUBLIC_SPOTIFY_CLIENT_ID` goes in the EAS environment like the Google ID.
+
+**On your own iPhone with a free Apple ID (no Developer Program):** Xcode signs with a "personal team" and
+installs on a phone you plug in; the app runs for 7 days, then rebuild. On a Mac with Xcode (App Store), its
+command-line tools, and CocoaPods (`brew install cocoapods`):
+```bash
+cd apps/mobile && npm install
+# Xcode → Settings → Accounts → add your Apple ID; the 10-character team ID is next to "Personal Team".
+export APPLE_TEAM_ID=XXXXXXXXXX
+EXPO_PUBLIC_API_URL=https://<tunnel>/v1 EXPO_PUBLIC_DEV_SIGN_IN=true npm run ios:personal
+```
+`ios:personal` regenerates `ios/` with `IOS_PERSONAL_TEAM=1`, builds with Xcode, installs on the connected phone
+(unlock it and tap Trust; the first time, also Settings → General → VPN & Device Management → trust your Apple ID),
+and starts the dev server. What's different in this build, because a personal team can't be provisioned for
+them: no Sign in with Apple (the button is hidden) and no push notifications, and the bundle ID is
+`com.firstline.fandomscore.dev` so the real one isn't registered to the personal team. Developer sign-in, Google
+(with an iOS client ID for the `.dev` bundle ID), Spotify, the Keychain, share sheets, and the offline queue can all
+be tried. Limits: 3 such apps per Apple ID and 10 devices a year.
 
 **Development build (your API, sign-in as anyone):**
 ```bash

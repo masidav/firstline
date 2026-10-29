@@ -115,6 +115,9 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   key (the `.p8` goes in `Auth__Apple__PrivateKey`; Team ID and Key ID go in the overlay) and a Google OAuth client of
   type iOS for the bundle ID (send Claude its ID). First build: `eas build -p ios --profile development`. Steps with
   the exact commands: `apps/mobile/README.md`, "Building the iOS app".
+  *Before the program (decided 2026-10-29):* on a Mac with Xcode and a free Apple ID, `npm run ios:personal` installs
+  the app on your own iPhone for 7 days at a time, without Apple sign-in or push (same README, "On your own iPhone
+  with a free Apple ID").
 - [ ] **Email** for staff alerts now and fan email later. Needs a provider chosen (section C).
 
 ## C. Product decisions

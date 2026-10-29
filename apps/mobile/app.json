@@ -41,10 +41,7 @@
       "bundleIdentifier": "com.firstline.fandomscore",
       "supportsTablet": false,
       "usesAppleSignIn": true,
-      "config": { "usesNonExemptEncryption": false },
-      "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"]
-      }
+      "config": { "usesNonExemptEncryption": false }
     },
     "android": {
       "package": "com.firstline.fandomscore",

@@ -1,4 +1,5 @@
 import * as AppleAuthentication from 'expo-apple-authentication';
+import Constants from 'expo-constants';
 
 import { randomString, sha256Hex } from './crypto';
 import type { SignInOutcome } from './providerSignIn';
@@ -7,9 +8,17 @@ import type { SignInOutcome } from './providerSignIn';
 // reports itself unavailable and the button is not shown (Apple's web flow needs a Services ID and a server-side
 // form post, neither of which exists yet; see the README).
 
-/** True on an iPhone or iPad with Sign in with Apple; false on the web and Android. */
+/**
+ * True on an iPhone or iPad with Sign in with Apple; false on the web and Android, and in a build made without the
+ * entitlement (a personal-team build, app.config.ts), where Apple's sheet would open and then fail.
+ */
 export function isAppleSignInAvailable(): Promise<boolean> {
+  if (appleSignInConfigured() === false) return Promise.resolve(false);
   return AppleAuthentication.isAvailableAsync().catch(() => false);
+}
+
+function appleSignInConfigured(): boolean | undefined {
+  return (Constants.expoConfig?.extra as { appleSignIn?: boolean } | undefined)?.appleSignIn;
 }
 
 /** Shows Apple's sheet and returns the credential for POST /auth/sessions. */

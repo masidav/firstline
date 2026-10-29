@@ -7,6 +7,7 @@
     "start": "expo start",
     "web": "expo start --web",
     "build:web": "expo export --platform web --clear",
+    "ios:personal": "export IOS_PERSONAL_TEAM=1 && expo prebuild --platform ios --clean && expo run:ios --device",
     "check:ios": "expo prebuild --platform ios --no-install --clean && expo export --platform ios --output-dir .expo/ios-export",
     "generate:api": "openapi-typescript ../../openapi.yaml -o src/api/schema.d.ts",
     "typecheck": "tsc --noEmit",

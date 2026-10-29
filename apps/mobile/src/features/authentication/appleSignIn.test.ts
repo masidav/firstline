@@ -13,6 +13,9 @@ jest.mock('expo-apple-authentication', () => ({
   isAvailableAsync: () => mockAvailable(),
   signInAsync: (options?: unknown) => mockSignIn(options),
 }));
+const mockExtra: { appleSignIn?: boolean } = {};
+// A getter: the factory runs during import hoisting, before mockExtra is assigned.
+jest.mock('expo-constants', () => ({ __esModule: true, default: { expoConfig: { get extra() { return mockExtra; } } } }));
 jest.mock('expo-crypto', () => {
   const nodeCrypto = jest.requireActual<typeof import('node:crypto')>('node:crypto');
   return {
@@ -62,4 +65,22 @@ test('availability follows the module, and a throwing module means unavailable',
   await expect(isAppleSignInAvailable()).resolves.toBe(true);
   mockAvailable.mockRejectedValueOnce(new Error('no module'));
   await expect(isAppleSignInAvailable()).resolves.toBe(false);
+});
+
+describe('a build without the Sign in with Apple entitlement', () => {
+  afterEach(() => {
+    delete mockExtra.appleSignIn;
+  });
+
+  it('hides the button even where the module is available', async () => {
+    mockAvailable.mockResolvedValue(true);
+    mockExtra.appleSignIn = false;
+    await expect(isAppleSignInAvailable()).resolves.toBe(false);
+  });
+
+  it('asks the module when the build has the entitlement', async () => {
+    mockAvailable.mockResolvedValue(true);
+    mockExtra.appleSignIn = true;
+    await expect(isAppleSignInAvailable()).resolves.toBe(true);
+  });
 });

@@ -19,7 +19,9 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       icon and splash (`assets/`, drawn by `tools/dev/app-icons.mjs`), `app.config.ts` (Google scheme, EAS project id,
       local-network exception for dev builds), `eas.json` profiles, `expo-dev-client`. Verified: `npm run check:ios`
       (iOS prebuild and Hermes bundle on Linux, now in CI), typecheck, Jest 297. The build itself waits on the Apple
-      Developer Program and `eas init` (README "Building the iOS app"). Android: package and adaptive icon set, never built.*
+      Developer Program and `eas init` (README "Building the iOS app"). Decided 2026-10-29: the first device test is
+      a free-Apple-ID build on a Mac (`npm run ios:personal`: no Apple sign-in or push entitlement, `.dev` bundle ID;
+      verified here by prebuild in both modes). Android: package and adaptive icon set, never built.*
 - [x] Google sign-in on web. *Done 2026-10-26: "Continue with Google" sends the fan to Google (OpenID Connect,
       ID token in the fragment, no Google script), `/google-callback` checks the state and signs in; a new account
       chooses a handle. Needs `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` and the redirect URI on the Google client (README).
