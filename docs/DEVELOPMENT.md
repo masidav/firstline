@@ -62,6 +62,23 @@ dotnet test FandomScore.slnx
 ```
 The suite starts its own PostgreSQL 16 container, so it needs Docker but not the compose database.
 
+### Continuous integration
+`.github/workflows/ci.yml` runs on every push to `main` (which beta deploys from) and on pull requests:
+
+| Job | What it checks | The same thing locally |
+|---|---|---|
+| Backend | build with analyzers as errors; migration, invariant, and API tests | `dotnet build` / `dotnet test` |
+| Applied migrations unchanged | only new migration files; new ones keep the running release working | `python3 tools/ci/check_migration_safety.py <file>` |
+| OpenAPI contract is valid | `openapi.yaml` parses and validates | `openapi-spec-validator openapi.yaml` |
+| Fan app, Promoter dashboard | generated API types current, typecheck, unit tests, builds | `npm run generate:api`, `npm run typecheck`, `npm test` |
+| Dev seed script | `tools/dev/seed.py` against the current schema | see the script's header |
+| End-to-end journeys | both web apps in a browser against the API and a seeded database | `apps/mobile/e2e/run.sh`, `apps/promoter-web/e2e/run.sh` |
+| Infrastructure | `terraform fmt` and `validate`, `kustomize build`, kubeconform on the rendered manifests, every image builds | `infrastructure/README.md` |
+| Server images start | the migrate, api, and worker images come up with production settings and answer their health checks | `tools/ci/smoke-images.sh` (its header says how to build the images) |
+| Lint | shellcheck on every tracked script, actionlint on the workflows, hadolint on the Dockerfile (`.hadolint.yaml`) | commands in the job's comments |
+| Dependency vulnerabilities | `dotnet list package --vulnerable --include-transitive`; `npm audit --omit=dev` for both web apps | the same commands |
+| Agent hook tests | the scripts behind `.claude/settings.json` | `python -m unittest discover -s tools/agent-hooks` |
+
 ## Migrations
 - Add a new file `database/migrations/NNNN_description.sql` with the next number. DbUp runs each file once,
   in name order, in its own transaction, and records it in the `schemaversions` table.

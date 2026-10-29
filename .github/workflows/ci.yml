@@ -321,6 +321,21 @@ jobs:
             echo "$env: $(grep -c '^kind:' "/tmp/$env.yaml") resources"
           done
 
+      # The rendered manifests must match the Kubernetes API (strict: no unknown fields) and the CRDs the cluster
+      # has (Gateway API, GKE policies, Secrets Store CSI) from the community CRD catalog. A CRD the catalog
+      # doesn't know is skipped, not failed, so a catalog change can't block a deploy; the summary shows the count.
+      - name: Install kubeconform
+        run: |
+          curl -fsSL "https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin kubeconform
+
+      - name: Kubeconform (beta, prod)
+        run: |
+          kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version 1.31.0 \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            /tmp/beta.yaml /tmp/prod.yaml
+
       - uses: docker/setup-buildx-action@v3
 
       - name: Build the api, worker, migrate, web, and promoter-web images
@@ -329,6 +344,90 @@ jobs:
             docker buildx build --target "$target" --output type=cacheonly \
               --cache-from type=gha --cache-to type=gha,mode=max .
           done
+
+  # The server images must start with production settings, not just build: the migrator applies every migration to
+  # an empty database, the API answers its health check and refuses anonymous calls, and the worker's liveness
+  # endpoint answers with its job loops running (tools/ci/smoke-images.sh). Reuses the infrastructure job's cache.
+  images:
+    name: Server images start (migrate, api, worker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the migrate, api, and worker images
+        run: |
+          for target in migrate api worker; do
+            docker buildx build --target "$target" --tag "fandomscore-$target" --load \
+              --cache-from type=gha --cache-to type=gha,mode=max .
+          done
+
+      - name: Start them against PostgreSQL 16 and check their health endpoints
+        run: tools/ci/smoke-images.sh
+
+  # Scripts, workflows, and the Dockerfile are linted the same way locally (each tool's comment says how).
+  lint:
+    name: Lint (shell scripts, workflows, Dockerfile)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      # Every tracked shell script. Locally: docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:stable -S warning <files>
+      - name: ShellCheck
+        run: |
+          shellcheck --version | head -2
+          git ls-files -z -- '*.sh' | xargs -0 shellcheck -S warning
+
+      # Workflow syntax, expressions, action inputs, and the `run:` scripts (through shellcheck).
+      # Locally: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12
+      - name: actionlint
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -no-color -oneline
+
+      # Rules ignored on purpose are listed, with reasons, in .hadolint.yaml.
+      - name: hadolint
+        run: docker run --rm -v "$PWD:/mnt" -w /mnt hadolint/hadolint:v2.12.0 hadolint Dockerfile
+
+  # Known vulnerabilities in what ships: every NuGet package (including transitive) and the web apps' runtime
+  # dependencies. The fan app's Expo pins carry known high-severity advisories in packages that never see untrusted
+  # input in a static web build (zod inside expo's config loader); those are listed for information and the job
+  # fails only on a critical one until Expo moves on.
+  dependencies:
+    name: Dependency vulnerabilities
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore FandomScore.slnx
+
+      - name: NuGet packages
+        run: |
+          dotnet list FandomScore.slnx package --vulnerable --include-transitive | tee /tmp/nuget.txt
+          if grep -q 'has the following vulnerable packages' /tmp/nuget.txt; then
+            echo "::error::A NuGet package has a known vulnerability. Update it (see above)."; exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Promoter dashboard (runtime dependencies, high or worse)
+        working-directory: apps/promoter-web
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Fan app (runtime dependencies, critical)
+        working-directory: apps/mobile
+        run: |
+          npm audit --omit=dev --audit-level=high || echo "::warning::The fan app has high-severity advisories (listed above); only critical ones fail this job."
+          npm audit --omit=dev --audit-level=critical
 
   agent-hooks:
     name: Agent hook tests

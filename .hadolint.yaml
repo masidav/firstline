@@ -1,0 +1,8 @@
+# Dockerfile lint (CI job "lint"). Locally: docker run --rm -v "$PWD:/mnt" -w /mnt hadolint/hadolint hadolint Dockerfile
+ignored:
+  # USER $APP_UID: the base image sets APP_UID=1654, so the id is numeric at runtime (Kubernetes' runAsNonRoot
+  # verifies it; see the Dockerfile header).
+  - DL3066
+  # `cd apps/mobile && npm ci` in one RUN keeps each web build's steps in a single layer; WORKDIR would not change
+  # the result.
+  - DL3003

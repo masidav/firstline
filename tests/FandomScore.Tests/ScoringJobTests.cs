@@ -144,6 +144,37 @@ public sealed class ScoringJobTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Empty(await ScoresAsync());
     }
 
+    [Fact]
+    public async Task The_daily_rescore_queues_every_active_artist_once()
+    {
+        var second = await ScoringSetup.ActiveArtistAsync(_db, "sp-second", "Second", releases: 2);
+        await using var connection = await _db.OpenConnectionAsync();
+        var onboarding = await connection.ExecuteScalarAsync<Guid>(
+            "INSERT INTO artists (name, spotify_artist_id) VALUES ('Still onboarding', 'sp-onboarding') RETURNING id");
+        // Activating an artist queues its first rescore; start from an empty queue.
+        await connection.ExecuteAsync("DELETE FROM jobs WHERE kind = 'scoring.score_artist'");
+        var jobOptions = Microsoft.Extensions.Options.Options.Create(new JobOptions());
+        var queue = new JobQueue(_db, jobOptions);
+        var rescoreAll = new RescoreAllJob(_db);
+        await queue.RegisterScheduleAsync(rescoreAll.Kind, rescoreAll.Every!.Value, CancellationToken.None);
+        Assert.Equal(1, await queue.FireDueSchedulesAsync(CancellationToken.None));
+        var runner = new JobRunner(queue, [rescoreAll], jobOptions, TimeProvider.System, NullLogger<JobRunner>.Instance);
+
+        Assert.True(await runner.RunOnceAsync(CancellationToken.None));
+
+        var queued = await QueuedRescoresAsync(connection);
+        Assert.Equal(new[] { _artistId, second }.Order(), queued.Order());
+        Assert.DoesNotContain(onboarding, queued);
+
+        // Asking again before those ran queues nothing more: one rescore per artist at a time.
+        Assert.Equal(2, await connection.ExecuteScalarAsync<int>("SELECT request_full_rescore()"));
+        Assert.Equal(2, (await QueuedRescoresAsync(connection)).Count);
+
+        static async Task<List<Guid>> QueuedRescoresAsync(NpgsqlConnection connection) =>
+            (await connection.QueryAsync<Guid>(
+                "SELECT (payload->>'artist_id')::uuid FROM jobs WHERE kind = 'scoring.score_artist' AND status = 'queued'")).ToList();
+    }
+
     private async Task RescoreAsync()
     {
         await using (var connection = await _db.OpenConnectionAsync())

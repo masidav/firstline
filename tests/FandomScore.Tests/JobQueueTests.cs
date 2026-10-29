@@ -218,6 +218,34 @@ public sealed class JobQueueTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal(Guid.Parse("00000000-0000-0000-0000-0000000000a1"), Assert.Single(purged));
     }
 
+    [Fact]
+    public async Task Prune_deletes_finished_jobs_past_their_retention_only()
+    {
+        // Defaults: succeeded jobs are kept 7 days, failed ones 30 (JobOptions). Queued and running jobs are never
+        // pruned, however old.
+        await ExecuteAsync(
+            """
+            INSERT INTO jobs (kind, status, finished_at) VALUES
+              ('test.old_success',    'succeeded', now() - interval '8 days'),
+              ('test.recent_success', 'succeeded', now() - interval '6 days'),
+              ('test.old_failure',    'failed',    now() - interval '31 days'),
+              ('test.recent_failure', 'failed',    now() - interval '29 days');
+            INSERT INTO jobs (kind, status, created_at, run_at) VALUES
+              ('test.old_queued', 'queued', now() - interval '90 days', now() + interval '1 day');
+            INSERT INTO jobs (kind, status, created_at, locked_by, locked_until) VALUES
+              ('test.old_running', 'running', now() - interval '90 days', 'another-worker', now() + interval '1 hour');
+            """);
+        var prune = new PruneJobsJob(_queue);
+        await _queue.RegisterScheduleAsync(prune.Kind, prune.Every!.Value, CancellationToken.None);
+        Assert.Equal(1, await _queue.FireDueSchedulesAsync(CancellationToken.None));
+
+        Assert.True(await Runner(prune).RunOnceAsync(CancellationToken.None));
+
+        var kept = (await QueryAsync<string>("SELECT kind FROM jobs WHERE kind LIKE 'test.%' ORDER BY kind")).ToArray();
+        Assert.Equal(["test.old_queued", "test.old_running", "test.recent_failure", "test.recent_success"], kept);
+        Assert.Equal("succeeded", Assert.Single(await QueryAsync<string>("SELECT status FROM jobs WHERE kind = 'jobs.prune'")));
+    }
+
     private JobQueue NewQueue(JobOptions? options = null) => new(_db, Options.Create(options ?? new JobOptions()));
 
     private JobRunner Runner(IJobHandler handler) =>
