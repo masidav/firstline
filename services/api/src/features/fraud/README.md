@@ -13,7 +13,7 @@ Migration `0042_fraud_review.sql`, endpoints in `FraudEndpoints.cs`. Tests: `Fra
   - is skipped when a returned seat is handed on (`backfill_allocation()`).
 
   A registration made before the flag stays live until the draw, so clearing the flag in time restores it. Tickets
-  already given out are **not** taken back (open decision).
+  already given out are **not** taken back (decided 2026-10-29).
 - **Decisions.** `POST /v1/admin/fraud-flags/{id}/decision`: `uphold` an open flag, or `clear` an open or upheld one.
   A cleared flag is final; a new flag can be raised later.
 - **Appeals.** The fan sees their flags at `GET /v1/me/fraud-review` (reason and status only) and appeals once per flag
@@ -36,4 +36,5 @@ audit lookup), linked from the profile.
 - No automatic detection yet: flags are raised by staff (Phase 10 "detect streaming-farm and bot behavior").
 - Flags and appeals are kept when an account is deleted (for the audit trail); retention is part of the privacy review.
 - A held fan can still be named as someone's +1 guest.
-- Provisional product rules are listed in `PROJECT_TODO.md` (Phase 10).
+- The product rules (confirmed 2026-10-29) are listed in `PROJECT_TODO.md` (Phase 10). The migration's header still
+  calls keeping tickets an open decision; it was decided as written.

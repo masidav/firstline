@@ -314,7 +314,7 @@ Details: [Notifications](services/api/src/features/notifications/TODO.md) · [Mo
       exclusions, and every flag and appeal step with its actor. App: `/account-review` (fan), `/fraud` (staff).
       Verified: `dotnet test` (FraudReviewApiTests 5, invariants), app Jest (AccountReviewScreen, FraudReviewScreen,
       ShowScreen).*
-- [ ] Fraud review rules set provisionally (2026-10-29), confirm or change: an **open** flag already holds the fan (not
+- [x] Fraud review rules (confirmed 2026-10-29): an **open** flag already holds the fan (not
       only an upheld one); the fan is **told** when flagged and sees the reason category (never the evidence); **one
       appeal per flag**, decided by any staff member (even the one who raised it); an upheld flag holds until an appeal
       or staff clear it (no expiry); **tickets already given out stay** with a fan flagged after the draw; a held fan
