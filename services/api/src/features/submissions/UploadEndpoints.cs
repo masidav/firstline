@@ -16,11 +16,19 @@ namespace FandomScore.Api.Features.Submissions;
 /// Uploads always go through the API, so nothing is stored before the metadata (GPS location included) is gone.
 /// Downloads redirect to a short-lived Cloud Storage link when the store can make one, so the API doesn't stream
 /// the bytes (<see cref="RedirectToStorage"/>).
+/// <para>
+/// File links come in two kinds. <see cref="FileUrl"/> (purpose <c>file</c>) is for people who may always see the file:
+/// its owner (their submissions, data export) and staff (review, reports, redaction). <see cref="SharedFileUrl"/>
+/// (purpose <c>shared_file</c>) is what the feed hands to everyone else; it is checked against the post on every
+/// request, so a takedown, an unshare, a deleted account, or a paused artist stops it at once rather than when the
+/// link expires. Its storage redirect is short-lived and barely cached for the same reason.
+/// </para>
 /// </summary>
 public static class UploadEndpoints
 {
     public const string UploadPurpose = "upload";
     public const string FilePurpose = "file";
+    public const string SharedFilePurpose = "shared_file";
     public const int MaxBytes = 15 * 1024 * 1024;
 
     /// <summary>Staff-uploaded featured-artist videos (migration 0023): MP4 up to 100 MB, stored as uploaded.</summary>
@@ -36,17 +44,29 @@ public static class UploadEndpoints
     public static readonly TimeSpan StorageLinkLifetime = TimeSpan.FromMinutes(15);
 
     /// <summary>
+    /// The storage link behind a feed (shared) file: just long enough to follow the redirect, so a storage link copied
+    /// out of it stops soon after a takedown. The redirect (or the bytes) is cached for <see cref="SharedCacheSeconds"/>.
+    /// </summary>
+    public static readonly TimeSpan SharedStorageLinkLifetime = TimeSpan.FromMinutes(2);
+
+    private const int SharedCacheSeconds = 60;
+
+    /// <summary>
     /// A redirect to the file in storage, or null when the store can't sign links (local disk): then the caller serves
     /// the bytes. The redirect may be cached for less time than the storage link lives.
     /// </summary>
-    public static async Task<IResult?> RedirectToStorage(IFileStore files, string key, HttpResponse response, CancellationToken cancellationToken)
+    public static Task<IResult?> RedirectToStorage(IFileStore files, string key, HttpResponse response, CancellationToken cancellationToken) =>
+        RedirectToStorage(files, key, response, StorageLinkLifetime, 600, cancellationToken);
+
+    private static async Task<IResult?> RedirectToStorage(
+        IFileStore files, string key, HttpResponse response, TimeSpan lifetime, int cacheSeconds, CancellationToken cancellationToken)
     {
-        if (await files.SignedReadUrlAsync(key, StorageLinkLifetime, cancellationToken) is not { } url)
+        if (await files.SignedReadUrlAsync(key, lifetime, cancellationToken) is not { } url)
         {
             return null;
         }
 
-        response.Headers.CacheControl = "private, max-age=600";
+        response.Headers.CacheControl = FormattableString.Invariant($"private, max-age={cacheSeconds}");
         return Results.Redirect(url.ToString());
     }
 
@@ -66,9 +86,19 @@ public static class UploadEndpoints
 
     public sealed record UploadIntent(Guid UploadId, string Method, string Url, IReadOnlyDictionary<string, string> Headers, DateTimeOffset ExpiresAt);
 
-    /// <summary>A signed, absolute link to one stored submission file.</summary>
+    /// <summary>
+    /// A signed, absolute link to one stored submission file for its owner or staff: it works for its whole hour,
+    /// whatever happens to the post. Never hand it to other fans; they get <see cref="SharedFileUrl"/>.
+    /// </summary>
     public static string FileUrl(HttpRequest request, SignedUrls urls, Guid fileId) =>
         $"{SignedUrls.Origin(request)}/v1/files/{fileId}{urls.Sign(FilePurpose, fileId, FileLinkLifetime).Query}";
+
+    /// <summary>
+    /// A signed, absolute link to a shared photo's file for other fans (the feed). It only works while the photo is
+    /// still on the feed: shared, not taken down, its author not deleted, its artist active, the file archived.
+    /// </summary>
+    public static string SharedFileUrl(HttpRequest request, SignedUrls urls, Guid fileId) =>
+        $"{SignedUrls.Origin(request)}/v1/files/{fileId}{urls.Sign(SharedFilePurpose, fileId, FileLinkLifetime).Query}";
 
     private static async Task<IResult> CreateAsync(
         ClaimsPrincipal user, HttpRequest request, JsonElement body, NpgsqlDataSource db, SignedUrls urls, CancellationToken cancellationToken)
@@ -227,15 +257,36 @@ public static class UploadEndpoints
         Guid fileId, long? exp, string? sig, NpgsqlDataSource db, SignedUrls urls, IFileStore files, HttpResponse response,
         CancellationToken cancellationToken)
     {
+        var shared = false;
         if (!urls.Verify(FilePurpose, fileId, exp, sig))
         {
-            throw new ApiProblemException(StatusCodes.Status403Forbidden, "forbidden", "Link expired", "This link is invalid or has expired.");
+            if (!urls.Verify(SharedFilePurpose, fileId, exp, sig))
+            {
+                throw new ApiProblemException(StatusCodes.Status403Forbidden, "forbidden", "Link expired", "This link is invalid or has expired.");
+            }
+
+            shared = true;
         }
 
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        // A feed link is checked against the post now, not when it was signed (primary-key lookups only). The
+        // conditions match the feed's photo source (FeedEndpoints); a takedown also clears shared_at (migration 0014).
         var file = await connection.QuerySingleOrDefaultAsync<(string StorageKey, string MimeType)>(
-            "SELECT storage_key, mime_type FROM submission_files WHERE id = @fileId", new { fileId });
-        if (file.StorageKey is not null && await RedirectToStorage(files, file.StorageKey, response, cancellationToken) is { } redirect)
+            shared
+                ? """
+                  SELECT f.storage_key, f.mime_type
+                  FROM submission_files f
+                  JOIN submissions s ON s.id = f.submission_id
+                  JOIN users u ON u.id = s.user_id
+                  JOIN artists a ON a.id = s.artist_id
+                  WHERE f.id = @fileId AND f.redaction_state = 'archived'
+                    AND s.shared_at IS NOT NULL AND s.removed_at IS NULL AND s.status = 'verified'
+                    AND u.deleted_at IS NULL AND a.status = 'active'
+                  """
+                : "SELECT storage_key, mime_type FROM submission_files WHERE id = @fileId",
+            new { fileId });
+        if (file.StorageKey is not null && await RedirectToStorage(files, file.StorageKey, response,
+                shared ? SharedStorageLinkLifetime : StorageLinkLifetime, shared ? SharedCacheSeconds : 600, cancellationToken) is { } redirect)
         {
             return redirect;
         }
@@ -243,10 +294,11 @@ public static class UploadEndpoints
         var content = file.StorageKey is null ? null : await files.ReadAsync(file.StorageKey, cancellationToken);
         if (content is null)
         {
-            throw new ApiProblemException(StatusCodes.Status404NotFound, "not_found", "File not found", "No file has this id.");
+            throw new ApiProblemException(StatusCodes.Status404NotFound, "not_found", "File not found",
+                shared ? "This photo is no longer on the feed." : "No file has this id.");
         }
 
-        response.Headers.CacheControl = "private, max-age=3600";
+        response.Headers.CacheControl = shared ? FormattableString.Invariant($"private, max-age={SharedCacheSeconds}") : "private, max-age=3600";
         response.Headers.XContentTypeOptions = "nosniff";
         return Results.Bytes(content, file.MimeType);
     }

@@ -322,7 +322,7 @@ public static partial class FeedEndpoints
             .ToLookup(f => f.SubmissionId);
         return rows.ToDictionary(r => r.Id, r => new FeedPhoto(r.Kind, r.Caption,
             r.ConcertDate is { } date ? new FeedConcert(r.ConcertName, r.ConcertVenue, r.ConcertCity, date) : null,
-            [.. files[r.Id].Select(f => new SubmissionEndpoints.SubmissionFile(f.Id, f.MimeType, UploadEndpoints.FileUrl(request, urls, f.Id), f.Redacted))]));
+            [.. files[r.Id].Select(f => new SubmissionEndpoints.SubmissionFile(f.Id, f.MimeType, UploadEndpoints.SharedFileUrl(request, urls, f.Id), f.Redacted))]));
     }
 
     private static async Task<Dictionary<Guid, FeedLog>> LoadLogsAsync(NpgsqlConnection connection, Guid[] ids)

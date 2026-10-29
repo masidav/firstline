@@ -441,8 +441,11 @@ export interface paths {
         /**
          * A stored submission photo (signed link)
          * @description The `url` of a submission file; signed and valid for an hour, so image tags can load it without sign-in.
-         *     Where files are in Cloud Storage, this redirects (302) to a 15-minute storage link instead of sending the
+         *     Where files are in Cloud Storage, this redirects (302) to a short-lived storage link instead of sending the
          *     bytes; image tags and players follow it.
+         *     Links handed to the file's owner and to staff work for the whole hour. Links in the feed are checked on every
+         *     request: once the photo leaves the feed (taken down, unshared, its author deleted, its artist paused) they
+         *     answer 404 at once, and their storage link lasts only 2 minutes.
          */
         get: operations["getFile"];
         put?: never;

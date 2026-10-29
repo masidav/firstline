@@ -466,8 +466,12 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
 - [x] Security decisions (decided 2026-10-28): a named +1 does **not** have to accept (they can decline before the
       draw); follows need **no approval**, so followers-only means anyone who follows; others' prompt answers may be
       seen before answering.
-- [ ] Still open from the 2026-10-28 review: push tokens move to whoever registers them last (by design for now);
-      signed photo links outlive a takedown by up to an hour.
+- [ ] Still open from the 2026-10-28 review: push tokens move to whoever registers them last (by design for now).
+      *Fixed 2026-10-29: signed photo links outlived a takedown by up to an hour. Feed links now have their own
+      purpose (`shared_file`) and `GET /files/{id}` checks the photo is still on the feed on every request (404
+      otherwise; 2-minute storage redirect); owner and staff links still show a taken-down photo (it stays as proof).
+      Verified: `dotnet build` 0 warnings, `dotnet test` 353/353 (ReportApiTests 2 new), app types regenerated and
+      `npm run typecheck` in both apps.*
 - [ ] Before deploying: set `AllowedHosts` (or a public origin) and require the sign-in nonce once the app sends it.
 - [ ] Add tests for failure cases, concurrency, and duplicate requests.
 - [ ] Document decisions that remain proposed or open in the source README.

@@ -114,6 +114,108 @@ public sealed class ReportApiTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_feed_link_to_a_photo_stops_at_its_takedown_but_the_owner_and_staff_links_keep_working()
+    {
+        var author = await SignInAsync("author");
+        var fan = await SignInAsync("fan_one");
+        var staff = await StaffAsync("staffer");
+        var photoId = await SharedPhotoAsync("author");
+        var bytes = await ArchivedFileAsync(photoId);
+
+        var feed = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/feed", fan), HttpStatusCode.OK);
+        var feedLink = Assert.Single(FileLinks(feed));
+        var ownerLink = Assert.Single(FileLinks(await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/submissions/{photoId}", author), HttpStatusCode.OK)));
+        await ReportAsync(fan, "photo", photoId, "inappropriate");
+        var reportLink = Assert.Single(FileLinks(await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/admin/reports", staff), HttpStatusCode.OK)));
+        Assert.NotEqual(feedLink, ownerLink);   // the feed gets its own kind of link
+        Assert.Equal(bytes, await FetchFileAsync(feedLink));
+
+        await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/reports/photo/{photoId}/decision", staff, new { action = "take_down" }),
+            HttpStatusCode.OK);
+
+        // The feed link, still within its hour, is refused at once; anyone could have copied it.
+        var gone = await _client.GetAsync(new Uri(feedLink).PathAndQuery);
+        Assert.Equal("not_found", (await JsonAsync(gone, HttpStatusCode.NotFound)).GetProperty("code").GetString());
+
+        // The photo stays as proof: its owner and staff still see it, with links handed out before and after.
+        Assert.Equal(bytes, await FetchFileAsync(ownerLink));
+        Assert.Equal(bytes, await FetchFileAsync(reportLink));
+        Assert.Equal(bytes, await FetchFileAsync(Assert.Single(FileLinks(
+            await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/submissions/{photoId}", author), HttpStatusCode.OK)))));
+        Assert.Equal(bytes, await FetchFileAsync(Assert.Single(FileLinks(
+            await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/admin/submissions/{photoId}", staff), HttpStatusCode.OK)))));
+    }
+
+    [Fact]
+    public async Task A_feed_link_to_a_photo_stops_when_its_author_unshares_it()
+    {
+        await SignInAsync("author");
+        var fan = await SignInAsync("fan_one");
+        var photoId = await SharedPhotoAsync("author");
+        var bytes = await ArchivedFileAsync(photoId);
+        var feedLink = Assert.Single(FileLinks(await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/feed", fan), HttpStatusCode.OK)));
+        Assert.Equal(bytes, await FetchFileAsync(feedLink));
+
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            await connection.ExecuteAsync("UPDATE submissions SET shared_at = NULL WHERE id = @photoId", new { photoId });
+        }
+
+        await JsonAsync(await _client.GetAsync(new Uri(feedLink).PathAndQuery), HttpStatusCode.NotFound);
+
+        // A tampered link is still refused as invalid, not looked up.
+        var forged = feedLink.Replace("sig=", "sig=x", StringComparison.Ordinal);
+        await JsonAsync(await _client.GetAsync(new Uri(forged).PathAndQuery), HttpStatusCode.Forbidden);
+    }
+
+    /// <summary>Every <c>/v1/files/</c> link anywhere in a response.</summary>
+    private static List<string> FileLinks(JsonElement json)
+    {
+        var links = new List<string>();
+        void Walk(JsonElement e)
+        {
+            switch (e.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    foreach (var p in e.EnumerateObject()) Walk(p.Value);
+                    break;
+                case JsonValueKind.Array:
+                    foreach (var item in e.EnumerateArray()) Walk(item);
+                    break;
+                case JsonValueKind.String when e.GetString()!.Contains("/v1/files/", StringComparison.Ordinal):
+                    links.Add(e.GetString()!);
+                    break;
+            }
+        }
+
+        Walk(json);
+        return links;
+    }
+
+    private async Task<byte[]> FetchFileAsync(string link)
+    {
+        var response = await _client.GetAsync(new Uri(link).PathAndQuery);
+        Assert.True(response.StatusCode == HttpStatusCode.OK, $"{link}: {response.StatusCode} {await response.Content.ReadAsStringAsync()}");
+        return await response.Content.ReadAsByteArrayAsync();
+    }
+
+    /// <summary>A redacted, archived file on the photo (only those reach the feed), stored in the test's local store.</summary>
+    private async Task<byte[]> ArchivedFileAsync(Guid submissionId)
+    {
+        var key = $"archive/{Guid.NewGuid()}";
+        var bytes = "test-photo-bytes"u8.ToArray();
+        await _factory.Services.GetRequiredService<FandomScore.Storage.IFileStore>().PutAsync(key, bytes, CancellationToken.None);
+        await using var connection = await _db.OpenConnectionAsync();
+        await connection.ExecuteAsync(
+            """
+            INSERT INTO submission_files (submission_id, storage_key, sha256, mime_type, bytes, tier, redacted, redaction_state, archived_at)
+            VALUES (@submissionId, @key, @sha, 'image/jpeg', @length, 'archive', true, 'archived', now())
+            """,
+            new { submissionId, key, sha = System.Security.Cryptography.SHA256.HashData(bytes), length = (long)bytes.Length });
+        return bytes;
+    }
+
+    [Fact]
     public async Task Only_visible_posts_by_others_can_be_reported_and_only_staff_decide()
     {
         var author = await SignInAsync("author");

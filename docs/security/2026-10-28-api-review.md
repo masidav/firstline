@@ -30,6 +30,7 @@ origin list.
 | Others' stats and profile counted private and taken-down logs and private lists | Low | Counted only for the fan themselves |
 | Request bodies up to 30 MB on every JSON endpoint | Low | 1 MB, uploads raise it to their declared size |
 | No general limit | Low | 1,200 requests per minute per fan (or IP); follows, unfollows, and clicks 120 per minute |
+| A signed photo link copied from the feed worked for up to an hour after a takedown (fixed 2026-10-29) | Low-medium | The feed's file links have their own purpose (`shared_file`) and `GET /files/{id}` checks them on every request (one primary-key join): the photo must still be on the feed (shared, not taken down, verified, author not deleted, artist active, file archived), else 404. Their Cloud Storage redirect lasts 2 minutes and is cached 60 seconds (owner and staff links keep 15 minutes and 10). Links for the owner (submissions, data export) and staff (review, reports, redaction) are unchanged: a taken-down photo stays as proof. Unsharing stops feed links too. Prompt answers and album logs have no files; featured videos were already checked on every request. Tests: `ReportApiTests` (2 new). |
 
 ## Decided (2026-10-28)
 - A named +1 doesn't have to accept; declining before the draw is the safety net.
@@ -38,7 +39,6 @@ origin list.
 
 ## Open (later work; in PROJECT_TODO.md)
 - A push token moves to whoever registers it last (by design); a stolen token could receive someone's pushes.
-- A signed photo link copied from the feed works for up to an hour after a takedown.
 - Set `AllowedHosts` (or a configured public origin) for deployed environments; links are built from the Host header.
 - Require the sign-in nonce once the app always sends one.
 - Not reviewed: worker job handlers beyond the redaction gate.
