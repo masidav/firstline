@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { ApiError, errorMessage } from '../api/client';
-import { startGoogleSignIn } from '../auth/google';
+import { randomString, startGoogleSignIn } from '../auth/google';
 import type { Credential } from '../auth/session';
 import { useSession } from '../auth/SessionProvider';
 import { config } from '../config';
@@ -67,7 +67,7 @@ export function SignInPage({ initialCredential }: { initialCredential?: Credenti
         <div className="card">
           {config.googleWebClientId && <Button onClick={startGoogleSignIn}>Continue with Google</Button>}
           {config.devSignIn && (
-            <form onSubmit={(e) => { e.preventDefault(); void submit({ provider: 'google', idToken: `dev:${devName.trim()}` }); }} className="grid">
+            <form onSubmit={(e) => { e.preventDefault(); void submit({ provider: 'google', idToken: `dev:${devName.trim()}`, nonce: randomString(32) }); }} className="grid">
               <Field label="Test account name" value={devName} onChange={(e) => setDevName(e.target.value)} hint="Developer sign-in: the same name signs back in to the same account." />
               <Button type="submit" kind="secondary" busy={busy}>Sign in</Button>
             </form>

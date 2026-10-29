@@ -59,7 +59,7 @@ public sealed class ForwardedHeadersTests : IDisposable
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/auth/sessions")
         {
-            Content = JsonContent.Create(new { provider = "google", id_token = "forged" }),
+            Content = JsonContent.Create(new { provider = "google", nonce = TestAuth.Nonce, id_token = "forged" }),
         };
         request.Headers.Add("X-Forwarded-For", forwardedFor);
         using var response = await client.SendAsync(request);

@@ -20,7 +20,7 @@ export async function sql<T extends Record<string, unknown>>(text: string, value
 /** A new account through the API (developer sign-in), made staff when asked. */
 export async function apiSession(request: APIRequestContext, staff = false) {
   const handle = uniqueName(staff ? 'staff' : 'user');
-  const response = await request.post(`${settings.apiUrl}/auth/sessions`, { data: { provider: 'google', id_token: `dev:${handle}`, handle } });
+  const response = await request.post(`${settings.apiUrl}/auth/sessions`, { data: { provider: 'google', id_token: `dev:${handle}`, nonce: 'e2e-nonce', handle } });
   expect(response.status(), await response.text()).toBe(201);
   const body = (await response.json()) as { access_token: string; user: { id: string } };
   if (staff) await sql('UPDATE users SET is_staff = true WHERE id = $1', [body.user.id]);

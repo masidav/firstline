@@ -53,7 +53,7 @@ export async function apiSession(
 ): Promise<{ token: string; userId: string; handle: string }> {
   const handle = uniqueName(staff ? 'staff' : 'apifan');
   const response = await request.post(`${settings.apiUrl}/auth/sessions`, {
-    data: { provider: 'google', id_token: `dev:${handle}`, handle },
+    data: { provider: 'google', id_token: `dev:${handle}`, nonce: 'e2e-nonce', handle },
   });
   expect(response.status(), await response.text()).toBe(201);
   const body = (await response.json()) as { access_token: string; user: { id: string } };

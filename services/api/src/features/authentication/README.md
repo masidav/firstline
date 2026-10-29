@@ -30,7 +30,7 @@ Tables: `auth_identities`, `auth_sessions`, `refresh_tokens` (`database/migratio
 and the ADR. With no client IDs set, sign-in returns `422` for that provider; tests replace the validator.
 
 ## Tests
-- `tests/FandomScore.Tests/AuthApiTests.cs`: sign-in, account creation rules, conflicts, token checks, rotation
+- `tests/FandomScore.Tests/AuthApiTests.cs`: sign-in (a nonce is required), account creation rules, conflicts, token checks, rotation
   and reuse, expiry, sign-out, account deletion, and that no credential is logged. Real PostgreSQL, fake provider.
 - `tests/FandomScore.Tests/OidcIdentityTokenValidatorTests.cs`: the real token checks (signature, issuer, audience,
   expiry, nonce, `email_verified`) with a local RSA key.

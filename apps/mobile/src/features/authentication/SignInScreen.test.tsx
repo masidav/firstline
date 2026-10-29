@@ -10,7 +10,12 @@ let mockStatus = 'signedOut';
 jest.mock('../../auth/SessionProvider', () => ({
   useSession: () => ({ session: mockSession, state: { status: mockStatus } }),
 }));
-jest.mock('../../config', () => ({ config: { devSignIn: false, googleWebClientId: 'web-1', googleIosClientId: '' } }));
+const mockConfig = { devSignIn: false, googleWebClientId: 'web-1', googleIosClientId: '' };
+jest.mock('../../config', () => ({
+  get config() {
+    return mockConfig;
+  },
+}));
 jest.mock('./googleSignIn', () => ({ googleClientId: 'web-1', startGoogleSignIn: jest.fn() }));
 jest.mock('./appleSignIn', () => ({ isAppleSignInAvailable: jest.fn(), startAppleSignIn: jest.fn() }));
 jest.mock('./AppleSignInButton', () => {
@@ -26,7 +31,21 @@ const credential = { provider: 'google' as const, idToken: 'tok', nonce: 'n' };
 beforeEach(() => {
   jest.clearAllMocks();
   mockStatus = 'signedOut';
+  mockConfig.devSignIn = false;
   apple().isAppleSignInAvailable.mockResolvedValue(false);
+});
+
+test('developer sign-in sends a fresh nonce too (the API requires one on every sign-in)', async () => {
+  mockConfig.devSignIn = true;
+  mockSignIn.mockResolvedValue({ isNewUser: false });
+  render(<SignInScreen />);
+
+  fireEvent.changeText(screen.getByLabelText('Test account name'), 'alice');
+  fireEvent.press(screen.getByRole('button', { name: 'Sign in' }));
+
+  await waitFor(() =>
+    expect(mockSignIn).toHaveBeenCalledWith({ provider: 'google', idToken: 'dev:alice', nonce: expect.stringMatching(/^.{32}$/) }, undefined),
+  );
 });
 
 test('on the web, Continue with Google leaves the page and the button stays busy', async () => {

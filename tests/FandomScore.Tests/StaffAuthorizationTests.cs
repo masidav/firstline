@@ -66,7 +66,7 @@ public sealed class StaffAuthorizationTests(PostgresFixture postgres) : IAsyncLi
     private async Task<string> SignInAsync()
     {
         var response = await _client.PostAsJsonAsync("/v1/auth/sessions",
-            new { provider = "google", id_token = TestAuth.IdToken("g-1", "staff@example.test"), handle = "staffer" });
+            new { provider = "google", nonce = TestAuth.Nonce, id_token = TestAuth.IdToken("g-1", "staff@example.test"), handle = "staffer" });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.GetProperty("access_token").GetString()!;
     }

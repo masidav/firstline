@@ -31,6 +31,8 @@ origin list.
 | Request bodies up to 30 MB on every JSON endpoint | Low | 1 MB, uploads raise it to their declared size |
 | No general limit | Low | 1,200 requests per minute per fan (or IP); follows, unfollows, and clicks 120 per minute |
 | A signed photo link copied from the feed worked for up to an hour after a takedown (fixed 2026-10-29) | Low-medium | The feed's file links have their own purpose (`shared_file`) and `GET /files/{id}` checks them on every request (one primary-key join): the photo must still be on the feed (shared, not taken down, verified, author not deleted, artist active, file archived), else 404. Their Cloud Storage redirect lasts 2 minutes and is cached 60 seconds (owner and staff links keep 15 minutes and 10). Links for the owner (submissions, data export) and staff (review, reports, redaction) are unchanged: a taken-down photo stays as proof. Unsharing stops feed links too. Prompt answers and album logs have no files; featured videos were already checked on every request. Tests: `ReportApiTests` (2 new). |
+| Absolute links (signed file links, score cards, featured videos) were built from the request's Host header, so a spoofed Host could make the API hand out links to another domain | Medium | 2026-10-29: links start with `App__PublicOrigin` (set in the beta and prod overlays); outside Development the API won't start without it, and only Development falls back to the request. Host filtering (`AllowedHosts`) was not used: kubelet probes and the load balancer's health checks send the pod address as Host. `PublicOriginTests`. |
+| The sign-in nonce was optional, so an identity token issued for another sign-in (same Google client, a leaked token) could be replayed | Medium | 2026-10-29: `POST /auth/sessions` requires `nonce` (openapi); missing, empty, or not in the token is `401 unauthorized`. Every client already sent one (fan app Google web, Google native, Apple; promoter dashboard Google); developer sign-in and the e2e fixtures now send one too. Apple's server-side code exchange (account deletion) still validates without a nonce: that token comes straight from Apple's token endpoint, not a client. `AuthApiTests`, `AppleTests`, `OidcIdentityTokenValidatorTests`. |
 
 ## Decided (2026-10-28)
 - A named +1 doesn't have to accept; declining before the draw is the safety net.
@@ -39,6 +41,4 @@ origin list.
 
 ## Open (later work; in PROJECT_TODO.md)
 - A push token moves to whoever registers it last (by design); a stolen token could receive someone's pushes.
-- Set `AllowedHosts` (or a configured public origin) for deployed environments; links are built from the Host header.
-- Require the sign-in nonce once the app always sends one.
 - Not reviewed: worker job handlers beyond the redaction gate.

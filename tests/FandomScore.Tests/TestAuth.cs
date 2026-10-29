@@ -10,6 +10,15 @@ public static class TestAuth
 {
     public static readonly string SigningKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 
+    /// <summary>App:PublicOrigin for tests that run the API outside Development (where it is required).</summary>
+    public const string PublicOrigin = "https://api.firstline.test";
+
+    /// <summary>The raw sign-in nonce every test client sends (POST /v1/auth/sessions requires one).</summary>
+    public const string Nonce = "test-nonce-0S6_WzA2Mj";
+
+    /// <summary>What Apple puts in its token for <see cref="Nonce"/>: SHA-256, lowercase hex.</summary>
+    public static readonly string HashedNonce = Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Nonce)));
+
     /// <summary>An identity token the fake validator accepts: <c>ok:subject:email</c> or <c>unverified:subject:email</c>.</summary>
     public static string IdToken(string subject, string email, bool verified = true) =>
         $"{(verified ? "ok" : "unverified")}:{subject}:{email}";
@@ -22,6 +31,12 @@ public sealed class FakeIdentityTokenValidator : IIdentityTokenValidator
 
     public Task<ProviderIdentity?> ValidateAsync(string provider, string idToken, string? nonce, CancellationToken cancellationToken)
     {
+        // Like the real validator: the token "carries" TestAuth.Nonce; null is only for server-fetched tokens.
+        if (nonce is not (null or TestAuth.Nonce))
+        {
+            return Task.FromResult<ProviderIdentity?>(null);
+        }
+
         var parts = idToken.Split(':');
         ProviderIdentity? identity = parts is [var kind and ("ok" or "unverified"), var subject, var email]
             ? new ProviderIdentity(subject, email, kind == "ok")

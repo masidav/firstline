@@ -60,6 +60,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 
 // Lets the Expo web build call the API (Cors__AllowedOrigins).
 builder.Services.AddWebClients(builder.Configuration);
+// Absolute links start with App__PublicOrigin, not the request's Host header (required outside Development).
+builder.Services.AddPublicOrigin(builder.Configuration);
 // Real client addresses behind the load balancer (ForwardedHeaders__KnownProxies / KnownNetworks).
 builder.Services.AddLoadBalancerForwarding(builder.Configuration);
 

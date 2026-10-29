@@ -91,7 +91,7 @@ public sealed class SecurityRouteTests(PostgresFixture postgres)
         });
         using var client = factory.CreateClient();
         var signIn = await client.PostAsJsonAsync("/v1/auth/sessions",
-            new { provider = "google", id_token = TestAuth.IdToken("g-security-fan", "security-fan@example.test"), handle = "security_fan" });
+            new { provider = "google", nonce = TestAuth.Nonce, id_token = TestAuth.IdToken("g-security-fan", "security-fan@example.test"), handle = "security_fan" });
         var fan = JsonDocument.Parse(await signIn.Content.ReadAsStringAsync()).RootElement.GetProperty("access_token").GetString()!;
 
         var failures = new List<string>();

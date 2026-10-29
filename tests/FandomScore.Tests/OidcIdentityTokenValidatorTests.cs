@@ -97,6 +97,7 @@ public sealed class OidcIdentityTokenValidatorTests : IDisposable
         Assert.NotNull(await _validator.ValidateAsync("google", Token(claims: new() { ["nonce"] = hashed }), nonce, CancellationToken.None));
         Assert.Null(await _validator.ValidateAsync("google", Token(claims: new() { ["nonce"] = "other" }), nonce, CancellationToken.None));
         Assert.Null(await _validator.ValidateAsync("google", Token(), nonce, CancellationToken.None));
+        Assert.Null(await _validator.ValidateAsync("google", Token(claims: new() { ["nonce"] = nonce }), "", CancellationToken.None));
     }
 
     private string Token(Action<SecurityTokenDescriptor>? change = null, Dictionary<string, object>? claims = null)

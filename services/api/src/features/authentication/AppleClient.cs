@@ -56,6 +56,8 @@ public sealed partial class AppleClient(
         }
 
         var tokens = await tokenResponse.Content.ReadFromJsonAsync<AppleTokens>(cancellationToken);
+        // No nonce: this token comes straight from Apple's token endpoint (our own TLS call, client secret), not from a
+        // client, so there is nothing to replay; the subject check below ties it to the account being deleted.
         var identity = tokens?.IdToken is { } idToken
             ? await validator.ValidateAsync("apple", idToken, nonce: null, cancellationToken)
             : null;

@@ -47,6 +47,7 @@ public sealed class ArtistApiTests(PostgresFixture postgres) : IAsyncLifetime, I
         _factory = new ContractCheckedFactory().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Production");
+            builder.UseSetting("App:PublicOrigin", TestAuth.PublicOrigin);
             builder.UseSetting("ConnectionStrings:Database", connectionString);
             builder.UseSetting("Auth:SigningKey", TestAuth.SigningKey);
             builder.UseSetting("Spotify:ClientId", options.ClientId);
@@ -445,7 +446,7 @@ public sealed class ArtistApiTests(PostgresFixture postgres) : IAsyncLifetime, I
     private async Task<string> SignInAsync(string handle, HttpClient? client = null)
     {
         var response = await (client ?? _client).PostAsJsonAsync("/v1/auth/sessions",
-            new { provider = "google", id_token = TestAuth.IdToken($"g-{handle}", $"{handle}@example.test"), handle });
+            new { provider = "google", nonce = TestAuth.Nonce, id_token = TestAuth.IdToken($"g-{handle}", $"{handle}@example.test"), handle });
         return (await JsonAsync(response, HttpStatusCode.Created)).GetProperty("access_token").GetString()!;
     }
 

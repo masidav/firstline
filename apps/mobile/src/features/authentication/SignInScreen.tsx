@@ -6,6 +6,7 @@ import { config } from '../../config';
 import { Body, Button, ErrorText, Screen, Title } from '../../ui/components';
 import { isAppleSignInAvailable, startAppleSignIn } from './appleSignIn';
 import { AppleSignInButton } from './AppleSignInButton';
+import { randomString } from './crypto';
 import { DevSignInForm } from './DevSignInForm';
 import { FinishSignIn } from './FinishSignIn';
 import { googleClientId, startGoogleSignIn } from './googleSignIn';
@@ -78,7 +79,7 @@ export function SignInScreen({ initialCredential = null }: { initialCredential?:
           ) : null}
           <ErrorText>{error}</ErrorText>
           {config.devSignIn ? (
-            <DevSignInForm signIn={(idToken, handle) => session.signIn({ provider: 'google', idToken }, handle)} />
+            <DevSignInForm signIn={(idToken, handle) => session.signIn({ provider: 'google', idToken, nonce: randomString(32) }, handle)} />
           ) : null}
           {!providers && !config.devSignIn ? <Body>No sign-in method is configured for this build yet.</Body> : null}
         </>

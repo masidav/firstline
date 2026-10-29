@@ -35,7 +35,10 @@ export interface paths {
          * @description Exchanges an Apple or Google identity token for app tokens. Creates the account on first sign-in
          *     (then `handle` is required, and the provider must share a verified email). Spotify is connected
          *     separately (`PUT /me/spotify`). Each sign-in starts a new session (one per device).
-         *     If `nonce` is sent, the token must carry it, raw (Google) or as its SHA-256 hex (Apple).
+         *     `nonce` is required: a fresh random value the app put in the provider request, which the token must carry,
+         *     raw (Google) or as its SHA-256 hex (Apple). A missing or mismatched nonce gets `401 unauthorized`, like any
+         *     other invalid token, so a token issued for another sign-in can't be replayed. (Developer sign-in tokens,
+         *     Development only, are not real tokens; the request still needs a nonce.)
          *     A new provider account whose email already belongs to another account gets `409 email_in_use`;
          *     each email belongs to one account, and accounts are not linked across providers.
          *     App Store rules may require offering Sign in with Apple; verify against current guidelines.
@@ -3465,7 +3468,8 @@ export interface components {
             /** @enum {string} */
             provider: "apple" | "google";
             id_token: string;
-            nonce?: string;
+            /** @description The raw nonce the app generated for this sign-in. Apple's token carries its SHA-256 hex; Google's carries it as is. */
+            nonce: string;
             /** @description Required when this sign-in creates a new account. */
             handle?: string;
         };

@@ -303,7 +303,7 @@ public sealed class DataExportApiTests(PostgresFixture postgres) : IAsyncLifetim
     private async Task<(string Access, string Refresh)> SignInWithRefreshAsync(string handle)
     {
         var response = await _client.PostAsJsonAsync("/v1/auth/sessions",
-            new { provider = "google", id_token = TestAuth.IdToken($"g-{handle}", $"{handle}@example.test"), handle });
+            new { provider = "google", nonce = TestAuth.Nonce, id_token = TestAuth.IdToken($"g-{handle}", $"{handle}@example.test"), handle });
         var session = await JsonAsync(response, HttpStatusCode.Created);
         return (session.GetProperty("access_token").GetString()!, session.GetProperty("refresh_token").GetString()!);
     }

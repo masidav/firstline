@@ -314,7 +314,7 @@ public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifeti
     private async Task<string> TokenAsync(string handle)
     {
         var response = await _client.PostAsJsonAsync("/v1/auth/sessions",
-            new { provider = "google", id_token = TestAuth.IdToken($"g-{handle}", $"{handle}@example.test"), handle });
+            new { provider = "google", nonce = TestAuth.Nonce, id_token = TestAuth.IdToken($"g-{handle}", $"{handle}@example.test"), handle });
         // 201 for a new account, 200 when signing in again.
         return (await JsonAsync(response, response.StatusCode == HttpStatusCode.OK ? HttpStatusCode.OK : HttpStatusCode.Created))
             .GetProperty("access_token").GetString()!;

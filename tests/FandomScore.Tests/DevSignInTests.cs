@@ -34,7 +34,7 @@ public sealed class DevSignInTests(PostgresFixture postgres) : IAsyncLifetime
         var client = factory.CreateClient();
 
         var response = await client.PostAsJsonAsync("/v1/auth/sessions",
-            new { provider = "google", id_token = "dev:alice", handle = "alice" });
+            new { provider = "google", nonce = TestAuth.Nonce, id_token = "dev:alice", handle = "alice" });
         var session = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.Equal("alice@example.test", session.GetProperty("user").GetProperty("email").GetString());
@@ -44,7 +44,7 @@ public sealed class DevSignInTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(me)).StatusCode);
 
         var invalid = await client.PostAsJsonAsync("/v1/auth/sessions",
-            new { provider = "google", id_token = "dev:not valid!", handle = "bob" });
+            new { provider = "google", nonce = TestAuth.Nonce, id_token = "dev:not valid!", handle = "bob" });
         Assert.Equal(HttpStatusCode.Unauthorized, invalid.StatusCode);
     }
 
@@ -54,7 +54,7 @@ public sealed class DevSignInTests(PostgresFixture postgres) : IAsyncLifetime
         await using var factory = Factory("Development", devSignIn: false);
 
         var response = await factory.CreateClient().PostAsJsonAsync("/v1/auth/sessions",
-            new { provider = "google", id_token = "dev:alice", handle = "alice" });
+            new { provider = "google", nonce = TestAuth.Nonce, id_token = "dev:alice", handle = "alice" });
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -97,6 +97,7 @@ public sealed class DevSignInTests(PostgresFixture postgres) : IAsyncLifetime
         new ContractCheckedFactory().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment(environment);
+            builder.UseSetting("App:PublicOrigin", TestAuth.PublicOrigin);
             builder.UseSetting("ConnectionStrings:Database", _connectionString);
             builder.UseSetting("Auth:SigningKey", TestAuth.SigningKey);
             builder.UseSetting("Auth:DevSignIn", devSignIn ? "true" : "false");

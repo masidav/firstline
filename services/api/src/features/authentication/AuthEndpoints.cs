@@ -43,6 +43,14 @@ public static class AuthEndpoints
             throw ApiProblemException.Validation(new FieldError("provider", "This sign-in provider is not enabled."));
         }
 
+        // The nonce ties the identity token to this sign-in attempt, so a token lifted from elsewhere (another site
+        // using the same Google client, a log) can't be replayed here. Every client sends one; without it, or when
+        // the token doesn't carry it, the answer is the same 401 as for any other bad token.
+        if (string.IsNullOrEmpty(request.Nonce))
+        {
+            throw ApiProblemException.Unauthorized("The identity token is invalid or expired.");
+        }
+
         var identity = await validator.ValidateAsync(request.Provider, request.IdToken, request.Nonce, cancellationToken)
             ?? throw ApiProblemException.Unauthorized("The identity token is invalid or expired.");
 

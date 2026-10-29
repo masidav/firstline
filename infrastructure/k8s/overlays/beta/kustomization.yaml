@@ -46,6 +46,10 @@ configMapGenerator:
       # that appends the client address to X-Forwarded-For. Until it is set, every client shares one
       # sign-in rate limit.
       - ForwardedHeaders__KnownProxies=136.81.191.137
+      # The API's public URL (gateway.yaml hostname). Every absolute link it hands out (signed file links, score
+      # cards) starts with this, never with the request's Host header; the API won't start without it outside
+      # Development. Host itself is not filtered, so probes and load-balancer health checks (pod IP as Host) still work.
+      - App__PublicOrigin=https://api.beta.firstline.com
       # Non-secret provider settings (.env.example). Secrets are in Secret Manager (secrets.yaml).
       - Auth__Apple__ClientIds=
       - Auth__Google__ClientIds=494880048811-14ch6rdq1p4vuatcebg2qq187dkgm4iv.apps.googleusercontent.com

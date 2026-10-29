@@ -15,7 +15,12 @@ public interface IIdentityTokenValidator
 {
     bool IsEnabled(string provider);
 
-    /// <summary>Returns null when the token is not a valid, current token for this app.</summary>
+    /// <summary>
+    /// Returns null when the token is not a valid, current token for this app, or doesn't carry
+    /// <paramref name="nonce"/> (raw or SHA-256 hex). Sign-in always passes the client's nonce (the endpoint requires
+    /// one); null skips the check and is only for a token the API fetched from the provider itself over TLS, such as
+    /// Apple's code exchange before revoking a sign-in (<see cref="AppleClient"/>), where there is no client nonce.
+    /// </summary>
     Task<ProviderIdentity?> ValidateAsync(string provider, string idToken, string? nonce, CancellationToken cancellationToken);
 
     /// <summary>
@@ -132,11 +137,17 @@ public sealed class OidcIdentityTokenValidator(IReadOnlyDictionary<string, OidcP
     }
 
     // Google echoes the nonce the app sent; Apple echoes what the app sent to Apple, which is its SHA-256 (hex).
+    // A null request nonce means a server-fetched token (see the interface), never a client sign-in.
     private static bool NonceMatches(string? tokenNonce, string? requestNonce)
     {
         if (requestNonce is null)
         {
             return true;
+        }
+
+        if (requestNonce.Length == 0)
+        {
+            return false;
         }
 
         if (tokenNonce is null)

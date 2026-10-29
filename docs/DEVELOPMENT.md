@@ -102,4 +102,5 @@ The suite starts its own PostgreSQL 16 container, so it needs Docker but not the
 - Production logs are JSON on the console. Development uses the plain formatter.
 - In Kubernetes, secrets arrive as files in `Secrets__Directory` (one per configuration key) instead of environment
   variables, and `ForwardedHeaders__KnownProxies`/`KnownNetworks` tell the API which load balancer to trust for
-  client addresses. Neither is needed locally.
+  client addresses. Neither is needed locally. Deployed APIs also need `App__PublicOrigin` (their public URL, for the
+  links they hand out); locally it can stay empty and links use the address you called.

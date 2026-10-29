@@ -69,11 +69,11 @@ test('a new account needs a handle, then signs in', async () => {
   });
   const manager = new SessionManager(BASE, store, api.fetchImpl);
 
-  const error = await manager.signIn({ provider: 'google', idToken: 'dev:alice' }).catch((e: unknown) => e);
+  const error = await manager.signIn({ provider: 'google', idToken: 'dev:alice', nonce: 'n' }).catch((e: unknown) => e);
   expect(error).toBeInstanceOf(ApiError);
   expect((error as ApiError).fieldError('handle')).toBe('Required to create an account.');
 
-  await expect(manager.signIn({ provider: 'google', idToken: 'dev:alice' }, 'alice')).resolves.toEqual({ isNewUser: true });
+  await expect(manager.signIn({ provider: 'google', idToken: 'dev:alice', nonce: 'n' }, 'alice')).resolves.toEqual({ isNewUser: true });
   expect(manager.getState()).toEqual({ status: 'signedIn', me });
   expect(manager.provider).toBe('google');
   expect(store.value).toEqual({ refreshToken: 'r1', provider: 'google' });
@@ -107,7 +107,7 @@ test('an expired access token is refreshed once for concurrent calls, and the ca
       request.headers.get('Authorization') === 'Bearer a2' ? json(200, me) : json(401, { code: 'unauthorized' }),
   });
   const manager = new SessionManager(BASE, store, api.fetchImpl);
-  await manager.signIn({ provider: 'google', idToken: 'dev:alice' });
+  await manager.signIn({ provider: 'google', idToken: 'dev:alice', nonce: 'n' });
 
   const [first, second] = await Promise.all([manager.api.GET('/me'), manager.api.GET('/me')]);
 
@@ -125,7 +125,7 @@ test('a rejected refresh ends the session', async () => {
     'GET /me': () => json(401, { code: 'unauthorized' }),
   });
   const manager = new SessionManager(BASE, store, api.fetchImpl);
-  await manager.signIn({ provider: 'google', idToken: 'dev:alice' });
+  await manager.signIn({ provider: 'google', idToken: 'dev:alice', nonce: 'n' });
 
   const result = await manager.api.GET('/me');
 
@@ -153,7 +153,7 @@ test('sign-out clears the session even if the API call fails', async () => {
     'DELETE /auth/sessions/current': () => json(500, { code: 'internal_error' }),
   });
   const manager = new SessionManager(BASE, store, api.fetchImpl);
-  await manager.signIn({ provider: 'google', idToken: 'dev:alice' });
+  await manager.signIn({ provider: 'google', idToken: 'dev:alice', nonce: 'n' });
 
   await manager.signOut();
 

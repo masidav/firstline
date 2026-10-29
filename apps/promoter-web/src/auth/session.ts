@@ -10,11 +10,11 @@ export type SessionState =
   | { status: 'signedIn'; me: Me }
   | { status: 'unreachable' };
 
-/** What a sign-in hands the API: a provider identity token, and the nonce in it if any. */
+/** What a sign-in hands the API: a provider identity token, and the raw nonce in it (the API requires one). */
 export interface Credential {
   provider: 'google' | 'apple';
   idToken: string;
-  nonce?: string;
+  nonce: string;
 }
 
 export interface TokenStore {

@@ -10,11 +10,14 @@ export type SessionState =
 
 export type { Provider };
 
-/** What a sign-in provider handed the app: its identity token, and the nonce the app put in it (if any). */
+/**
+ * What a sign-in provider handed the app: its identity token, and the raw nonce the app put in it. The API requires
+ * the nonce and refuses a token that doesn't carry it (so a token from another sign-in can't be replayed).
+ */
 export interface Credential {
   provider: Provider;
   idToken: string;
-  nonce?: string;
+  nonce: string;
 }
 
 /**

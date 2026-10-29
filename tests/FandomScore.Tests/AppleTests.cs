@@ -53,6 +53,7 @@ public sealed class AppleTests(PostgresFixture postgres) : IAsyncLifetime, IDisp
         _factory = new ContractCheckedFactory().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Production");
+            builder.UseSetting("App:PublicOrigin", TestAuth.PublicOrigin);
             builder.UseSetting("ConnectionStrings:Database", connectionString);
             builder.UseSetting("Auth:SigningKey", TestAuth.SigningKey);
             builder.UseSetting("Auth:Apple:ClientIds", $"{BundleId},com.example.web");
@@ -86,8 +87,36 @@ public sealed class AppleTests(PostgresFixture postgres) : IAsyncLifetime, IDisp
         Assert.Equal("relay@privaterelay.appleid.com", created.GetProperty("user").GetProperty("email").GetString());
 
         var forged = await _client.PostAsJsonAsync("/v1/auth/sessions",
-            new { provider = "apple", id_token = AppleJwt(new() { ["sub"] = "a-1" }, audience: "someone-else") });
+            new { provider = "apple", nonce = TestAuth.Nonce, id_token = AppleJwt(new() { ["sub"] = "a-1" }, audience: "someone-else") });
         Assert.Equal(HttpStatusCode.Unauthorized, forged.StatusCode);
+    }
+
+    [Fact]
+    public async Task Apple_sign_in_needs_the_nonce_the_token_carries()
+    {
+        var missing = await _client.PostAsJsonAsync("/v1/auth/sessions",
+            new { provider = "apple", id_token = IdToken("a-1"), handle = "fan_one" });
+        Assert.Equal(HttpStatusCode.Unauthorized, missing.StatusCode);
+
+        var empty = await _client.PostAsJsonAsync("/v1/auth/sessions",
+            new { provider = "apple", nonce = "", id_token = IdToken("a-1"), handle = "fan_one" });
+        Assert.Equal(HttpStatusCode.Unauthorized, empty.StatusCode);
+
+        var other = await _client.PostAsJsonAsync("/v1/auth/sessions",
+            new { provider = "apple", nonce = "another-sign-in", id_token = IdToken("a-1"), handle = "fan_one" });
+        Assert.Equal(HttpStatusCode.Unauthorized, other.StatusCode);
+
+        // A token without any nonce (issued for some other flow) can't be used to sign in either.
+        var unbound = await _client.PostAsJsonAsync("/v1/auth/sessions", new
+        {
+            provider = "apple",
+            nonce = TestAuth.Nonce,
+            id_token = AppleJwt(new() { ["sub"] = "a-1", ["email"] = "relay@privaterelay.appleid.com", ["email_verified"] = "true" }),
+            handle = "fan_one",
+        });
+        Assert.Equal(HttpStatusCode.Unauthorized, unbound.StatusCode);
+
+        await SignInAsync("a-1", "fan_one", HttpStatusCode.Created);
     }
 
     [Fact]
@@ -199,6 +228,7 @@ public sealed class AppleTests(PostgresFixture postgres) : IAsyncLifetime, IDisp
         ["email"] = "relay@privaterelay.appleid.com",
         ["email_verified"] = "true",
         ["is_private_email"] = "true",
+        ["nonce"] = TestAuth.HashedNonce,
     });
 
     private string AppleEvent(string type, string subject) => AppleJwt(EventClaims(type, subject));
@@ -223,7 +253,7 @@ public sealed class AppleTests(PostgresFixture postgres) : IAsyncLifetime, IDisp
 
     private async Task<JsonElement> SignInAsync(string subject, string? handle, HttpStatusCode expected)
     {
-        var response = await _client.PostAsJsonAsync("/v1/auth/sessions", new { provider = "apple", id_token = IdToken(subject), handle });
+        var response = await _client.PostAsJsonAsync("/v1/auth/sessions", new { provider = "apple", nonce = TestAuth.Nonce, id_token = IdToken(subject), handle });
         var body = await response.Content.ReadAsStringAsync();
         Assert.True(response.StatusCode == expected, $"Expected {expected}, got {response.StatusCode}: {body}");
         return JsonDocument.Parse(body).RootElement;

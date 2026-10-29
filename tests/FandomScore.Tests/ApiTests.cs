@@ -71,6 +71,7 @@ public sealed class ApiTests : IClassFixture<ApiTests.ApiFactory>
             builder.UseSetting("ConnectionStrings:Database", "Host=localhost;Database=unused");
             builder.UseSetting("Auth:SigningKey", TestAuth.SigningKey);
             builder.UseEnvironment("Production");
+            builder.UseSetting("App:PublicOrigin", TestAuth.PublicOrigin);
             builder.ConfigureServices(services => services.AddTransient<IStartupFilter, ThrowingRoutes>());
         }
 

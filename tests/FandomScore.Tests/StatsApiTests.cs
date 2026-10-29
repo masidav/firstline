@@ -156,7 +156,7 @@ public sealed class StatsApiTests(PostgresFixture postgres) : IAsyncLifetime
     private async Task<string> SignInAsync(string handle)
     {
         var response = await _client.PostAsJsonAsync("/v1/auth/sessions",
-            new { provider = "google", id_token = TestAuth.IdToken($"g-{handle}", $"{handle}@example.test"), handle });
+            new { provider = "google", nonce = TestAuth.Nonce, id_token = TestAuth.IdToken($"g-{handle}", $"{handle}@example.test"), handle });
         var body = await response.Content.ReadAsStringAsync();
         Assert.True(response.StatusCode == HttpStatusCode.Created, body);
         return JsonDocument.Parse(body).RootElement.GetProperty("access_token").GetString()!;

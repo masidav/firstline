@@ -29,7 +29,7 @@ public sealed class RateLimitTests : IDisposable
     public async Task Sign_in_attempts_are_limited_per_client()
     {
         var client = _factory.CreateClient();
-        var attempt = new { provider = "google", id_token = "forged" };
+        var attempt = new { provider = "google", nonce = TestAuth.Nonce, id_token = "forged" };
 
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/v1/auth/sessions", attempt)).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/v1/auth/sessions", attempt)).StatusCode);

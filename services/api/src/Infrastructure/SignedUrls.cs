@@ -34,8 +34,11 @@ public sealed class SignedUrls(IOptions<AuthOptions> auth, TimeProvider time)
             Encoding.ASCII.GetBytes(Signature(purpose, id, expiry)), Encoding.ASCII.GetBytes(sig));
     }
 
-    /// <summary>The API's public origin for absolute links, from the request (forwarded headers are applied first).</summary>
-    public static string Origin(HttpRequest request) => $"{request.Scheme}://{request.Host}{request.PathBase}";
+    /// <summary>
+    /// The API's public origin for absolute links: <c>App:PublicOrigin</c>, never the client-controlled Host header
+    /// (falls back to the request only in Development; <see cref="PublicOrigin"/>).
+    /// </summary>
+    public static string Origin(HttpRequest request) => PublicOrigin.For(request);
 
     private string Signature(string purpose, Guid id, long exp)
     {

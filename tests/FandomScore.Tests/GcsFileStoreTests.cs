@@ -162,7 +162,7 @@ public sealed class GcsFileStoreTests(PostgresFixture postgres) : IAsyncLifetime
         var artistId = await ScoringSetup.ActiveArtistAsync(db, "sp-gcs", "GCS Band", releases: 1);
 
         var session = await api.PostAsJsonAsync("/v1/auth/sessions",
-            new { provider = "google", id_token = TestAuth.IdToken("g-gcs_fan", "gcs_fan@example.test"), handle = "gcs_fan" });
+            new { provider = "google", nonce = TestAuth.Nonce, id_token = TestAuth.IdToken("g-gcs_fan", "gcs_fan@example.test"), handle = "gcs_fan" });
         var token = (await Json(session)).GetProperty("access_token").GetString()!;
         var photo = JpegWithLocation();
         var intent = await Json(await Send(api, HttpMethod.Post, "/v1/uploads", token, new { purpose = "submission", mime_type = "image/jpeg", bytes = photo.Length }));

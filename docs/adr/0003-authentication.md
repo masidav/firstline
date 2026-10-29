@@ -9,7 +9,7 @@
 | Concern | Choice |
 | --- | --- |
 | How fans prove who they are | **Sign in with Apple** or **Google**. The app gets an OpenID Connect identity token from the provider and sends it to `POST /auth/sessions`. No passwords, so no password storage, resets, or credential stuffing. |
-| Checking identity tokens | The API checks the token's signature against the provider's published keys (fetched from its OpenID configuration and cached; refetched when a key ID is unknown). It also checks the issuer, that the audience is one of our client IDs, the expiry, and the nonce if one was sent. |
+| Checking identity tokens | The API checks the token's signature against the provider's published keys (fetched from its OpenID configuration and cached; refetched when a key ID is unknown). It also checks the issuer, that the audience is one of our client IDs, the expiry, and the nonce: every sign-in must send the raw nonce the app put in the provider request, and the token must carry it (raw for Google, SHA-256 hex for Apple), or the answer is `401` (required since 2026-10-29). |
 | Account key | `auth_identities (provider, subject)` → `users.id`. The provider's `sub` is stable; emails can change, so they are not used to find accounts. |
 | New accounts | Need a handle and a **verified** email from the provider. Apple's private relay emails are accepted. |
 | Access tokens | JWT, HS256, **15 minutes**, claims `sub` (user) and `sid` (session). Signed with `Auth__SigningKey` from the environment. |

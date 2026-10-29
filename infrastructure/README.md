@@ -62,6 +62,10 @@ use it, then approve prod.
   `X-Forwarded-For` only from the Google Front End ranges and the load balancer's own address
   (`ForwardedHeaders__KnownNetworks`, `ForwardedHeaders__KnownProxies`), so the sign-in rate limit sees the
   real client.
+- The API builds every absolute link it hands out (signed file links, score cards, featured videos) from
+  `App__PublicOrigin` (the overlay's `app-config`, e.g. `https://api.beta.firstline.com`), never from the request's
+  Host header, and refuses to start without it outside Development. It does not filter Host (`AllowedHosts` stays
+  `*`): the kubelet probes and the load balancer's health checks send the pod address as Host and would be refused.
 - Secrets never leave Secret Manager as environment variables: the GKE Secret Manager add-on mounts each one as a
   file named after its configuration key (`/secrets/Auth__SigningKey`), and the processes read that directory
   (`Secrets__Directory`). Each workload has its own Kubernetes service account bound through Workload Identity
@@ -121,8 +125,8 @@ steps with `prod` in place of `beta`.
    `Spotify__TokenKey` must be the same value for the API and the worker (it is: one secret, two readers).
    Beta and prod use different Spotify apps and Apple keys, so a beta tester never touches prod credentials.
 5. **Overlay.** In `k8s/overlays/<env>/`, set the project id and region (`kustomization.yaml`,
-   `serviceaccounts.yaml`, `secrets.yaml`), the hostname (`gateway.yaml`), `ForwardedHeaders__KnownProxies` to
-   output `api_ip_address`, and the non-secret provider settings (`Auth__*__ClientIds`, `Spotify__ClientId`,
+   `serviceaccounts.yaml`, `secrets.yaml`), the hostname (`gateway.yaml`) and the same URL as `App__PublicOrigin`,
+   `ForwardedHeaders__KnownProxies` to output `api_ip_address`, and the non-secret provider settings (`Auth__*__ClientIds`, `Spotify__ClientId`,
    `Spotify__RedirectUris`, `Cors__AllowedOrigins`), and the web apps' hostnames (`gateway.yaml`) and settings
    (`web-config`). Commit these; they hold no secrets.
 6. **GitHub.** Create the environment (`beta` or `prod`) under repository settings with the

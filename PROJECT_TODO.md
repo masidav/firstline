@@ -472,7 +472,11 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
       otherwise; 2-minute storage redirect); owner and staff links still show a taken-down photo (it stays as proof).
       Verified: `dotnet build` 0 warnings, `dotnet test` 353/353 (ReportApiTests 2 new), app types regenerated and
       `npm run typecheck` in both apps.*
-- [ ] Before deploying: set `AllowedHosts` (or a public origin) and require the sign-in nonce once the app sends it.
+- [x] Before deploying: set `AllowedHosts` (or a public origin) and require the sign-in nonce once the app sends it.
+      *Done 2026-10-29: links use `App__PublicOrigin` (beta/prod overlays; required outside Development; no Host
+      filtering, so probes and health checks still pass); `nonce` is required on sign-in (every client already sent
+      one; dev sign-in now does too). Verified: `dotnet build` (0 warnings), `dotnet test` (366 passed, 0 failed), `npm test` (mobile 300, promoter-web 10) and
+      `npm run typecheck` in apps/mobile and apps/promoter-web.*
 - [ ] Add tests for failure cases, concurrency, and duplicate requests.
 - [ ] Document decisions that remain proposed or open in the source README.
 

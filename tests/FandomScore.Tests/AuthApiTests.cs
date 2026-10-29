@@ -36,6 +36,7 @@ public sealed class AuthApiTests(PostgresFixture postgres) : IAsyncLifetime
         _factory = new ContractCheckedFactory().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Production");
+            builder.UseSetting("App:PublicOrigin", TestAuth.PublicOrigin);
             builder.UseSetting("ConnectionStrings:Database", _connectionString);
             builder.UseSetting("Auth:SigningKey", TestAuth.SigningKey);
             builder.UseSetting("Logging:LogLevel:Default", "Debug");
@@ -82,7 +83,7 @@ public sealed class AuthApiTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal("validation_failed", unverified.GetProperty("code").GetString());
 
         var provider = await ProblemAsync(await _client.PostAsJsonAsync("/v1/auth/sessions",
-            new { provider = "myspace", id_token = "x", handle = "fan_one" }), 422);
+            new { provider = "myspace", nonce = TestAuth.Nonce, id_token = "x", handle = "fan_one" }), 422);
         Assert.Equal("provider", provider.GetProperty("errors")[0].GetProperty("field").GetString());
     }
 
@@ -92,6 +93,21 @@ public sealed class AuthApiTests(PostgresFixture postgres) : IAsyncLifetime
         var problem = await ProblemAsync(await PostSignInAsync("forged", "fan_one"), 401);
 
         Assert.Equal("unauthorized", problem.GetProperty("code").GetString());
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("someone-elses-nonce")]
+    public async Task Sign_in_without_the_matching_nonce_is_unauthorized(string? nonce)
+    {
+        var response = await _client.PostAsJsonAsync("/v1/auth/sessions",
+            new { provider = "google", nonce, id_token = TestAuth.IdToken("g-1", "a@example.test"), handle = "fan_one" });
+        var problem = await ProblemAsync(response, 401);
+
+        Assert.Equal("unauthorized", problem.GetProperty("code").GetString());
+        // No account was created.
+        await SignInAsync(TestAuth.IdToken("g-1", "a@example.test"), "fan_one", HttpStatusCode.Created);
     }
 
     [Fact]
@@ -294,7 +310,7 @@ public sealed class AuthApiTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     private Task<HttpResponseMessage> PostSignInAsync(string idToken, string? handle, string provider = "google") =>
-        _client.PostAsJsonAsync("/v1/auth/sessions", new { provider, id_token = idToken, handle });
+        _client.PostAsJsonAsync("/v1/auth/sessions", new { provider, nonce = TestAuth.Nonce, id_token = idToken, handle });
 
     private async Task<JsonElement> SignInAsync(string idToken, string? handle, HttpStatusCode expected) =>
         await JsonAsync(await PostSignInAsync(idToken, handle), expected);
