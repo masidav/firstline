@@ -22,6 +22,7 @@ public sealed partial class OpenApiContract
     private readonly string _defs;
     private readonly Dictionary<string, (string Path, JsonObject Operation)> _operations = new(StringComparer.Ordinal);
     private readonly HashSet<string> _planned = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _anonymous = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, JsonSchema> _schemas = new(StringComparer.Ordinal);
 
     public static OpenApiContract Instance => Loaded.Value;
@@ -43,6 +44,11 @@ public sealed partial class OpenApiContract
                     {
                         _planned.Add(Key(method, path));
                     }
+
+                    if (operation["security"] is JsonArray { Count: 0 })
+                    {
+                        _anonymous.Add(Key(method, path));
+                    }
                 }
             }
         }
@@ -50,6 +56,9 @@ public sealed partial class OpenApiContract
 
     /// <summary>Every documented operation as "METHOD /path/{}" (parameters normalized).</summary>
     public IReadOnlyCollection<string> Operations => _operations.Keys;
+
+    /// <summary>Operations that override the global security with <c>security: []</c>: no sign-in.</summary>
+    public IReadOnlyCollection<string> Anonymous => _anonymous;
 
     /// <summary>Operations marked <c>x-requires-schema</c> or <c>x-planned</c>: designed, not built.</summary>
     public IReadOnlyCollection<string> Planned => _planned;
