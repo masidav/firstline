@@ -5,7 +5,9 @@
     "scheme": "fandomscore",
     "version": "0.1.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
+    "runtimeVersion": { "policy": "appVersion" },
     "web": {
       "bundler": "metro",
       "output": "single"
@@ -24,10 +26,32 @@
           "microphonePermission": false
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 160,
+          "resizeMode": "contain",
+          "backgroundColor": "#0f1115"
+        }
+      ]
     ],
     "ios": {
-      "usesAppleSignIn": true
+      "bundleIdentifier": "com.firstline.fandomscore",
+      "supportsTablet": false,
+      "usesAppleSignIn": true,
+      "config": { "usesNonExemptEncryption": false },
+      "infoPlist": {
+        "UIBackgroundModes": ["remote-notification"]
+      }
+    },
+    "android": {
+      "package": "com.firstline.fandomscore",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/splash-icon.png",
+        "backgroundColor": "#0f1115"
+      }
     }
   }
 }

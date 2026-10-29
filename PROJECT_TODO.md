@@ -402,7 +402,10 @@ Details: [ADR 0002](docs/adr/0002-hosting-gcp-gke.md) · [Infrastructure](infras
       *Since 2026-10-25 it seeds real artists and albums from Spotify when Spotify credentials are set (made-up ones
       otherwise, as in CI); see `apps/mobile/TODO.md`.*
 - [ ] Test accounts for every external provider (Spotify, Apple, ticketers) usable on beta.
-- [ ] Beta distribution: TestFlight and Google Play closed testing.
+- [ ] Beta distribution: TestFlight and Google Play closed testing. *iOS build configuration done 2026-10-29
+      (bundle ID, icon and splash, `app.config.ts`, `eas.json` profiles, dev client); CI generates the iOS project and
+      bundle on every push (`npm run check:ios`). The first build needs the Apple Developer Program and `eas init`
+      (`docs/OWNER_TODO.md`); nothing has run on a device yet.*
 - [ ] App Store and Google Play readiness: privacy labels, data safety form, in-app account deletion, Sign in with Apple.
 - [ ] Staged rollout: internal, closed alpha, one pilot show, public beta, general availability.
 

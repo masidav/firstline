@@ -107,9 +107,14 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
 - [ ] **Ticketmaster** (concert listings, sale dates, presale reminders). Get a key at developer.ticketmaster.com
   and store it the same way as `Ticketmaster__ApiKey`, then restart the worker so it reads the new value:
   `kubectl -n fandomscore rollout restart deployment/worker`. Check the terms question in section D first.
-- [ ] **Apple sign-in, the iPhone app, and push notifications** (when you want iOS). Needs the Apple Developer
-  Program, a bundle ID, a Sign in with Apple key (the `.p8` goes in `Auth__Apple__PrivateKey`; Team ID and Key ID go
-  in the overlay), and an Expo account for builds and push.
+- [ ] **Apple sign-in, the iPhone app, and push notifications** (when you want iOS). The app is configured and its
+  iOS project is checked in CI (bundle ID `com.firstline.fandomscore`); the build runs in Expo's cloud, so no Mac is
+  needed. You need: the Apple Developer Program ($99/year) and an Expo account (expo.dev, free tier builds work).
+  Then, in `apps/mobile`: `npm i -g eas-cli && eas login && eas init` (commit the `app.json` change), and
+  `eas credentials -p ios` to let Expo create the certificates and the push key. For sign-in: a Sign in with Apple
+  key (the `.p8` goes in `Auth__Apple__PrivateKey`; Team ID and Key ID go in the overlay) and a Google OAuth client of
+  type iOS for the bundle ID (send Claude its ID). First build: `eas build -p ios --profile development`. Steps with
+  the exact commands: `apps/mobile/README.md`, "Building the iOS app".
 - [ ] **Email** for staff alerts now and fan email later. Needs a provider chosen (section C).
 
 ## C. Product decisions

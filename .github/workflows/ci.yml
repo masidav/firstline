@@ -143,6 +143,11 @@ jobs:
       - name: Web build
         run: npm run build:web
 
+      # The iOS app can't be built on Linux, but its native project and JavaScript bundle can: this catches broken
+      # config plugins, app.config.ts, and web-only imports before an EAS build does (apps/mobile/README.md).
+      - name: iOS native project and bundle
+        run: npm run check:ios
+
   promoter-web:
     name: Promoter dashboard (typecheck, tests, API types, build)
     runs-on: ubuntu-latest

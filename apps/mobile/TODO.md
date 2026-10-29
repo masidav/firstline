@@ -14,7 +14,12 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Handle API errors, network loss, expired sessions, and background/resume behavior.
 - [ ] Add component and screen tests using the existing test stack. *Plus browser end-to-end journeys since
       2026-10-27 (`e2e/`, run in CI).*
-- [ ] Verify iOS and Android builds and document required configuration. *Web build verified (CI and a Playwright WebKit run at iPhone size, 2026-10-18); iOS waits on the Apple Developer Program.*
+- [ ] Verify iOS and Android builds and document required configuration. *Web build verified (CI and a Playwright
+      WebKit run at iPhone size, 2026-10-18). iOS configured 2026-10-29: bundle ID `com.firstline.fandomscore`,
+      icon and splash (`assets/`, drawn by `tools/dev/app-icons.mjs`), `app.config.ts` (Google scheme, EAS project id,
+      local-network exception for dev builds), `eas.json` profiles, `expo-dev-client`. Verified: `npm run check:ios`
+      (iOS prebuild and Hermes bundle on Linux, now in CI), typecheck, Jest 297. The build itself waits on the Apple
+      Developer Program and `eas init` (README "Building the iOS app"). Android: package and adaptive icon set, never built.*
 - [x] Google sign-in on web. *Done 2026-10-26: "Continue with Google" sends the fan to Google (OpenID Connect,
       ID token in the fragment, no Google script), `/google-callback` checks the state and signs in; a new account
       chooses a handle. Needs `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` and the redirect URI on the Google client (README).
@@ -25,7 +30,7 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       (`expo-apple-authentication`, hashed nonce, fresh authorization code before `DELETE /me`); unit-tested with the
       module mocked. Not run on a device: needs the Apple Developer Program and an iOS build.*
 - [ ] Google sign-in in the native app: written 2026-10-26 (`googleSignIn.native.ts`, PKCE code flow with an iOS
-      client ID, unit-tested), not run on a device. Needs an iOS client ID and its reversed scheme in `app.json`.
+      client ID, unit-tested), not run on a device. Needs an iOS client ID; `app.config.ts` adds its reversed scheme (2026-10-29).
 
 ## Home screen concept (requested 2026-10-20, not designed yet)
 - [ ] Main feed scrolls **horizontally, like a music sheet** (a staff the fan moves along).
@@ -89,7 +94,8 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Register for an allocation; show status (registered, selected, not selected, expired).
 - [ ] Claim a reservation and hand off to checkout; show the non-transferable ticket or delivery date.
 - [ ] Face-value exchange or return flow.
-- [ ] Release builds via EAS Build; beta via TestFlight and Google Play closed testing.
+- [ ] Release builds via EAS Build; beta via TestFlight and Google Play closed testing. *`eas.json` profiles written
+      2026-10-29 (`development`, `development-simulator`, `beta`, `production`); no build run yet (needs `eas init`).*
 
 ## Verification
 - [ ] Add or update automated tests for the behavior above.

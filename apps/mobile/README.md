@@ -1,7 +1,8 @@
-# Fan app (web now, iOS later)
+# Fan app (web and iOS)
 
 One Expo (React Native) codebase. It runs as a **web app** today, so it can be tried on a phone without an
-Apple Developer account. The same code builds the iOS app later (see [Moving to iOS](#moving-to-ios)).
+Apple Developer account. The same code is the iOS app: its native project is configured and checked in CI, and
+building it needs the Apple Developer Program (see [Building the iOS app](#building-the-ios-app)).
 
 Expo SDK 57, expo-router, TypeScript. The API client is generated from `openapi.yaml`.
 
@@ -104,6 +105,9 @@ at startup from `/config.js`, which nginx writes from its environment, so one im
 | `src/api/` | `schema.d.ts` (generated, don't edit), `client.ts` (typed client, `ApiError`), `errors.ts` (messages). |
 | `src/features/<feature>/` | Feature UI, e.g. `authentication/SignInScreen` (Google, Apple, developer sign-in), `settings/ProfileScreen`. |
 | `src/ui/` | Shared components and theme tokens. |
+| `app.json`, `app.config.ts` | App config: the static part (name, bundle ID, icon, plugins) and the part that depends on the environment (Google's scheme, EAS project id, local-network exception). |
+| `eas.json` | EAS Build profiles: `development`, `development-simulator`, `beta`, `production`. |
+| `assets/` | Icon and splash image, drawn by `tools/dev/app-icons.mjs` (placeholders until there is a brand). |
 
 ## Commands
 ```bash
@@ -112,6 +116,7 @@ npm test               # Jest (jest-expo)
 npm run typecheck      # tsc
 npm run generate:api   # regenerate src/api/schema.d.ts after openapi.yaml changes (CI checks it)
 npm run build:web      # static web build in dist/
+npm run check:ios      # generates the iOS project (ios/, not committed) and bundles the JS for iOS; CI runs it
 e2e/run.sh             # end-to-end journeys in a browser against the API and a seeded database (e2e/README.md)
 ```
 
@@ -126,14 +131,48 @@ e2e/run.sh             # end-to-end journeys in a browser against the API and a 
   `src/routeGuards.test.tsx` checks every route. Don't put test files under `src/app`: expo-router makes each
   file there a route and bundles it.
 
-## Moving to iOS
-Needs the Apple Developer Program ($99/year). Then:
-1. Pick the bundle ID and add `ios.bundleIdentifier` to `app.json`.
-2. Sign in with Apple and Google are built (see above); add the Google iOS client's scheme to `app.json` and try
-   both on a device.
-3. Build in the cloud with EAS (`eas build -p ios`), install a development build or ship to TestFlight
-   (`eas submit`). No Mac needed. Everything else (screens, session, API client) is shared.
+## Building the iOS app
+The native project is generated from `app.json` and `app.config.ts` (`expo prebuild`); nothing under `ios/` is
+hand-edited or committed. What's set: bundle ID `com.firstline.fandomscore`, Sign in with Apple, push
+(`aps-environment`), the photo-library purpose string, the `fandomscore` URL scheme (Spotify's redirect
+`fandomscore://spotify-callback`), Google's reversed-client-ID scheme when `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` is
+set, portrait only, iPhone only, and the export-compliance answer (`usesNonExemptEncryption: false`, the app only
+uses HTTPS). CI runs `npm run check:ios` on every push: the prebuild and an iOS JavaScript bundle, which is as far
+as Linux gets. The build itself happens in EAS Build's cloud, so no Mac is needed.
+
+**Once, with the Apple Developer Program ($99/year) and an Expo account:**
+1. `npm install -g eas-cli && eas login`, then in `apps/mobile`: `eas init` (creates the EAS project and writes
+   `extra.eas.projectId` into `app.json`; commit that). The project id is also what push notifications need.
+2. `eas credentials -p ios`: let EAS create the distribution certificate, the provisioning profile, and the push key
+   (APNs) for `com.firstline.fandomscore`. EAS stores them; nothing goes in the repo.
+3. Sign in with Apple: in the Apple developer portal create a Sign in with Apple key (`.p8`). The API needs
+   `Auth__Apple__ClientIds=com.firstline.fandomscore`, the key, Team ID, and Key ID (`docs/OWNER_TODO.md`).
+4. Google: create an OAuth client of type **iOS** for the bundle ID. Its ID goes in the build's environment
+   (`eas env:create --name EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID --visibility plaintext`, one per environment) and in the
+   API's `Auth__Google__ClientIds` next to the web client. `app.config.ts` adds the reversed scheme by itself.
+5. Spotify: add `fandomscore://spotify-callback` to the Spotify app's redirect URIs and to the API's
+   `Spotify__RedirectUris`; `EXPO_PUBLIC_SPOTIFY_CLIENT_ID` goes in the EAS environment like the Google ID.
+
+**Development build (your API, sign-in as anyone):**
+```bash
+EXPO_PUBLIC_API_URL=https://<tunnel>/v1 eas build -p ios --profile development   # installs on registered devices
+npx expo start --dev-client                                                      # then open the app on the phone
+```
+`eas device:create` registers a phone for internal distribution. The profile turns developer sign-in on. An API on
+plain `http://192.168.x.x` works too (`app.config.ts` adds the local-networking exception), but Google, Apple, and
+Spotify sign-in need HTTPS, so a tunnel is simpler. `--profile development-simulator` makes a simulator build for a
+Mac.
+
+**Beta (TestFlight):** `eas build -p ios --profile beta` builds against `https://api.beta.firstline.com/v1` with the
+build number incremented, then `eas submit -p ios --profile beta` uploads it to App Store Connect; add testers in
+TestFlight. `production` is the same against the production API, whose hostname is still the placeholder from
+`infrastructure/k8s/overlays/prod` (change both when it's decided).
+
+Not tried yet, in this order, once a build exists: Sign in with Apple and Google, connecting Spotify, push
+notifications on a real phone, the share sheets, and the offline journal queue (Keychain and file storage are
+written and unit-tested with the modules mocked). Universal links (`https://app.beta.firstline.com/...` opening
+the app) and EAS Update (over-the-air JavaScript fixes) are not set up.
 
 ## Not done yet
-Sign in with Apple and Google in the native app are written but not run on a device (needs the Apple program and
-an iOS build); Apple's web flow; Spotify connect in the native app.
+Everything native is written but not run on a device (needs the Apple program and an iOS build; see above). Apple's
+web flow. Android is configured (`android.package`, adaptive icon) but has never been built.
