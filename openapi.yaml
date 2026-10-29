@@ -2291,7 +2291,8 @@ paths:
       operationId: getEligibility
       summary: Can I register for this allocation?
       description: |
-        `reason` says why not: `not_open`, `artist_not_active`, `hub_city_required`, `no_score`,
+        `reason` says why not: `not_open`, `artist_not_active`, `under_review` (a fraud review holds the fan; see
+        `GET /me/fraud-review`), `hub_city_required`, `no_score`,
         `below_threshold` (raw score under `min_raw_score`), `already_registered` (for another allocation of the
         same show), or `named_as_guest` (someone named the fan as their +1 for it; `POST /events/{eventId}/guest-invite/decline`
         frees them). `raw_score`, `percentile`, and `hub_match` are the fan's
@@ -2349,7 +2350,9 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Registration'}
         '403':
-          description: 'No score for the artist, or below the threshold (`code: not_eligible`)'
+          description: |
+            No score for the artist, or below the threshold (`code: not_eligible`); or a fraud review holds the fan
+            (`code: under_review`, see `GET /me/fraud-review`). Every refusal is recorded in the eligibility audit.
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
@@ -2930,6 +2933,200 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ModerationDecision'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /me/fraud-review:
+    get:
+      tags: [Me]
+      operationId: getMyFraudReview
+      summary: Fraud reviews of my account, and my appeals
+      description: |
+        `on_hold` is true while a flag is `open` (under review) or `upheld`: the fan can't register for fan tickets,
+        and the draw and returned seats pass them by. Each flag shows its reason category and status, never the
+        evidence or staff notes. `can_appeal` while the flag holds the fan and they haven't appealed it yet.
+      responses:
+        '200':
+          description: The fan's flags, newest first
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FanReview'}
+  /me/fraud-review/flags/{flagId}/appeal:
+    parameters:
+      - {name: flagId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      tags: [Me]
+      operationId: appealFraudFlag
+      summary: Appeal a fraud review
+      description: |
+        Once per flag, while it holds the fan. Staff are told; granting the appeal clears the flag, denying it upholds
+        the flag.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message: {type: string, minLength: 1, maxLength: 2000, description: The fan's side, for staff.}
+      responses:
+        '201':
+          description: Appeal filed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FraudAppeal'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: '`appeal_unavailable`: already appealed, or the flag is cleared'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /admin/fraud-flags:
+    get:
+      tags: [Admin]
+      operationId: listFraudFlags
+      summary: Fraud review queue
+      description: |
+        `needs_action` (the default): open flags and flags with a pending appeal, oldest first. The other filters list
+        flags by status, newest first. Each flag comes with context for the decision: account age, the trust parts,
+        live registrations, and tickets held.
+      parameters:
+        - name: status
+          in: query
+          schema: {type: string, enum: [needs_action, open, upheld, cleared], default: needs_action}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page of flags
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FraudFlagPage'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+    post:
+      tags: [Admin]
+      operationId: raiseFraudFlag
+      summary: Flag a fan for fraud review
+      description: |
+        Holds the fan at once (no registering, passed over by draws and returned seats) until staff clear the flag.
+        Registrations made before the flag stay live until the draw. The fan is told their account is under review.
+        One open flag per fan.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [handle, reason]
+              properties:
+                handle: {type: string}
+                reason: {type: string, enum: [streaming_farm, bot, shared_device, duplicate_account, other]}
+                note: {type: string, maxLength: 2000, description: Internal only.}
+                evidence: {type: object, additionalProperties: true, description: 'Internal only: what the flag is based on.'}
+      responses:
+        '201':
+          description: Flag raised
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FraudFlag'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: '`flag_open`: the fan already has an open flag'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /admin/fraud-flags/{flagId}/decision:
+    parameters:
+      - {name: flagId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      tags: [Admin]
+      operationId: decideFraudFlag
+      summary: Uphold or clear a flag
+      description: |
+        `uphold` an open flag (the hold stays until an appeal is granted) or `clear` an open or upheld one (the hold
+        ends). Recorded with the staff member in the eligibility audit. A cleared flag is final.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: {type: string, enum: [uphold, clear]}
+                note: {type: string, maxLength: 2000, description: Internal only.}
+      responses:
+        '200':
+          description: Decision recorded
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FraudFlag'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: '`conflict`: the flag is already in that state, or cleared'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /admin/fraud-appeals/{appealId}/decision:
+    parameters:
+      - {name: appealId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      tags: [Admin]
+      operationId: decideFraudAppeal
+      summary: Grant or deny an appeal
+      description: |
+        `grant` clears the flag; `deny` upholds it (if it was still open). `response` is shown to the fan.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: {type: string, enum: [grant, deny]}
+                response: {type: string, maxLength: 2000, description: Shown to the fan.}
+      responses:
+        '200':
+          description: Decision recorded; the flag as it is now
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FraudFlag'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: '`appeal_unavailable`: already decided'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /admin/eligibility-audit:
+    get:
+      tags: [Admin]
+      operationId: listEligibilityAudit
+      summary: Eligibility decisions for a fan or an allocation
+      description: |
+        Newest first. Every registration (with the score snapshot it was based on), refused registration (at most once
+        an hour per fan, allocation, and reason), fan held out of a draw or skipped for a returned seat, and flag and
+        appeal change. Send `handle`, `allocation_id`, or both.
+      parameters:
+        - {name: handle, in: query, schema: {type: string}}
+        - {name: allocation_id, in: query, schema: {type: string, format: uuid}}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page of audit entries
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EligibilityAuditPage'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
@@ -3764,6 +3961,9 @@ components:
             - not_eligible
             - already_registered
             - named_as_guest
+            - under_review
+            - flag_open
+            - appeal_unavailable
             - plus_one_unavailable
             - guest_unavailable
             - selection_not_ready
@@ -3802,6 +4002,102 @@ components:
       properties:
         rule_key: {type: string}
         points: {type: number}
+    FanReview:
+      type: object
+      required: [on_hold, flags]
+      properties:
+        on_hold: {type: boolean, description: 'A flag is open or upheld: no fan tickets until it''s cleared.'}
+        flags:
+          type: array
+          items: {$ref: '#/components/schemas/FanFlag'}
+    FanFlag:
+      type: object
+      required: [id, reason, status, raised_at, decided_at, can_appeal, appeal]
+      properties:
+        id: {type: string, format: uuid}
+        reason: {type: string, enum: [streaming_farm, bot, shared_device, duplicate_account, other]}
+        status: {type: string, enum: [open, upheld, cleared], description: 'open: under review'}
+        raised_at: {type: string, format: date-time}
+        decided_at: {type: [string, 'null'], format: date-time}
+        can_appeal: {type: boolean}
+        appeal:
+          oneOf: [{$ref: '#/components/schemas/FraudAppeal'}, {type: 'null'}]
+    FraudAppeal:
+      type: object
+      required: [id, flag_id, message, filed_at, status, decided_at, response]
+      properties:
+        id: {type: string, format: uuid}
+        flag_id: {type: string, format: uuid}
+        message: {type: string}
+        filed_at: {type: string, format: date-time}
+        status: {type: string, enum: [pending, granted, denied]}
+        decided_at: {type: [string, 'null'], format: date-time}
+        response: {type: [string, 'null'], description: Staff's answer to the fan.}
+    FraudFlag:
+      type: object
+      description: A flag as staff see it, with the evidence and context for deciding.
+      required: [id, user_id, user, reason, evidence, note, source, raised_by, raised_at, status, decided_by, decided_at,
+                 decision_note, appeal, appeal_decided_by, context]
+      properties:
+        id: {type: string, format: uuid}
+        user_id: {type: string, format: uuid}
+        user: {$ref: '#/components/schemas/UserRef'}
+        reason: {type: string, enum: [streaming_farm, bot, shared_device, duplicate_account, other]}
+        evidence: {type: object, additionalProperties: true}
+        note: {type: [string, 'null']}
+        source: {type: string, enum: [staff, rule]}
+        raised_by: {type: [string, 'null'], description: Staff handle; null for a rule.}
+        raised_at: {type: string, format: date-time}
+        status: {type: string, enum: [open, upheld, cleared]}
+        decided_by: {type: [string, 'null'], description: Staff handle}
+        decided_at: {type: [string, 'null'], format: date-time}
+        decision_note: {type: [string, 'null']}
+        appeal:
+          oneOf: [{$ref: '#/components/schemas/FraudAppeal'}, {type: 'null'}]
+        appeal_decided_by: {type: [string, 'null'], description: Staff handle}
+        context:
+          type: object
+          required: [account_created_at, trust_parts, live_registrations, held_reservations]
+          properties:
+            account_created_at: {type: string, format: date-time}
+            trust_parts: {type: object, additionalProperties: {type: number}, description: 'Each part of the trust score, 0 to 1'}
+            live_registrations: {type: integer, minimum: 0}
+            held_reservations: {type: integer, minimum: 0, description: Tickets the fan holds for shows not yet started}
+    FraudFlagPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/FraudFlag'}
+        next_cursor: {type: [string, 'null']}
+    EligibilityAuditEntry:
+      type: object
+      required: [id, at, action, reason, user_id, handle, allocation_id, registration_id, flag_id, appeal_id, actor, inputs]
+      properties:
+        id: {type: integer}
+        at: {type: string, format: date-time}
+        action:
+          type: string
+          enum: [registered, registration_blocked, draw_held_out, backfill_skipped, flag_raised, flag_upheld, flag_cleared,
+                 appeal_filed, appeal_granted, appeal_denied]
+        reason: {type: [string, 'null'], description: The refusal reason or the flag's reason.}
+        user_id: {type: string, format: uuid}
+        handle: {type: [string, 'null'], description: Null when the account was deleted.}
+        allocation_id: {type: [string, 'null'], format: uuid}
+        registration_id: {type: [string, 'null'], format: uuid}
+        flag_id: {type: [string, 'null'], format: uuid}
+        appeal_id: {type: [string, 'null'], format: uuid}
+        actor: {type: [string, 'null'], description: 'Handle of who decided (the fan or staff); null for the system'}
+        inputs: {type: object, additionalProperties: true, description: 'What the decision was based on: score snapshot, threshold, hub match, flag.'}
+    EligibilityAuditPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/EligibilityAuditEntry'}
+        next_cursor: {type: [string, 'null']}
     UserRef:
       type: object
       required: [handle, deleted]
@@ -4237,7 +4533,7 @@ components:
               description: position, spotify_track_id, title, artist_name, album_title, cover_url, added_at, refreshed_at.
         tickets:
           type: object
-          required: [registrations, guest_of, reservations]
+          required: [registrations, guest_of, reservations, account_reviews, eligibility_decisions]
           properties:
             registrations:
               allOf: [{$ref: '#/components/schemas/ExportRows'}]
@@ -4248,6 +4544,12 @@ components:
             reservations:
               allOf: [{$ref: '#/components/schemas/ExportRows'}]
               description: id, registration_id, allocation_id, event_id, event_name, event_starts_at, seats, face_value_cents, currency, deliver_at, created_at, returned_at, cancelled_at, cancelled_reason. Not the ticket token.
+            account_reviews:
+              allOf: [{$ref: '#/components/schemas/ExportRows'}]
+              description: Fraud reviews of the account. id, reason, status, raised_at, decided_at, appeal_message, appeal_filed_at, appeal_status, appeal_decided_at, appeal_response. Not the evidence or staff notes.
+            eligibility_decisions:
+              allOf: [{$ref: '#/components/schemas/ExportRows'}]
+              description: The eligibility audit about the fan. at, action, reason, allocation_id, registration_id, flag_id, appeal_id, inputs (null for flag decisions).
         notifications:
           allOf: [{$ref: '#/components/schemas/ExportRows'}]
           description: Fan notices (not staff notices). id, kind, subject_id, data, created_at, read_at.
@@ -4518,7 +4820,7 @@ components:
         eligible: {type: boolean, description: 'True if the fan can register now, or already has'}
         reason:
           type: [string, 'null']
-          enum: [not_open, artist_not_active, hub_city_required, no_score, below_threshold, already_registered, named_as_guest, null]
+          enum: [not_open, artist_not_active, under_review, hub_city_required, no_score, below_threshold, already_registered, named_as_guest, null]
         min_raw_score: {type: [number, 'null']}
         raw_score: {type: [number, 'null']}
         percentile: {type: [number, 'null']}
@@ -4556,7 +4858,7 @@ components:
         id: {type: string, format: uuid}
         kind:
           type: string
-          enum: [draw_selected, draw_not_selected, seat_backfilled, ticket_delivered, presale, guest_named, staff_report, staff_review, staff_draw, staff_redaction, staff_show_changed]
+          enum: [draw_selected, draw_not_selected, seat_backfilled, ticket_delivered, presale, guest_named, fraud_hold, fraud_cleared, appeal_decided, staff_report, staff_review, staff_draw, staff_redaction, staff_show_changed, staff_appeal]
         title: {type: string}
         body: {type: string}
         link: {type: string, description: 'App route to open, e.g. /tickets or /show/{id}'}

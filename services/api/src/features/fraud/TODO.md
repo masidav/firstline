@@ -7,13 +7,17 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Detect streaming-farm patterns: looped plays, 24/7 listening, sudden spikes before an allocation, many accounts on one device or network.
 - [ ] Freeze each fan's eligibility snapshot when an allocation's registration closes so late gaming has no effect.
 - [ ] Verify one person per account at registration (phone or ID check) and record only the verification result, not raw documents.
-- [ ] Give staff a fraud review queue with the evidence behind each flag; reuse the audit-trail pattern of `verification_checks`.
-- [ ] Support appeals with a recorded decision and reviewer.
+- [x] Give staff a fraud review queue with the evidence behind each flag; reuse the audit-trail pattern of `verification_checks`.
+      *Done 2026-10-29 (migration 0042): `fraud_flags` with evidence and notes, `/v1/admin/fraud-flags`, an append-only
+      `eligibility_audit` of every eligibility decision. Verified: FraudReviewApiTests 5, invariants (0042).*
+- [x] Support appeals with a recorded decision and reviewer. *Done 2026-10-29: one appeal per flag, granted (cleared) or
+      denied (upheld) by a named staff member, with a response the fan sees.*
 - [ ] Keep a living document of known gaming strategies and the mitigation for each.
 - [ ] Test that flagged fans are excluded, appeals restore eligibility, and snapshots ignore later changes.
+      *Excluded and restored: done 2026-10-29 (FraudReviewApiTests). Snapshots wait on the frozen eligibility snapshot above.*
 
 ## Verification
 - [ ] Add or update automated tests for the behavior above.
 - [ ] Run the relevant tests and record actual results.
-- [ ] Update the feature README with setup, interfaces, dependencies, and known limitations.
+- [x] Update the feature README with setup, interfaces, dependencies, and known limitations. *README.md, 2026-10-29.*
 - [ ] Update `PROJECT_TODO.md` when this feature reaches a verified milestone.

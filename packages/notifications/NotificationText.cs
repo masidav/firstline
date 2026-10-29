@@ -7,7 +7,7 @@ namespace FandomScore.Notifications;
 public sealed record NotificationMessage(string Title, string Body, string Link);
 
 /// <summary>
-/// Turns a notification row (kind and data, migrations 0021, 0029, 0031) into text. The API shows it in the in-app list;
+/// Turns a notification row (kind and data, migrations 0021, 0029, 0031, 0042) into text. The API shows it in the in-app list;
 /// the worker sends the same text as a push. Times are relative ("starts in about 5 hours") or dates only, because
 /// neither knows the fan's time zone.
 /// </summary>
@@ -16,7 +16,8 @@ public static class NotificationText
     /// <summary>Push categories a fan can turn off (users.push_tickets, push_presales, push_staff; migration 0032).</summary>
     public static string Category(string kind) => kind switch
     {
-        "draw_selected" or "draw_not_selected" or "seat_backfilled" or "ticket_delivered" or "guest_named" => "tickets",
+        "draw_selected" or "draw_not_selected" or "seat_backfilled" or "ticket_delivered" or "guest_named"
+            or "fraud_hold" or "fraud_cleared" or "appeal_decided" => "tickets",
         "presale" => "presales",
         _ when kind.StartsWith("staff_", StringComparison.Ordinal) => "staff",
         _ => "other",
@@ -41,6 +42,13 @@ public static class NotificationText
             "guest_named" => ("You're someone's +1",
                 $"@{Text("host_handle")} named you as their +1 for {show}{on}. If you didn't agree, decline it on the show page: it keeps you from registering yourself.",
                 $"/show/{Text("event_id")}"),
+            "fraud_hold" => ("Your account is under review",
+                "We're checking some activity on your account, so fan ticket registration is paused for now. You can tell us your side.",
+                "/account-review"),
+            "fraud_cleared" => ("Your account review is closed", "You're clear to register for fan tickets again.", "/account-review"),
+            "appeal_decided" => Text("status") == "granted"
+                ? ("Your appeal was accepted", "You're clear to register for fan tickets again.", "/account-review")
+                : ("Your appeal was turned down", "Your account stays on hold for fan tickets. Open Account review for our answer.", "/account-review"),
             "presale" => (Text("artist_name") is { Length: > 0 } artist ? $"Presale: {artist}" : "Presale",
                 $"{Text("presale_name")} for {show}{(Text("city") is { Length: > 0 } city ? $" in {city}" : "")} {PresaleWhen(data, now)}.",
                 $"/show/{Text("event_id")}"),
@@ -48,6 +56,7 @@ public static class NotificationText
             "staff_review" => ("Proof to review", $"@{Text("handle")} sent {Text("kind").Replace('_', ' ')} for {Text("artist_name")}.", "/review"),
             "staff_redaction" => ("A photo needs a redaction check", Text("note") is { Length: > 0 } note ? note : "The redaction worker couldn't finish a file.", "/redactions"),
             "staff_show_changed" => ("A show with fan tickets changed", ShowChanged(show, Text("status"), data), $"/show/{Text("event_id")}"),
+            "staff_appeal" => ("A fan appealed a fraud review", $"@{Text("handle")} appealed their account review.", "/fraud"),
             "staff_draw" => ("A fan draw ran", $"{show}: {Number("selected_fans")} of {Number("registrations")} fans selected, {Number("seats_assigned")} of {Number("tickets")} seats assigned.", $"/show/{Text("event_id")}"),
             _ => ("Update", "Something changed.", "/home"),
         };

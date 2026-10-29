@@ -191,6 +191,7 @@ export function ProfileScreen({ me }: { me: Me }) {
       <Button label="People you follow" kind="secondary" onPress={() => router.push('/people')} />
       {me.is_staff && <Button label="Review queue" kind="secondary" onPress={() => router.push('/review')} />}
       {me.is_staff && <Button label="Reported posts" kind="secondary" onPress={() => router.push('/moderation')} />}
+      {me.is_staff && <Button label="Fraud review" kind="secondary" onPress={() => router.push('/fraud')} />}
       {me.is_staff && <Button label="Photo redaction" kind="secondary" onPress={() => router.push('/redactions')} />}
       {me.is_staff && <Button label="Artist links and sources" kind="secondary" onPress={() => router.push('/concert-sources')} />}
       {me.is_staff && <Button label="Featured artist" kind="secondary" onPress={() => router.push('/featured-admin')} />}

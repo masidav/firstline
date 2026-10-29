@@ -18,6 +18,7 @@ type Eligibility = components['schemas']['Eligibility'];
 const reasons: Record<string, string> = {
   not_open: "Registration isn't open right now.",
   artist_not_active: "This artist isn't active right now, so registration is paused.",
+  under_review: "Your account is on hold for fan tickets for now, so you can't register. Your account review has the details.",
   hub_city_required: 'Choose your hub cities before registering.',
   no_score: "You don't have a fandom score for this artist yet. Connect Spotify and listen to them.",
   below_threshold: "Your fandom score for this artist is below this allocation's minimum.",
@@ -189,6 +190,9 @@ function AllocationCard({ allocation }: { allocation: Allocation }) {
       )}
       {eligibility && !eligibility.eligible && eligibility.reason && !registration && allocation.status === 'open' && (
         <Body muted>{reasons[eligibility.reason] ?? eligibility.reason}</Body>
+      )}
+      {eligibility?.reason === 'under_review' && !registration && allocation.status === 'open' && (
+        <Button label="See your account review" kind="secondary" onPress={() => router.push('/account-review')} />
       )}
       {eligibility?.reason === 'named_as_guest' && !registration && allocation.status === 'open' && (
         <Button

@@ -2310,4 +2310,102 @@ BEGIN
   ASSERT decline_plus_one_invite(gen_random_uuid(), gen_random_uuid()) = 0, 'declining with nothing to decline is a no-op';
 END $$;
 
+-- ------------------------------------------------------------ fraud review (0042)
+-- A flag's facts never change and its status only moves forward; one open flag per fan; an appeal is the flagged fan's,
+-- once, while the flag holds them; deciding an appeal decides the flag; the audit log is append-only and records each
+-- step with its actor. (FraudReviewApiTests covers registering, the draw, and returned seats.)
+DO $$
+DECLARE fan uuid; other uuid; staff uuid; f uuid; ap uuid; v_actions text[];
+BEGIN
+  INSERT INTO users (handle, email) VALUES ('fraud_fan', 'fraud_fan@example.test') RETURNING id INTO fan;
+  INSERT INTO users (handle, email) VALUES ('fraud_other', 'fraud_other@example.test') RETURNING id INTO other;
+  INSERT INTO users (handle, email, is_staff) VALUES ('fraud_reviewer', 'fraud_reviewer@example.test', true) RETURNING id INTO staff;
+
+  ASSERT NOT fan_on_hold(fan), 'no flag, no hold';
+  INSERT INTO fraud_flags (user_id, reason, raised_by) VALUES (fan, 'bot', staff) RETURNING id INTO f;
+  ASSERT fan_on_hold(fan) AND fan_hold_flag(fan) = f, 'an open flag holds the fan';
+  ASSERT EXISTS (SELECT 1 FROM notifications WHERE user_id = fan AND kind = 'fraud_hold' AND subject_id = f), 'the fan is told';
+
+  BEGIN
+    INSERT INTO fraud_flags (user_id, reason, raised_by) VALUES (fan, 'other', staff);
+    RAISE EXCEPTION 'a second open flag should fail';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  BEGIN
+    UPDATE fraud_flags SET reason = 'other' WHERE id = f;
+    RAISE EXCEPTION 'editing a flag''s facts should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%only the decision changes%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE fraud_flags SET status = 'upheld' WHERE id = f;
+    RAISE EXCEPTION 'a decision without a decider should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%records who made it%', SQLERRM;
+  END;
+  BEGIN
+    DELETE FROM fraud_flags WHERE id = f;
+    RAISE EXCEPTION 'deleting a flag should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%never deleted%', SQLERRM;
+  END;
+  BEGIN
+    INSERT INTO fraud_appeals (flag_id, user_id, message) VALUES (f, other, 'not mine');
+    RAISE EXCEPTION 'appealing someone else''s flag should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%only the flagged fan%', SQLERRM;
+  END;
+
+  INSERT INTO fraud_appeals (flag_id, user_id, message) VALUES (f, fan, 'I am a person') RETURNING id INTO ap;
+  ASSERT EXISTS (SELECT 1 FROM notifications n JOIN users u ON u.id = n.user_id
+                  WHERE u.id = staff AND n.kind = 'staff_appeal' AND n.subject_id = ap), 'staff are told';
+  BEGIN
+    INSERT INTO fraud_appeals (flag_id, user_id, message) VALUES (f, fan, 'again');
+    RAISE EXCEPTION 'a second appeal should fail';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+
+  PERFORM decide_fraud_appeal(ap, staff, false, 'No');
+  ASSERT (SELECT status FROM fraud_flags WHERE id = f) = 'upheld', 'a denied appeal upholds the flag';
+  BEGIN
+    UPDATE fraud_appeals SET status = 'granted', decided_by = staff WHERE id = ap;
+    RAISE EXCEPTION 'deciding an appeal twice should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%once%', SQLERRM;
+  END;
+  BEGIN
+    PERFORM decide_fraud_appeal(ap, staff, true, NULL);
+    RAISE EXCEPTION 'deciding an appeal twice should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%already_decided%', SQLERRM;
+  END;
+
+  UPDATE fraud_flags SET status = 'cleared', decided_by = staff, decision_note = 'second look' WHERE id = f;
+  ASSERT NOT fan_on_hold(fan), 'a cleared flag holds no one';
+  BEGIN
+    UPDATE fraud_flags SET status = 'upheld', decided_by = staff WHERE id = f;
+    RAISE EXCEPTION 'reopening a cleared flag should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%can''t become%', SQLERRM;
+  END;
+
+  SELECT array_agg(action || ':' || COALESCE((SELECT handle::text FROM users WHERE id = actor_id), '-') ORDER BY id)
+    INTO v_actions FROM eligibility_audit WHERE user_id = fan;
+  ASSERT v_actions = ARRAY['flag_raised:fraud_reviewer', 'appeal_filed:fraud_fan', 'appeal_denied:fraud_reviewer',
+                           'flag_upheld:fraud_reviewer', 'flag_cleared:fraud_reviewer'], array_to_string(v_actions, ', ');
+  ASSERT (SELECT inputs ->> 'note' FROM eligibility_audit WHERE flag_id = f AND action = 'flag_cleared') = 'second look',
+         'a decision keeps its note in the log';
+
+  BEGIN
+    UPDATE eligibility_audit SET reason = 'x' WHERE user_id = fan;
+    RAISE EXCEPTION 'editing the eligibility audit should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%never changed or deleted%', SQLERRM;
+  END;
+  BEGIN
+    DELETE FROM eligibility_audit WHERE user_id = fan;
+    RAISE EXCEPTION 'deleting from the eligibility audit should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%never changed or deleted%', SQLERRM;
+  END;
+END $$;
+SELECT pg_temp.expect_error($$INSERT INTO fraud_flags (user_id, reason, raised_by)
+  VALUES ('00000000-0000-0000-0000-000000000001', 'vibes', '00000000-0000-0000-0000-000000000002')$$, 'fraud_flags_reason_check');
+SELECT pg_temp.expect_error($$INSERT INTO fraud_flags (user_id, reason)
+  VALUES ('00000000-0000-0000-0000-000000000001', 'bot')$$, 'fraud_flags_raised_by_check');
+SELECT pg_temp.expect_error($$INSERT INTO eligibility_audit (user_id, action)
+  VALUES ('00000000-0000-0000-0000-000000000001', 'registration_blocked')$$, 'eligibility_audit_subject_check');
+SELECT pg_temp.expect_error($$TRUNCATE eligibility_audit CASCADE$$, 'never changed or deleted');
+
 \echo ALL INVARIANT TESTS PASSED

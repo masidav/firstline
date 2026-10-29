@@ -258,6 +258,21 @@ public static class DataExportEndpoints
                        res.created_at, res.returned_at, res.cancelled_at, res.cancelled_reason
                 FROM reservations res JOIN events e ON e.id = res.event_id WHERE res.user_id = @me ORDER BY res.created_at
                 """)),
+            // Fraud reviews as the fan sees them: never the evidence, staff notes, or who on staff decided.
+            ("account_reviews", Rows(
+                """
+                SELECT f.id, f.reason, f.status, f.raised_at, f.decided_at, ap.message AS appeal_message,
+                       ap.filed_at AS appeal_filed_at, ap.status AS appeal_status, ap.decided_at AS appeal_decided_at,
+                       ap.response AS appeal_response
+                FROM fraud_flags f LEFT JOIN fraud_appeals ap ON ap.flag_id = f.id WHERE f.user_id = @me ORDER BY f.raised_at
+                """)),
+            // The eligibility audit about the fan; the inputs of flag decisions can hold staff notes, so they're left out.
+            ("eligibility_decisions", Rows(
+                """
+                SELECT x.at, x.action, x.reason, x.allocation_id, x.registration_id, x.flag_id, x.appeal_id,
+                       CASE WHEN x.action LIKE 'flag_%' THEN NULL ELSE x.inputs END AS inputs
+                FROM eligibility_audit x WHERE x.user_id = @me ORDER BY x.id
+                """)),
         ]),
     ];
 

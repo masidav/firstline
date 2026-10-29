@@ -125,3 +125,16 @@ test('a fan named as someone\'s +1 is told why and can decline it, then register
   );
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Decline the +1 invite' })).toBeNull());
 });
+
+test('a fan on hold is told so calmly and pointed to their account review', async () => {
+  const { router } = jest.requireMock('expo-router') as { router: { push: jest.Mock } };
+  mockApi.GET.mockImplementation((path: string) =>
+    Promise.resolve(ok(path === '/events/{eventId}' ? detail : eligibility({ eligible: false, reason: 'under_review', standing: null }))),
+  );
+  render(<ShowScreen eventId="ev-1" />);
+
+  expect(await screen.findByText(/on hold for fan tickets/)).toBeTruthy();
+  expect(screen.queryByLabelText('Register')).toBeNull();
+  fireEvent.press(screen.getByRole('button', { name: 'See your account review' }));
+  expect(router.push).toHaveBeenCalledWith('/account-review');
+});

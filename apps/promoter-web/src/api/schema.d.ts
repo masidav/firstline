@@ -1980,7 +1980,8 @@ export interface paths {
         };
         /**
          * Can I register for this allocation?
-         * @description `reason` says why not: `not_open`, `artist_not_active`, `hub_city_required`, `no_score`,
+         * @description `reason` says why not: `not_open`, `artist_not_active`, `under_review` (a fraud review holds the fan; see
+         *     `GET /me/fraud-review`), `hub_city_required`, `no_score`,
          *     `below_threshold` (raw score under `min_raw_score`), `already_registered` (for another allocation of the
          *     same show), or `named_as_guest` (someone named the fan as their +1 for it; `POST /events/{eventId}/guest-invite/decline`
          *     frees them). `raw_score`, `percentile`, and `hub_match` are the fan's
@@ -2537,6 +2538,146 @@ export interface paths {
          *     everyone but its author and reverses its points.
          */
         post: operations["decideReportedPost"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/fraud-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fraud reviews of my account, and my appeals
+         * @description `on_hold` is true while a flag is `open` (under review) or `upheld`: the fan can't register for fan tickets,
+         *     and the draw and returned seats pass them by. Each flag shows its reason category and status, never the
+         *     evidence or staff notes. `can_appeal` while the flag holds the fan and they haven't appealed it yet.
+         */
+        get: operations["getMyFraudReview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/fraud-review/flags/{flagId}/appeal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                flagId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Appeal a fraud review
+         * @description Once per flag, while it holds the fan. Staff are told; granting the appeal clears the flag, denying it upholds
+         *     the flag.
+         */
+        post: operations["appealFraudFlag"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/fraud-flags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fraud review queue
+         * @description `needs_action` (the default): open flags and flags with a pending appeal, oldest first. The other filters list
+         *     flags by status, newest first. Each flag comes with context for the decision: account age, the trust parts,
+         *     live registrations, and tickets held.
+         */
+        get: operations["listFraudFlags"];
+        put?: never;
+        /**
+         * Flag a fan for fraud review
+         * @description Holds the fan at once (no registering, passed over by draws and returned seats) until staff clear the flag.
+         *     Registrations made before the flag stay live until the draw. The fan is told their account is under review.
+         *     One open flag per fan.
+         */
+        post: operations["raiseFraudFlag"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/fraud-flags/{flagId}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                flagId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Uphold or clear a flag
+         * @description `uphold` an open flag (the hold stays until an appeal is granted) or `clear` an open or upheld one (the hold
+         *     ends). Recorded with the staff member in the eligibility audit. A cleared flag is final.
+         */
+        post: operations["decideFraudFlag"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/fraud-appeals/{appealId}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appealId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Grant or deny an appeal
+         * @description `grant` clears the flag; `deny` upholds it (if it was still open). `response` is shown to the fan.
+         */
+        post: operations["decideFraudAppeal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/eligibility-audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Eligibility decisions for a fan or an allocation
+         * @description Newest first. Every registration (with the score snapshot it was based on), refused registration (at most once
+         *     an hour per fan, allocation, and reason), fan held out of a draw or skipped for a returned seat, and flag and
+         *     appeal change. Send `handle`, `allocation_id`, or both.
+         */
+        get: operations["listEligibilityAudit"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3155,7 +3296,7 @@ export interface components {
              * @description Stable machine-readable code.
              * @enum {string}
              */
-            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "named_as_guest" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "reservation_unavailable" | "trivia_answered" | "trivia_expired" | "prompt_closed" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_track_not_found" | "followers_only" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "spotify_no_device" | "spotify_premium_required" | "spotify_player_refused" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
+            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "named_as_guest" | "under_review" | "flag_open" | "appeal_unavailable" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "reservation_unavailable" | "trivia_answered" | "trivia_expired" | "prompt_closed" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_track_not_found" | "followers_only" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "spotify_no_device" | "spotify_premium_required" | "spotify_player_refused" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
             errors?: {
                 field?: string;
                 message?: string;
@@ -3164,6 +3305,119 @@ export interface components {
         PointsAward: {
             rule_key: string;
             points: number;
+        };
+        FanReview: {
+            /** @description A flag is open or upheld: no fan tickets until it's cleared. */
+            on_hold: boolean;
+            flags: components["schemas"]["FanFlag"][];
+        };
+        FanFlag: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            reason: "streaming_farm" | "bot" | "shared_device" | "duplicate_account" | "other";
+            /**
+             * @description open: under review
+             * @enum {string}
+             */
+            status: "open" | "upheld" | "cleared";
+            /** Format: date-time */
+            raised_at: string;
+            /** Format: date-time */
+            decided_at: string | null;
+            can_appeal: boolean;
+            appeal: components["schemas"]["FraudAppeal"] | null;
+        };
+        FraudAppeal: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            flag_id: string;
+            message: string;
+            /** Format: date-time */
+            filed_at: string;
+            /** @enum {string} */
+            status: "pending" | "granted" | "denied";
+            /** Format: date-time */
+            decided_at: string | null;
+            /** @description Staff's answer to the fan. */
+            response: string | null;
+        };
+        /** @description A flag as staff see it, with the evidence and context for deciding. */
+        FraudFlag: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            user_id: string;
+            user: components["schemas"]["UserRef"];
+            /** @enum {string} */
+            reason: "streaming_farm" | "bot" | "shared_device" | "duplicate_account" | "other";
+            evidence: {
+                [key: string]: unknown;
+            };
+            note: string | null;
+            /** @enum {string} */
+            source: "staff" | "rule";
+            /** @description Staff handle; null for a rule. */
+            raised_by: string | null;
+            /** Format: date-time */
+            raised_at: string;
+            /** @enum {string} */
+            status: "open" | "upheld" | "cleared";
+            /** @description Staff handle */
+            decided_by: string | null;
+            /** Format: date-time */
+            decided_at: string | null;
+            decision_note: string | null;
+            appeal: components["schemas"]["FraudAppeal"] | null;
+            /** @description Staff handle */
+            appeal_decided_by: string | null;
+            context: {
+                /** Format: date-time */
+                account_created_at: string;
+                /** @description Each part of the trust score, 0 to 1 */
+                trust_parts: {
+                    [key: string]: number;
+                };
+                live_registrations: number;
+                /** @description Tickets the fan holds for shows not yet started */
+                held_reservations: number;
+            };
+        };
+        FraudFlagPage: {
+            items: components["schemas"]["FraudFlag"][];
+            next_cursor: string | null;
+        };
+        EligibilityAuditEntry: {
+            id: number;
+            /** Format: date-time */
+            at: string;
+            /** @enum {string} */
+            action: "registered" | "registration_blocked" | "draw_held_out" | "backfill_skipped" | "flag_raised" | "flag_upheld" | "flag_cleared" | "appeal_filed" | "appeal_granted" | "appeal_denied";
+            /** @description The refusal reason or the flag's reason. */
+            reason: string | null;
+            /** Format: uuid */
+            user_id: string;
+            /** @description Null when the account was deleted. */
+            handle: string | null;
+            /** Format: uuid */
+            allocation_id: string | null;
+            /** Format: uuid */
+            registration_id: string | null;
+            /** Format: uuid */
+            flag_id: string | null;
+            /** Format: uuid */
+            appeal_id: string | null;
+            /** @description Handle of who decided (the fan or staff); null for the system */
+            actor: string | null;
+            /** @description What the decision was based on: score snapshot, threshold, hub match, flag. */
+            inputs: {
+                [key: string]: unknown;
+            };
+        };
+        EligibilityAuditPage: {
+            items: components["schemas"]["EligibilityAuditEntry"][];
+            next_cursor: string | null;
         };
         UserRef: {
             /** @description Null when the account was deleted. */
@@ -3549,6 +3803,10 @@ export interface components {
                 guest_of: components["schemas"]["ExportRows"];
                 /** @description id, registration_id, allocation_id, event_id, event_name, event_starts_at, seats, face_value_cents, currency, deliver_at, created_at, returned_at, cancelled_at, cancelled_reason. Not the ticket token. */
                 reservations: components["schemas"]["ExportRows"];
+                /** @description Fraud reviews of the account. id, reason, status, raised_at, decided_at, appeal_message, appeal_filed_at, appeal_status, appeal_decided_at, appeal_response. Not the evidence or staff notes. */
+                account_reviews: components["schemas"]["ExportRows"];
+                /** @description The eligibility audit about the fan. at, action, reason, allocation_id, registration_id, flag_id, appeal_id, inputs (null for flag decisions). */
+                eligibility_decisions: components["schemas"]["ExportRows"];
             };
             /** @description Fan notices (not staff notices). id, kind, subject_id, data, created_at, read_at. */
             notifications: components["schemas"]["ExportRows"];
@@ -3846,7 +4104,7 @@ export interface components {
             /** @description True if the fan can register now, or already has */
             eligible: boolean;
             /** @enum {string|null} */
-            reason?: "not_open" | "artist_not_active" | "hub_city_required" | "no_score" | "below_threshold" | "already_registered" | "named_as_guest" | null;
+            reason?: "not_open" | "artist_not_active" | "under_review" | "hub_city_required" | "no_score" | "below_threshold" | "already_registered" | "named_as_guest" | null;
             min_raw_score: number | null;
             raw_score?: number | null;
             percentile?: number | null;
@@ -3883,7 +4141,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             /** @enum {string} */
-            kind: "draw_selected" | "draw_not_selected" | "seat_backfilled" | "ticket_delivered" | "presale" | "guest_named" | "staff_report" | "staff_review" | "staff_draw" | "staff_redaction" | "staff_show_changed";
+            kind: "draw_selected" | "draw_not_selected" | "seat_backfilled" | "ticket_delivered" | "presale" | "guest_named" | "fraud_hold" | "fraud_cleared" | "appeal_decided" | "staff_report" | "staff_review" | "staff_draw" | "staff_redaction" | "staff_show_changed" | "staff_appeal";
             title: string;
             body: string;
             /** @description App route to open, e.g. /tickets or /show/{id} */
@@ -8006,7 +8264,10 @@ export interface operations {
                     "application/json": components["schemas"]["Registration"];
                 };
             };
-            /** @description No score for the artist, or below the threshold (`code: not_eligible`) */
+            /**
+             * @description No score for the artist, or below the threshold (`code: not_eligible`); or a fraud review holds the fan
+             *     (`code: under_review`, see `GET /me/fraud-review`). Every refusal is recorded in the eligibility audit.
+             */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -8777,6 +9038,252 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModerationDecision"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getMyFraudReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The fan's flags, newest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FanReview"];
+                };
+            };
+        };
+    };
+    appealFraudFlag: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                flagId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The fan's side */
+                    message: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Appeal filed */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FraudAppeal"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description `appeal_unavailable`: already appealed, or the flag is cleared */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    listFraudFlags: {
+        parameters: {
+            query?: {
+                status?: "needs_action" | "open" | "upheld" | "cleared";
+                limit?: components["parameters"]["Limit"];
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of flags */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FraudFlagPage"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    raiseFraudFlag: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    handle: string;
+                    /** @enum {string} */
+                    reason: "streaming_farm" | "bot" | "shared_device" | "duplicate_account" | "other";
+                    /** @description Internal only. */
+                    note?: string;
+                    /** @description Internal only: what the flag is based on. */
+                    evidence?: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Flag raised */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FraudFlag"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description `flag_open`: the fan already has an open flag */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    decideFraudFlag: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                flagId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    decision: "uphold" | "clear";
+                    /** @description Internal only. */
+                    note?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Decision recorded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FraudFlag"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description `conflict`: the flag is already in that state, or cleared */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    decideFraudAppeal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    decision: "grant" | "deny";
+                    /** @description Shown to the fan. */
+                    response?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Decision recorded; the flag as it is now */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FraudFlag"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description `appeal_unavailable`: already decided */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    listEligibilityAudit: {
+        parameters: {
+            query?: {
+                handle?: string;
+                allocation_id?: string;
+                limit?: components["parameters"]["Limit"];
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of audit entries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EligibilityAuditPage"];
                 };
             };
             403: components["responses"]["Forbidden"];

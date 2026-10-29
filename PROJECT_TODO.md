@@ -306,7 +306,19 @@ Details: [Notifications](services/api/src/features/notifications/TODO.md) · [Mo
 - [ ] Detect streaming-farm and bot behavior (play patterns, account age, device and payment signals, shared-device clusters).
 - [ ] Add verification sources: Apple Music (MusicKit), direct-to-consumer store purchases, verified attendance history.
 - [ ] Bind one person to one account (phone or ID verification at allocation time) without over-collecting personal data.
-- [ ] Add fraud review tooling, an appeals process, and audit logging for every eligibility decision.
+- [x] Add fraud review tooling, an appeals process, and audit logging for every eligibility decision.
+      *Done 2026-10-29 (migration 0042, `services/api/src/features/fraud`): staff flag a fan with evidence and a note;
+      an open or upheld flag holds the fan (no registering; the draw withdraws them, `fraud_hold`; returned seats skip
+      them); the fan sees the reason and appeals once; staff grant (cleared) or deny (upheld). An append-only
+      `eligibility_audit` logs every registration with its snapshot, refused registrations, draw and backfill
+      exclusions, and every flag and appeal step with its actor. App: `/account-review` (fan), `/fraud` (staff).
+      Verified: `dotnet test` (FraudReviewApiTests 5, invariants), app Jest (AccountReviewScreen, FraudReviewScreen,
+      ShowScreen).*
+- [ ] Fraud review rules set provisionally (2026-10-29), confirm or change: an **open** flag already holds the fan (not
+      only an upheld one); the fan is **told** when flagged and sees the reason category (never the evidence); **one
+      appeal per flag**, decided by any staff member (even the one who raised it); an upheld flag holds until an appeal
+      or staff clear it (no expiry); **tickets already given out stay** with a fan flagged after the draw; a held fan
+      can still be someone's +1 guest; flags are kept after account deletion for the audit trail.
 - [ ] Red-team the scoring rules before each pilot; record known gaming strategies and mitigations.
 
 Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](services/api/src/integrations/apple-music/TODO.md)

@@ -18,6 +18,10 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       when it arrives, a delivered one shows the token (holder only), and "Can't go? Return it" gives the seat back after a
       confirmation. Linked from the home header, the profile, the show screen, and the feed's registration card.
       Verified: MyTicketsScreen tests, Jest 113/113.
+- [x] Fraud review (Phase 10, 2026-10-29): a fan on hold sees the `under_review` reason on the show screen with a link to
+      `/account-review` (their reviews in plain words, the appeal and staff response, one appeal per review). Staff work
+      flags, appeals, and the eligibility audit at `/fraud` (linked from the profile). Verified: AccountReviewScreen,
+      FraudReviewScreen, and ShowScreen tests; Jest 297/297; typecheck clean.
 - [ ] Notify fans when the draw has run and when a ticket is delivered (Phase 9 notifications).
 - [ ] A scannable ticket (QR) once the door-side check-in exists; today the token is shown as text.
 
