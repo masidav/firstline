@@ -92,7 +92,11 @@ jobs:
           curl -fsSL "https://get.maestro.mobile.dev" | bash
           export PATH="$HOME/.maestro/bin:$PATH"
           maestro --version
-          maestro --device "$SIMULATOR_UDID" test --format junit --output maestro-results.xml --debug-output maestro-debug maestro/launch.yaml
+          # Screenshots and debug output land in the test output directory (relative to apps/mobile).
+          maestro --device "$SIMULATOR_UDID" test --format junit --output maestro-results.xml \
+            --test-output-dir maestro-output --debug-output maestro-output/debug maestro/launch.yaml
+        env:
+          MAESTRO_CLI_NO_ANALYTICS: '1'
 
       - name: Upload the app
         if: success()
@@ -110,6 +114,5 @@ jobs:
           path: |
             apps/mobile/xcodebuild.log
             apps/mobile/maestro-results.xml
-            apps/mobile/maestro-debug
-            apps/mobile/launch.png
+            apps/mobile/maestro-output
           if-no-files-found: ignore

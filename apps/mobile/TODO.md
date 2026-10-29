@@ -99,7 +99,10 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Release builds via EAS Build; beta via TestFlight and Google Play closed testing. *`eas.json` profiles written
       2026-10-29 (`development`, `development-simulator`, `beta`, `production`); no build run yet (needs `eas init`).
       Workflows `mobile-ios.yml` (simulator build and Maestro launch flow on a macOS runner) and `mobile-release.yml`
-      (EAS build and submit, needs `EXPO_TOKEN`) added 2026-10-29.*
+      (EAS build and submit, needs `EXPO_TOKEN`) added 2026-10-29. Verified 2026-10-29: the simulator workflow built
+      the app on the macOS 26 runner (Xcode 26.6; the macOS 15 image's Xcode 16.4 fails on Expo's Swift 6.2 package)
+      and the Maestro flow passed on an iPhone Air simulator, iOS 26.2; 28 minutes end to end, 18 of them the build.
+      The EAS workflow stops with its "EXPO_TOKEN is not set" message, as intended.*
 
 ## Verification
 - [ ] Add or update automated tests for the behavior above.

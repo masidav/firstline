@@ -387,7 +387,8 @@ Details: [ADR 0002](docs/adr/0002-hosting-gcp-gke.md) · [Infrastructure](infras
       allocation, sign-out, and account deletion, against the real API and a seeded database. Verified: 10 passed
       locally, and a reintroduced deep-link bug fails the reload journey. Native: since 2026-10-29 the workflow
       "iOS app (simulator)" builds the iPhone app on a macOS runner and runs a Maestro launch flow in the Simulator,
-      on demand (macOS minutes are billed at 10x); more flows once a build has been tried on a device.*
+      on demand (macOS minutes are billed at 10x). First run passed 2026-10-29 (28 minutes); more flows once a build
+      has been tried on a device.*
 - [ ] Promoter dashboard end-to-end tests (Playwright) and accessibility checks. *Journeys done 2026-10-27
       (`apps/promoter-web/e2e`, CI); accessibility checks not yet.*
 - [ ] API contract tests against `openapi.yaml`; load tests for on-sale registration spikes.

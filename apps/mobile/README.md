@@ -191,8 +191,9 @@ TestFlight. `production` is the same against the production API, whose hostname 
 - *iOS app (simulator)* (`mobile-ios.yml`): a macOS runner generates the native project, builds an unsigned Release
   app for the iOS Simulator with the JavaScript bundle embedded, launches it in a simulator, and runs the Maestro
   flow in `maestro/launch.yaml` (the first screen renders). The `.app` is an artifact: open it in Xcode's Simulator
-  or upload it to appetize.io. No Apple account involved. macOS minutes cost ten times Linux minutes on a private
-  repository, so it also runs weekly only if the repository variable `IOS_WEEKLY_BUILD` is `true`.
+  or upload it to appetize.io. No Apple account involved. A run takes about 28 minutes, and macOS minutes cost ten
+  times Linux minutes on a private repository, so it also runs weekly only if the repository variable
+  `IOS_WEEKLY_BUILD` is `true`.
 - *Mobile release (EAS)* (`mobile-release.yml`): `eas build` for iOS, Android, or both with a chosen profile, and
   optionally `--auto-submit` (TestFlight, Google Play testing tracks). Needs the repository secret `EXPO_TOKEN`
   (expo.dev → Account settings → Access tokens) and the one-time setup above; it stops with a message otherwise.
