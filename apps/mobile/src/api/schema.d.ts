@@ -3803,6 +3803,10 @@ export interface components {
                 guest_of: components["schemas"]["ExportRows"];
                 /** @description id, registration_id, allocation_id, event_id, event_name, event_starts_at, seats, face_value_cents, currency, deliver_at, created_at, returned_at, cancelled_at, cancelled_reason. Not the ticket token. */
                 reservations: components["schemas"]["ExportRows"];
+                /** @description Fraud reviews of the account. id, reason, status, raised_at, decided_at, appeal_message, appeal_filed_at, appeal_status, appeal_decided_at, appeal_response. Not the evidence or staff notes. */
+                account_reviews: components["schemas"]["ExportRows"];
+                /** @description The eligibility audit about the fan. at, action, reason, allocation_id, registration_id, flag_id, appeal_id, inputs (null for flag decisions). */
+                eligibility_decisions: components["schemas"]["ExportRows"];
             };
             /** @description Fan notices (not staff notices). id, kind, subject_id, data, created_at, read_at. */
             notifications: components["schemas"]["ExportRows"];
