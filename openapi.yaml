@@ -13,8 +13,9 @@ info:
     - **Auth:** `Authorization: Bearer <access token>` (JWT, 15 minutes). Refresh tokens rotate on every use.
       Staff-only routes live under `/admin` and require `is_staff` (checked on every request; `403 forbidden` otherwise).
       So every operation without `security: []` can answer `401` (Unauthorized), and every `/admin` operation `403`
-      (Forbidden), whether or not it lists them. The test suite checks every response against this file, these two
-      rules included (`tests/FandomScore.Tests/Contract`).
+      (Forbidden), whether or not it lists them. Every operation can also answer `429` (RateLimited; see Rate limits).
+      The test suite checks every response against this file, these rules included (`tests/FandomScore.Tests/Contract`).
+    - **Request size:** request bodies are limited to 1 MB, except uploads (their declared size).
     - **Format:** JSON, `snake_case`, UUID ids, RFC 3339 UTC timestamps.
     - **Pagination:** cursor based. Send `limit` (1 to 100, default 25) and `cursor`; read `next_cursor`
       (null on the last page).
@@ -32,19 +33,21 @@ info:
     - **`x-requires-schema`:** marks operations that need tables not yet in `database/migrations`.
     - **`x-planned`:** marks operations designed here but not built (or no longer planned), with why.
 
-    ## Rate limits (proposed starting values)
+    ## Rate limits
 
     | Area | Limit |
     | --- | --- |
     | Sign-in and token refresh (`/auth/sessions`, `/auth/refresh`) | 20 per minute per client IP |
     | Add artist (`POST /artists`) | 50 new artists per user per UTC day (`artist_add_limit`) |
-    | Artist search | 30 per minute per user |
+    | Artist search and album search (both can call Spotify) | 30 per minute per user |
+    | Grab-bag songs (`PUT /me/grab-bag/{position}`: a Spotify lookup, maybe a new artist) | 30 per hour per user |
+    | Score refresh (`POST /artists/{id}/score/refresh`) | 10 per hour per user |
+    | Score cards (the link, and the image per client IP) | 60 per minute |
+    | Follow and unfollow, link clicks | 120 per minute per user |
     | Manual Spotify sync | 1 per 15 minutes per user (automatic sync runs on a schedule) |
-    | Score refresh | Not limited: at most one rescore is queued per artist, so repeats cost nothing |
     | Submissions | 20 per day per user |
-    | Comments | 60 per hour per user |
     | Download my data (`GET /me/export`) | 3 per hour per user |
-    | Everything else | 300 per minute per user |
+    | Everything (a ceiling on all of the above) | 1,200 per minute per user, or per client IP without sign-in |
 
     Limited calls return `429` with `Retry-After`.
 servers:
@@ -2244,6 +2247,27 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
 
   # ------------------------------------------------------------------ Allocations
+  /events/{eventId}/guest-invite/decline:
+    parameters:
+      - {$ref: '#/components/parameters/EventId'}
+    post:
+      tags: [Allocations]
+      operationId: declineGuestInvite
+      summary: Decline being someone's +1 for a show
+      description: |
+        Before the draw, a fan someone named as their +1 can decline (they get a `guest_named` notification). It frees
+        them to register for the show themselves (registration answers `named_as_guest` until then), and that fan can't
+        name them again for this show. Idempotent: `declined` is 0 when there was nothing to decline.
+      responses:
+        '200':
+          description: How many invites were declined
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [declined]
+                properties:
+                  declined: {type: integer, minimum: 0}
   /events/{eventId}:
     parameters:
       - {$ref: '#/components/parameters/EventId'}
@@ -2268,8 +2292,9 @@ paths:
       summary: Can I register for this allocation?
       description: |
         `reason` says why not: `not_open`, `artist_not_active`, `hub_city_required`, `no_score`,
-        `below_threshold` (raw score under `min_raw_score`), or `already_registered` (for another allocation of the
-        same show, or named as someone's guest for it). `raw_score`, `percentile`, and `hub_match` are the fan's
+        `below_threshold` (raw score under `min_raw_score`), `already_registered` (for another allocation of the
+        same show), or `named_as_guest` (someone named the fan as their +1 for it; `POST /events/{eventId}/guest-invite/decline`
+        frees them). `raw_score`, `percentile`, and `hub_match` are the fan's
         current standing; a registration keeps the values from when it was made.
         `standing` (while registration is upcoming or open, for a fan who can register or has) says where they would
         place if the draw ran now, counting equal scores against them. `likely` is true only when the seats of
@@ -3738,6 +3763,7 @@ components:
             - hub_city_required
             - not_eligible
             - already_registered
+            - named_as_guest
             - plus_one_unavailable
             - guest_unavailable
             - selection_not_ready
@@ -4492,7 +4518,7 @@ components:
         eligible: {type: boolean, description: 'True if the fan can register now, or already has'}
         reason:
           type: [string, 'null']
-          enum: [not_open, artist_not_active, hub_city_required, no_score, below_threshold, already_registered, null]
+          enum: [not_open, artist_not_active, hub_city_required, no_score, below_threshold, already_registered, named_as_guest, null]
         min_raw_score: {type: [number, 'null']}
         raw_score: {type: [number, 'null']}
         percentile: {type: [number, 'null']}
@@ -4530,7 +4556,7 @@ components:
         id: {type: string, format: uuid}
         kind:
           type: string
-          enum: [draw_selected, draw_not_selected, seat_backfilled, ticket_delivered, presale, staff_report, staff_review, staff_draw, staff_redaction, staff_show_changed]
+          enum: [draw_selected, draw_not_selected, seat_backfilled, ticket_delivered, presale, guest_named, staff_report, staff_review, staff_draw, staff_redaction, staff_show_changed]
         title: {type: string}
         body: {type: string}
         link: {type: string, description: 'App route to open, e.g. /tickets or /show/{id}'}

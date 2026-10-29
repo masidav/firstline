@@ -20,6 +20,7 @@ public static partial class AllocationEndpoints
         v1.MapPut("/allocations/{allocationId:guid}/registration", RegisterAsync);
         v1.MapDelete("/allocations/{allocationId:guid}/registration", WithdrawAsync);
         v1.MapPut("/allocations/{allocationId:guid}/registration/guest", NameGuestAsync);
+        v1.MapPost("/events/{eventId:guid}/guest-invite/decline", DeclineGuestInviteAsync);
         v1.MapGet("/me/registrations", ListMyRegistrationsAsync);
     }
 
@@ -44,7 +45,7 @@ public static partial class AllocationEndpoints
 
     /// <summary>
     /// Whether the fan can register now. <c>Reason</c> is null when they can (or already have), else one of
-    /// not_open, artist_not_active, hub_city_required, no_score, below_threshold, already_registered.
+    /// not_open, artist_not_active, hub_city_required, no_score, below_threshold, already_registered, named_as_guest.
     /// </summary>
     public sealed record Eligibility(
         Guid AllocationId, bool Eligible, string? Reason, decimal? MinRawScore, decimal? RawScore, decimal? Percentile,
@@ -293,6 +294,7 @@ public static partial class AllocationEndpoints
                 "not_registered" => NotFound("You're not registered for this allocation."),
                 "no_plus_one" => GuestUnavailable("You don't have a +1 seat for this allocation."),
                 "already_named" => GuestUnavailable("You've already named your guest. Guests can't be changed."),
+                "declined" => GuestUnavailable("This person declined being your +1 for this show."),
                 "self" => GuestUnavailable("Your guest has to be someone else."),
                 "guest_has_ticket" => GuestUnavailable("This person is already registered for this show or is someone else's guest."),
                 _ => GuestUnavailable("This account can't be your guest."),
@@ -300,6 +302,18 @@ public static partial class AllocationEndpoints
         }
 
         return Results.Ok(await LoadRegistrationAsync(connection, userId, allocationId));
+    }
+
+    // The caller declines being someone's +1 for this show, before the draw (migration 0041). Idempotent.
+    private static async Task<IResult> DeclineGuestInviteAsync(
+        ClaimsPrincipal user, Guid eventId, NpgsqlDataSource db, CancellationToken cancellationToken)
+    {
+        await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var declined = await connection.ExecuteScalarAsync<int>(
+            "SELECT decline_plus_one_invite(@me, @eventId)", new { me = user.UserId(), eventId }, transaction);
+        await transaction.CommitAsync(cancellationToken);
+        return Results.Ok(new { Declined = declined });
     }
 
     private static async Task<IResult> WithdrawAsync(
@@ -351,7 +365,9 @@ public static partial class AllocationEndpoints
         "hub_city_required" => new(StatusCodes.Status409Conflict, "hub_city_required", "Hub city required",
             "Choose a hub city before registering."),
         "already_registered" => new(StatusCodes.Status409Conflict, "already_registered", "Already registered for this show",
-            "You're registered for another allocation of this show, or you're someone's guest for it."),
+            "You're registered for another allocation of this show."),
+        "named_as_guest" => new(StatusCodes.Status409Conflict, "named_as_guest", "You're someone's +1",
+            "Someone named you as their +1 for this show. Decline it to register yourself."),
         "no_score" => new(StatusCodes.Status403Forbidden, "not_eligible", "Not eligible",
             "You don't have a fandom score for this artist yet. Connect Spotify and listen to them."),
         "below_threshold" => new(StatusCodes.Status403Forbidden, "not_eligible", "Not eligible",

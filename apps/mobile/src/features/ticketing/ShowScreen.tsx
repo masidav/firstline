@@ -21,7 +21,8 @@ const reasons: Record<string, string> = {
   hub_city_required: 'Choose your hub cities before registering.',
   no_score: "You don't have a fandom score for this artist yet. Connect Spotify and listen to them.",
   below_threshold: "Your fandom score for this artist is below this allocation's minimum.",
-  already_registered: "You're registered for another allocation of this show, or you're someone's +1 for it.",
+  already_registered: "You're registered for another allocation of this show.",
+  named_as_guest: "Someone named you as their +1 for this show, so you can't register yourself. Decline it if you didn't agree.",
 };
 
 /** A show and its fan allocations (GET /events/{id}), with registration for each. */
@@ -188,6 +189,18 @@ function AllocationCard({ allocation }: { allocation: Allocation }) {
       )}
       {eligibility && !eligibility.eligible && eligibility.reason && !registration && allocation.status === 'open' && (
         <Body muted>{reasons[eligibility.reason] ?? eligibility.reason}</Body>
+      )}
+      {eligibility?.reason === 'named_as_guest' && !registration && allocation.status === 'open' && (
+        <Button
+          label="Decline the +1 invite"
+          kind="secondary"
+          busy={busy}
+          onPress={() =>
+            void act(async () => {
+              unwrap(await session.api.POST('/events/{eventId}/guest-invite/decline', { params: { path: { eventId: allocation.event_id } } }));
+            })
+          }
+        />
       )}
 
       {registration?.guest && <Body muted>Your +1: @{registration.guest.handle}</Body>}

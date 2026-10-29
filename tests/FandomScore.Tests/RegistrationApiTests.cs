@@ -223,6 +223,42 @@ public sealed class RegistrationApiTests(PostgresFixture postgres) : IAsyncLifet
     }
 
     [Fact]
+    public async Task A_named_guest_is_told_can_decline_before_the_draw_and_then_register_and_cant_be_named_again()
+    {
+        var host = await FanAsync("host_fan", score: 80, "us-il-chicago");
+        var rival = await FanAsync("rival_fan", score: 90, "us-il-chicago");
+        await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{_allocationId}/registration", host, new { plus_one = true }), HttpStatusCode.Created);
+        await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{_allocationId}/registration/guest", host, new { handle = "rival_fan" }),
+            HttpStatusCode.OK);
+
+        // The rival hears about it, and registration says why it's blocked.
+        var notices = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/notifications", rival), HttpStatusCode.OK);
+        var notice = Assert.Single(notices.GetProperty("items").EnumerateArray());
+        Assert.Equal("guest_named", notice.GetProperty("kind").GetString());
+        Assert.Contains("@host_fan named you as their +1", notice.GetProperty("body").GetString(), StringComparison.Ordinal);
+        var eligibility = await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/allocations/{_allocationId}/eligibility", rival), HttpStatusCode.OK);
+        Assert.Equal("named_as_guest", eligibility.GetProperty("reason").GetString());
+        var blocked = await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{_allocationId}/registration", rival), HttpStatusCode.Conflict);
+        Assert.Equal("named_as_guest", blocked.GetProperty("code").GetString());
+
+        // Declining frees them; declining again does nothing.
+        var declined = await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/events/{_eventId}/guest-invite/decline", rival), HttpStatusCode.OK);
+        Assert.Equal(1, declined.GetProperty("declined").GetInt32());
+        Assert.Equal(0, (await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/events/{_eventId}/guest-invite/decline", rival), HttpStatusCode.OK))
+            .GetProperty("declined").GetInt32());
+        var hostRegistration = (await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/registrations", host), HttpStatusCode.OK)).GetProperty("items")[0];
+        var registration = hostRegistration.TryGetProperty("registration", out var inner) ? inner : hostRegistration;
+        Assert.Equal(JsonValueKind.Null, registration.GetProperty("guest").ValueKind);
+        await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{_allocationId}/registration", rival), HttpStatusCode.Created);
+
+        // The host can't name them again for this show.
+        var again = await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{_allocationId}/registration/guest", host, new { handle = "rival_fan" }),
+            HttpStatusCode.Conflict);
+        Assert.Equal("guest_unavailable", again.GetProperty("code").GetString());
+        Assert.Contains("declined", again.GetProperty("detail").GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task The_draw_ranks_local_fans_first_seats_plus_ones_and_records_a_seed()
     {
         var staff = await FanAsync("draw_staff", score: null);

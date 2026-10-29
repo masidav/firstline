@@ -19,7 +19,7 @@ public static class ScoringEndpoints
     {
         v1.MapGet("/me/scores", ListMineAsync);
         v1.MapGet("/artists/{artistId:guid}/score", GetAsync);
-        v1.MapPost("/artists/{artistId:guid}/score/refresh", RefreshAsync);
+        v1.MapPost("/artists/{artistId:guid}/score/refresh", RefreshAsync).RequireRateLimiting(AbuseLimits.Rescores);
 
         var admin = v1.MapGroup("/admin").RequireAuthorization(AuthSetup.StaffPolicy);
         admin.MapGet("/scoring-rules", ListRulesAsync);

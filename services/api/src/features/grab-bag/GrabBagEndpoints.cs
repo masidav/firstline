@@ -27,7 +27,7 @@ public static partial class GrabBagEndpoints
     public static void MapGrabBag(this RouteGroupBuilder v1)
     {
         v1.MapGet("/me/grab-bag", GetMineAsync);
-        v1.MapPut("/me/grab-bag/{position:int}", PutAsync);
+        v1.MapPut("/me/grab-bag/{position:int}", PutAsync).RequireRateLimiting(AbuseLimits.GrabBagAdds);
         v1.MapDelete("/me/grab-bag/{position:int}", DeleteAsync);
         v1.MapPut("/me/grab-bag/order", ReorderAsync);
         v1.MapGet("/users/{handle}/grab-bag", GetForUserAsync);

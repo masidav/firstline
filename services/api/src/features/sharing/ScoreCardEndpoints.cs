@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Dapper;
+using Microsoft.Extensions.Caching.Memory;
 using FandomScore.Api.Features.Authentication;
 using FandomScore.Api.Infrastructure;
 using Npgsql;
@@ -17,8 +18,8 @@ public static class ScoreCardEndpoints
 
     public static void MapScoreCards(this RouteGroupBuilder v1)
     {
-        v1.MapGet("/me/scores/{artistId:guid}/card", GetAsync);
-        v1.MapGet("/score-cards/{userId:guid}/{artistId:guid}.png", ImageAsync).AllowAnonymous();
+        v1.MapGet("/me/scores/{artistId:guid}/card", GetAsync).RequireRateLimiting(AbuseLimits.ScoreCards);
+        v1.MapGet("/score-cards/{userId:guid}/{artistId:guid}.png", ImageAsync).AllowAnonymous().RequireRateLimiting(AbuseLimits.ScoreCards);
     }
 
     public sealed record ScoreCardLink(string ImageUrl, string ShareText, string TopLabel, bool IsEstimated, DateTime ExpiresAt);
@@ -41,7 +42,7 @@ public static class ScoreCardEndpoints
 
     private static async Task<IResult> ImageAsync(
         Guid userId, Guid artistId, long? exp, string? sig, NpgsqlDataSource db, SignedUrls urls, TimeProvider time,
-        HttpResponse response, CancellationToken cancellationToken)
+        Microsoft.Extensions.Caching.Memory.IMemoryCache cache, HttpResponse response, CancellationToken cancellationToken)
     {
         if (!urls.Verify(Purpose(artistId), userId, exp, sig))
         {
@@ -52,7 +53,13 @@ public static class ScoreCardEndpoints
         var card = await LoadAsync(connection, userId, artistId, time) ?? throw NoScore();
         response.Headers.CacheControl = "private, max-age=300";
         response.Headers.XContentTypeOptions = "nosniff";
-        return Results.Bytes(ScoreCard.Render(card), "image/png");
+        // Drawn once per distinct card for a few minutes: a shared link hit many times doesn't redraw it each time.
+        var png = await cache.GetOrCreateAsync(card, entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10);
+            return Task.FromResult(ScoreCard.Render(card));
+        });
+        return Results.Bytes(png!, "image/png");
     }
 
     // Only an active artist the fan has a score for; a deleted account has no card.

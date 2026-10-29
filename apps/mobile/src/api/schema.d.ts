@@ -1923,6 +1923,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/events/{eventId}/guest-invite/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decline being someone's +1 for a show
+         * @description Before the draw, a fan someone named as their +1 can decline (they get a `guest_named` notification). It frees
+         *     them to register for the show themselves (registration answers `named_as_guest` until then), and that fan can't
+         *     name them again for this show. Idempotent: `declined` is 0 when there was nothing to decline.
+         */
+        post: operations["declineGuestInvite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/events/{eventId}": {
         parameters: {
             query?: never;
@@ -1957,8 +1981,9 @@ export interface paths {
         /**
          * Can I register for this allocation?
          * @description `reason` says why not: `not_open`, `artist_not_active`, `hub_city_required`, `no_score`,
-         *     `below_threshold` (raw score under `min_raw_score`), or `already_registered` (for another allocation of the
-         *     same show, or named as someone's guest for it). `raw_score`, `percentile`, and `hub_match` are the fan's
+         *     `below_threshold` (raw score under `min_raw_score`), `already_registered` (for another allocation of the
+         *     same show), or `named_as_guest` (someone named the fan as their +1 for it; `POST /events/{eventId}/guest-invite/decline`
+         *     frees them). `raw_score`, `percentile`, and `hub_match` are the fan's
          *     current standing; a registration keeps the values from when it was made.
          *     `standing` (while registration is upcoming or open, for a fan who can register or has) says where they would
          *     place if the draw ran now, counting equal scores against them. `likely` is true only when the seats of
@@ -3130,7 +3155,7 @@ export interface components {
              * @description Stable machine-readable code.
              * @enum {string}
              */
-            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "reservation_unavailable" | "trivia_answered" | "trivia_expired" | "prompt_closed" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_track_not_found" | "followers_only" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "spotify_no_device" | "spotify_premium_required" | "spotify_player_refused" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
+            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "named_as_guest" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "reservation_unavailable" | "trivia_answered" | "trivia_expired" | "prompt_closed" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_track_not_found" | "followers_only" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "spotify_no_device" | "spotify_premium_required" | "spotify_player_refused" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
             errors?: {
                 field?: string;
                 message?: string;
@@ -3821,7 +3846,7 @@ export interface components {
             /** @description True if the fan can register now, or already has */
             eligible: boolean;
             /** @enum {string|null} */
-            reason?: "not_open" | "artist_not_active" | "hub_city_required" | "no_score" | "below_threshold" | "already_registered" | null;
+            reason?: "not_open" | "artist_not_active" | "hub_city_required" | "no_score" | "below_threshold" | "already_registered" | "named_as_guest" | null;
             min_raw_score: number | null;
             raw_score?: number | null;
             percentile?: number | null;
@@ -3858,7 +3883,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             /** @enum {string} */
-            kind: "draw_selected" | "draw_not_selected" | "seat_backfilled" | "ticket_delivered" | "presale" | "staff_report" | "staff_review" | "staff_draw" | "staff_redaction" | "staff_show_changed";
+            kind: "draw_selected" | "draw_not_selected" | "seat_backfilled" | "ticket_delivered" | "presale" | "guest_named" | "staff_report" | "staff_review" | "staff_draw" | "staff_redaction" | "staff_show_changed";
             title: string;
             body: string;
             /** @description App route to open, e.g. /tickets or /show/{id} */
@@ -7869,6 +7894,30 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    declineGuestInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description How many invites were declined */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        declined: number;
+                    };
+                };
+            };
         };
     };
     getEvent: {

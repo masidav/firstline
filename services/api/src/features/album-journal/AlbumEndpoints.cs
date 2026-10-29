@@ -20,7 +20,7 @@ public static partial class AlbumEndpoints
     public static void MapAlbums(this RouteGroupBuilder v1)
     {
         v1.MapGet("/artists/{artistId:guid}/albums", ListByArtistAsync);
-        v1.MapGet("/albums/search", SearchAsync);
+        v1.MapGet("/albums/search", SearchAsync).RequireRateLimiting(Artists.ArtistEndpoints.SearchRateLimit);   // falls through to Spotify search
         v1.MapGet("/albums/{albumId:guid}", GetAsync);
         v1.MapGet("/albums/{albumId:guid}/logs", ListLogsAsync);
     }

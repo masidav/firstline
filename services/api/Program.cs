@@ -49,6 +49,9 @@ builder.Services.AddMemoryCache();
 builder.Services.AddScoped<SpotifyPlayerAccess>();
 builder.Services.AddArtists();
 builder.Services.AddDataExport();
+builder.Services.AddAbuseLimits();
+// Request bodies: 1 MB unless an endpoint raises it for itself (uploads do).
+builder.WebHost.ConfigureKestrel(kestrel => kestrel.Limits.MaxRequestBodySize = AbuseLimits.MaxBodyBytes);
 builder.Services.AddUploads(builder.Configuration, builder.Environment);
 builder.Services.AddApiProblems();
 builder.Services.ConfigureHttpJsonOptions(options =>

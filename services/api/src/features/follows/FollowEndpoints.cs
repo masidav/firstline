@@ -17,8 +17,8 @@ public static class FollowEndpoints
     {
         v1.MapGet("/users", SearchAsync);
         v1.MapGet("/users/{handle}", GetProfileAsync);
-        v1.MapPut("/users/{handle}/follow", FollowAsync);
-        v1.MapDelete("/users/{handle}/follow", UnfollowAsync);
+        v1.MapPut("/users/{handle}/follow", FollowAsync).RequireRateLimiting(AbuseLimits.Churn);
+        v1.MapDelete("/users/{handle}/follow", UnfollowAsync).RequireRateLimiting(AbuseLimits.Churn);
         v1.MapGet("/me/following", ListFollowingAsync);
         v1.MapGet("/me/followers", ListFollowersAsync);
         v1.MapDelete("/me/followers/{handle}", RemoveFollowerAsync);
@@ -94,7 +94,8 @@ public static class FollowEndpoints
                     (SELECT count(*) FROM album_logs l WHERE l.user_id = u.id AND l.deleted_at IS NULL AND l.removed_at IS NULL
                        AND (l.visibility = 'public' OR u.id = @me
                             OR (l.visibility = 'followers' AND EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = @me AND f.followee_id = u.id))))::int AS LogCount,
-                    (SELECT count(*) FROM lists li WHERE li.user_id = u.id)::int AS ListCount,
+                    (SELECT count(*) FROM lists li WHERE li.user_id = u.id AND (li.visibility = 'public' OR u.id = @me
+                       OR (li.visibility = 'followers' AND EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = @me AND f.followee_id = u.id))))::int AS ListCount,
                     (SELECT count(*) FROM follows f WHERE f.followee_id = u.id)::int AS FollowerCount,
                     (SELECT count(*) FROM follows f WHERE f.follower_id = u.id)::int AS FollowingCount,
                     u.is_artist AS IsArtist,

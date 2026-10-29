@@ -1265,7 +1265,7 @@ BEGIN
     RAISE EXCEPTION 'a guest without a +1 should fail';
   EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE 'guest blocked: no_plus_one%', SQLERRM;
   END;
-  ASSERT registration_blocker(guest, al) = 'already_registered', 'a named guest can''t also register for the show';
+  ASSERT registration_blocker(guest, al) = 'named_as_guest', 'a named guest can''t also register for the show (until they decline, 0041)';
 
   -- Close and draw. 3 seats: top (+1) takes 2; tie_a and tie_b tie at 50 for the last one; far (99) isn't local.
   ALTER TABLE allocations DISABLE TRIGGER trg_allocation_check;
@@ -2302,5 +2302,12 @@ SELECT pg_temp.expect_error(
   $$INSERT INTO fan_overall_scores (user_id, trust, trust_parts, activity, activity_parts, level)
     VALUES ('00000000-0000-0000-0000-000000000001', 0.5, '{}', 0.95, '{}', 11)$$,
   'fan_overall_scores_level');
+
+-- ------------------------------------------------------------ +1 guest decline (0041)
+-- Only decline_plus_one_invite() clears a named guest before the draw (RegistrationApiTests covers the guard).
+DO $$
+BEGIN
+  ASSERT decline_plus_one_invite(gen_random_uuid(), gen_random_uuid()) = 0, 'declining with nothing to decline is a no-op';
+END $$;
 
 \echo ALL INVARIANT TESTS PASSED

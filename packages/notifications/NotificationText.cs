@@ -16,7 +16,7 @@ public static class NotificationText
     /// <summary>Push categories a fan can turn off (users.push_tickets, push_presales, push_staff; migration 0032).</summary>
     public static string Category(string kind) => kind switch
     {
-        "draw_selected" or "draw_not_selected" or "seat_backfilled" or "ticket_delivered" => "tickets",
+        "draw_selected" or "draw_not_selected" or "seat_backfilled" or "ticket_delivered" or "guest_named" => "tickets",
         "presale" => "presales",
         _ when kind.StartsWith("staff_", StringComparison.Ordinal) => "staff",
         _ => "other",
@@ -38,6 +38,9 @@ public static class NotificationText
             "draw_not_selected" => ("Not this time", $"The fan draw for {show} didn't pick you. If a selected fan returns their seat, it goes to the next in line.", $"/show/{Text("event_id")}"),
             "seat_backfilled" => ("A seat opened up for you", $"A fan returned their seat for {show}{on}, and it's yours: {seats} at face value.", "/tickets"),
             "ticket_delivered" => ("Your ticket is here", $"Your ticket for {show}{on} has been delivered. Open Tickets to show it at the door.", "/tickets"),
+            "guest_named" => ("You're someone's +1",
+                $"@{Text("host_handle")} named you as their +1 for {show}{on}. If you didn't agree, decline it on the show page: it keeps you from registering yourself.",
+                $"/show/{Text("event_id")}"),
             "presale" => (Text("artist_name") is { Length: > 0 } artist ? $"Presale: {artist}" : "Presale",
                 $"{Text("presale_name")} for {show}{(Text("city") is { Length: > 0 } city ? $" in {city}" : "")} {PresaleWhen(data, now)}.",
                 $"/show/{Text("event_id")}"),

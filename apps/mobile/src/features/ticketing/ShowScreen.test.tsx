@@ -5,7 +5,7 @@ import { type Standing, standingMessage } from './standing';
 
 const ok = (data: unknown, status = 200) => ({ data, response: { ok: true, status } });
 
-const mockApi = { GET: jest.fn(), PUT: jest.fn(), DELETE: jest.fn() };
+const mockApi = { GET: jest.fn(), PUT: jest.fn(), DELETE: jest.fn(), POST: jest.fn() };
 const mockSession = { api: mockApi };
 jest.mock('../../auth/SessionProvider', () => ({ useSession: () => ({ session: mockSession, state: { status: 'signedIn' } }) }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn(), replace: jest.fn(), back: jest.fn(), canGoBack: () => false } }));
@@ -103,4 +103,25 @@ test('a fan below the minimum is told why and has no Register button', async () 
 
   expect(await screen.findByText(/below this allocation's minimum/)).toBeTruthy();
   expect(screen.queryByLabelText('Register')).toBeNull();
+});
+
+test('a fan named as someone\'s +1 is told why and can decline it, then register', async () => {
+  let named = true;
+  mockApi.GET.mockImplementation((path: string) =>
+    Promise.resolve(ok(path === '/events/{eventId}' ? detail : named
+      ? eligibility({ eligible: false, reason: 'named_as_guest', standing: null })
+      : eligibility({}))),
+  );
+  mockApi.POST.mockImplementation(() => {
+    named = false;
+    return Promise.resolve(ok({ declined: 1 }));
+  });
+  render(<ShowScreen eventId="ev-1" />);
+
+  expect(await screen.findByText(/named you as their \+1/)).toBeTruthy();
+  fireEvent.press(screen.getByRole('button', { name: 'Decline the +1 invite' }));
+  await waitFor(() =>
+    expect(mockApi.POST).toHaveBeenCalledWith('/events/{eventId}/guest-invite/decline', { params: { path: { eventId: 'ev-1' } } }),
+  );
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Decline the +1 invite' })).toBeNull());
 });

@@ -141,6 +141,8 @@ public sealed partial class OpenApiContract
         {
             401 when signedIn => _root["components"]!["responses"]!["Unauthorized"],
             403 when signedIn && path.StartsWith("/admin/", StringComparison.Ordinal) => _root["components"]!["responses"]!["Forbidden"],
+            // The global rate limit (AbuseLimits) applies to every operation.
+            429 => _root["components"]!["responses"]!["RateLimited"],
             _ => null,
         };
     }

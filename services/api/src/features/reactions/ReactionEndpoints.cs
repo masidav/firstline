@@ -51,6 +51,8 @@ public static class ReactionEndpoints
         Validate(targetType, reaction);
         var me = user.UserId();
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        // Same visibility check as adding: counts for a post the caller can't see would confirm it exists.
+        await RequireVisibleAsync(connection, me, targetType, targetId);
         await connection.ExecuteAsync(
             "DELETE FROM post_reactions WHERE target_type = @targetType AND target_id = @targetId AND user_id = @me AND reaction = @reaction",
             new { targetType, targetId, me, reaction });

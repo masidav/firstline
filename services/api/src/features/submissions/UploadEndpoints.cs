@@ -168,10 +168,10 @@ public static class UploadEndpoints
                 upload.Expired ? "This upload has expired. Start again." : "This upload already has its file.");
         }
 
-        if (upload.MimeType == "video/mp4"
-            && request.HttpContext.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit)
+        // Other requests are capped at 1 MB (AbuseLimits); an upload may send its declared size (plus a byte to notice more).
+        if (request.HttpContext.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit)
         {
-            limit.MaxRequestBodySize = MaxVideoBytes + 1L;   // Kestrel's default is 30 MB
+            limit.MaxRequestBodySize = upload.DeclaredBytes + 1L;
         }
 
         // Read at most the declared size (plus one byte to notice a bigger body).

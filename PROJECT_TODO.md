@@ -442,7 +442,13 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
 - [ ] Do not store untracked-artist listening data.
 - [ ] Do not archive unredacted submission files.
 - [ ] Keep secrets out of source control and logs.
-- [ ] Enforce authorization and visibility at the API boundary.
+- [ ] Enforce authorization and visibility at the API boundary. *Security pass 2026-10-28
+      (`docs/security/2026-10-28-api-review.md`): standing route tests (sign-in, staff, contract), simultaneous-request
+      tests, fixes for the +1 guest lockout, rate limits, request size, and count leaks. Open items below.*
+- [ ] Security decisions from the 2026-10-28 review: must a named +1 accept before counting; "followers-only" with
+      instant follows (approve follows, private accounts, or relabel); others' prompt answers visible before answering;
+      push tokens move to whoever registers them last; signed photo links outlive a takedown by up to an hour.
+- [ ] Before deploying: set `AllowedHosts` (or a public origin) and require the sign-in nonce once the app sends it.
 - [ ] Add tests for failure cases, concurrency, and duplicate requests.
 - [ ] Document decisions that remain proposed or open in the source README.
 

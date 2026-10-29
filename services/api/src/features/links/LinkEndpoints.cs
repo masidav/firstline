@@ -18,7 +18,7 @@ public static class LinkEndpoints
 
     public static void MapLinks(this RouteGroupBuilder v1)
     {
-        v1.MapPost("/clicks", RecordAsync);
+        v1.MapPost("/clicks", RecordAsync).RequireRateLimiting(AbuseLimits.Churn);
         var admin = v1.MapGroup("/admin").RequireAuthorization(AuthSetup.StaffPolicy);
         admin.MapPatch("/artists/{artistId:guid}/links", SetLinksAsync);
         admin.MapGet("/clicks", SummaryAsync);

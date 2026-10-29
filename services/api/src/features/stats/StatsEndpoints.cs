@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Dapper;
+using FandomScore.Api.Infrastructure;
 using FandomScore.Api.Features.Authentication;
 using FandomScore.Api.Features.Scoring;
 using Npgsql;
@@ -43,7 +44,7 @@ public static class StatsEndpoints
     private static async Task<IResult> GetMineAsync(ClaimsPrincipal user, NpgsqlDataSource db, CancellationToken cancellationToken)
     {
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
-        return Results.Ok(await LoadAsync(connection, user.UserId()));
+        return Results.Ok(await LoadAsync(connection, user.UserId(), own: true));
     }
 
     // The fan themself and their followers; anyone else gets 403 followers_only. Stats are followers-only, none public
@@ -59,12 +60,13 @@ public static class StatsEndpoints
                 "Fandom stats are shared with followers. Follow this fan to see theirs.");
         }
 
-        var stats = await LoadAsync(connection, owner);
+        var stats = await LoadAsync(connection, owner, own: owner == me);
         return Results.Ok(new ProfileStats(stats.Artists, stats.Journal, stats.Proof, stats.LedgerPoints));
     }
 
     /// <summary>One fan's numbers, read from stored state and the ledger.</summary>
-    public static async Task<UserStats> LoadAsync(NpgsqlConnection connection, Guid userId)
+    /// <summary>The fan's stats. Unless <paramref name="own"/>, journal counts leave out private and taken-down logs and private lists.</summary>
+    public static async Task<UserStats> LoadAsync(NpgsqlConnection connection, Guid userId, bool own = true)
     {
         using var results = await connection.QueryMultipleAsync(
             """
@@ -93,9 +95,10 @@ public static class StatsEndpoints
                    count(*) FILTER (WHERE is_relisten)::int AS Relistens,
                    count(*) FILTER (WHERE btrim(COALESCE(review, '')) <> '')::int AS Reviews,
                    count(*) FILTER (WHERE rating IS NOT NULL)::int AS Ratings,
-                   (SELECT count(*) FROM lists WHERE user_id = @userId)::int AS Lists,
+                   (SELECT count(*) FROM lists WHERE user_id = @userId AND (@own OR visibility <> 'private'))::int AS Lists,
                    (SELECT count(*) FROM comments WHERE user_id = @userId AND deleted_at IS NULL)::int AS Comments
-            FROM album_logs WHERE user_id = @userId AND deleted_at IS NULL;
+            FROM album_logs WHERE user_id = @userId AND deleted_at IS NULL
+              AND (@own OR (visibility <> 'private' AND removed_at IS NULL));
 
             SELECT count(*) FILTER (WHERE kind = 'ticket')::int AS Tickets,
                    count(*) FILTER (WHERE kind = 'merch')::int AS Merch,
@@ -104,7 +107,7 @@ public static class StatsEndpoints
 
             SELECT COALESCE(sum(points), 0) FROM score_events WHERE user_id = @userId AND reversed_at IS NULL;
             """,
-            new { userId });
+            new { userId, own });
 
         var artists = (await results.ReadAsync<ArtistRow>()).Select(r => new ArtistStat(
             new ScoringEndpoints.ArtistRef(r.Id, r.Name, r.ImageUrl), r.RawScore, r.Percentile, r.Rank, r.Fans, r.IsEstimated,
