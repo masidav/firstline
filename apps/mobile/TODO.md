@@ -97,7 +97,9 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Claim a reservation and hand off to checkout; show the non-transferable ticket or delivery date.
 - [ ] Face-value exchange or return flow.
 - [ ] Release builds via EAS Build; beta via TestFlight and Google Play closed testing. *`eas.json` profiles written
-      2026-10-29 (`development`, `development-simulator`, `beta`, `production`); no build run yet (needs `eas init`).*
+      2026-10-29 (`development`, `development-simulator`, `beta`, `production`); no build run yet (needs `eas init`).
+      Workflows `mobile-ios.yml` (simulator build and Maestro launch flow on a macOS runner) and `mobile-release.yml`
+      (EAS build and submit, needs `EXPO_TOKEN`) added 2026-10-29.*
 
 ## Verification
 - [ ] Add or update automated tests for the behavior above.

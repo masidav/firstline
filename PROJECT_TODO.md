@@ -385,7 +385,9 @@ Details: [ADR 0002](docs/adr/0002-hosting-gcp-gke.md) · [Infrastructure](infras
       *Web end-to-end journeys done 2026-10-27 (`apps/mobile/e2e`, Playwright, CI job "End-to-end journeys"): sign-up,
       Google sign-in (stubbed Google), deep-link reloads, logging an album online and offline, registering for an
       allocation, sign-out, and account deletion, against the real API and a seeded database. Verified: 10 passed
-      locally, and a reintroduced deep-link bug fails the reload journey. Native flows (Maestro) wait on iOS builds.*
+      locally, and a reintroduced deep-link bug fails the reload journey. Native: since 2026-10-29 the workflow
+      "iOS app (simulator)" builds the iPhone app on a macOS runner and runs a Maestro launch flow in the Simulator,
+      on demand (macOS minutes are billed at 10x); more flows once a build has been tried on a device.*
 - [ ] Promoter dashboard end-to-end tests (Playwright) and accessibility checks. *Journeys done 2026-10-27
       (`apps/promoter-web/e2e`, CI); accessibility checks not yet.*
 - [ ] API contract tests against `openapi.yaml`; load tests for on-sale registration spikes.
@@ -404,8 +406,9 @@ Details: [ADR 0002](docs/adr/0002-hosting-gcp-gke.md) · [Infrastructure](infras
 - [ ] Test accounts for every external provider (Spotify, Apple, ticketers) usable on beta.
 - [ ] Beta distribution: TestFlight and Google Play closed testing. *iOS build configuration done 2026-10-29
       (bundle ID, icon and splash, `app.config.ts`, `eas.json` profiles, dev client); CI generates the iOS project and
-      bundle on every push (`npm run check:ios`). The first build needs the Apple Developer Program and `eas init`
-      (`docs/OWNER_TODO.md`); nothing has run on a device yet.*
+      bundle on every push (`npm run check:ios`). The workflow "Mobile release (EAS)" builds and submits
+      (TestFlight, Google Play) on demand once the secret `EXPO_TOKEN` exists. The first build needs the Apple
+      Developer Program and `eas init` (`docs/OWNER_TODO.md`); nothing has run on a device yet.*
 - [ ] App Store and Google Play readiness: privacy labels, data safety form, in-app account deletion, Sign in with Apple.
 - [ ] Staged rollout: internal, closed alpha, one pilot show, public beta, general availability.
 

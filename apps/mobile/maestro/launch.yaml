@@ -1,0 +1,13 @@
+# Smoke flow for a Release build in the iOS Simulator (.github/workflows/mobile-ios.yml): the native app starts, the
+# JavaScript bundle loads, and the first screen renders. Which screen depends on whether the API answers: the sign-in
+# screen (titled "Fandom Score") or "Can't reach the server". Run locally with `maestro test maestro/launch.yaml`
+# against a booted simulator with the app installed.
+appId: com.firstline.fandomscore
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      text: "Fandom Score|Can't reach the server"
+    timeout: 60000
+- takeScreenshot: launch

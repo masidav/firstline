@@ -1,0 +1,109 @@
+# Builds the iPhone app on a macOS runner and runs it in the iOS Simulator: `expo prebuild`, CocoaPods, an unsigned
+# Release build (the JavaScript bundle is embedded, so the app runs on its own), then a Maestro flow that launches it
+# and checks the first screen renders (apps/mobile/maestro/launch.yaml). No Apple Developer account is involved:
+# simulator builds aren't signed. The .app is uploaded as an artifact; it runs in Xcode's Simulator or on appetize.io.
+#
+# macOS minutes are billed at ten times Linux minutes on private repositories, so this runs on demand (Actions tab,
+# "Run workflow") and, only when the repository variable IOS_WEEKLY_BUILD is "true", every Monday. Device builds and
+# store uploads go through EAS instead (mobile-release.yml).
+name: iOS app (simulator)
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: The API the build talks to
+        default: https://api.beta.firstline.com/v1
+        type: string
+  schedule:
+    - cron: '17 6 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-ios
+  cancel-in-progress: true
+
+jobs:
+  simulator:
+    name: Build and launch in the Simulator
+    if: github.event_name == 'workflow_dispatch' || vars.IOS_WEEKLY_BUILD == 'true'
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: apps/mobile
+    env:
+      EXPO_PUBLIC_API_URL: ${{ inputs.api_url || 'https://api.beta.firstline.com/v1' }}
+      EXPO_PUBLIC_DEV_SIGN_IN: 'false'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - run: npm ci
+
+      - run: xcodebuild -version
+
+      - name: Cache CocoaPods downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/CocoaPods
+          key: cocoapods-${{ runner.os }}-${{ hashFiles('apps/mobile/package-lock.json') }}
+          restore-keys: cocoapods-${{ runner.os }}-
+
+      # Generates ios/ from app.json and app.config.ts and runs `pod install`.
+      - name: Native project
+        run: npx expo prebuild --platform ios --clean
+
+      # Release: the "Bundle React Native code and images" phase embeds the JavaScript bundle with the EXPO_PUBLIC_
+      # values above. Unsigned: the Simulator doesn't check signatures.
+      - name: Build (Release, iOS Simulator)
+        run: |
+          set -o pipefail
+          xcodebuild -workspace ios/FandomScore.xcworkspace -scheme FandomScore -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build | tail -n 80
+          ls build/Build/Products/Release-iphonesimulator/FandomScore.app/Info.plist
+
+      - name: Start a simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = [d for v in json.load(sys.stdin)["devices"].values() for d in v if d["name"].startswith("iPhone")]
+          print(sorted(devices, key=lambda d: d["name"])[-1]["udid"])')
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/FandomScore.app
+          echo "SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
+
+      - name: Maestro
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          export PATH="$HOME/.maestro/bin:$PATH"
+          maestro --version
+          maestro --device "$SIMULATOR_UDID" test --format junit --output maestro-results.xml --debug-output maestro-debug maestro/launch.yaml
+
+      - name: Upload the app
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FandomScore-ios-simulator
+          path: apps/mobile/build/Build/Products/Release-iphonesimulator/FandomScore.app
+          if-no-files-found: error
+
+      - name: Upload Maestro output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro
+          path: |
+            apps/mobile/maestro-results.xml
+            apps/mobile/maestro-debug
+            apps/mobile/launch.png
+          if-no-files-found: ignore

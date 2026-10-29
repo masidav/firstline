@@ -118,6 +118,7 @@ npm run generate:api   # regenerate src/api/schema.d.ts after openapi.yaml chang
 npm run build:web      # static web build in dist/
 npm run check:ios      # generates the iOS project (ios/, not committed) and bundles the JS for iOS; CI runs it
 npm run ios:personal   # on a Mac: build and install on a plugged-in iPhone with a free Apple ID (see below)
+maestro test maestro/launch.yaml   # the launch smoke flow against a booted simulator with the app installed
 e2e/run.sh             # end-to-end journeys in a browser against the API and a seeded database (e2e/README.md)
 ```
 
@@ -185,6 +186,16 @@ Mac.
 build number incremented, then `eas submit -p ios --profile beta` uploads it to App Store Connect; add testers in
 TestFlight. `production` is the same against the production API, whose hostname is still the placeholder from
 `infrastructure/k8s/overlays/prod` (change both when it's decided).
+
+**In the pipeline.** Two workflows, both started from the Actions tab (they don't run on push):
+- *iOS app (simulator)* (`mobile-ios.yml`): a macOS runner generates the native project, builds an unsigned Release
+  app for the iOS Simulator with the JavaScript bundle embedded, launches it in a simulator, and runs the Maestro
+  flow in `maestro/launch.yaml` (the first screen renders). The `.app` is an artifact: open it in Xcode's Simulator
+  or upload it to appetize.io. No Apple account involved. macOS minutes cost ten times Linux minutes on a private
+  repository, so it also runs weekly only if the repository variable `IOS_WEEKLY_BUILD` is `true`.
+- *Mobile release (EAS)* (`mobile-release.yml`): `eas build` for iOS, Android, or both with a chosen profile, and
+  optionally `--auto-submit` (TestFlight, Google Play testing tracks). Needs the repository secret `EXPO_TOKEN`
+  (expo.dev → Account settings → Access tokens) and the one-time setup above; it stops with a message otherwise.
 
 Not tried yet, in this order, once a build exists: Sign in with Apple and Google, connecting Spotify, push
 notifications on a real phone, the share sheets, and the offline journal queue (Keychain and file storage are
