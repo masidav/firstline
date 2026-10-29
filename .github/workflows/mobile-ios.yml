@@ -29,7 +29,8 @@ jobs:
   simulator:
     name: Build and launch in the Simulator
     if: github.event_name == 'workflow_dispatch' || vars.IOS_WEEKLY_BUILD == 'true'
-    runs-on: macos-15
+    # Expo SDK 57's native packages need Swift 6.2 (Xcode 26); the macOS 26 image defaults to it.
+    runs-on: macos-26
     timeout-minutes: 60
     defaults:
       run:
@@ -65,10 +66,14 @@ jobs:
       # values above. Unsigned: the Simulator doesn't check signatures.
       - name: Build (Release, iOS Simulator)
         run: |
-          set -o pipefail
-          xcodebuild -workspace ios/FandomScore.xcworkspace -scheme FandomScore -configuration Release \
+          if ! xcodebuild -workspace ios/FandomScore.xcworkspace -scheme FandomScore -configuration Release \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build | tail -n 80
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build > xcodebuild.log 2>&1; then
+            echo "::error::xcodebuild failed; the full log is in the xcodebuild-log-and-maestro artifact."
+            grep -E "error:|error - |BUILD FAILED|The following build commands failed" -A3 xcodebuild.log | head -n 120
+            exit 1
+          fi
+          grep -c "warning:" xcodebuild.log || true
           ls build/Build/Products/Release-iphonesimulator/FandomScore.app/Info.plist
 
       - name: Start a simulator
@@ -97,12 +102,13 @@ jobs:
           path: apps/mobile/build/Build/Products/Release-iphonesimulator/FandomScore.app
           if-no-files-found: error
 
-      - name: Upload Maestro output
+      - name: Upload the build log and Maestro output
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: maestro
+          name: xcodebuild-log-and-maestro
           path: |
+            apps/mobile/xcodebuild.log
             apps/mobile/maestro-results.xml
             apps/mobile/maestro-debug
             apps/mobile/launch.png
