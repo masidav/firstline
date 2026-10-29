@@ -42,8 +42,8 @@ export function AccountReviewScreen() {
       {review && review.flags.length === 0 && <Body muted>Your account isn't under review. Nothing to do here.</Body>}
       {review?.on_hold && (
         <Body>
-          Your account is on hold for fan tickets, so registration, the draw, and returned seats will pass you by for now.
-          Everything else works as usual. If something looks wrong, you can tell us your side below.
+          Your account is on hold for fan tickets, so you can't register for them for now (and a confirmed hold keeps you
+          out of draws and returned seats too). Everything else works as usual. If something looks wrong, you can tell us your side below.
         </Body>
       )}
       {review && review.flags.length > 0 && !review.on_hold && <Body muted>Nothing is on hold. Past reviews are listed below.</Body>}

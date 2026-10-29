@@ -5,9 +5,15 @@ Migration `0042_fraud_review.sql`, endpoints in `FraudEndpoints.cs`. Tests: `Fra
 ## What it does
 - **Flags.** Staff flag a fan (`POST /v1/admin/fraud-flags`) with a reason (`streaming_farm`, `bot`, `shared_device`,
   `duplicate_account`, `other`), an internal note, and optional evidence (JSON). One open flag per fan.
-  `source = 'rule'` is reserved for automatic detection (not built yet).
-- **The hold.** While a flag is `open` or `upheld` (`fan_on_hold()`), the fan:
-  - can't register (`registration_blocker()` answers `under_review`; the API returns `403 under_review`);
+- **Automatic detection** (migration 0043, worker `fraud.detect` every 6 hours): rules in `fraud_rules`
+  (`round_the_clock`, `rapid_plays`, `looping`, `listening_spike`) run over the play ledger of fans with plays in the
+  last day and raise a flag with `source = 'rule'`, the rules that fired, and what they measured in `evidence.rules`.
+  A fan already held isn't flagged again; a rule whose flag staff cleared waits `cooldown_days` (30). Thresholds are
+  data (`fraud_rules.params`), provisional. Strategies and rules: `docs/security/gaming-strategies.md`.
+- **The hold.** While a flag is `open` or `upheld` (`fan_on_hold()`), the fan can't register
+  (`registration_blocker()` answers `under_review`; the API returns `403 under_review`). The full hold applies to an
+  upheld flag, or an open one staff raised (`fan_full_hold_flag()`; an open *rule* flag only blocks registering,
+  decided 2026-10-29). Under the full hold the fan also:
   - is withdrawn from any allocation the draw runs (`withdrawn_reason = 'fraud_hold'`, before the trust snapshots and
     ranking, so the draw stays reproducible from stored data);
   - is skipped when a returned seat is handed on (`backfill_allocation()`).
@@ -33,7 +39,8 @@ Fan: `/account-review` (linked from the show page and the notices). Staff: `/fra
 audit lookup), linked from the profile.
 
 ## Known limitations
-- No automatic detection yet: flags are raised by staff (Phase 10 "detect streaming-farm and bot behavior").
+- Detection reads only the play ledger: no device, network, or payment signals, so linked accounts and "click
+  everything" gaming aren't detected (see `docs/security/gaming-strategies.md`).
 - Flags and appeals are kept when an account is deleted (for the audit trail); retention is part of the privacy review.
 - A held fan can still be named as someone's +1 guest.
 - The product rules (confirmed 2026-10-29) are listed in `PROJECT_TODO.md` (Phase 10). The migration's header still

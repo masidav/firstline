@@ -304,6 +304,15 @@ Details: [Notifications](services/api/src/features/notifications/TODO.md) · [Mo
       plays in 12 of the last 12 weeks; each post taken down in the last year lowers good standing.
 - [ ] Define the eligibility model: which signals count, their weights, and minimum account/history age.
 - [ ] Detect streaming-farm and bot behavior (play patterns, account age, device and payment signals, shared-device clusters).
+      *Play patterns done 2026-10-29 (migration 0043): rules `round_the_clock`, `rapid_plays`, `looping`,
+      `listening_spike` (thresholds in `fraud_rules`), run every 6 hours by `fraud.detect`, raise rule flags for staff.
+      An open rule flag only blocks registering; the full hold starts when staff uphold it (decided 2026-10-29).
+      Verified: `dotnet test` (FraudReviewApiTests 7, invariants). Device, network, and payment signals: no data yet.*
+- [ ] Fraud detection thresholds set provisionally (2026-10-29), confirm or change: 24/7 = plays in 20+ hours of a day
+      on 3 of 14 days; rapid = 70 % of 100+ plays under 40 s apart in a week; looping = 300+ plays of an artist in a
+      week, 90 % on 3 tracks (artists with 10+ tracks); spike = 300+ plays in a week and 10x the usual week while the
+      artist's fan tickets are open or within 14 days; a cleared rule waits 30 days; the sweep runs every 6 hours; the fan
+      is told when a rule flags them.
 - [ ] Add verification sources: Apple Music (MusicKit), direct-to-consumer store purchases, verified attendance history.
 - [ ] Bind one person to one account (phone or ID verification at allocation time) without over-collecting personal data.
 - [x] Add fraud review tooling, an appeals process, and audit logging for every eligibility decision.
@@ -320,6 +329,8 @@ Details: [Notifications](services/api/src/features/notifications/TODO.md) · [Mo
       or staff clear it (no expiry); **tickets already given out stay** with a fan flagged after the draw; a held fan
       can still be someone's +1 guest; flags are kept after account deletion for the audit trail.
 - [ ] Red-team the scoring rules before each pilot; record known gaming strategies and mitigations.
+      *Started 2026-10-29: `docs/security/gaming-strategies.md` (10 strategies). Biggest gap: "click everything"
+      (likes, saves, follows, playlists in minutes) isn't detected. Repeat before each pilot.*
 
 Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](services/api/src/integrations/apple-music/TODO.md)
 

@@ -2948,8 +2948,9 @@ paths:
       operationId: getMyFraudReview
       summary: Fraud reviews of my account, and my appeals
       description: |
-        `on_hold` is true while a flag is `open` (under review) or `upheld`: the fan can't register for fan tickets,
-        and the draw and returned seats pass them by. Each flag shows its reason category and status, never the
+        `on_hold` is true while a flag is `open` (under review) or `upheld`: the fan can't register for fan tickets.
+        An upheld flag, or an open one staff raised, also has the draw and returned seats pass them by; an open flag
+        raised by the automatic rules only blocks registering until staff uphold it. Each flag shows its reason category and status, never the
         evidence or staff notes. `can_appeal` while the flag holds the fan and they haven't appealed it yet.
       responses:
         '200':
@@ -2997,7 +2998,8 @@ paths:
       description: |
         `needs_action` (the default): open flags and flags with a pending appeal, oldest first. The other filters list
         flags by status, newest first. Each flag comes with context for the decision: account age, the trust parts,
-        live registrations, and tickets held.
+        live registrations, and tickets held. Flags with `source: rule` were raised by the automatic rules (every 6
+        hours over the play history); their `evidence.rules` holds what each rule measured.
       parameters:
         - name: status
           in: query
@@ -4051,7 +4053,7 @@ components:
         reason: {type: string, enum: [streaming_farm, bot, shared_device, duplicate_account, other]}
         evidence: {type: object, additionalProperties: true}
         note: {type: [string, 'null']}
-        source: {type: string, enum: [staff, rule]}
+        source: {type: string, enum: [staff, rule], description: '`rule`: raised by automatic detection (open, it only blocks registering)'}
         raised_by: {type: [string, 'null'], description: Staff handle; null for a rule.}
         raised_at: {type: string, format: date-time}
         status: {type: string, enum: [open, upheld, cleared]}

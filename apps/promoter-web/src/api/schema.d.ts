@@ -2559,8 +2559,9 @@ export interface paths {
         };
         /**
          * Fraud reviews of my account, and my appeals
-         * @description `on_hold` is true while a flag is `open` (under review) or `upheld`: the fan can't register for fan tickets,
-         *     and the draw and returned seats pass them by. Each flag shows its reason category and status, never the
+         * @description `on_hold` is true while a flag is `open` (under review) or `upheld`: the fan can't register for fan tickets.
+         *     An upheld flag, or an open one staff raised, also has the draw and returned seats pass them by; an open flag
+         *     raised by the automatic rules only blocks registering until staff uphold it. Each flag shows its reason category and status, never the
          *     evidence or staff notes. `can_appeal` while the flag holds the fan and they haven't appealed it yet.
          */
         get: operations["getMyFraudReview"];
@@ -2606,7 +2607,8 @@ export interface paths {
          * Fraud review queue
          * @description `needs_action` (the default): open flags and flags with a pending appeal, oldest first. The other filters list
          *     flags by status, newest first. Each flag comes with context for the decision: account age, the trust parts,
-         *     live registrations, and tickets held.
+         *     live registrations, and tickets held. Flags with `source: rule` were raised by the automatic rules (every 6
+         *     hours over the play history); their `evidence.rules` holds what each rule measured.
          */
         get: operations["listFraudFlags"];
         put?: never;
@@ -3362,7 +3364,10 @@ export interface components {
                 [key: string]: unknown;
             };
             note: string | null;
-            /** @enum {string} */
+            /**
+             * @description `rule`: raised by automatic detection (open, it only blocks registering)
+             * @enum {string}
+             */
             source: "staff" | "rule";
             /** @description Staff handle; null for a rule. */
             raised_by: string | null;

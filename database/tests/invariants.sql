@@ -2408,4 +2408,79 @@ SELECT pg_temp.expect_error($$INSERT INTO eligibility_audit (user_id, action)
   VALUES ('00000000-0000-0000-0000-000000000001', 'registration_blocked')$$, 'eligibility_audit_subject_check');
 SELECT pg_temp.expect_error($$TRUNCATE eligibility_audit CASCADE$$, 'never changed or deleted');
 
+-- ------------------------------------------------------------ fraud detection (0043)
+-- Each rule fires on its own pattern and nothing else; a fan already held isn't flagged again; a cleared rule stays
+-- quiet for its cooldown; an open rule flag blocks registering but isn't the full hold until staff uphold it.
+DO $$
+DECLARE big uuid; small uuid; ev uuid; staff uuid; clock uuid; rapid uuid; loop_fan uuid; small_fan uuid; spike uuid;
+        f uuid; day0 timestamptz := (date_trunc('day', now() AT TIME ZONE 'UTC') - interval '5 days') AT TIME ZONE 'UTC';
+BEGIN
+  INSERT INTO users (handle, email, is_staff) VALUES ('det_staff', 'det_staff@example.test', true) RETURNING id INTO staff;
+  INSERT INTO users (handle, email) VALUES ('det_clock', 'det_clock@example.test') RETURNING id INTO clock;
+  INSERT INTO users (handle, email) VALUES ('det_rapid', 'det_rapid@example.test') RETURNING id INTO rapid;
+  INSERT INTO users (handle, email) VALUES ('det_loop', 'det_loop@example.test') RETURNING id INTO loop_fan;
+  INSERT INTO users (handle, email) VALUES ('det_small', 'det_small@example.test') RETURNING id INTO small_fan;
+  INSERT INTO users (handle, email) VALUES ('det_spike', 'det_spike@example.test') RETURNING id INTO spike;
+  INSERT INTO artists (name, spotify_artist_id) VALUES ('Det Big', 'sp-det-big') RETURNING id INTO big;
+  INSERT INTO artist_baselines (artist_id, dist_params, curve) VALUES (big, '{}', '[]');
+  UPDATE artists SET status = 'active', catalog_loaded_at = now() WHERE id = big;
+  INSERT INTO artists (name, spotify_artist_id) VALUES ('Det Small', 'sp-det-small') RETURNING id INTO small;
+  WITH al AS (INSERT INTO albums (artist_id, title) VALUES (big, 'Big LP') RETURNING id)
+  INSERT INTO tracks (album_id, title, spotify_track_id) SELECT al.id, 'T' || i, 'det-big-' || i FROM al, generate_series(1, 12) i;
+  WITH al AS (INSERT INTO albums (artist_id, title) VALUES (small, 'Small EP') RETURNING id)
+  INSERT INTO tracks (album_id, title, spotify_track_id) SELECT al.id, 'S' || i, 'det-small-' || i FROM al, generate_series(1, 3) i;
+
+  -- Every hour for four whole UTC days, an hour apart.
+  INSERT INTO user_plays (user_id, artist_id, spotify_track_id, played_at)
+  SELECT clock, big, 'det-big-' || (i % 12 + 1), day0 + make_interval(hours => i) FROM generate_series(0, 95) i;
+  -- 150 plays 35 seconds apart, many tracks.
+  INSERT INTO user_plays (user_id, artist_id, spotify_track_id, played_at)
+  SELECT rapid, big, 'det-big-' || (i % 12 + 1), now() - interval '1 day' + make_interval(secs => 35 * i) FROM generate_series(1, 150) i;
+  -- 320 plays a minute apart, nearly all on three tracks: of a 12-track artist, and of a 3-track one.
+  INSERT INTO user_plays (user_id, artist_id, spotify_track_id, played_at)
+  SELECT loop_fan, big, 'det-big-' || (i % 3 + 1), now() - interval '2 days' + make_interval(secs => 61 * i) FROM generate_series(1, 320) i;
+  INSERT INTO user_plays (user_id, artist_id, spotify_track_id, played_at)
+  SELECT small_fan, small, 'det-small-' || (i % 3 + 1), now() - interval '2 days' + make_interval(secs => 61 * i) FROM generate_series(1, 320) i;
+  -- 310 plays over 12 tracks this week and none before, while the artist has fan tickets open.
+  INSERT INTO user_plays (user_id, artist_id, spotify_track_id, played_at)
+  SELECT spike, big, 'det-big-' || (i % 12 + 1), now() - interval '2 days' + make_interval(secs => 61 * i) FROM generate_series(1, 310) i;
+
+  ASSERT fraud_rule_hits(spike) = '{}', 'no spike without fan tickets in sight';
+  INSERT INTO events (artist_id, name, city_id, starts_at) VALUES (big, 'Det Show', 'us-il-chicago', now() + interval '30 days') RETURNING id INTO ev;
+  INSERT INTO allocations (event_id, tickets, face_value_cents, min_raw_score, registration_opens_at, registration_closes_at, published_at)
+  VALUES (ev, 10, 4500, 0, now() + interval '3 days', now() + interval '6 days', now());
+
+  ASSERT (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(fraud_rule_hits(clock)) k) = ARRAY['round_the_clock'], fraud_rule_hits(clock)::text;
+  ASSERT (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(fraud_rule_hits(rapid)) k) = ARRAY['rapid_plays'], fraud_rule_hits(rapid)::text;
+  ASSERT (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(fraud_rule_hits(loop_fan)) k) = ARRAY['listening_spike', 'looping'],
+         fraud_rule_hits(loop_fan)::text;
+  ASSERT fraud_rule_hits(small_fan) = '{}', 'looping a three-song artist is normal: ' || fraud_rule_hits(small_fan)::text;
+  ASSERT (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(fraud_rule_hits(spike)) k) = ARRAY['listening_spike'], fraud_rule_hits(spike)::text;
+
+  -- The sweep flags the four, once, as rule flags; bot rules name the flag.
+  PERFORM run_fraud_detection(interval '7 days');
+  ASSERT (SELECT count(*) FROM fraud_flags WHERE user_id IN (clock, rapid, loop_fan, small_fan, spike)) = 4, 'four fans flagged';
+  ASSERT run_fraud_detection(interval '7 days') = 0, 'held fans are not flagged again';
+  ASSERT (SELECT reason FROM fraud_flags WHERE user_id = clock) = 'bot', 'round the clock is a bot';
+  ASSERT (SELECT reason FROM fraud_flags WHERE user_id = loop_fan) = 'streaming_farm', 'looping is a farm';
+  ASSERT (SELECT bool_and(source = 'rule' AND raised_by IS NULL AND status = 'open') FROM fraud_flags
+           WHERE user_id IN (clock, rapid, loop_fan, spike)), 'rule flags, open';
+  ASSERT (SELECT evidence -> 'rules' -> 'rapid_plays' ->> 'plays' FROM fraud_flags WHERE user_id = rapid) = '150', 'evidence';
+  ASSERT EXISTS (SELECT 1 FROM eligibility_audit WHERE user_id = rapid AND action = 'flag_raised' AND actor_id IS NULL),
+         'raised by the system';
+
+  -- An open rule flag blocks registering (fan_on_hold) but isn't the full hold until upheld.
+  SELECT id INTO f FROM fraud_flags WHERE user_id = clock;
+  ASSERT fan_on_hold(clock) AND fan_full_hold_flag(clock) IS NULL, 'an open rule flag only blocks registering';
+  UPDATE fraud_flags SET status = 'upheld', decided_by = staff WHERE id = f;
+  ASSERT fan_full_hold_flag(clock) = f, 'upheld: the full hold';
+
+  -- Cleared: the same rule stays quiet for its cooldown.
+  UPDATE fraud_flags SET status = 'cleared', decided_by = staff WHERE user_id = rapid;
+  ASSERT NOT fan_on_hold(rapid), 'cleared';
+  ASSERT detect_fraud(rapid) IS NULL, 'a cleared rule waits out its cooldown';
+END $$;
+SELECT pg_temp.expect_error($$INSERT INTO fraud_rules (rule_key, reason, params, description) VALUES ('x', 'vibes', '{}', 'x')$$,
+  'fraud_rules_reason_check');
+
 \echo ALL INVARIANT TESTS PASSED

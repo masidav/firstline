@@ -11,13 +11,17 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging.Abstractions;
+using FandomScore.Worker.Fraud;
+using FandomScore.Worker.Jobs;
 using Npgsql;
 
 namespace FandomScore.Tests;
 
 /// <summary>
 /// Fraud review, appeals, and the eligibility audit (migration 0042): a flag holds a fan out of registering, the draw,
-/// and returned seats until it's cleared; the fan appeals once; every decision is in the audit log.
+/// and returned seats until it's cleared; the fan appeals once; every decision is in the audit log. Automatic
+/// detection (0043): an open rule flag only blocks registering until staff uphold it.
 /// </summary>
 [Collection(PostgresCollection.Name)]
 public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifetime
@@ -269,6 +273,79 @@ public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifeti
         Assert.Contains("I just really like this band.", text, StringComparison.Ordinal);
         Assert.DoesNotContain("Second look", text, StringComparison.Ordinal);
         Assert.DoesNotContain("Confirmed.", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_detection_job_flags_a_bot_and_its_open_flag_only_blocks_registering()
+    {
+        var allocationId = await AllocationAsync(tickets: 1);
+        var bot = await FanAsync("rapid_bot", score: 99, "us-il-chicago");
+        var other = await FanAsync("steady_fan", score: 50, "us-il-chicago");
+        await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{allocationId}/registration", bot), HttpStatusCode.Created);
+        await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{allocationId}/registration", other), HttpStatusCode.Created);
+        var second = await AllocationAsync(tickets: 1);
+
+        // 150 plays 35 seconds apart today: rapid_plays. A steady listener is left alone.
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            await connection.ExecuteAsync(
+                """
+                INSERT INTO user_plays (user_id, artist_id, spotify_track_id, played_at)
+                SELECT u.id, @_artistId, 'trk-' || (i % 9), now() - interval '3 hours' + make_interval(secs => 35 * i)
+                  FROM users u, generate_series(1, 150) i WHERE u.handle = 'rapid_bot';
+                INSERT INTO user_plays (user_id, artist_id, spotify_track_id, played_at)
+                SELECT u.id, @_artistId, 'trk-' || (i % 9), now() - interval '20 hours' + make_interval(mins => 4 * i)
+                  FROM users u, generate_series(1, 40) i WHERE u.handle = 'steady_fan';
+                """,
+                new { _artistId });
+        }
+
+        var job = new DetectFraudJob(_db, NullLogger<DetectFraudJob>.Instance);
+        await job.RunAsync(new ClaimedJob(1, job.Kind, "{}", 1, 10), CancellationToken.None);
+        await job.RunAsync(new ClaimedJob(2, job.Kind, "{}", 1, 10), CancellationToken.None);   // idempotent
+
+        var queue = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/admin/fraud-flags", _staff), HttpStatusCode.OK);
+        var flag = Assert.Single(queue.GetProperty("items").EnumerateArray());
+        Assert.Equal(("rapid_bot", "rule", "bot", JsonValueKind.Null), (flag.GetProperty("user").GetProperty("handle").GetString(),
+            flag.GetProperty("source").GetString(), flag.GetProperty("reason").GetString(), flag.GetProperty("raised_by").ValueKind));
+        Assert.Equal(150, flag.GetProperty("evidence").GetProperty("rules").GetProperty("rapid_plays").GetProperty("plays").GetInt32());
+
+        // Open rule flag: no new registrations...
+        var blocked = await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{second}/registration", bot), HttpStatusCode.Forbidden);
+        Assert.Equal("under_review", blocked.GetProperty("code").GetString());
+        // ...but the registration made before it stays in the draw (here it wins the one seat).
+        await DrawAsync(allocationId);
+        var mine = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/registrations", bot), HttpStatusCode.OK);
+        Assert.Equal("selected", mine.GetProperty("items")[0].GetProperty("registration").GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task An_upheld_rule_flag_holds_the_fan_out_of_the_draw()
+    {
+        var allocationId = await AllocationAsync(tickets: 1);
+        var bot = await FanAsync("upheld_bot", score: 99, "us-il-chicago");
+        var other = await FanAsync("next_in_line", score: 50, "us-il-chicago");
+        await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{allocationId}/registration", bot), HttpStatusCode.Created);
+        await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{allocationId}/registration", other), HttpStatusCode.Created);
+        Guid flagId;
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            flagId = await connection.ExecuteScalarAsync<Guid>(
+                """
+                INSERT INTO fraud_flags (user_id, reason, evidence, source)
+                SELECT id, 'bot', '{"rules": {"round_the_clock": {"days_over": 4}}}', 'rule' FROM users WHERE handle = 'upheld_bot'
+                RETURNING id
+                """);
+        }
+
+        await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/fraud-flags/{flagId}/decision", _staff,
+            new { decision = "uphold", note = "Checked: no human listens 24/7." }), HttpStatusCode.OK);
+        await DrawAsync(allocationId);
+
+        var mine = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/registrations", other), HttpStatusCode.OK);
+        Assert.Equal("selected", mine.GetProperty("items")[0].GetProperty("registration").GetProperty("status").GetString());
+        var audit = await AuditAsync("?handle=upheld_bot");
+        Assert.Equal("draw_held_out", audit[0].GetProperty("action").GetString());
     }
 
     // ------------------------------------------------------------------ helpers
