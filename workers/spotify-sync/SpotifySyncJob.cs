@@ -14,8 +14,9 @@ namespace FandomScore.Worker.SpotifySync;
 /// tracks yet (<see cref="SpotifyOptions.AutoTrackTopArtists"/>; they onboard and then score on the fan's next
 /// sync), drops untracked artists in memory, then brings the user's <c>user_artist_signals</c> and
 /// <c>user_track_likes</c> up to date in one transaction (rows updated, pruned, and added rather than replaced, so a
-/// follow's <c>followed_since</c> and a playlist row's first-seen date survive; migration 0048). Running it again
-/// gives the same result.
+/// follow's <c>followed_since</c> and a playlist row's first-seen date survive; migration 0048). Undated items the
+/// fan already had when the sync first saw their artist are stored as baseline and never count toward a burst
+/// (migration 0049). Running it again gives the same result.
 /// See docs/adr/0005-spotify-integration.md.
 /// </summary>
 public sealed partial class SpotifySyncJob(
@@ -200,30 +201,45 @@ public sealed partial class SpotifySyncJob(
         }
 
         var artists = signals.Artists;
+        // Artists whose items the fan's previous sync could not have seen: all of them on the first sync, else those
+        // that became active since. An undated playlist row or follow of theirs was already there, date unknown, so
+        // it's stored as baseline and never counts toward a burst (migration 0049). Fixed for the life of the row.
+        var unseenArtistIds = (await connection.QueryAsync<Guid>(
+            """
+            SELECT a.id FROM artists a JOIN spotify_connections c ON c.user_id = @userId
+            WHERE a.id = ANY(@artistIds) AND (c.last_synced_at IS NULL OR a.activated_at IS NULL OR a.activated_at > c.last_synced_at)
+            """,
+            new { userId, artistIds = artists.Select(a => a.ArtistId).ToArray() }, transaction)).ToArray();
         await connection.ExecuteAsync(
             """
             -- Rescore the artists the fan had signals for and the ones they have now (percentiles depend on all fans).
             SELECT request_artist_rescore(artist_id) FROM user_artist_signals WHERE user_id = @userId;
             -- Updated in place (not replaced), so followed_since, which the database sets when the follow first
-            -- appears, survives the daily re-sync.
+            -- appears, survives the daily re-sync, and so does followed_since_baseline (the database takes it only
+            -- when the follow first appears).
             INSERT INTO user_artist_signals (user_id, artist_id, liked_tracks, playlist_tracks, distinct_albums,
                                              top_artist_rank, recent_plays, top_artist_rank_short, top_artist_rank_long,
-                                             top_tracks, playlists_featuring, dedicated_playlists, followed)
-            SELECT @userId, * FROM unnest(@artistIds, @liked, @playlist, @albums, @ranks, @recent, @ranksShort, @ranksLong,
-                                          @topTracks, @featuring, @dedicated, @followed)
+                                             top_tracks, playlists_featuring, dedicated_playlists, followed,
+                                             followed_since_baseline)
+            SELECT @userId, x.*, x.followed AND x.artist_id = ANY(@unseenArtistIds)
+            FROM unnest(@artistIds, @liked, @playlist, @albums, @ranks, @recent, @ranksShort, @ranksLong,
+                        @topTracks, @featuring, @dedicated, @followed)
+                 AS x (artist_id, liked_tracks, playlist_tracks, distinct_albums, top_artist_rank, recent_plays,
+                       top_artist_rank_short, top_artist_rank_long, top_tracks, playlists_featuring, dedicated_playlists, followed)
             ON CONFLICT (user_id, artist_id) DO UPDATE
             SET liked_tracks = EXCLUDED.liked_tracks, playlist_tracks = EXCLUDED.playlist_tracks,
                 distinct_albums = EXCLUDED.distinct_albums, top_artist_rank = EXCLUDED.top_artist_rank,
                 recent_plays = EXCLUDED.recent_plays, top_artist_rank_short = EXCLUDED.top_artist_rank_short,
                 top_artist_rank_long = EXCLUDED.top_artist_rank_long, top_tracks = EXCLUDED.top_tracks,
                 playlists_featuring = EXCLUDED.playlists_featuring, dedicated_playlists = EXCLUDED.dedicated_playlists,
-                followed = EXCLUDED.followed, synced_at = now();
+                followed = EXCLUDED.followed, followed_since_baseline = EXCLUDED.followed_since_baseline, synced_at = now();
             DELETE FROM user_artist_signals WHERE user_id = @userId AND artist_id <> ALL (@artistIds);
             SELECT request_artist_rescore(a) FROM unnest(@artistIds) a;
 
             -- Likes and playlist tracks: rows gone from the library are removed, rows still there take Spotify's
             -- added_at when it gives one (a playlist row without one keeps the date it was first seen), new rows are
-            -- added (the database dates a playlist row without added_at as first seen now).
+            -- added (the database dates a playlist row without added_at as first seen now; baseline when its artist is
+            -- one the previous sync could not have seen).
             DELETE FROM user_track_likes l
             WHERE l.user_id = @userId
               AND NOT EXISTS (SELECT 1 FROM unnest(@trackIds, @sources) AS x (spotify_track_id, source)
@@ -234,10 +250,12 @@ public sealed partial class SpotifySyncJob(
             FROM unnest(@trackIds, @sources, @savedAt) AS x (spotify_track_id, source, saved_at)
             JOIN tracks t ON t.spotify_track_id = x.spotify_track_id
             WHERE l.user_id = @userId AND l.track_id = t.id AND l.source = x.source;
-            INSERT INTO user_track_likes (user_id, track_id, source, saved_at)
-            SELECT @userId, t.id, x.source, x.saved_at
+            INSERT INTO user_track_likes (user_id, track_id, source, saved_at, saved_at_baseline)
+            SELECT @userId, t.id, x.source, x.saved_at,
+                   x.source = 'playlist' AND x.saved_at IS NULL AND al.artist_id = ANY(@unseenArtistIds)
             FROM unnest(@trackIds, @sources, @savedAt) AS x (spotify_track_id, source, saved_at)
             JOIN tracks t ON t.spotify_track_id = x.spotify_track_id
+            JOIN albums al ON al.id = t.album_id
             ON CONFLICT DO NOTHING;
 
             DELETE FROM user_album_saves WHERE user_id = @userId;
@@ -274,6 +292,7 @@ public sealed partial class SpotifySyncJob(
                 featuring = artists.Select(a => a.PlaylistsFeaturing).ToArray(),
                 dedicated = artists.Select(a => a.DedicatedPlaylists).ToArray(),
                 followed = artists.Select(a => a.Followed).ToArray(),
+                unseenArtistIds,
                 trackIds = signals.Tracks.Select(t => t.SpotifyTrackId).ToArray(),
                 sources = signals.Tracks.Select(t => t.Source).ToArray(),
                 savedAt = signals.Tracks.Select(t => t.SavedAt).ToArray(),

@@ -11,7 +11,8 @@ public sealed record ArtistSignals(
 /// <summary>
 /// A track for <c>user_track_likes</c>; stored only if the track is in our catalog. <see cref="SavedAt"/> is Spotify's
 /// <c>added_at</c>: of the like, or the earliest playlist add of the track. Null when Spotify gave none; a playlist row
-/// is then dated when the sync first saw it (migration 0048).
+/// is then dated when the sync first saw it (migration 0048), and marked baseline (date unknown, never part of a burst)
+/// when it was already there the first time the sync could see its artist (migration 0049).
 /// </summary>
 public sealed record TrackSignal(string SpotifyTrackId, string Source, DateTime? SavedAt);
 

@@ -313,7 +313,12 @@ Details: [Notifications](services/api/src/features/notifications/TODO.md) · [Mo
       invariants). Extended the same day (migration 0048) to playlist adds (the sync now stores Spotify's `added_at`
       for playlist items, or the first sighting when Spotify has none) and the follow (`followed_since`, set when the
       sync first sees it, cleared on unfollow); re-syncs update rows in place so the dates survive. Verified:
-      `dotnet test` (FraudReviewApiTests 9, SpotifySyncJobTests 15, invariants).*
+      `dotnet test` (FraudReviewApiTests 9, SpotifySyncJobTests 15, invariants). Decided 2026-10-30: first-sync
+      undated items don't count. Migration 0049 marks an undated playlist item or follow that was already there the
+      first time the sync could see it (the fan's first sync, or the first after the artist became active; everything
+      stamped before 0049) as baseline: date unknown, never part of a burst, fixed for the life of the row. Only
+      undated items that appear between two syncs, and items Spotify dates, count. Verified: `dotnet test`
+      (FraudReviewApiTests 10, SpotifySyncJobTests 16, DataExportApiTests, invariants 0049).*
 - [ ] Fraud detection thresholds set provisionally (2026-10-29), confirm or change: 24/7 = plays in 20+ hours of a day
       on 3 of 14 days; rapid = 70 % of 100+ plays under 40 s apart in a week; looping = 300+ plays of an artist in a
       week, 90 % on 3 tracks (artists with 10+ tracks); spike = 300+ plays in a week and 10x the usual week while the
@@ -321,7 +326,7 @@ Details: [Notifications](services/api/src/features/notifications/TODO.md) · [Mo
       Burst (2026-10-30) = 40+ liked tracks, playlist adds, album saves, and the follow of one artist within 24 hours,
       80 % of the fan's saves of that artist, within 7 days of sign-up or while fan tickets are open or within 14 days
       (playlist adds and the follow count since migration 0048, dated by Spotify's `added_at` or the sync's first
-      sighting). *Burst confirmed 2026-10-30: a genuine new fan saving a whole discography on joining goes to staff
+      sighting; undated items already there at the first sync don't count, migration 0049). *Burst confirmed 2026-10-30: a genuine new fan saving a whole discography on joining goes to staff
       review, accepted. The four play-pattern thresholds are still provisional.*
 - [x] Automatic flags stay hidden from the fan until a person reviews them (decided 2026-10-30): registering is refused
       with a neutral "Registration isn't available for your account right now"; no notice, review screen, appeal, or

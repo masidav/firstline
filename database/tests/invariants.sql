@@ -2663,6 +2663,80 @@ BEGIN
   ASSERT run_fraud_detection(interval '1 day') = 0, 'nobody flagged twice';
   ASSERT (SELECT evidence -> 'rules' -> 'burst_engagement' -> 0 -> 'kinds' ->> 'playlist' FROM fraud_flags WHERE user_id = follower) = '60', 'evidence';
 END $$;
+-- ------------------------------------------------------------ undated items already there don't count (0049)
+-- An undated playlist row or follow the sync marks baseline (already there when it first looked) never makes a burst,
+-- though it still counts among the fan's saves; undated rows that appear on a later sync do; a row Spotify dates
+-- counts even if the writer asks for baseline; the flag is fixed for the life of the row (a re-sync can't flip it
+-- either way); a follow that ends and comes back is new.
+DO $$
+DECLARE ar uuid; ar2 uuid; longtime uuid; dated uuid; tr1 uuid; v jsonb;
+BEGIN
+  SELECT id INTO ar FROM artists WHERE spotify_artist_id = 'sp-bur';
+  INSERT INTO artists (name, spotify_artist_id) VALUES ('Baseline Band', 'sp-bl') RETURNING id INTO ar2;
+  INSERT INTO artist_baselines (artist_id, dist_params, curve) VALUES (ar2, '{}', '[]');
+  UPDATE artists SET status = 'active', catalog_loaded_at = now() WHERE id = ar2;
+  INSERT INTO albums (artist_id, title) VALUES (ar2, 'BL LP');
+  INSERT INTO tracks (album_id, title, spotify_track_id)
+  SELECT al.id, 'BL ' || i, 'bl-' || i FROM albums al, generate_series(1, 50) i WHERE al.artist_id = ar2;
+  INSERT INTO users (handle, email) VALUES ('bl_longtime', 'bl_longtime@example.test') RETURNING id INTO longtime;
+  INSERT INTO users (handle, email) VALUES ('bl_dated', 'bl_dated@example.test') RETURNING id INTO dated;
+
+  -- The first sync: a new account with a big, very old, undated playlist of 60 tracks and the follow. All stamped now
+  -- and all baseline: no burst, though it's 61 saves in a second, a week after sign-up.
+  INSERT INTO user_track_likes (user_id, track_id, source, saved_at, saved_at_baseline)
+  SELECT longtime, t.id, 'playlist', NULL, true FROM tracks t JOIN albums al ON al.id = t.album_id WHERE al.artist_id = ar;
+  INSERT INTO user_artist_signals (user_id, artist_id, playlist_tracks, followed, followed_since_baseline) VALUES (longtime, ar, 60, true, true);
+  ASSERT (SELECT bool_and(saved_at = now() AND saved_at_baseline) FROM user_track_likes WHERE user_id = longtime), 'stamped, baseline';
+  ASSERT (SELECT followed_since = now() AND followed_since_baseline FROM user_artist_signals WHERE user_id = longtime), 'follow baseline';
+  ASSERT fraud_rule_hits(longtime) = '{}', 'baseline rows are not a burst: ' || fraud_rule_hits(longtime)::text;
+
+  -- Re-syncs can't flip the flag: an update keeps it whatever the writer says, and Spotify's date arriving later
+  -- doesn't make the row countable.
+  UPDATE user_track_likes SET saved_at = NULL, saved_at_baseline = false WHERE user_id = longtime;
+  UPDATE user_track_likes SET saved_at = now() - interval '1 hour' WHERE user_id = longtime AND track_id = (SELECT min(track_id::text)::uuid FROM user_track_likes WHERE user_id = longtime);
+  UPDATE user_artist_signals SET followed = true, followed_since_baseline = false, liked_tracks = 1 WHERE user_id = longtime;
+  ASSERT (SELECT bool_and(saved_at_baseline) FROM user_track_likes WHERE user_id = longtime), 'a re-sync keeps the playlist rows baseline';
+  ASSERT (SELECT followed_since_baseline FROM user_artist_signals WHERE user_id = longtime), 'a re-sync keeps the follow baseline';
+  ASSERT fraud_rule_hits(longtime) = '{}', 'still no burst: ' || fraud_rule_hits(longtime)::text;
+
+  -- A later sync: 50 undated playlist adds of another artist appear since the last one, and the follow. They count.
+  INSERT INTO user_track_likes (user_id, track_id, source, saved_at)
+  SELECT longtime, t.id, 'playlist', NULL FROM tracks t JOIN albums al ON al.id = t.album_id WHERE al.artist_id = ar2;
+  INSERT INTO user_artist_signals (user_id, artist_id, playlist_tracks, followed) VALUES (longtime, ar2, 50, true);
+  v := fraud_rule_hits(longtime) -> 'burst_engagement';
+  ASSERT jsonb_array_length(v) = 1 AND (v -> 0 ->> 'artist_id')::uuid = ar2, fraud_rule_hits(longtime)::text;
+  ASSERT (v -> 0 ->> 'saves')::int = 51 AND (v -> 0 ->> 'all_saves')::int = 51
+     AND v -> 0 -> 'kinds' = '{"liked": 0, "playlist": 50, "album": 0, "follow": 1}', v::text;
+
+  -- A track taken out of the playlist and put back is new and counts; the baseline rows still count among the fan's
+  -- saves of the artist, so 45 put back out of 61 is no burst (74 %, under 80 %).
+  DELETE FROM user_track_likes WHERE user_id = longtime AND track_id IN (SELECT t.id FROM tracks t JOIN albums al ON al.id = t.album_id WHERE al.artist_id = ar2);
+  DELETE FROM user_artist_signals WHERE user_id = longtime AND artist_id = ar2;
+  DELETE FROM user_track_likes WHERE user_id = longtime AND track_id IN (
+    SELECT t.id FROM tracks t JOIN albums al ON al.id = t.album_id WHERE al.artist_id = ar ORDER BY t.spotify_track_id LIMIT 45);
+  INSERT INTO user_track_likes (user_id, track_id, source, saved_at)
+  SELECT longtime, t.id, 'playlist', NULL FROM tracks t JOIN albums al ON al.id = t.album_id WHERE al.artist_id = ar ORDER BY t.spotify_track_id LIMIT 45;
+  ASSERT (SELECT count(*) FILTER (WHERE NOT saved_at_baseline) FROM user_track_likes WHERE user_id = longtime) = 45, 'the re-added rows are new';
+  ASSERT fraud_rule_hits(longtime) = '{}', 'a share of the whole library is not a burst: ' || fraud_rule_hits(longtime)::text;
+
+  -- A follow that ends and comes back is new: no longer baseline.
+  UPDATE user_artist_signals SET followed = false WHERE user_id = longtime AND artist_id = ar;
+  ASSERT (SELECT followed_since IS NULL AND NOT followed_since_baseline FROM user_artist_signals WHERE user_id = longtime AND artist_id = ar), 'unfollowed';
+  UPDATE user_artist_signals SET followed = true WHERE user_id = longtime AND artist_id = ar;
+  ASSERT (SELECT followed_since = now() AND NOT followed_since_baseline FROM user_artist_signals WHERE user_id = longtime AND artist_id = ar), 'refollowed: countable';
+
+  -- Spotify's own added_at: countable even on a first sync, even if the writer asks for baseline; a liked row is never
+  -- baseline. 60 adds in 20 minutes fire.
+  SELECT t.id INTO tr1 FROM tracks t JOIN albums al ON al.id = t.album_id WHERE al.artist_id = ar ORDER BY t.spotify_track_id LIMIT 1;
+  INSERT INTO user_track_likes (user_id, track_id, source, saved_at, saved_at_baseline) VALUES (dated, tr1, 'liked', NULL, true);
+  ASSERT NOT (SELECT saved_at_baseline FROM user_track_likes WHERE user_id = dated AND source = 'liked'), 'a liked row is never baseline';
+  INSERT INTO user_track_likes (user_id, track_id, source, saved_at, saved_at_baseline)
+  SELECT dated, t.id, 'playlist', now() - interval '2 hours' + make_interval(secs => 20 * row_number() OVER ()), true
+    FROM tracks t JOIN albums al ON al.id = t.album_id WHERE al.artist_id = ar;
+  ASSERT NOT (SELECT bool_or(saved_at_baseline) FROM user_track_likes WHERE user_id = dated), 'a dated row is never baseline';
+  v := fraud_rule_hits(dated) -> 'burst_engagement' -> 0;
+  ASSERT v IS NOT NULL AND (v -> 'kinds' ->> 'playlist')::int = 60, fraud_rule_hits(dated)::text;
+END $$;
 -- ------------------------------------------------------------ scalping complaints (0047)
 -- One hand-entered record per allocation: a count of zero or more, a note of 1 to 2000 characters or null, the
 -- database stamps updated_at, and the record stays with its allocation.

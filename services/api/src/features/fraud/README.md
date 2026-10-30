@@ -8,7 +8,8 @@ Migration `0042_fraud_review.sql`, endpoints in `FraudEndpoints.cs`. Tests: `Fra
 - **Automatic detection** (migration 0043, worker `fraud.detect` every 6 hours): rules in `fraud_rules`
   (`round_the_clock`, `rapid_plays`, `looping`, `listening_spike`; `burst_engagement` since 0045, over likes and album
   saves, and since 0048 over playlist adds and the follow too, each dated by Spotify's `added_at` or, failing that,
-  when the sync first saw it) run over fans with plays, saves, or a new follow in the last day and raise a flag with
+  when the sync first saw it; since 0049 an undated item that was already there the first time the sync could see
+  it is baseline, date unknown, and never part of a burst) run over fans with plays, saves, or a new follow in the last day and raise a flag with
   `source = 'rule'`, the rules that fired, and what they measured in `evidence.rules` (a burst is broken down by
   `kinds`: liked, playlist, album, follow). The flag is named by the strongest reason: bot, then streaming_farm.
   A fan already held isn't flagged again; a rule whose flag staff cleared waits `cooldown_days` (30). Thresholds are
@@ -50,8 +51,10 @@ audit lookup), linked from the profile.
 ## Known limitations
 - Detection reads only the play ledger and the synced library: no device, network, or payment signals, so linked
   accounts aren't detected (see `docs/security/gaming-strategies.md`). A "click everything" burst is seen once the daily
-  sync has run; a save undone before then never is. Playlist rows synced before 0048 carry no date until the fan's next
-  sync.
+  sync has run; a save undone before then never is. Undated items (very old playlists, every follow) that were already
+  there at the fan's first sync, or when the artist became active, are baseline and never seen as a burst, even if
+  they were added just before (decided 2026-10-30, migration 0049). An artist paused and made active again keeps its
+  first `activated_at`, so its undated items reappearing then are not baseline.
 - Flags and appeals are kept when an account is deleted (for the audit trail); retention is part of the privacy review.
 - A held fan can still be named as someone's +1 guest.
 - The product rules (confirmed 2026-10-29) are listed in `PROJECT_TODO.md` (Phase 10). The migration's header still
