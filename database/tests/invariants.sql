@@ -2520,4 +2520,35 @@ BEGIN
   ASSERT (SELECT shown_to_fan_at IS NOT NULL FROM fraud_flags WHERE id = f), 'a staff flag is shown at once';
 END $$;
 
+-- ------------------------------------------------------------ scalping complaints (0047)
+-- One hand-entered record per allocation: a count of zero or more, a note of 1 to 2000 characters or null, the
+-- database stamps updated_at, and the record stays with its allocation.
+DO $$
+DECLARE staff uuid; al uuid; t0 timestamptz;
+BEGIN
+  INSERT INTO users (handle, email, is_staff) VALUES ('cmp_staff', 'cmp_staff@example.test', true) RETURNING id INTO staff;
+  INSERT INTO allocations (event_id, name, tickets, face_value_cents, registration_opens_at, registration_closes_at)
+  VALUES ('41000000-0000-0000-0000-000000000001', 'Complaints allocation', 10, 1000, now() + interval '1 day', now() + interval '2 days')
+  RETURNING id INTO al;
+
+  INSERT INTO allocation_complaints (allocation_id, scalping_complaints, note, updated_by, updated_at)
+  VALUES (al, 2, 'Two listings seen on a resale site; both turned out to be fakes.', staff, '2000-01-01');
+  SELECT updated_at INTO t0 FROM allocation_complaints WHERE allocation_id = al;
+  ASSERT t0 > now() - interval '1 minute', 'the database stamps updated_at';
+  PERFORM pg_sleep(0.01);
+  UPDATE allocation_complaints SET scalping_complaints = 0, note = NULL WHERE allocation_id = al;
+  ASSERT (SELECT updated_at FROM allocation_complaints WHERE allocation_id = al) > t0, 'and restamps it on every change';
+  BEGIN
+    UPDATE allocation_complaints SET allocation_id = gen_random_uuid() WHERE allocation_id = al;
+    RAISE EXCEPTION 'moving a complaints record should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%for good%', SQLERRM;
+  END;
+END $$;
+SELECT pg_temp.expect_error($$INSERT INTO allocation_complaints (allocation_id, scalping_complaints, updated_by)
+  SELECT id, -1, (SELECT id FROM users WHERE handle = 'cmp_staff') FROM allocations WHERE name = 'Complaints allocation'$$,
+  'allocation_complaints_count_check');
+SELECT pg_temp.expect_error($$INSERT INTO allocation_complaints (allocation_id, scalping_complaints, note, updated_by)
+  SELECT id, 0, '   ', (SELECT id FROM users WHERE handle = 'cmp_staff') FROM allocations WHERE name = 'Complaints allocation'$$,
+  'allocation_complaints_note_check');
+
 \echo ALL INVARIANT TESTS PASSED

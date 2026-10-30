@@ -2281,6 +2281,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/events/{eventId}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * The pilot case-study report for any show
+         * @description Same as `GET /organizations/{organizationId}/events/{eventId}/report`, for staff.
+         */
+        get: operations["getShowReportForStaff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/allocations/{allocationId}/complaints": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Record scalping complaints for an allocation
+         * @description Same as `PUT /organizations/{organizationId}/allocations/{allocationId}/complaints`, for staff.
+         */
+        put: operations["putAllocationComplaintsForStaff"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/events/{eventId}": {
         parameters: {
             query?: never;
@@ -3250,6 +3294,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/organizations/{organizationId}/events/{eventId}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * The pilot case-study report for a show
+         * @description Per published allocation and rolled up: seats offered, registrations, eligible and ineligible fans, selected
+         *     fans, +1s, tickets delivered, returns and re-offers, seats unfilled (empty seats once the show has started),
+         *     hub against non-hub fill, sell-through, and the scalping complaints someone recorded. Any member.
+         */
+        get: operations["getOrganizationShowReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{organizationId}/allocations/{allocationId}/complaints": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Record scalping complaints for an allocation
+         * @description Admins and owners. The platform never sees a resale (tickets stay on the account they were drawn for), so
+         *     complaints that reach the promoter are entered by hand: a count and an optional note, replacing the previous
+         *     entry. Published allocations only.
+         */
+        put: operations["putOrganizationAllocationComplaints"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4012,6 +4106,80 @@ export interface components {
         EventDetail: {
             event: components["schemas"]["Event"];
             allocations: components["schemas"]["Allocation"][];
+        };
+        /**
+         * @description The pilot case-study report for a show (Phase 11). `allocations` lists every published allocation;
+         *     `totals` rolls up those not cancelled. Computed from registrations, the recorded draw, reservations, and the
+         *     eligibility audit; only scalping complaints are entered by hand.
+         */
+        ShowReport: {
+            event: components["schemas"]["Event"];
+            /** Format: date-time */
+            generated_at: string;
+            show_started: boolean;
+            totals: components["schemas"]["ReportMetrics"];
+            allocations: components["schemas"]["AllocationReport"][];
+        };
+        AllocationReport: {
+            allocation: components["schemas"]["Allocation"];
+            metrics: components["schemas"]["ReportMetrics"];
+            complaints: components["schemas"]["AllocationComplaints"] | null;
+        };
+        /** @description Seats, not fans, unless the name says fans (a +1 is two seats on one reservation). */
+        ReportMetrics: {
+            /** @description The allocation's tickets */
+            seats_offered: number;
+            /** @description Live registrations (not withdrawn) */
+            registrations: number;
+            withdrawn: number;
+            /** @description Same as `registrations`; a fan registers only when eligible */
+            eligible_registrations: number;
+            /** @description Fans refused by the eligibility check (score */
+            ineligible_attempts: number;
+            /** @description Registrations whose hub cities include the show's city */
+            hub_registrations: number;
+            non_hub_registrations: number;
+            /** @description Fans ever selected */
+            selected_fans: number;
+            /** @description Fans the draw itself selected */
+            selected_in_draw: number;
+            /** @description Live reservations with two seats */
+            plus_ones: number;
+            /** @description Seats on live reservations */
+            seats_filled: number;
+            hub_seats_filled: number;
+            non_hub_seats_filled: number;
+            /** @description Seats on live reservations past their delivery time */
+            tickets_delivered: number;
+            /** @description Reservations fans gave back */
+            returns: number;
+            seats_returned: number;
+            /** @description Reservations cancelled (account deleted) */
+            cancellations: number;
+            /** @description Reservations made after the draw */
+            re_offers: number;
+            seats_re_offered: number;
+            /** @description Offered seats nobody holds right now */
+            seats_unfilled: number;
+            /** @description Seats nobody held at show start; null until the show has started */
+            empty_seats: number | null;
+            /** @description seats_filled over seats_offered */
+            sell_through_percent: number | null;
+            /** @description Hand-entered; null until someone records them */
+            scalping_complaints: number | null;
+        };
+        AllocationComplaints: {
+            /** Format: uuid */
+            allocation_id: string;
+            scalping_complaints: number;
+            note: string | null;
+            updated_by_handle: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ComplaintsRequest: {
+            scalping_complaints: number;
+            note?: string | null;
         };
         EventCreate: {
             /** Format: uuid */
@@ -8645,6 +8813,59 @@ export interface operations {
             422: components["responses"]["ValidationFailed"];
         };
     };
+    getShowReportForStaff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShowReport"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    putAllocationComplaintsForStaff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComplaintsRequest"];
+            };
+        };
+        responses: {
+            /** @description What is recorded now */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AllocationComplaints"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
     getEventForStaff: {
         parameters: {
             query?: never;
@@ -10215,6 +10436,60 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    getOrganizationShowReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShowReport"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    putOrganizationAllocationComplaints: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComplaintsRequest"];
+            };
+        };
+        responses: {
+            /** @description What is recorded now */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AllocationComplaints"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
         };
     };
 }

@@ -38,7 +38,7 @@ public static partial class AllocationEndpoints
         admin.MapPost("/allocations/{allocationId:guid}/cancel", CancelAsync);
         admin.MapDelete("/allocations/{allocationId:guid}", DeleteDraftAsync);
         MapSelection(admin);
-        MapOrganizationShows(v1);
+        MapReports(admin, MapOrganizationShows(v1));
     }
 
     /// <summary>

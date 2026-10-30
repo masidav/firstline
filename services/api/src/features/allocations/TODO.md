@@ -51,6 +51,10 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       racing registrations for one show, the draw waiting for an in-flight registration, two draws at once, and the
       stored seed repeating every rank.*
 
+- [x] Case-study report for the pilot: sell-through, returns and re-offers, empty seats, hub fill, hand-entered
+      scalping complaints. *Done 2026-10-30 (migration 0047, `AllocationEndpoints.Report.cs`, README "Case-study
+      report"). Verified: ShowReportApiTests 2, invariants (0047), full `dotnet test`.*
+
 ## Verification
 - [x] Add or update automated tests for the behavior above. *AllocationConcurrencyTests 7, invariants (0033).*
 - [x] Run the relevant tests and record actual results. *2026-10-26: `dotnet test` (results in the commit), load test

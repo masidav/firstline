@@ -10,6 +10,7 @@ import { useLoad } from '../lib/useLoad';
 import { Button, Card, ErrorText, Field, Loading, Status } from '../ui/components';
 import { AllocationForm } from './AllocationForm';
 import { useOrganization } from './OrganizationLayout';
+import { ShowReport } from './ShowReport';
 
 /** One show: its details (editable until an allocation opens) and its fan allocations. */
 export function ShowPage() {
@@ -135,6 +136,8 @@ export function ShowPage() {
           </table>
         )}
       </Card>
+
+      <ShowReport organizationId={organizationId} eventId={eventId} manage={manage} />
     </>
   );
 }

@@ -17,6 +17,9 @@ export type DrawStatus = Schemas['DrawStatus'];
 export type PromoterRegistration = Schemas['PromoterRegistration'];
 export type Reservation = Schemas['Reservation'];
 export type Selection = Schemas['Selection'];
+export type ShowReport = Schemas['ShowReport'];
+export type AllocationReport = Schemas['AllocationReport'];
+export type ReportMetrics = Schemas['ReportMetrics'];
 export type HubCity = Schemas['HubCity'];
 export type Artist = Schemas['Artist'];
 
