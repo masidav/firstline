@@ -64,7 +64,7 @@ public sealed class DevSignInTests(PostgresFixture postgres) : IAsyncLifetime
     [InlineData("Staging")]
     public async Task Developer_sign_in_stops_startup_outside_development(string environment)
     {
-        await using var factory = Factory(environment, devSignIn: true);
+        await using var factory = Factory(environment, devSignIn: true, new StartupFailureFactory());
 
         var error = Assert.Throws<OptionsValidationException>(() => factory.CreateClient());
         Assert.Contains("only allowed in Development", error.Message);
@@ -93,8 +93,8 @@ public sealed class DevSignInTests(PostgresFixture postgres) : IAsyncLifetime
         return request;
     }
 
-    private WebApplicationFactory<Program> Factory(string environment, bool devSignIn) =>
-        new ContractCheckedFactory().WithWebHostBuilder(builder =>
+    private WebApplicationFactory<Program> Factory(string environment, bool devSignIn, ContractCheckedFactory? app = null) =>
+        (app ?? new ContractCheckedFactory()).WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment(environment);
             builder.UseSetting("App:PublicOrigin", TestAuth.PublicOrigin);

@@ -84,7 +84,7 @@ public sealed class PublicOriginTests(PostgresFixture postgres) : IAsyncLifetime
     [InlineData("Staging")]
     public async Task Outside_development_the_api_wont_start_without_a_public_origin(string environment)
     {
-        await using var factory = Factory(environment, publicOrigin: null);
+        await using var factory = Factory(environment, publicOrigin: null, new StartupFailureFactory());
 
         var error = Assert.Throws<OptionsValidationException>(() => factory.CreateClient());
         Assert.Contains("App:PublicOrigin", error.Message, StringComparison.Ordinal);
@@ -97,7 +97,7 @@ public sealed class PublicOriginTests(PostgresFixture postgres) : IAsyncLifetime
     [InlineData("https://user:pass@api.example.com")]
     public async Task A_malformed_public_origin_stops_startup(string origin)
     {
-        await using var factory = Factory("Development", origin);
+        await using var factory = Factory("Development", origin, new StartupFailureFactory());
 
         var error = Assert.Throws<OptionsValidationException>(() => factory.CreateClient());
         Assert.Contains("absolute http(s) URL", error.Message, StringComparison.Ordinal);
@@ -119,8 +119,8 @@ public sealed class PublicOriginTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.StartsWith("http://192.168.1.20:5271/v1/score-cards/", card.GetProperty("image_url").GetString(), StringComparison.Ordinal);
     }
 
-    private WebApplicationFactory<Program> Factory(string environment, string? publicOrigin) =>
-        new ContractCheckedFactory().WithWebHostBuilder(builder =>
+    private WebApplicationFactory<Program> Factory(string environment, string? publicOrigin, ContractCheckedFactory? app = null) =>
+        (app ?? new ContractCheckedFactory()).WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment(environment);
             builder.UseSetting("ConnectionStrings:Database", _connectionString);
