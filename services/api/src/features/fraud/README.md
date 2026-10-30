@@ -6,8 +6,9 @@ Migration `0042_fraud_review.sql`, endpoints in `FraudEndpoints.cs`. Tests: `Fra
 - **Flags.** Staff flag a fan (`POST /v1/admin/fraud-flags`) with a reason (`streaming_farm`, `bot`, `shared_device`,
   `duplicate_account`, `other`), an internal note, and optional evidence (JSON). One open flag per fan.
 - **Automatic detection** (migration 0043, worker `fraud.detect` every 6 hours): rules in `fraud_rules`
-  (`round_the_clock`, `rapid_plays`, `looping`, `listening_spike`) run over the play ledger of fans with plays in the
-  last day and raise a flag with `source = 'rule'`, the rules that fired, and what they measured in `evidence.rules`.
+  (`round_the_clock`, `rapid_plays`, `looping`, `listening_spike`; `burst_engagement` since 0045, over likes and album
+  saves) run over fans with plays or saves in the last day and raise a flag with `source = 'rule'`, the rules that
+  fired, and what they measured in `evidence.rules`. The flag is named by the strongest reason: bot, then streaming_farm.
   A fan already held isn't flagged again; a rule whose flag staff cleared waits `cooldown_days` (30). Thresholds are
   data (`fraud_rules.params`), provisional. Strategies and rules: `docs/security/gaming-strategies.md`.
 - **Hidden until reviewed** (migration 0044, decided 2026-10-30): a rule flag isn't shown to the fan until staff uphold

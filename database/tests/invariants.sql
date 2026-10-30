@@ -2520,4 +2520,89 @@ BEGIN
   ASSERT (SELECT shown_to_fan_at IS NOT NULL FROM fraud_flags WHERE id = f), 'a staff flag is shown at once';
 END $$;
 
+-- ------------------------------------------------------------ burst engagement (0045)
+-- Liking every track and saving every album of an artist in one sitting fires burst_engagement, within a week of
+-- sign-up or while the artist has fan tickets in sight; saving the same amount over months doesn't, nor does a
+-- long-time saver bingeing a release; the sweep reaches a fan with no plays; the flag is named by the strongest
+-- reason (a looping burster is a streaming_farm, not other); a re-run flags nobody twice.
+DO $$
+DECLARE ar uuid; ev uuid; clicker uuid; gradual uuid; release_fan uuid; old_clicker uuid; loop_clicker uuid; al1 uuid;
+        v jsonb; v_rule jsonb;
+BEGIN
+  INSERT INTO users (handle, email) VALUES ('bur_clicker', 'bur_clicker@example.test') RETURNING id INTO clicker;
+  INSERT INTO users (handle, email) VALUES ('bur_gradual', 'bur_gradual@example.test') RETURNING id INTO gradual;
+  INSERT INTO users (handle, email) VALUES ('bur_release', 'bur_release@example.test') RETURNING id INTO release_fan;
+  INSERT INTO users (handle, email, created_at) VALUES ('bur_old', 'bur_old@example.test', now() - interval '400 days') RETURNING id INTO old_clicker;
+  INSERT INTO users (handle, email) VALUES ('bur_loop', 'bur_loop@example.test') RETURNING id INTO loop_clicker;
+  INSERT INTO artists (name, spotify_artist_id) VALUES ('Bur Band', 'sp-bur') RETURNING id INTO ar;
+  INSERT INTO artist_baselines (artist_id, dist_params, curve) VALUES (ar, '{}', '[]');
+  UPDATE artists SET status = 'active', catalog_loaded_at = now() WHERE id = ar;
+  -- Five albums of twelve tracks.
+  INSERT INTO albums (artist_id, title) SELECT ar, 'Bur LP ' || a FROM generate_series(1, 5) a;
+  INSERT INTO tracks (album_id, title, spotify_track_id)
+  SELECT al.id, 'B' || al.title || '-' || i, 'bur-' || al.id || '-' || i FROM albums al, generate_series(1, 12) i WHERE al.artist_id = ar;
+  SELECT id INTO al1 FROM albums WHERE artist_id = ar ORDER BY title LIMIT 1;
+
+  -- The clicker, a day after signing up: all 60 tracks liked and 5 albums saved within twenty minutes.
+  INSERT INTO user_track_likes (user_id, track_id, source, saved_at)
+  SELECT clicker, t.id, 'liked', now() - interval '2 hours' + make_interval(secs => 15 * row_number() OVER ())
+    FROM tracks t JOIN albums al ON al.id = t.album_id WHERE al.artist_id = ar;
+  INSERT INTO user_album_saves (user_id, album_id, saved_at)
+  SELECT clicker, id, now() - interval '1 hour' FROM albums WHERE artist_id = ar;
+  -- The gradual fan: the same 65 saves spread over the last 300 days.
+  INSERT INTO user_track_likes (user_id, track_id, source, saved_at)
+  SELECT gradual, t.id, 'liked', now() - make_interval(days => (5 * row_number() OVER ())::int)
+    FROM tracks t JOIN albums al ON al.id = t.album_id WHERE al.artist_id = ar;
+  INSERT INTO user_album_saves (user_id, album_id, saved_at)
+  SELECT gradual, id, now() - make_interval(days => 290) FROM albums WHERE artist_id = ar;
+  -- The release-day fan: 48 saves over a year, then the new album and its 12 tracks today (13 of 61: no burst).
+  INSERT INTO user_track_likes (user_id, track_id, source, saved_at)
+  SELECT release_fan, t.id, 'liked', now() - make_interval(days => (7 * row_number() OVER ())::int)
+    FROM tracks t JOIN albums al ON al.id = t.album_id WHERE al.artist_id = ar AND al.id <> al1;
+  INSERT INTO user_track_likes (user_id, track_id, source, saved_at)
+  SELECT release_fan, t.id, 'liked', now() - interval '3 hours' FROM tracks t WHERE t.album_id = al1;
+  INSERT INTO user_album_saves (user_id, album_id, saved_at) VALUES (release_fan, al1, now() - interval '3 hours');
+  -- An old account clicking everything today, with no fan tickets in sight: not a burst until tickets open.
+  INSERT INTO user_track_likes (user_id, track_id, source, saved_at)
+  SELECT old_clicker, t.id, 'liked', now() - interval '2 hours' + make_interval(secs => 15 * row_number() OVER ())
+    FROM tracks t JOIN albums al ON al.id = t.album_id WHERE al.artist_id = ar;
+  -- A new account clicking everything and looping three tracks.
+  INSERT INTO user_track_likes (user_id, track_id, source, saved_at)
+  SELECT loop_clicker, t.id, 'liked', now() - interval '2 hours' + make_interval(secs => 15 * row_number() OVER ())
+    FROM tracks t JOIN albums al ON al.id = t.album_id WHERE al.artist_id = ar;
+  INSERT INTO user_plays (user_id, artist_id, spotify_track_id, played_at)
+  SELECT loop_clicker, ar, 'bur-' || al1 || '-' || (i % 3 + 1), now() - interval '2 days' + make_interval(secs => 61 * i) FROM generate_series(1, 320) i;
+
+  v := fraud_rule_hits(clicker);
+  ASSERT (SELECT array_agg(k) FROM jsonb_object_keys(v) k) = ARRAY['burst_engagement'], v::text;
+  v_rule := v -> 'burst_engagement' -> 0;
+  ASSERT (v_rule ->> 'saves')::int = 65 AND (v_rule ->> 'all_saves')::int = 65
+     AND (v_rule ->> 'after_signup')::boolean AND NOT (v_rule ->> 'fan_tickets')::boolean, v_rule::text;
+  ASSERT fraud_rule_hits(gradual) = '{}', 'gradual saves are not a burst: ' || fraud_rule_hits(gradual)::text;
+  ASSERT fraud_rule_hits(release_fan) = '{}', 'a release-day binge by a long-time saver is not a burst: ' || fraud_rule_hits(release_fan)::text;
+  ASSERT fraud_rule_hits(old_clicker) = '{}', 'an old account with no tickets in sight: ' || fraud_rule_hits(old_clicker)::text;
+  ASSERT (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(fraud_rule_hits(loop_clicker)) k) = ARRAY['burst_engagement', 'looping'],
+         fraud_rule_hits(loop_clicker)::text;
+
+  -- Fan tickets open: now the old account's burst counts too.
+  INSERT INTO events (artist_id, name, city_id, starts_at) VALUES (ar, 'Bur Show', 'us-il-chicago', now() + interval '30 days') RETURNING id INTO ev;
+  INSERT INTO allocations (event_id, tickets, face_value_cents, min_raw_score, registration_opens_at, registration_closes_at, published_at)
+  VALUES (ev, 10, 4500, 0, now() + interval '3 days', now() + interval '6 days', now());
+  v_rule := fraud_rule_hits(old_clicker) -> 'burst_engagement' -> 0;
+  ASSERT v_rule IS NOT NULL AND NOT (v_rule ->> 'after_signup')::boolean AND (v_rule ->> 'fan_tickets')::boolean, fraud_rule_hits(old_clicker)::text;
+  ASSERT fraud_rule_hits(gradual) = '{}', 'still gradual';
+
+  -- The sweep reaches fans with saves and no plays; the flag is named by the strongest reason; a re-run adds nothing.
+  ASSERT run_fraud_detection(interval '1 day') = 3, 'clicker, old clicker, and loop clicker flagged';
+  ASSERT run_fraud_detection(interval '1 day') = 0, 'nobody flagged twice';
+  ASSERT (SELECT count(*) FROM fraud_flags WHERE user_id IN (clicker, gradual, release_fan, old_clicker, loop_clicker)) = 3, 'three flags';
+  ASSERT (SELECT reason FROM fraud_flags WHERE user_id = clicker) = 'other', 'a burst is other';
+  ASSERT (SELECT reason FROM fraud_flags WHERE user_id = loop_clicker) = 'streaming_farm', 'looping names the flag before the burst';
+  ASSERT (SELECT source = 'rule' AND status = 'open' AND shown_to_fan_at IS NULL FROM fraud_flags WHERE user_id = clicker),
+         'an open rule flag, hidden from the fan';
+  ASSERT (SELECT evidence -> 'rules' -> 'burst_engagement' -> 0 ->> 'saves' FROM fraud_flags WHERE user_id = clicker) = '65', 'evidence';
+END $$;
+SELECT pg_temp.expect_error($$INSERT INTO fraud_rules (rule_key, reason, params, description) VALUES ('burst_engagement', 'other', '{}', 'dup')$$,
+  'fraud_rules_pkey');
+
 \echo ALL INVARIANT TESTS PASSED

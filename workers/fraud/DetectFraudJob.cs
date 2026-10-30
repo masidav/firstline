@@ -5,8 +5,8 @@ using Npgsql;
 namespace FandomScore.Worker.Fraud;
 
 /// <summary>
-/// Every 6 hours, <c>fraud.detect</c>: runs the fraud rules (<c>fraud_rules</c>, migration 0043) over every fan with
-/// plays in the last day and raises a rule flag for staff to review where one fires (<c>run_fraud_detection()</c>).
+/// Every 6 hours, <c>fraud.detect</c>: runs the fraud rules (<c>fraud_rules</c>, migrations 0043 and 0045) over every fan
+/// with plays or saves in the last day and raises a rule flag for staff to review where one fires (<c>run_fraud_detection()</c>).
 /// An open rule flag only blocks registering for fan tickets until staff uphold it. Idempotent: a fan already held is
 /// skipped, and a cleared rule waits out its cooldown.
 /// </summary>

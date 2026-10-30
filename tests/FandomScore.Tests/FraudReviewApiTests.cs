@@ -21,7 +21,7 @@ namespace FandomScore.Tests;
 /// <summary>
 /// Fraud review, appeals, and the eligibility audit (migration 0042): a flag holds a fan out of registering, the draw,
 /// and returned seats until it's cleared; the fan appeals once; every decision is in the audit log. Automatic
-/// detection (0043): an open rule flag only blocks registering until staff uphold it, and the fan doesn't know about
+/// detection (0043, 0045): an open rule flag only blocks registering until staff uphold it, and the fan doesn't know about
 /// it until then (0044).
 /// </summary>
 [Collection(PostgresCollection.Name)]
@@ -337,6 +337,54 @@ public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifeti
         await DrawAsync(allocationId);
         var mine = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/registrations", bot), HttpStatusCode.OK);
         Assert.Equal("selected", mine.GetProperty("items")[0].GetProperty("registration").GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task The_detection_job_flags_a_fan_who_likes_the_whole_catalog_in_one_sitting_but_not_a_gradual_one()
+    {
+        var clicker = await FanAsync("click_everything", score: 80, "us-il-chicago");
+        await FanAsync("gradual_saver", score: 80, "us-il-chicago");
+
+        // A 45-track album. The clicker, who signed up just now, likes every track and saves the album in eight
+        // minutes; the gradual fan liked the same tracks one every five days over the last seven months.
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            await connection.ExecuteAsync(
+                """
+                INSERT INTO tracks (album_id, title, spotify_track_id)
+                SELECT al.id, 'Song ' || i, 'burst-' || i FROM albums al, generate_series(1, 45) i WHERE al.artist_id = @_artistId;
+                INSERT INTO user_track_likes (user_id, track_id, source, saved_at)
+                SELECT u.id, t.id, 'liked', now() - interval '1 hour' + make_interval(secs => 10 * row_number() OVER (ORDER BY t.spotify_track_id))
+                  FROM users u, tracks t JOIN albums al ON al.id = t.album_id WHERE u.handle = 'click_everything' AND al.artist_id = @_artistId;
+                INSERT INTO user_album_saves (user_id, album_id, saved_at)
+                SELECT u.id, al.id, now() - interval '50 minutes' FROM users u, albums al WHERE u.handle = 'click_everything' AND al.artist_id = @_artistId;
+                INSERT INTO user_track_likes (user_id, track_id, source, saved_at)
+                SELECT u.id, t.id, 'liked', now() - make_interval(days => (5 * row_number() OVER (ORDER BY t.spotify_track_id))::int)
+                  FROM users u, tracks t JOIN albums al ON al.id = t.album_id WHERE u.handle = 'gradual_saver' AND al.artist_id = @_artistId;
+                """,
+                new { _artistId });
+        }
+
+        var job = new DetectFraudJob(_db, NullLogger<DetectFraudJob>.Instance);
+        await job.RunAsync(new ClaimedJob(1, job.Kind, "{}", 1, 10), CancellationToken.None);
+        await job.RunAsync(new ClaimedJob(2, job.Kind, "{}", 1, 10), CancellationToken.None);   // idempotent
+
+        var queue = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/admin/fraud-flags", _staff), HttpStatusCode.OK);
+        var flag = Assert.Single(queue.GetProperty("items").EnumerateArray());
+        Assert.Equal(("click_everything", "rule", "other", JsonValueKind.Null), (flag.GetProperty("user").GetProperty("handle").GetString(),
+            flag.GetProperty("source").GetString(), flag.GetProperty("reason").GetString(), flag.GetProperty("shown_to_fan_at").ValueKind));
+        var rules = flag.GetProperty("evidence").GetProperty("rules");
+        var burst = Assert.Single(Assert.Single(rules.EnumerateObject(), r => r.Name == "burst_engagement").Value.EnumerateArray());
+        Assert.Equal((46, 46, true, false), (burst.GetProperty("saves").GetInt32(), burst.GetProperty("all_saves").GetInt32(),
+            burst.GetProperty("after_signup").GetBoolean(), burst.GetProperty("fan_tickets").GetBoolean()));
+
+        // Hidden from the fan until a person reviews it, as for any rule flag.
+        var review = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/fraud-review", clicker), HttpStatusCode.OK);
+        Assert.False(review.GetProperty("on_hold").GetBoolean());
+        Assert.Empty(review.GetProperty("flags").EnumerateArray());
+        var allocationId = await AllocationAsync(tickets: 1);
+        Assert.Equal("unavailable", (await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/allocations/{allocationId}/eligibility", clicker),
+            HttpStatusCode.OK)).GetProperty("reason").GetString());
     }
 
     [Fact]

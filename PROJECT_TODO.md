@@ -307,11 +307,17 @@ Details: [Notifications](services/api/src/features/notifications/TODO.md) · [Mo
       *Play patterns done 2026-10-29 (migration 0043): rules `round_the_clock`, `rapid_plays`, `looping`,
       `listening_spike` (thresholds in `fraud_rules`), run every 6 hours by `fraud.detect`, raise rule flags for staff.
       An open rule flag only blocks registering; the full hold starts when staff uphold it (decided 2026-10-29).
-      Verified: `dotnet test` (FraudReviewApiTests 7, invariants). Device, network, and payment signals: no data yet.*
+      Verified: `dotnet test` (FraudReviewApiTests 7, invariants). Device, network, and payment signals: no data yet.
+      "Click everything" done 2026-10-30 (migration 0045): rule `burst_engagement` reads Spotify's `added_at` on likes
+      and album saves; the sweep also checks fans with recent saves. Verified: `dotnet test` (FraudReviewApiTests 8,
+      invariants).*
 - [ ] Fraud detection thresholds set provisionally (2026-10-29), confirm or change: 24/7 = plays in 20+ hours of a day
       on 3 of 14 days; rapid = 70 % of 100+ plays under 40 s apart in a week; looping = 300+ plays of an artist in a
       week, 90 % on 3 tracks (artists with 10+ tracks); spike = 300+ plays in a week and 10x the usual week while the
       artist's fan tickets are open or within 14 days; a cleared rule waits 30 days; the sweep runs every 6 hours.
+      Burst (2026-10-30) = 40+ liked tracks and album saves of one artist within 24 hours, 80 % of the fan's saves of
+      that artist, within 7 days of sign-up or while fan tickets are open or within 14 days; playlist adds and follows
+      don't count (no timestamp stored).
 - [x] Automatic flags stay hidden from the fan until a person reviews them (decided 2026-10-30): registering is refused
       with a neutral "Registration isn't available for your account right now"; no notice, review screen, appeal, or
       data-download trace until staff uphold; an unreviewed flag leaves the fan in the draw, and staff are told when a
