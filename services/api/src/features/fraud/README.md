@@ -7,8 +7,10 @@ Migration `0042_fraud_review.sql`, endpoints in `FraudEndpoints.cs`. Tests: `Fra
   `duplicate_account`, `other`), an internal note, and optional evidence (JSON). One open flag per fan.
 - **Automatic detection** (migration 0043, worker `fraud.detect` every 6 hours): rules in `fraud_rules`
   (`round_the_clock`, `rapid_plays`, `looping`, `listening_spike`; `burst_engagement` since 0045, over likes and album
-  saves) run over fans with plays or saves in the last day and raise a flag with `source = 'rule'`, the rules that
-  fired, and what they measured in `evidence.rules`. The flag is named by the strongest reason: bot, then streaming_farm.
+  saves, and since 0048 over playlist adds and the follow too, each dated by Spotify's `added_at` or, failing that,
+  when the sync first saw it) run over fans with plays, saves, or a new follow in the last day and raise a flag with
+  `source = 'rule'`, the rules that fired, and what they measured in `evidence.rules` (a burst is broken down by
+  `kinds`: liked, playlist, album, follow). The flag is named by the strongest reason: bot, then streaming_farm.
   A fan already held isn't flagged again; a rule whose flag staff cleared waits `cooldown_days` (30). Thresholds are
   data (`fraud_rules.params`), provisional. Strategies and rules: `docs/security/gaming-strategies.md`.
 - **Hidden until reviewed** (migration 0044, decided 2026-10-30): a rule flag isn't shown to the fan until staff uphold
@@ -46,8 +48,10 @@ Fan: `/account-review` (linked from the show page and the notices). Staff: `/fra
 audit lookup), linked from the profile.
 
 ## Known limitations
-- Detection reads only the play ledger: no device, network, or payment signals, so linked accounts and "click
-  everything" gaming aren't detected (see `docs/security/gaming-strategies.md`).
+- Detection reads only the play ledger and the synced library: no device, network, or payment signals, so linked
+  accounts aren't detected (see `docs/security/gaming-strategies.md`). A "click everything" burst is seen once the daily
+  sync has run; a save undone before then never is. Playlist rows synced before 0048 carry no date until the fan's next
+  sync.
 - Flags and appeals are kept when an account is deleted (for the audit trail); retention is part of the privacy review.
 - A held fan can still be named as someone's +1 guest.
 - The product rules (confirmed 2026-10-29) are listed in `PROJECT_TODO.md` (Phase 10). The migration's header still

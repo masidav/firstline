@@ -3890,7 +3890,7 @@ export interface components {
                 connection: {
                     [key: string]: unknown;
                 } | null;
-                /** @description Per tracked artist. artist_id, artist_name, liked_tracks, playlist_tracks, distinct_albums, top_artist_rank, top_artist_rank_short, top_artist_rank_long, top_tracks, playlists_featuring, dedicated_playlists, followed, recent_plays, synced_at. */
+                /** @description Per tracked artist. artist_id, artist_name, liked_tracks, playlist_tracks, distinct_albums, top_artist_rank, top_artist_rank_short, top_artist_rank_long, top_tracks, playlists_featuring, dedicated_playlists, followed, followed_since (when the sync first saw the follow), recent_plays, synced_at. */
                 artist_signals: components["schemas"]["ExportRows"];
                 /** @description Tracked artists' tracks liked or on the caller's playlists. spotify_track_id, track_title, album_title, artist_name, source (liked, playlist), saved_at. */
                 saved_tracks: components["schemas"]["ExportRows"];

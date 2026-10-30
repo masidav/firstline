@@ -95,7 +95,7 @@ public static class DataExportEndpoints
                 """
                 SELECT a.id AS artist_id, a.name AS artist_name, s.liked_tracks, s.playlist_tracks, s.distinct_albums,
                        s.top_artist_rank, s.top_artist_rank_short, s.top_artist_rank_long, s.top_tracks, s.playlists_featuring,
-                       s.dedicated_playlists, s.followed, s.recent_plays, s.synced_at
+                       s.dedicated_playlists, s.followed, s.followed_since, s.recent_plays, s.synced_at
                 FROM user_artist_signals s JOIN artists a ON a.id = s.artist_id WHERE s.user_id = @me ORDER BY a.name
                 """)),
             ("saved_tracks", Rows(

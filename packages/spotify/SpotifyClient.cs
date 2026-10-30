@@ -112,7 +112,8 @@ public sealed partial class SpotifyClient(
             var items = await GetPagesAsync<PlaylistItemDto>(accessToken,
                 $"playlists/{Uri.EscapeDataString(playlist.Id)}/items", _options.MaxPlaylistItems, "playlist items", cancellationToken);
             ownPlaylists.Add(new SpotifyPlaylist(playlist.Id, playlist.Collaborative,
-                [.. items.Select(i => ToTrack(i.Item ?? i.Track)).OfType<SpotifyTrack>()]));
+                [.. items.Select(i => ToTrack(i.Item ?? i.Track) is { } track ? new SpotifyPlaylistItem(track, AddedAtOrNull(i.AddedAt)) : null)
+                    .OfType<SpotifyPlaylistItem>()]));
         }
 
         return new SpotifyLibrary(
@@ -577,5 +578,9 @@ public sealed partial class SpotifyClient(
     private sealed record PlaylistDto(string? Id, bool Collaborative, OwnerDto? Owner);
 
     // Since February 2026 the track is in "item"; "track" is read too in case older responses appear.
-    private sealed record PlaylistItemDto(TrackDto? Item, TrackDto? Track);
+    private sealed record PlaylistItemDto(DateTimeOffset? AddedAt, TrackDto? Item, TrackDto? Track);
+
+    // Spotify documents added_at as missing for some very old playlists; in practice those come back as the epoch.
+    private static DateTimeOffset? AddedAtOrNull(DateTimeOffset? addedAt) =>
+        addedAt is { Year: > 1970 } ? addedAt : null;
 }

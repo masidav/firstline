@@ -20,6 +20,12 @@ and drops everything else before it is stored. Follows need scope `user-follow-r
 is synced without follows. A track counts for its primary artist only (provisional; co-credits are
 an open decision in `PROJECT_TODO.md`).
 
+Saves are dated for fraud detection (`burst_engagement`, migrations 0045 and 0048): `user_track_likes.saved_at` is
+Spotify's `added_at` of the like or of the earliest playlist add (a playlist item Spotify leaves undated is stamped
+when first seen, by a trigger), and `user_artist_signals.followed_since` is set by a trigger when the follow first
+appears and cleared when it ends. So `SaveAsync` updates, prunes, and adds rows rather than replacing them, and stays
+idempotent: a re-sync with the same library changes nothing.
+
 Needs the same `Spotify__ClientId` and `Spotify__TokenKey` as the API.
 
 ## Known limits
