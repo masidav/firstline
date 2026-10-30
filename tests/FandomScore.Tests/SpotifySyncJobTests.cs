@@ -169,6 +169,58 @@ public sealed class SpotifySyncJobTests(PostgresFixture postgres) : IAsyncLifeti
     }
 
     [Fact]
+    public async Task Playlist_adds_and_the_follow_are_dated_and_keep_their_dates_across_syncs()
+    {
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            await connection.ExecuteAsync(
+                """
+                INSERT INTO tracks (album_id, title, spotify_track_id)
+                SELECT id, 'Track ' || x, x FROM albums, unnest(ARRAY['tr-a2', 'tr-a3']) x WHERE spotify_album_id = 'al-a1'
+                """);
+        }
+
+        // tr-a1 has Spotify's added_at; tr-a2 has none (a very old playlist); tr-a3 is in two playlists, the later add first.
+        _spotify.Playlists.AddRange([FakeSpotify.Playlist("pl-one", "sp-user-1"), FakeSpotify.Playlist("pl-two", "sp-user-1")]);
+        _spotify.PlaylistItems["pl-one"] = [
+            FakeSpotify.PlaylistItem(FakeSpotify.Track("tr-a1", "al-a1", ArtistA), "2026-10-20T10:00:00Z"),
+            FakeSpotify.PlaylistItem(FakeSpotify.Track("tr-a2", "al-a1", ArtistA)),
+            FakeSpotify.PlaylistItem(FakeSpotify.Track("tr-a3", "al-a1", ArtistA), "2026-10-22T10:00:00Z"),
+        ];
+        _spotify.PlaylistItems["pl-two"] = [FakeSpotify.PlaylistItem(FakeSpotify.Track("tr-a3", "al-a1", ArtistA), "2026-10-21T10:00:00Z")];
+        _spotify.FollowedArtistIds.Add(ArtistA);
+
+        var before = DateTime.UtcNow.AddSeconds(-1);
+        await RunAsync();
+        var first = await PlaylistAddsAsync();
+        Assert.Equal(new DateTime(2026, 10, 20, 10, 0, 0, DateTimeKind.Utc), first["tr-a1"]);
+        Assert.Equal(new DateTime(2026, 10, 21, 10, 0, 0, DateTimeKind.Utc), first["tr-a3"]);   // the earliest add
+        Assert.InRange(first["tr-a2"], before, DateTime.UtcNow.AddSeconds(1));                  // first seen by this sync
+        var followedSince = Assert.Single(await FollowedSinceAsync()).Value;
+        Assert.NotNull(followedSince);
+        Assert.InRange(followedSince.Value, before, DateTime.UtcNow.AddSeconds(1));
+
+        // The daily re-sync changes nothing it already knew.
+        await Task.Delay(20);
+        await RunAsync();
+        Assert.Equal(first, await PlaylistAddsAsync());
+        Assert.Equal(followedSince, Assert.Single(await FollowedSinceAsync()).Value);
+
+        // Unfollowing clears the date; following again dates it afresh. A track taken out of every playlist is gone.
+        _spotify.FollowedArtistIds.Clear();
+        _spotify.PlaylistItems["pl-one"].RemoveAt(1);
+        await RunAsync();
+        Assert.Null(Assert.Single(await FollowedSinceAsync()).Value);
+        Assert.Equal(["tr-a1", "tr-a3"], (await PlaylistAddsAsync()).Keys.Order());
+        await Task.Delay(20);
+        _spotify.FollowedArtistIds.Add(ArtistA);
+        await RunAsync();
+        var again = Assert.Single(await FollowedSinceAsync()).Value;
+        Assert.NotNull(again);
+        Assert.True(again > followedSince, $"{again:O} should be after {followedSince:O}");
+    }
+
+    [Fact]
     public async Task Follows_are_skipped_for_connections_made_without_the_follow_scope()
     {
         await using var connection = await _db.OpenConnectionAsync();
@@ -462,6 +514,28 @@ public sealed class SpotifySyncJobTests(PostgresFixture postgres) : IAsyncLifeti
             WHERE l.user_id = @_userId ORDER BY 1
             """,
             new { _userId })];
+    }
+
+    /// <summary>Spotify track id → saved_at (UTC) of the fan's playlist rows.</summary>
+    private async Task<Dictionary<string, DateTime>> PlaylistAddsAsync()
+    {
+        await using var connection = await _db.OpenConnectionAsync();
+        return (await connection.QueryAsync<(string TrackId, DateTime SavedAt)>(
+                """
+                SELECT t.spotify_track_id, l.saved_at AT TIME ZONE 'UTC' FROM user_track_likes l JOIN tracks t ON t.id = l.track_id
+                WHERE l.user_id = @_userId AND l.source = 'playlist'
+                """,
+                new { _userId }))
+            .ToDictionary(r => r.TrackId, r => DateTime.SpecifyKind(r.SavedAt, DateTimeKind.Utc));
+    }
+
+    /// <summary>Artist id → followed_since (UTC, null when not followed) from the fan's signals.</summary>
+    private async Task<Dictionary<Guid, DateTime?>> FollowedSinceAsync()
+    {
+        await using var connection = await _db.OpenConnectionAsync();
+        return (await connection.QueryAsync<(Guid ArtistId, DateTime? FollowedSince)>(
+                "SELECT artist_id, followed_since AT TIME ZONE 'UTC' FROM user_artist_signals WHERE user_id = @_userId", new { _userId }))
+            .ToDictionary(r => r.ArtistId, DateTime? (r) => r.FollowedSince is { } d ? DateTime.SpecifyKind(d, DateTimeKind.Utc) : null);
     }
 
     private sealed record StateRow(string SyncState, string? SyncError, int TrackedArtistsFound, bool Synced, int TopArtistsAdded);

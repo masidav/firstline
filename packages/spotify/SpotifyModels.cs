@@ -20,8 +20,18 @@ public sealed record SpotifySavedAlbum(string AlbumId, IReadOnlyList<string> Art
 /// <summary>One play from the fan's history.</summary>
 public sealed record SpotifyPlay(SpotifyTrack Track, DateTimeOffset PlayedAt);
 
-/// <summary>A playlist the fan owns or collaborates on, with its tracks.</summary>
-public sealed record SpotifyPlaylist(string Id, bool Collaborative, IReadOnlyList<SpotifyTrack> Tracks);
+/// <summary>
+/// A track in one of the fan's playlists. <see cref="AddedAt"/> is Spotify's <c>added_at</c> for the item; null when
+/// Spotify omits it (it does for some very old playlists) or dates it to the epoch.
+/// </summary>
+public sealed record SpotifyPlaylistItem(SpotifyTrack Track, DateTimeOffset? AddedAt);
+
+/// <summary>A playlist the fan owns or collaborates on, with its items.</summary>
+public sealed record SpotifyPlaylist(string Id, bool Collaborative, IReadOnlyList<SpotifyPlaylistItem> Items)
+{
+    /// <summary>The playlist's tracks, in order.</summary>
+    public IReadOnlyList<SpotifyTrack> Tracks => [.. Items.Select(i => i.Track)];
+}
 
 /// <summary>
 /// One user's listening signals as Spotify returned them, for every artist. Held in memory only: the sync
@@ -48,6 +58,9 @@ public sealed record SpotifyLibrary(
 
     /// <summary>Every track in the fan's own or collaborative playlists (a track in two playlists appears twice).</summary>
     public IReadOnlyList<SpotifyTrack> PlaylistTracks => [.. Playlists.SelectMany(p => p.Tracks)];
+
+    /// <summary>Every item in the fan's own or collaborative playlists, with when it was added.</summary>
+    public IReadOnlyList<SpotifyPlaylistItem> PlaylistItems => [.. Playlists.SelectMany(p => p.Items)];
 }
 
 /// <summary>An artist from search or lookup. <see cref="ImageUrl"/> is the smallest image at least 300 px wide.</summary>

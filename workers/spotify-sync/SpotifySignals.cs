@@ -8,7 +8,11 @@ public sealed record ArtistSignals(
     short? TopArtistRankShort, short? TopArtistRankLong, int TopTracks, int PlaylistsFeaturing, int DedicatedPlaylists,
     bool Followed);
 
-/// <summary>A track for <c>user_track_likes</c>; stored only if the track is in our catalog.</summary>
+/// <summary>
+/// A track for <c>user_track_likes</c>; stored only if the track is in our catalog. <see cref="SavedAt"/> is Spotify's
+/// <c>added_at</c>: of the like, or the earliest playlist add of the track. Null when Spotify gave none; a playlist row
+/// is then dated when the sync first saw it (migration 0048).
+/// </summary>
 public sealed record TrackSignal(string SpotifyTrackId, string Source, DateTime? SavedAt);
 
 /// <summary>A saved album for <c>user_album_saves</c>; stored only if the album is in our catalog.</summary>
@@ -46,11 +50,13 @@ public static class SpotifySignals
             .Where(s => ArtistOf(s.Track) is not null)
             .DistinctBy(s => s.Track.Id)
             .ToList();
-        // Distinct tracks, so copying a track into many playlists counts once.
-        var inPlaylists = library.PlaylistTracks
-            .Where(t => ArtistOf(t) is not null)
-            .DistinctBy(t => t.Id)
+        // Distinct tracks, so copying a track into many playlists counts once, dated by its first add.
+        var playlistAdds = library.PlaylistItems
+            .Where(i => ArtistOf(i.Track) is not null)
+            .GroupBy(i => i.Track.Id)
+            .Select(g => new SpotifyPlaylistItem(g.First().Track, g.Min(i => i.AddedAt)))
             .ToList();
+        var inPlaylists = playlistAdds.Select(i => i.Track).ToList();
         var recent = library.RecentlyPlayed.Where(p => ArtistOf(p.Track) is not null).ToList();
         var topRanks = Ranks(library.TopArtists);
         var topRanksShort = Ranks(library.TopArtistsShort);
@@ -97,7 +103,7 @@ public static class SpotifySignals
         }).ToList();
 
         var tracks = liked.Select(s => new TrackSignal(s.Track.Id, "liked", s.SavedAt?.UtcDateTime))
-            .Concat(inPlaylists.Select(t => new TrackSignal(t.Id, "playlist", null)))
+            .Concat(playlistAdds.Select(i => new TrackSignal(i.Track.Id, "playlist", i.AddedAt?.UtcDateTime)))
             .ToList();
         var albums = savedAlbums.Select(a => new AlbumSave(a.AlbumId, a.SavedAt?.UtcDateTime)).ToList();
         var plays = recent.Select(p => new PlaySignal(ArtistOf(p.Track)!.Value, p.Track.Id, p.PlayedAt.UtcDateTime)).ToList();

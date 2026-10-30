@@ -207,7 +207,7 @@ public sealed class FakeSpotify : HttpMessageHandler
     public static object Playlist(string id, string owner, bool collaborative = false) =>
         new { id, collaborative, owner = new { id = owner } };
 
-    public static object PlaylistItem(object track) => new { item = track };
+    public static object PlaylistItem(object track, string? addedAt = null) => new { added_at = addedAt, item = track };
 
     public static SpotifyOptions Options() => new()
     {

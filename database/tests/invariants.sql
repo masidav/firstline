@@ -2604,6 +2604,65 @@ BEGIN
 END $$;
 SELECT pg_temp.expect_error($$INSERT INTO fraud_rules (rule_key, reason, params, description) VALUES ('burst_engagement', 'other', '{}', 'dup')$$,
   'fraud_rules_pkey');
+-- ------------------------------------------------------------ playlist adds and follows are dated (0048)
+-- A playlist row without Spotify's added_at is dated when first seen and keeps that date through updates; a follow is
+-- dated when it first appears, keeps the date while it lasts, and loses it when it ends; a burst of playlist adds plus
+-- the follow fires burst_engagement with the kinds broken down; the sweep reaches a fan whose only fresh signal is the
+-- follow.
+DO $$
+DECLARE ar uuid; al1 uuid; tr1 uuid; lister uuid; follower uuid; t0 timestamptz; v jsonb;
+BEGIN
+  SELECT id INTO ar FROM artists WHERE spotify_artist_id = 'sp-bur';
+  SELECT id INTO al1 FROM albums WHERE artist_id = ar ORDER BY title LIMIT 1;
+  SELECT id INTO tr1 FROM tracks WHERE album_id = al1 ORDER BY spotify_track_id LIMIT 1;
+  INSERT INTO users (handle, email) VALUES ('pl_lister', 'pl_lister@example.test') RETURNING id INTO lister;
+  INSERT INTO users (handle, email, created_at) VALUES ('pl_follower', 'pl_follower@example.test', now() - interval '400 days') RETURNING id INTO follower;
+
+  -- First seen: a playlist row with no date is stamped now, and an update without a date keeps the stamp; Spotify's
+  -- own date wins when it arrives. Liked rows are left alone (their date feeds the score).
+  INSERT INTO user_track_likes (user_id, track_id, source, saved_at) VALUES (lister, tr1, 'playlist', NULL), (lister, tr1, 'liked', NULL);
+  SELECT saved_at INTO t0 FROM user_track_likes WHERE user_id = lister AND track_id = tr1 AND source = 'playlist';
+  ASSERT t0 IS NOT NULL AND t0 = now(), 'a playlist row without added_at is dated when first seen';
+  ASSERT (SELECT saved_at FROM user_track_likes WHERE user_id = lister AND track_id = tr1 AND source = 'liked') IS NULL, 'a liked row stays undated';
+  UPDATE user_track_likes SET saved_at = NULL WHERE user_id = lister AND track_id = tr1 AND source = 'playlist';
+  ASSERT (SELECT saved_at FROM user_track_likes WHERE user_id = lister AND track_id = tr1 AND source = 'playlist') = t0, 'the first-seen date survives an update';
+  UPDATE user_track_likes SET saved_at = '2024-01-01' WHERE user_id = lister AND track_id = tr1 AND source = 'playlist';
+  ASSERT (SELECT saved_at FROM user_track_likes WHERE user_id = lister AND track_id = tr1 AND source = 'playlist') = '2024-01-01', 'Spotify''s date replaces it';
+  DELETE FROM user_track_likes WHERE user_id = lister;
+
+  -- The follow: dated when it appears, kept while it lasts, cleared when it ends, dated afresh when it returns.
+  INSERT INTO user_artist_signals (user_id, artist_id, followed) VALUES (lister, ar, false);
+  ASSERT (SELECT followed_since FROM user_artist_signals WHERE user_id = lister) IS NULL, 'not following: no date';
+  UPDATE user_artist_signals SET followed = true WHERE user_id = lister;
+  ASSERT (SELECT followed_since FROM user_artist_signals WHERE user_id = lister) = now(), 'following: dated now';
+  UPDATE user_artist_signals SET followed = true, followed_since = '2020-01-01', liked_tracks = 3 WHERE user_id = lister;
+  ASSERT (SELECT followed_since FROM user_artist_signals WHERE user_id = lister) = now(), 'still following: the first sighting stands';
+  UPDATE user_artist_signals SET followed = false WHERE user_id = lister;
+  ASSERT (SELECT followed_since FROM user_artist_signals WHERE user_id = lister) IS NULL, 'unfollowed: cleared';
+  INSERT INTO user_artist_signals (user_id, artist_id, followed, followed_since) VALUES (follower, ar, true, now() - interval '3 hours');
+  ASSERT (SELECT followed_since FROM user_artist_signals WHERE user_id = follower) = now() - interval '3 hours', 'an explicit date is kept on insert';
+
+  -- A playlist-only burst: the lister, new today, puts all 60 tracks in a playlist (Spotify-dated, 20 minutes) and
+  -- follows: 61 saves, no like or album save among them.
+  INSERT INTO user_track_likes (user_id, track_id, source, saved_at)
+  SELECT lister, t.id, 'playlist', now() - interval '2 hours' + make_interval(secs => 20 * row_number() OVER ())
+    FROM tracks t JOIN albums al ON al.id = t.album_id WHERE al.artist_id = ar;
+  UPDATE user_artist_signals SET followed = true, playlist_tracks = 60 WHERE user_id = lister;
+  v := fraud_rule_hits(lister) -> 'burst_engagement' -> 0;
+  ASSERT v IS NOT NULL AND (v ->> 'saves')::int = 61 AND (v ->> 'all_saves')::int = 61 AND (v ->> 'after_signup')::boolean, fraud_rule_hits(lister)::text;
+  ASSERT v -> 'kinds' = '{"liked": 0, "playlist": 60, "album": 0, "follow": 1}', (v -> 'kinds')::text;
+
+  -- The follower: an old account that added the catalog to a playlist ten days ago, while the artist's tickets were in
+  -- sight, and followed three hours ago. The sweep's day-long lookback finds them through the follow alone.
+  INSERT INTO user_track_likes (user_id, track_id, source, saved_at)
+  SELECT follower, t.id, 'playlist', now() - interval '10 days' + make_interval(secs => 20 * row_number() OVER ())
+    FROM tracks t JOIN albums al ON al.id = t.album_id WHERE al.artist_id = ar;
+  v := fraud_rule_hits(follower) -> 'burst_engagement' -> 0;
+  ASSERT v IS NOT NULL AND (v ->> 'saves')::int = 60 AND (v ->> 'fan_tickets')::boolean AND NOT (v ->> 'after_signup')::boolean, fraud_rule_hits(follower)::text;
+  ASSERT run_fraud_detection(interval '1 day') = 2, 'the lister and the follower are flagged';
+  ASSERT run_fraud_detection(interval '1 day') = 0, 'nobody flagged twice';
+  ASSERT (SELECT evidence -> 'rules' -> 'burst_engagement' -> 0 -> 'kinds' ->> 'playlist' FROM fraud_flags WHERE user_id = follower) = '60', 'evidence';
+END $$;
 -- ------------------------------------------------------------ scalping complaints (0047)
 -- One hand-entered record per allocation: a count of zero or more, a note of 1 to 2000 characters or null, the
 -- database stamps updated_at, and the record stays with its allocation.

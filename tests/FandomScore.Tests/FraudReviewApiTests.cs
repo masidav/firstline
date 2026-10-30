@@ -388,6 +388,44 @@ public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifeti
     }
 
     [Fact]
+    public async Task The_detection_job_flags_a_fan_who_playlists_the_whole_catalog_and_follows_in_one_sitting()
+    {
+        await FanAsync("playlist_everything", score: 80, "us-il-chicago");
+
+        // Nothing liked, no album saved: 45 tracks added to a playlist in eight minutes (Spotify's added_at), then the
+        // follow, which the sync dates when it first sees it (0048).
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            await connection.ExecuteAsync(
+                """
+                INSERT INTO tracks (album_id, title, spotify_track_id)
+                SELECT al.id, 'Song ' || i, 'pl-burst-' || i FROM albums al, generate_series(1, 45) i WHERE al.artist_id = @_artistId;
+                INSERT INTO user_track_likes (user_id, track_id, source, saved_at)
+                SELECT u.id, t.id, 'playlist', now() - interval '1 hour' + make_interval(secs => 10 * row_number() OVER (ORDER BY t.spotify_track_id))
+                  FROM users u, tracks t JOIN albums al ON al.id = t.album_id WHERE u.handle = 'playlist_everything' AND al.artist_id = @_artistId;
+                INSERT INTO user_artist_signals (user_id, artist_id, playlist_tracks, followed)
+                SELECT id, @_artistId, 45, true FROM users WHERE handle = 'playlist_everything';
+                """,
+                new { _artistId });
+        }
+
+        var job = new DetectFraudJob(_db, NullLogger<DetectFraudJob>.Instance);
+        await job.RunAsync(new ClaimedJob(1, job.Kind, "{}", 1, 10), CancellationToken.None);
+
+        var queue = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/admin/fraud-flags", _staff), HttpStatusCode.OK);
+        var flag = Assert.Single(queue.GetProperty("items").EnumerateArray());
+        Assert.Equal(("playlist_everything", "rule", "other"), (flag.GetProperty("user").GetProperty("handle").GetString(),
+            flag.GetProperty("source").GetString(), flag.GetProperty("reason").GetString()));
+        var burst = Assert.Single(Assert.Single(flag.GetProperty("evidence").GetProperty("rules").EnumerateObject(),
+            r => r.Name == "burst_engagement").Value.EnumerateArray());
+        Assert.Equal((46, 46, true), (burst.GetProperty("saves").GetInt32(), burst.GetProperty("all_saves").GetInt32(),
+            burst.GetProperty("after_signup").GetBoolean()));
+        var kinds = burst.GetProperty("kinds");
+        Assert.Equal((0, 45, 0, 1), (kinds.GetProperty("liked").GetInt32(), kinds.GetProperty("playlist").GetInt32(),
+            kinds.GetProperty("album").GetInt32(), kinds.GetProperty("follow").GetInt32()));
+    }
+
+    [Fact]
     public async Task An_upheld_rule_flag_holds_the_fan_out_of_the_draw()
     {
         var allocationId = await AllocationAsync(tickets: 1);

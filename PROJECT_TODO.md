@@ -310,15 +310,19 @@ Details: [Notifications](services/api/src/features/notifications/TODO.md) · [Mo
       Verified: `dotnet test` (FraudReviewApiTests 7, invariants). Device, network, and payment signals: no data yet.
       "Click everything" done 2026-10-30 (migration 0045): rule `burst_engagement` reads Spotify's `added_at` on likes
       and album saves; the sweep also checks fans with recent saves. Verified: `dotnet test` (FraudReviewApiTests 8,
-      invariants).*
+      invariants). Extended the same day (migration 0048) to playlist adds (the sync now stores Spotify's `added_at`
+      for playlist items, or the first sighting when Spotify has none) and the follow (`followed_since`, set when the
+      sync first sees it, cleared on unfollow); re-syncs update rows in place so the dates survive. Verified:
+      `dotnet test` (FraudReviewApiTests 9, SpotifySyncJobTests 15, invariants).*
 - [ ] Fraud detection thresholds set provisionally (2026-10-29), confirm or change: 24/7 = plays in 20+ hours of a day
       on 3 of 14 days; rapid = 70 % of 100+ plays under 40 s apart in a week; looping = 300+ plays of an artist in a
       week, 90 % on 3 tracks (artists with 10+ tracks); spike = 300+ plays in a week and 10x the usual week while the
       artist's fan tickets are open or within 14 days; a cleared rule waits 30 days; the sweep runs every 6 hours.
-      Burst (2026-10-30) = 40+ liked tracks and album saves of one artist within 24 hours, 80 % of the fan's saves of
-      that artist, within 7 days of sign-up or while fan tickets are open or within 14 days; playlist adds and follows
-      don't count (no timestamp stored). *Burst confirmed 2026-10-30: a genuine new fan saving a whole discography on
-      joining goes to staff review, accepted. The four play-pattern thresholds are still provisional.*
+      Burst (2026-10-30) = 40+ liked tracks, playlist adds, album saves, and the follow of one artist within 24 hours,
+      80 % of the fan's saves of that artist, within 7 days of sign-up or while fan tickets are open or within 14 days
+      (playlist adds and the follow count since migration 0048, dated by Spotify's `added_at` or the sync's first
+      sighting). *Burst confirmed 2026-10-30: a genuine new fan saving a whole discography on joining goes to staff
+      review, accepted. The four play-pattern thresholds are still provisional.*
 - [x] Automatic flags stay hidden from the fan until a person reviews them (decided 2026-10-30): registering is refused
       with a neutral "Registration isn't available for your account right now"; no notice, review screen, appeal, or
       data-download trace until staff uphold; an unreviewed flag leaves the fan in the draw, and staff are told when a
@@ -340,8 +344,9 @@ Details: [Notifications](services/api/src/features/notifications/TODO.md) · [Mo
       or staff clear it (no expiry); **tickets already given out stay** with a fan flagged after the draw; a held fan
       can still be someone's +1 guest; flags are kept after account deletion for the audit trail.
 - [ ] Red-team the scoring rules before each pilot; record known gaming strategies and mitigations.
-      *Started 2026-10-29: `docs/security/gaming-strategies.md` (10 strategies). Biggest gap: "click everything"
-      (likes, saves, follows, playlists in minutes) isn't detected. Repeat before each pilot.*
+      *Started 2026-10-29: `docs/security/gaming-strategies.md` (10 strategies). The biggest gap then, "click
+      everything" (likes, saves, follows, playlists in minutes), is detected since 2026-10-30 (`burst_engagement`,
+      migrations 0045 and 0048). Repeat before each pilot.*
 
 Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](services/api/src/integrations/apple-music/TODO.md)
 

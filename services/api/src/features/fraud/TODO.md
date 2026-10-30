@@ -7,7 +7,8 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Detect streaming-farm patterns: looped plays, 24/7 listening, sudden spikes before an allocation, many accounts on one device or network.
       *Play patterns done 2026-10-29 (migration 0043, `workers/fraud/DetectFraudJob.cs`): looped plays, 24/7 listening,
       rapid plays, spikes before fan tickets. "Click everything" done 2026-10-30 (migration 0045): `burst_engagement`
-      on likes and album saves. Devices and networks: no data yet.*
+      on likes and album saves; extended the same day (migration 0048) to playlist adds (Spotify's `added_at`, now
+      synced) and the follow (`followed_since`, set when the sync first sees it). Devices and networks: no data yet.*
 - [x] Keep a living document of known gaming strategies and the mitigation for each. *`docs/security/gaming-strategies.md`, 2026-10-29.*
 - [ ] Freeze each fan's eligibility snapshot when an allocation's registration closes so late gaming has no effect.
 - [ ] Verify one person per account at registration (phone or ID check) and record only the verification result, not raw documents.
@@ -21,7 +22,10 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 
 ## Verification
 - [ ] Add or update automated tests for the behavior above. *Detection rules: FraudReviewApiTests (2026-10-30: the burst
-      rule fires on a catalog liked in one sitting, not on gradual saves, once across two runs) and `invariants.sql`.*
-- [ ] Run the relevant tests and record actual results. *2026-10-30: `dotnet test` FraudReviewApiTests 8/8, DatabaseTests 2/2.*
+      rule fires on a catalog liked in one sitting, not on gradual saves, once across two runs; and on a catalog put in
+      a playlist plus a follow, with the kinds in the evidence), SpotifySyncJobTests (playlist adds and the follow keep
+      their dates across syncs) and `invariants.sql` (0045, 0048).*
+- [ ] Run the relevant tests and record actual results. *2026-10-30: `dotnet test` FraudReviewApiTests 9/9,
+      SpotifySyncJobTests 15/15, DatabaseTests 2/2.*
 - [x] Update the feature README with setup, interfaces, dependencies, and known limitations. *README.md, 2026-10-29.*
 - [ ] Update `PROJECT_TODO.md` when this feature reaches a verified milestone.

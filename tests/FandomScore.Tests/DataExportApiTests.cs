@@ -100,6 +100,7 @@ public sealed class DataExportApiTests(PostgresFixture postgres) : IAsyncLifetim
         var spotify = export.GetProperty("spotify");
         Assert.Equal("sp-user-ana", spotify.GetProperty("connection").GetProperty("spotify_user_id").GetString());
         Assert.Equal(7, Single(spotify, "artist_signals").GetProperty("liked_tracks").GetInt32());
+        Assert.Equal(JsonValueKind.Null, Single(spotify, "artist_signals").GetProperty("followed_since").ValueKind);   // not following
         Assert.Equal("Ana Track", Single(spotify, "saved_tracks").GetProperty("track_title").GetString());
         Assert.Equal("Album 1", Single(spotify, "saved_albums").GetProperty("album_title").GetString());
         Assert.Equal("Ana Track", Single(spotify, "plays").GetProperty("track_title").GetString());
