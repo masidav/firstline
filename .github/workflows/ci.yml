@@ -267,8 +267,9 @@ jobs:
         working-directory: apps/mobile
         run: npm run e2e
 
-      # The promoter dashboard's journeys, against the same database and API build (apps/promoter-web/e2e).
-      - name: Promoter journeys
+      # The promoter dashboard's journeys and its axe accessibility scan of every page, against the same database and
+      # API build (apps/promoter-web/e2e; serious or critical violations fail the scan).
+      - name: Promoter journeys and accessibility scan
         working-directory: apps/promoter-web
         run: |
           npm ci

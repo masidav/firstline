@@ -404,8 +404,11 @@ Details: [ADR 0002](docs/adr/0002-hosting-gcp-gke.md) · [Infrastructure](infras
       "iOS app (simulator)" builds the iPhone app on a macOS runner and runs a Maestro launch flow in the Simulator,
       on demand (macOS minutes are billed at 10x). First run passed 2026-10-29 (28 minutes); more flows once a build
       has been tried on a device.*
-- [ ] Promoter dashboard end-to-end tests (Playwright) and accessibility checks. *Journeys done 2026-10-27
-      (`apps/promoter-web/e2e`, CI); accessibility checks not yet.*
+- [x] Promoter dashboard end-to-end tests (Playwright) and accessibility checks. *Journeys done 2026-10-27
+      (`apps/promoter-web/e2e`, CI). Accessibility checks done 2026-10-30: `@axe-core/playwright` scans every page the
+      journeys visit (WCAG 2.2 AA + best practices, serious/critical fail) in the same CI job, and vitest-axe covers
+      error states; the first scan's findings (pill contrast, missing `h1`, picker list roles, empty table headers)
+      were fixed. Verified: Vitest 26 passed, `e2e/run.sh` 4 passed.*
 - [ ] API contract tests against `openapi.yaml`; load tests for on-sale registration spikes.
       *Database load test for registration spikes done 2026-10-26 (`tools/load/run.sh`, results in `tools/load/README.md`):
       registering holds 4,000 to 5,000 a second; the show page's standing was the bottleneck and now uses an in-memory

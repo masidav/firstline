@@ -25,7 +25,7 @@ export function OrganizationLayout() {
       <header className="topbar">
         <NavLink className="brand" to="/">Fandom Score</NavLink>
         <nav aria-label="Organization">
-          {data && <span><strong>{data.name}</strong> · {ROLE_LABELS[data.my_role ?? ''] ?? ''}</span>}
+          {data && <div><h1>{data.name}</h1> · {ROLE_LABELS[data.my_role ?? ''] ?? ''}</div>}
           <NavLink to={`/o/${organizationId}`} end>Shows</NavLink>
           <NavLink to={`/o/${organizationId}/members`}>Members</NavLink>
         </nav>

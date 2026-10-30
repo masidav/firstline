@@ -97,7 +97,7 @@ export function ShowPage() {
         {allocations.length > 0 && (
           <table>
             <thead>
-              <tr><th>Allocation</th><th>Status</th><th>Tickets</th><th>Face value</th><th>Registration</th><th /></tr>
+              <tr><th>Allocation</th><th>Status</th><th>Tickets</th><th>Face value</th><th>Registration</th><th><span className="visually-hidden">Actions</span></th></tr>
             </thead>
             <tbody>
               {allocations.map((a: Allocation) => (

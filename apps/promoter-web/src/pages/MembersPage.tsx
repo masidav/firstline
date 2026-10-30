@@ -43,7 +43,7 @@ export function MembersPage() {
       <p className="muted">Owners manage members. Admins run shows, allocations, and draws. Analysts can look at everything but change nothing.</p>
       <ErrorText>{error}</ErrorText>
       <table>
-        <thead><tr><th>Member</th><th>Role</th><th>Added</th><th /></tr></thead>
+        <thead><tr><th>Member</th><th>Role</th><th>Added</th><th><span className="visually-hidden">Actions</span></th></tr></thead>
         <tbody>
           {organization.members.map((m) => (
             <tr key={m.handle}>
