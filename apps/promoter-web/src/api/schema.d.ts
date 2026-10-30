@@ -3890,9 +3890,9 @@ export interface components {
                 connection: {
                     [key: string]: unknown;
                 } | null;
-                /** @description Per tracked artist. artist_id, artist_name, liked_tracks, playlist_tracks, distinct_albums, top_artist_rank, top_artist_rank_short, top_artist_rank_long, top_tracks, playlists_featuring, dedicated_playlists, followed, followed_since (when the sync first saw the follow), recent_plays, synced_at. */
+                /** @description Per tracked artist. artist_id, artist_name, liked_tracks, playlist_tracks, distinct_albums, top_artist_rank, top_artist_rank_short, top_artist_rank_long, top_tracks, playlists_featuring, dedicated_playlists, followed, followed_since (when the sync first saw the follow), followed_since_baseline (true when the follow was already there the first time the sync could see it, so its date is unknown), recent_plays, synced_at. */
                 artist_signals: components["schemas"]["ExportRows"];
-                /** @description Tracked artists' tracks liked or on the caller's playlists. spotify_track_id, track_title, album_title, artist_name, source (liked, playlist), saved_at. */
+                /** @description Tracked artists' tracks liked or on the caller's playlists. spotify_track_id, track_title, album_title, artist_name, source (liked, playlist), saved_at (Spotify's date, or for a playlist track Spotify leaves undated, when the sync first saw it), saved_at_baseline (true for an undated playlist track that was already there the first time the sync could see it, so its date is unknown). */
                 saved_tracks: components["schemas"]["ExportRows"];
                 /** @description spotify_album_id, album_title, artist_name, saved_at. */
                 saved_albums: components["schemas"]["ExportRows"];

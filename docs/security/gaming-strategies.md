@@ -16,7 +16,7 @@ trivia). Most Spotify signals saturate on a log or linear curve, so volume past 
 | 1 | **Stream with a bot**: loop the artist 24/7 on a spare account | Plays, play history, streak, top-artist rank | Plays saturate (100 in 90 days); rules `round_the_clock`, `rapid_plays`, `looping` flag it (0043); trust breaks ties on account age and steady weeks | A bot that plays at human hours and pace, under the thresholds, isn't caught by the rules |
 | 2 | **Streaming farm**: many accounts each streaming a little | Many mid-ranked fans for one show | One Spotify account per fan account (unique `spotify_user_id`); registration needs a score and a hub city; one registration per show | No device, network, or payment signals yet, so linked accounts aren't detected; one person per account (phone or ID) isn't built (Phase 10) |
 | 3 | **Cram before the sale**: binge an artist the week registration opens | Recent plays, play history | `listening_spike` flags a jump of 10x over the fan's usual week while the artist has fan tickets in sight (0043); streak and tenure signals can't be crammed | A real new fan bingeing is flagged too: staff must review (an open rule flag only blocks registering) |
-| 4 | **Click everything**: like every track, save every album, follow, add the catalog to playlists in ten minutes | Likes, playlists, dedicated playlists, follow, catalog coverage, album saves | Each signal saturates; album-save tenure rewards *early* saves; streak needs weeks; the allocation threshold is a raw-score floor; `burst_engagement` flags 40+ likes, playlist adds, album saves, and the follow of one artist inside 24 hours, holding 80 % of the fan's saves of that artist, within a week of sign-up or while the artist has fan tickets in sight (0045; playlist adds and the follow since 0048) | Spotify's `added_at` on likes, album saves, and playlist items is what makes this detectable; the follow has no Spotify date, so it's dated when the daily sync first sees it (at most a day late). A clicker who spaces the saves over a few days, or stays under 40, isn't caught; a save undone before the next sync is never seen. A new fan saving a whole discography on joining is flagged too: staff review it |
+| 4 | **Click everything**: like every track, save every album, follow, add the catalog to playlists in ten minutes | Likes, playlists, dedicated playlists, follow, catalog coverage, album saves | Each signal saturates; album-save tenure rewards *early* saves; streak needs weeks; the allocation threshold is a raw-score floor; `burst_engagement` flags 40+ likes, playlist adds, album saves, and the follow of one artist inside 24 hours, holding 80 % of the fan's saves of that artist, within a week of sign-up or while the artist has fan tickets in sight (0045; playlist adds and the follow since 0048; undated items a fan already had when the sync first looked don't count, 0049) | Spotify's `added_at` on likes, album saves, and playlist items is what makes this detectable; the follow has no Spotify date, so it's dated when the daily sync first sees it (at most a day late). A clicker who spaces the saves over a few days, or stays under 40, isn't caught; a save undone before the next sync is never seen. A new fan saving a whole discography on joining is flagged too: staff review it |
 | 5 | **Buy an aged Spotify account** with real history | Everything history-based | Trust counts *our* account age, not Spotify's; one Spotify account per fan account | A bought account with genuine history looks real. Proof of fandom (tickets, merch) and attendance history would help |
 | 6 | **Share one strong account** among friends for different shows | Several shows' tickets | One registration per show per account; tickets are non-transferable and delivered to the holder 24 hours before | Different shows by the same artist aren't limited |
 | 7 | **Farm ledger points**: journal logs, trivia, proof submissions | Ledger points | Points are small next to Spotify signals (trivia 0.30); proof is verified by staff; reported logs can be taken down (points reversed) | How much ledger points weigh against the Spotify score is still an open decision |
@@ -24,7 +24,7 @@ trivia). Most Spotify signals saturate on a log or linear curve, so volume past 
 | 9 | **Register many fans, return seats strategically** to steer backfill | Seats for friends lower in the ranking | Returned seats go strictly by draw rank; a held fan is skipped (0042) | — |
 | 10 | **Evade detection after a flag**: stop, wait out the review, resume | Clean slate | A cleared rule waits 30 days before firing again; staff see the flag history and the eligibility audit | After the cooldown the same pattern fires again, which is intended |
 
-## Detection rules (migrations 0043, 0045, 0048)
+## Detection rules (migrations 0043, 0045, 0048, 0049)
 Thresholds are data in `fraud_rules` and provisional (PROJECT_TODO.md). An automatic flag only blocks registering
 until staff uphold it (decided 2026-10-29), so a false positive costs a real fan a review, not a seat already won. The
 fan isn't told about it until then, and the refusal is deliberately vague (decided 2026-10-30), so a gamer can't use
@@ -44,9 +44,18 @@ tracks, and album saves are snapshots kept current by the daily sync, but each c
 `burst_engagement` reads the time of the save, not of the sync; a save undone before the next sync is never seen. The
 follow is a boolean on Spotify's side: it's dated when the sync first sees it (`followed_since`, cleared on unfollow),
 so a follow is placed within a day of when it happened. A playlist item Spotify doesn't date (some very old playlists)
-is dated the same way, and keeps that date across syncs. The flip side: every undated item a fan already has is
-stamped by the same sync (their first, or the first after 0048), so a long-time fan with a big, very old playlist of
-one artist can look like a burst and go to staff review; the evidence's `kinds` shows it is playlist adds.
+is dated the same way, and keeps that date across syncs.
+
+Resolved 2026-10-30 (migration 0049; decided 2026-10-30: first-sync undated items don't count): every undated item a
+fan already has used to be stamped by the same sync (their first, or the first after 0048), so a long-time fan with a
+big, very old playlist of one artist looked like a burst and was held from registering until staff cleared it. Now an
+undated playlist item or follow that was already there the first time the sync could see it (the fan's first sync, or
+the first after the artist became active) is marked baseline (`saved_at_baseline`, `followed_since_baseline`): its date
+is unknown and it never starts or joins a burst, though it still counts among the fan's saves of the artist for the
+80 % share. Only undated items that appear between two syncs, and items Spotify dates, count. The flag is fixed for
+the life of the row, so a re-sync can't change it; rows stamped before 0049 were all made baseline. What this gives
+up: undated items (very old playlists, and every follow) added just before a fan's first sync are not seen as a
+burst; a clicker's likes, album saves, and new playlists still are, because Spotify dates them.
 
 ## Before each pilot
 - Re-read this table against the current `scoring_rules` and `fraud_rules`.

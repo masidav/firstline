@@ -101,7 +101,9 @@ public sealed class DataExportApiTests(PostgresFixture postgres) : IAsyncLifetim
         Assert.Equal("sp-user-ana", spotify.GetProperty("connection").GetProperty("spotify_user_id").GetString());
         Assert.Equal(7, Single(spotify, "artist_signals").GetProperty("liked_tracks").GetInt32());
         Assert.Equal(JsonValueKind.Null, Single(spotify, "artist_signals").GetProperty("followed_since").ValueKind);   // not following
+        Assert.False(Single(spotify, "artist_signals").GetProperty("followed_since_baseline").GetBoolean());
         Assert.Equal("Ana Track", Single(spotify, "saved_tracks").GetProperty("track_title").GetString());
+        Assert.False(Single(spotify, "saved_tracks").GetProperty("saved_at_baseline").GetBoolean());
         Assert.Equal("Album 1", Single(spotify, "saved_albums").GetProperty("album_title").GetString());
         Assert.Equal("Ana Track", Single(spotify, "plays").GetProperty("track_title").GetString());
         var fandom = export.GetProperty("fandom");

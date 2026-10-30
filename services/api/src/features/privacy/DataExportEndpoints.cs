@@ -95,12 +95,13 @@ public static class DataExportEndpoints
                 """
                 SELECT a.id AS artist_id, a.name AS artist_name, s.liked_tracks, s.playlist_tracks, s.distinct_albums,
                        s.top_artist_rank, s.top_artist_rank_short, s.top_artist_rank_long, s.top_tracks, s.playlists_featuring,
-                       s.dedicated_playlists, s.followed, s.followed_since, s.recent_plays, s.synced_at
+                       s.dedicated_playlists, s.followed, s.followed_since, s.followed_since_baseline, s.recent_plays, s.synced_at
                 FROM user_artist_signals s JOIN artists a ON a.id = s.artist_id WHERE s.user_id = @me ORDER BY a.name
                 """)),
             ("saved_tracks", Rows(
                 """
-                SELECT t.spotify_track_id, t.title AS track_title, al.title AS album_title, a.name AS artist_name, l.source, l.saved_at
+                SELECT t.spotify_track_id, t.title AS track_title, al.title AS album_title, a.name AS artist_name, l.source, l.saved_at,
+                       l.saved_at_baseline
                 FROM user_track_likes l JOIN tracks t ON t.id = l.track_id JOIN albums al ON al.id = t.album_id
                 JOIN artists a ON a.id = al.artist_id
                 WHERE l.user_id = @me ORDER BY a.name, al.title, t.title, l.source

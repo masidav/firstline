@@ -26,6 +26,13 @@ when first seen, by a trigger), and `user_artist_signals.followed_since` is set 
 appears and cleared when it ends. So `SaveAsync` updates, prunes, and adds rows rather than replacing them, and stays
 idempotent: a re-sync with the same library changes nothing.
 
+An undated item's first-seen date only means something if the item appeared since the previous sync (migration 0049,
+decided 2026-10-30). So a new undated playlist row or follow of an artist the fan's previous sync could not have
+seen (the fan's first sync, or an artist activated since) is stored as baseline (`saved_at_baseline`,
+`followed_since_baseline`): date unknown, never part of a burst. The flag is set on insert and fixed for the life of
+the row (triggers keep it on update); a follow that ends and comes back, or a track removed from every playlist and
+added again, is a new row.
+
 Needs the same `Spotify__ClientId` and `Spotify__TokenKey` as the API.
 
 ## Known limits

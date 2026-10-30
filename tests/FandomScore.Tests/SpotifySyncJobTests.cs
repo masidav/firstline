@@ -221,6 +221,87 @@ public sealed class SpotifySyncJobTests(PostgresFixture postgres) : IAsyncLifeti
     }
 
     [Fact]
+    public async Task Undated_items_already_there_when_first_seen_are_baseline_and_undated_items_added_later_count()
+    {
+        // C is tracked and active; D is tracked but only activates between the first and second sync. 50 tracks each,
+        // and A gets 45 more.
+        Guid artistC, artistD;
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            (artistC, artistD) = await connection.QuerySingleAsync<(Guid, Guid)>(
+                """
+                INSERT INTO artists (name, spotify_artist_id) VALUES ('C', 'sp-art-c'), ('D', 'sp-art-d');
+                INSERT INTO artist_baselines (artist_id, dist_params, curve) SELECT id, '{}', '[]' FROM artists WHERE spotify_artist_id = 'sp-art-c';
+                UPDATE artists SET status = 'active', catalog_loaded_at = now() WHERE spotify_artist_id = 'sp-art-c';
+                INSERT INTO albums (artist_id, title, spotify_album_id)
+                SELECT id, name || '1', 'al-' || lower(name) FROM artists WHERE spotify_artist_id IN ('sp-art-c', 'sp-art-d');
+                INSERT INTO tracks (album_id, title, spotify_track_id)
+                SELECT al.id, x || i, 'tr-' || x || i FROM unnest(ARRAY['c', 'd']) x CROSS JOIN generate_series(1, 50) i
+                  JOIN albums al ON al.spotify_album_id = 'al-' || x;
+                INSERT INTO tracks (album_id, title, spotify_track_id)
+                SELECT id, 'a' || i, 'tr-a' || i FROM albums, generate_series(2, 46) i WHERE spotify_album_id = 'al-a1';
+                SELECT (SELECT id FROM artists WHERE spotify_artist_id = 'sp-art-c'), (SELECT id FROM artists WHERE spotify_artist_id = 'sp-art-d');
+                """);
+        }
+
+        // The first sync: a very old, undated playlist with C's and D's catalogs and tr-a1, which a newer playlist
+        // dates; and the follow of C. Before 0049 this was 51 saves of C stamped in one instant, a week after
+        // sign-up: a burst. Now they're baseline (D isn't active yet, so nothing of it is stored).
+        _spotify.Playlists.AddRange([FakeSpotify.Playlist("pl-old", "sp-user-1"), FakeSpotify.Playlist("pl-dated", "sp-user-1")]);
+        _spotify.PlaylistItems["pl-old"] = [
+            .. Enumerable.Range(1, 50).Select(i => FakeSpotify.PlaylistItem(FakeSpotify.Track($"tr-c{i}", "al-c", "sp-art-c"))),
+            .. Enumerable.Range(1, 50).Select(i => FakeSpotify.PlaylistItem(FakeSpotify.Track($"tr-d{i}", "al-d", "sp-art-d"))),
+            FakeSpotify.PlaylistItem(FakeSpotify.Track("tr-a1", "al-a1", ArtistA)),
+        ];
+        _spotify.PlaylistItems["pl-dated"] = [FakeSpotify.PlaylistItem(FakeSpotify.Track("tr-a1", "al-a1", ArtistA), "2026-10-20T10:00:00Z")];
+        _spotify.FollowedArtistIds.Add("sp-art-c");
+        await RunAsync();
+
+        var first = await PlaylistBaselineAsync();
+        Assert.Equal(51, first.Count);
+        Assert.All(Enumerable.Range(1, 50), i => Assert.True(first[$"tr-c{i}"]));
+        Assert.False(first["tr-a1"]);   // Spotify dated it
+        Assert.Equal(new Dictionary<Guid, bool> { [artistC] = true, [_artistA] = false }, await FollowBaselineAsync());
+        Assert.Equal("{}", await FraudRuleHitsAsync());
+
+        // The second sync: D has become active, so its old tracks are seen for the first time (baseline too). New since
+        // the first sync: an undated playlist with 45 of A's tracks, and the follow of A. Those count: a burst.
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            await connection.ExecuteAsync(
+                """
+                INSERT INTO artist_baselines (artist_id, dist_params, curve) VALUES (@artistD, '{}', '[]');
+                UPDATE artists SET status = 'active', catalog_loaded_at = now() WHERE id = @artistD;
+                """,
+                new { artistD });
+        }
+
+        _spotify.Playlists.Add(FakeSpotify.Playlist("pl-new", "sp-user-1"));
+        _spotify.PlaylistItems["pl-new"] = [.. Enumerable.Range(2, 45).Select(i => FakeSpotify.PlaylistItem(FakeSpotify.Track($"tr-a{i}", "al-a1", ArtistA)))];
+        _spotify.FollowedArtistIds.Add(ArtistA);
+        await RunAsync();
+
+        var second = await PlaylistBaselineAsync();
+        Assert.Equal(146, second.Count);
+        Assert.All(Enumerable.Range(1, 50), i => Assert.True(second[$"tr-c{i}"] && second[$"tr-d{i}"]));
+        Assert.All(Enumerable.Range(1, 46), i => Assert.False(second[$"tr-a{i}"]));
+        var follows = new Dictionary<Guid, bool> { [artistC] = true, [artistD] = false, [_artistA] = false };
+        Assert.Equal(follows, await FollowBaselineAsync());
+        var hits = await FraudRuleHitsAsync();
+        var burst = Assert.Single(JsonDocument.Parse(hits).RootElement.GetProperty("burst_engagement").EnumerateArray());
+        Assert.Equal((_artistA, 46, 47), (burst.GetProperty("artist_id").GetGuid(), burst.GetProperty("saves").GetInt32(),
+            burst.GetProperty("all_saves").GetInt32()));
+        Assert.Equal((45, 1), (burst.GetProperty("kinds").GetProperty("playlist").GetInt32(),
+            burst.GetProperty("kinds").GetProperty("follow").GetInt32()));
+
+        // A re-sync of the same library flips nothing either way.
+        await RunAsync();
+        Assert.Equal(second, await PlaylistBaselineAsync());
+        Assert.Equal(follows, await FollowBaselineAsync());
+        Assert.Equal(hits, await FraudRuleHitsAsync());
+    }
+
+    [Fact]
     public async Task Follows_are_skipped_for_connections_made_without_the_follow_scope()
     {
         await using var connection = await _db.OpenConnectionAsync();
@@ -536,6 +617,34 @@ public sealed class SpotifySyncJobTests(PostgresFixture postgres) : IAsyncLifeti
         return (await connection.QueryAsync<(Guid ArtistId, DateTime? FollowedSince)>(
                 "SELECT artist_id, followed_since AT TIME ZONE 'UTC' FROM user_artist_signals WHERE user_id = @_userId", new { _userId }))
             .ToDictionary(r => r.ArtistId, DateTime? (r) => r.FollowedSince is { } d ? DateTime.SpecifyKind(d, DateTimeKind.Utc) : null);
+    }
+
+    /// <summary>Spotify track id → saved_at_baseline of the fan's playlist rows.</summary>
+    private async Task<Dictionary<string, bool>> PlaylistBaselineAsync()
+    {
+        await using var connection = await _db.OpenConnectionAsync();
+        return (await connection.QueryAsync<(string TrackId, bool Baseline)>(
+                """
+                SELECT t.spotify_track_id, l.saved_at_baseline FROM user_track_likes l JOIN tracks t ON t.id = l.track_id
+                WHERE l.user_id = @_userId AND l.source = 'playlist'
+                """,
+                new { _userId }))
+            .ToDictionary(r => r.TrackId, r => r.Baseline);
+    }
+
+    /// <summary>Artist id → followed_since_baseline from the fan's signals.</summary>
+    private async Task<Dictionary<Guid, bool>> FollowBaselineAsync()
+    {
+        await using var connection = await _db.OpenConnectionAsync();
+        return (await connection.QueryAsync<(Guid ArtistId, bool Baseline)>(
+                "SELECT artist_id, followed_since_baseline FROM user_artist_signals WHERE user_id = @_userId", new { _userId }))
+            .ToDictionary(r => r.ArtistId, r => r.Baseline);
+    }
+
+    private async Task<string> FraudRuleHitsAsync()
+    {
+        await using var connection = await _db.OpenConnectionAsync();
+        return await connection.ExecuteScalarAsync<string>("SELECT fraud_rule_hits(@_userId)::text", new { _userId }) ?? "";
     }
 
     private sealed record StateRow(string SyncState, string? SyncError, int TrackedArtistsFound, bool Synced, int TopArtistsAdded);

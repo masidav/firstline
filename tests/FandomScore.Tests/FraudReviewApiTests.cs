@@ -12,8 +12,11 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
+using FandomScore.Spotify;
 using FandomScore.Worker.Fraud;
 using FandomScore.Worker.Jobs;
+using FandomScore.Worker.SpotifySync;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace FandomScore.Tests;
@@ -423,6 +426,79 @@ public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifeti
         var kinds = burst.GetProperty("kinds");
         Assert.Equal((0, 45, 0, 1), (kinds.GetProperty("liked").GetInt32(), kinds.GetProperty("playlist").GetInt32(),
             kinds.GetProperty("album").GetInt32(), kinds.GetProperty("follow").GetInt32()));
+    }
+
+    [Fact]
+    public async Task A_big_old_undated_playlist_on_the_first_sync_is_no_burst_but_undated_adds_on_a_later_sync_are()
+    {
+        // A fan who signed up just now connects Spotify. Their library has a very old playlist Spotify leaves undated,
+        // with 50 tracks of another band, and they follow that band. Stamped by one sync, that used to look like a burst
+        // (0048); since 0049 it's baseline: date unknown, never a burst.
+        await FanAsync("old_playlist_fan", score: 80, "us-il-chicago");
+        var oldBand = await ScoringSetup.ActiveArtistAsync(_db, "sp-old-band", "Old Band", releases: 1);
+        using var spotify = new FakeSpotify();
+        var protector = new SpotifyTokenProtector(FakeSpotify.Options());
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            await connection.ExecuteAsync(
+                """
+                INSERT INTO tracks (album_id, title, spotify_track_id)
+                SELECT al.id, 'Old ' || i, 'old-' || i FROM albums al, generate_series(1, 50) i WHERE al.artist_id = @oldBand;
+                INSERT INTO tracks (album_id, title, spotify_track_id)
+                SELECT al.id, 'New ' || i, 'new-' || i FROM albums al, generate_series(1, 45) i WHERE al.artist_id = @_artistId;
+                """,
+                new { oldBand, _artistId });
+            var userId = await connection.ExecuteScalarAsync<Guid>("SELECT id FROM users WHERE handle = 'old_playlist_fan'");
+            await connection.ExecuteAsync(
+                """
+                INSERT INTO spotify_connections (user_id, spotify_user_id, refresh_token_enc, scopes)
+                VALUES (@userId, 'sp-user-1', @token, @scopes)
+                """,
+                new { userId, token = protector.Protect(userId, "refresh-0"), scopes = SpotifyOptions.RequiredScopes.ToArray() });
+        }
+
+        spotify.Playlists.Add(FakeSpotify.Playlist("pl-old", "sp-user-1"));
+        spotify.PlaylistItems["pl-old"] = [.. Enumerable.Range(1, 50).Select(i => FakeSpotify.PlaylistItem(FakeSpotify.Track($"old-{i}", "al-old", "sp-old-band")))];
+        spotify.FollowedArtistIds.Add("sp-old-band");
+        await SyncAsync(spotify, protector, "old_playlist_fan");
+        await DetectAsync();
+        Assert.Empty((await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/admin/fraud-flags", _staff), HttpStatusCode.OK))
+            .GetProperty("items").EnumerateArray());
+
+        // The next day's sync finds a new playlist, undated too, with 45 tracks of this artist, and a new follow: that
+        // appeared between two syncs, so it counts.
+        spotify.Playlists.Add(FakeSpotify.Playlist("pl-new", "sp-user-1"));
+        spotify.PlaylistItems["pl-new"] = [.. Enumerable.Range(1, 45).Select(i => FakeSpotify.PlaylistItem(FakeSpotify.Track($"new-{i}", "al-new", "sp-fraud")))];
+        spotify.FollowedArtistIds.Add("sp-fraud");
+        await SyncAsync(spotify, protector, "old_playlist_fan");
+        await DetectAsync();
+
+        var flag = Assert.Single((await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/admin/fraud-flags", _staff), HttpStatusCode.OK))
+            .GetProperty("items").EnumerateArray());
+        Assert.Equal(("old_playlist_fan", "rule", "other"), (flag.GetProperty("user").GetProperty("handle").GetString(),
+            flag.GetProperty("source").GetString(), flag.GetProperty("reason").GetString()));
+        var burst = Assert.Single(Assert.Single(flag.GetProperty("evidence").GetProperty("rules").EnumerateObject(),
+            r => r.Name == "burst_engagement").Value.EnumerateArray());
+        Assert.Equal((_artistId, 46, 46), (burst.GetProperty("artist_id").GetGuid(), burst.GetProperty("saves").GetInt32(),
+            burst.GetProperty("all_saves").GetInt32()));
+        var kinds = burst.GetProperty("kinds");
+        Assert.Equal((0, 45, 0, 1), (kinds.GetProperty("liked").GetInt32(), kinds.GetProperty("playlist").GetInt32(),
+            kinds.GetProperty("album").GetInt32(), kinds.GetProperty("follow").GetInt32()));
+    }
+
+    private async Task SyncAsync(FakeSpotify spotify, SpotifyTokenProtector protector, string handle)
+    {
+        await using var connection = await _db.OpenConnectionAsync();
+        var userId = await connection.ExecuteScalarAsync<Guid>("SELECT id FROM users WHERE handle = @handle", new { handle });
+        var job = new SpotifySyncJob(_db, spotify.Client(), protector, Options.Create(FakeSpotify.Options()), NullLogger<SpotifySyncJob>.Instance);
+        await job.RunAsync(new ClaimedJob(1, SpotifySyncJob.JobKind, JsonSerializer.Serialize(new { user_id = userId }), 1, 10),
+            CancellationToken.None);
+    }
+
+    private async Task DetectAsync()
+    {
+        var job = new DetectFraudJob(_db, NullLogger<DetectFraudJob>.Instance);
+        await job.RunAsync(new ClaimedJob(1, job.Kind, "{}", 1, 10), CancellationToken.None);
     }
 
     [Fact]
