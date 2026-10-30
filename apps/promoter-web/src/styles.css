@@ -43,6 +43,7 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
 .status-allocation-cancelled, .status-draw-failed, .status-registration-withdrawn, .status-registration-not_selected { background: #fbe0e1; color: var(--danger); }
 .stats { display: flex; gap: 1.5rem; flex-wrap: wrap; }
 .stat strong { display: block; font-size: 1.4rem; }
+tr.current td { font-weight: 700; }
 .picker { display: grid; gap: 0.25rem; max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; padding: 0.25rem; margin: 0; list-style: none; }
 .picker button { width: 100%; text-align: left; background: none; border: 0; padding: 0.35rem 0.5rem; border-radius: 4px; cursor: pointer; font: inherit; }
 .picker button:hover, .picker button:focus { background: #eef0f6; }

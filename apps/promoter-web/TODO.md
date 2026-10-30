@@ -7,8 +7,13 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       *2026-10-27: Vite + React 19 + TypeScript, react-router, openapi-fetch with types generated from `openapi.yaml`.*
 - [x] Organization sign-in and member management. *Google and developer sign-in, a handle for new accounts; owners
       add, re-role, and remove members.*
-- [ ] Create and edit events and allocation pools; preview eligible-fan counts before opening registration.
-      *Shows and allocations done 2026-10-27 (times in the show city's time zone); the eligible-fan preview needs an API.*
+- [x] Create and edit events and allocation pools; preview eligible-fan counts before opening registration.
+      *Shows and allocations done 2026-10-27 (times in the show city's time zone). Eligible-fan preview done 2026-10-30:
+      the allocation page's "Eligible fans" card (`GET .../eligibility-preview`) shows fans with a score, how many clear
+      the threshold (local apart from elsewhere) against the tickets, eligible fans per ticket, and a table of the same
+      counts at other thresholds; it reloads after the rules are edited and stays as information once registration has
+      opened. Counts only, never a fan. Verified: Vitest 24 (one new test), `npm run typecheck`. No Playwright journey
+      yet (the real API needs seeded fans with scores).*
 - [x] Monitor registration and selection in near real time; trigger or schedule the draw. *Registrations refresh
       every 10 s while open; the draw is queued and followed every 3 s until done.*
 - [ ] Export reports and consented fan data; download the case-study metrics. *CSV of registrations and tickets done;

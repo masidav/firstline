@@ -15,6 +15,7 @@ export type Show = Schemas['Event'];
 export type Allocation = Schemas['Allocation'];
 export type DrawStatus = Schemas['DrawStatus'];
 export type PromoterRegistration = Schemas['PromoterRegistration'];
+export type EligibilityPreview = Schemas['EligibilityPreview'];
 export type Reservation = Schemas['Reservation'];
 export type Selection = Schemas['Selection'];
 export type HubCity = Schemas['HubCity'];

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
-import { type DrawStatus, errorMessage, type PromoterRegistration, unwrap } from '../api/client';
+import { type DrawStatus, type EligibilityPreview, errorMessage, type PromoterRegistration, unwrap } from '../api/client';
 import { useSession } from '../auth/SessionProvider';
 import { can, download, formatMoney, toCsv } from '../lib/format';
 import { formatInZone } from '../lib/time';
@@ -43,6 +43,10 @@ export function AllocationPage() {
       ? unwrap(await session.api.GET('/organizations/{organizationId}/allocations/{allocationId}/reservations', path)).items
       : [],
     [session, organizationId, allocationId, draw.data?.status],
+  );
+  const preview = useLoad(
+    async () => unwrap(await session.api.GET('/organizations/{organizationId}/allocations/{allocationId}/eligibility-preview', path)),
+    [session, organizationId, allocationId],
   );
   const [editing, setEditing] = useState(false);
   const [queueing, setQueueing] = useState(false);
@@ -125,7 +129,7 @@ export function AllocationPage() {
                 throw new Error(errorMessage(e));
               }
               setEditing(false);
-              await show.reload();
+              await Promise.all([show.reload(), preview.reload()]);
             }}
           />
         )}
@@ -138,6 +142,8 @@ export function AllocationPage() {
         </div>
         {live && <p className="muted">Updates every {LIVE_REFRESH_MS / 1000} seconds while registration is open.</p>}
       </Card>
+
+      <EligibleFansCard preview={preview.data} error={preview.error} allocationStatus={allocation.status} />
 
       <DrawCard
         status={draw.data}
@@ -176,6 +182,60 @@ export function AllocationPage() {
         <p className="muted">Fans appear by handle only: no scores, cities, or contact details.</p>
       </Card>
     </>
+  );
+}
+
+/**
+ * How many fans could register under the rules, before registration opens (and as information afterwards): counts
+ * only, split into local fans and others, with the same counts at other thresholds so a threshold change can be judged
+ * against the seats offered.
+ */
+function EligibleFansCard({ preview, error, allocationStatus }: { preview: EligibilityPreview | null; error?: string; allocationStatus: string }) {
+  const beforeOpening = allocationStatus === 'draft' || allocationStatus === 'upcoming';
+  return (
+    <Card title="Eligible fans">
+      <ErrorText>{error}</ErrorText>
+      {!preview && !error && <Loading />}
+      {preview && (
+        <>
+          <div className="stats" aria-label="Eligible fan totals">
+            <div className="stat"><strong>{preview.scored_fans}</strong>fans with a score</div>
+            <div className="stat"><strong>{preview.eligible.total}</strong>clear the threshold</div>
+            <div className="stat"><strong>{preview.eligible.local}</strong>local</div>
+            <div className="stat"><strong>{preview.eligible.other}</strong>elsewhere</div>
+            <div className="stat"><strong>{preview.tickets}</strong>tickets</div>
+          </div>
+          <p className="muted">
+            Minimum raw score {preview.threshold}{preview.threshold_is_default ? ' (set when published)' : ''}.{' '}
+            {preview.eligible.total < preview.tickets
+              ? 'Fewer eligible fans than tickets: seats would stay empty under this threshold.'
+              : `${Math.round(preview.eligible.total / preview.tickets * 10) / 10} eligible fans per ticket.`}
+            {preview.excluded > 0 && ` ${preview.excluded} more have a score but can't register (account on hold, deleted, or no hub city).`}
+          </p>
+          <table aria-label="Other thresholds">
+            <thead>
+              <tr><th>Minimum raw score</th><th>Eligible</th><th>Local</th><th>Elsewhere</th><th>Per ticket</th></tr>
+            </thead>
+            <tbody>
+              {preview.alternatives.map((a) => (
+                <tr key={a.threshold} className={a.threshold === preview.threshold ? 'current' : undefined}>
+                  <td>{a.threshold}{a.threshold === preview.threshold ? ' (current)' : ''}</td>
+                  <td>{a.total}</td>
+                  <td>{a.local}</td>
+                  <td>{a.other}</td>
+                  <td>{(a.total / preview.tickets).toFixed(1)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="muted">
+            {beforeOpening
+              ? 'Counted from today’s scores: fans with a score for the artist who could register now. Local fans (the show’s city is one of their hub cities) are drawn first. Not a forecast of who will register; the threshold can be changed until registration opens.'
+              : 'Counted from today’s scores, for information: the rules are locked now that registration has opened.'}
+          </p>
+        </>
+      )}
+    </Card>
   );
 }
 

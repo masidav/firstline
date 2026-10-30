@@ -31,7 +31,87 @@ public static partial class AllocationEndpoints
         organization.MapGet("/allocations/{allocationId:guid}/selection", GetSelectionAsync).AddEndpointFilter(read);
         organization.MapGet("/allocations/{allocationId:guid}/registrations", ListRegistrationsForOrganizationAsync).AddEndpointFilter(read);
         organization.MapGet("/allocations/{allocationId:guid}/reservations", ListReservationsForStaffAsync).AddEndpointFilter(read);
+        organization.MapGet("/allocations/{allocationId:guid}/eligibility-preview", GetEligibilityPreviewAsync).AddEndpointFilter(read);
     }
+
+    /// <summary>
+    /// openapi EligibilityPreview: how many fans could register under the allocation's rules, as counts only. <c>Threshold</c>
+    /// is <c>min_raw_score</c>, or the value publishing would set (<c>ThresholdIsDefault</c>). <c>ScoredFans</c> have a
+    /// score for the artist and could register (not deleted, not on fraud hold, with a hub city); <c>Excluded</c> have a
+    /// score but couldn't. <c>Eligible</c> clear the threshold; <c>Alternatives</c> repeat it for other thresholds.
+    /// </summary>
+    public sealed record EligibilityPreview(
+        Guid AllocationId, int Tickets, decimal Threshold, bool ThresholdIsDefault, int ScoredFans, int Excluded,
+        EligibilityCount Eligible, IReadOnlyList<EligibilityCount> Alternatives, DateTime ComputedAt);
+
+    /// <summary>openapi EligibilityCount: fans at or above <c>Threshold</c>; <c>Local</c> have the show's city among their hubs.</summary>
+    public sealed record EligibilityCount(decimal Threshold, int Total, int Local, int Other);
+
+    private sealed record PreviewRules(int Tickets, decimal Threshold, bool IsDefault, decimal DefaultThreshold);
+
+    private sealed record PreviewPool(int Scored, int Excluded);
+
+    private sealed record PreviewCount(decimal Threshold, int Total, int Local);
+
+    // Aggregates only, never a fan: promoters judge the pool and the threshold, not who is in it. The pool is every fan
+    // with a score for the artist who registration would let in today (registration_blocker(): not deleted, not on
+    // hold, a hub city set); the artist's status and the registration window are left out on purpose, since the
+    // preview is meant for before registration opens. One pass over user_artist_scores_rank_idx (artist_id, raw_score).
+    private static async Task<IResult> GetEligibilityPreviewAsync(Guid allocationId, NpgsqlDataSource db, CancellationToken cancellationToken)
+    {
+        await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        var rules = await connection.QuerySingleOrDefaultAsync<PreviewRules>(
+            """
+            SELECT a.tickets AS Tickets,
+                   COALESCE(a.min_raw_score, allocation_default_threshold(ev.artist_id)) AS Threshold,
+                   a.min_raw_score IS NULL AS IsDefault,
+                   allocation_default_threshold(ev.artist_id) AS DefaultThreshold
+              FROM allocations a JOIN events ev ON ev.id = a.event_id
+             WHERE a.id = @allocationId
+            """,
+            new { allocationId }) ?? throw NotFound("No allocation has this id.");
+
+        // Alternatives around the threshold (half, double, four times); around the default when the threshold is 0.
+        var step = rules.Threshold > 0 ? rules.Threshold : rules.DefaultThreshold;
+        var thresholds = new[] { rules.Threshold, step / 2, step, step * 2, step * 4 }
+            .Select(t => Math.Round(t, 2)).Distinct().Order().ToArray();
+
+        var pool = await connection.QuerySingleAsync<PreviewPool>(
+            $"""
+             WITH fans AS ({PreviewFans})
+             SELECT count(*) FILTER (WHERE eligible)::int AS Scored, count(*) FILTER (WHERE NOT eligible)::int AS Excluded FROM fans
+             """,
+            new { allocationId });
+        var counts = (await connection.QueryAsync<PreviewCount>(
+            $"""
+             WITH fans AS ({PreviewFans})
+             SELECT t.threshold AS Threshold,
+                    count(f.raw_score) FILTER (WHERE f.raw_score >= t.threshold)::int AS Total,
+                    count(f.raw_score) FILTER (WHERE f.raw_score >= t.threshold AND f.local)::int AS Local
+               FROM unnest(@thresholds::numeric[]) AS t(threshold)
+               LEFT JOIN fans f ON f.eligible
+              GROUP BY t.threshold ORDER BY t.threshold
+             """,
+            new { allocationId, thresholds }))
+            .Select(c => new EligibilityCount(c.Threshold, c.Total, c.Local, c.Total - c.Local)).ToList();
+
+        return Results.Ok(new EligibilityPreview(allocationId, rules.Tickets, rules.Threshold, rules.IsDefault, pool.Scored, pool.Excluded,
+            counts.Single(c => c.Threshold == rules.Threshold), counts, DateTime.UtcNow));
+    }
+
+    // Every fan with a score for the show's artist: eligible when registration would let them in, local when the
+    // show's city is one of their hub cities.
+    private const string PreviewFans =
+        """
+        SELECT s.raw_score,
+               u.deleted_at IS NULL AND NOT fan_on_hold(s.user_id)
+                 AND EXISTS (SELECT 1 FROM user_hub_cities h WHERE h.user_id = s.user_id) AS eligible,
+               EXISTS (SELECT 1 FROM user_hub_cities h WHERE h.user_id = s.user_id AND h.city_id = ev.city_id) AS local
+          FROM allocations a JOIN events ev ON ev.id = a.event_id
+          JOIN user_artist_scores s ON s.artist_id = ev.artist_id
+          JOIN users u ON u.id = s.user_id
+         WHERE a.id = @allocationId
+        """;
 
     public sealed record OrganizationEvents(IReadOnlyList<EventDetail> Items);
 

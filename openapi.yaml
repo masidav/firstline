@@ -3808,6 +3808,27 @@ paths:
                         handle: {type: string}
                         reservation: {$ref: '#/components/schemas/Reservation'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /organizations/{organizationId}/allocations/{allocationId}/eligibility-preview:
+    parameters:
+      - {$ref: '#/components/parameters/OrganizationId'}
+      - {$ref: '#/components/parameters/AllocationId'}
+    get:
+      tags: [Organizations, Allocations]
+      operationId: getOrganizationEligibilityPreview
+      summary: How many fans could register, under this threshold and others
+      description: |
+        Counts only, never a fan: fans with a score for the show's artist whom registration would let in today (not
+        deleted, not on fraud hold, a hub city set), how many clear the threshold, split into local fans (the show's
+        city is one of their hub cities; the draw puts them first) and others, and the same counts at a few other
+        thresholds so a promoter can see what changing `min_raw_score` would do before registration opens. Computed
+        from today's scores on every call, so it moves as fans listen; it isn't a forecast of who will register.
+      responses:
+        '200':
+          description: The eligible pool
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EligibilityPreview'}
+        '404': {$ref: '#/components/responses/NotFound'}
 components:
   securitySchemes:
     bearerAuth:
@@ -4992,6 +5013,35 @@ components:
         selected_fans: {type: integer}
         seats_assigned: {type: integer, description: Grows when a selected fan adds a +1 afterwards}
         ran_at: {type: string, format: date-time}
+    EligibilityPreview:
+      type: object
+      description: |
+        How many fans could register for an allocation, as counts only (no fan identities, scores, or cities).
+      required: [allocation_id, tickets, threshold, threshold_is_default, scored_fans, excluded, eligible, alternatives, computed_at]
+      properties:
+        allocation_id: {type: string, format: uuid}
+        tickets: {type: integer, description: Seats offered, to compare with the eligible counts}
+        threshold:
+          type: number
+          description: "`min_raw_score`, or the value publishing would set (a fan with two saved albums by the artist)"
+        threshold_is_default: {type: boolean, description: The allocation has no `min_raw_score` yet; `threshold` is what publishing would set}
+        scored_fans: {type: integer, description: Fans with a score for the artist whom registration would let in today}
+        excluded: {type: integer, description: Fans with a score who couldn't register (deleted, on fraud hold, or without a hub city)}
+        eligible: {$ref: '#/components/schemas/EligibilityCount'}
+        alternatives:
+          type: array
+          description: The same counts at other thresholds (half, double, and four times the threshold), lowest first; includes `eligible`
+          items: {$ref: '#/components/schemas/EligibilityCount'}
+        computed_at: {type: string, format: date-time}
+    EligibilityCount:
+      type: object
+      description: Fans whose raw score is at least `threshold`.
+      required: [threshold, total, local, other]
+      properties:
+        threshold: {type: number, minimum: 0}
+        total: {type: integer, minimum: 0}
+        local: {type: integer, minimum: 0, description: The show's city is one of their hub cities (the draw puts them first)}
+        other: {type: integer, minimum: 0}
     EventPage:
       type: object
       required: [items, next_cursor]
