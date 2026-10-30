@@ -6,7 +6,8 @@ needs no approval; a fan can unfollow, or remove a follower. Blocking is not wan
 ## What followers get
 - Followers-only album logs (`Journal.VisibleToViewer`, `GET /users/{handle}/logs`, `GET /logs/{id}`, and the feed).
 - The fan's grab bag (`GET /users/{handle}/grab-bag`).
-- The fan's top fandom stats, as `stat` items on the home feed (`features/feed`).
+- The fan's fandom stats (`GET /users/{handle}/stats`, `features/stats`), and the top ones as `stat` items on the home
+  feed (`features/feed`).
 
 ## Endpoints
 | Route | What |

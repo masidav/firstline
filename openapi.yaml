@@ -794,9 +794,10 @@ paths:
       summary: My stats in one list
       description: |
         The signed-in fan's numbers, read from stored state and the ledger (never from Spotify at request time).
-        Deleted logs and comments and reversed awards don't count. Listening totals cover active tracked artists
-        only. `ledger_points` is the sum of unreversed awards (journal, proof of fandom). Other fans' stats:
-        `GET /users/{handle}/stats`.
+        Deleted or taken-down logs, deleted comments (and comments on deleted or taken-down logs), unverified proof,
+        and reversed awards don't count. Listening totals cover active tracked artists only. `ledger_points` is the
+        sum of unreversed awards (journal, proof of fandom). `social` counts followers and following on this platform
+        (live accounts). Other fans' stats: `GET /users/{handle}/stats`.
       responses:
         '200':
           description: Stats
@@ -2023,8 +2024,9 @@ paths:
       summary: A fan's fandom stats
       description: |
         For the fan and their followers (decided 2026-10-20: followers see top fandom stats): artists with percentile
-        and rank, journal and proof counts, ledger points. Listening counts stay private. Stats are followers-only
-        (decided 2026-10-25: none are public by default), so others get 403.
+        and rank, journal and proof counts, follower and following counts, ledger points. Listening counts stay
+        private; private logs and lists aren't counted. Stats are followers-only (decided 2026-10-25: none are public
+        by default), so others get 403; a deleted or unknown handle is 404.
       responses:
         '200':
           description: Stats
@@ -5214,7 +5216,7 @@ components:
         computed_at: {type: string, format: date-time}
     UserStats:
       type: object
-      required: [artists, listening, journal, proof, ledger_points]
+      required: [artists, listening, journal, proof, social, ledger_points]
       properties:
         artists:
           type: array
@@ -5262,11 +5264,12 @@ components:
             tickets: {type: integer}
             merch: {type: integer}
             screenshots: {type: integer}
+        social: {$ref: '#/components/schemas/SocialStats'}
         ledger_points: {type: number}
     ProfileStats:
       type: object
       description: A fan's fandom stats as their followers see them. Listening counts stay private.
-      required: [artists, journal, proof, ledger_points]
+      required: [artists, journal, proof, social, ledger_points]
       properties:
         artists:
           type: array
@@ -5301,7 +5304,15 @@ components:
             tickets: {type: integer}
             merch: {type: integer}
             screenshots: {type: integer}
+        social: {$ref: '#/components/schemas/SocialStats'}
         ledger_points: {type: number}
+    SocialStats:
+      type: object
+      description: Followers and following on this platform (live accounts only), not Spotify follows.
+      required: [followers, following]
+      properties:
+        followers: {type: integer}
+        following: {type: integer}
     ScoreSummaryPage:
       type: object
       required: [items, next_cursor]

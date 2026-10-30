@@ -471,15 +471,17 @@ Details: [Agent tooling](docs/agent-tooling.md) · [Developer tooling](docs/TODO
 A fan's numbers in one list: on their own profile in full, and on other fans' profiles subject to visibility
 (followers see top fandom stats, decided 2026-10-20). Read from stored state and the ledger, never from Spotify
 at request time.
-- [ ] Define the stat list and its sources: per tracked artist (fandom score, percentile, rank among fans, estimated
+- [x] Define the stat list and its sources: per tracked artist (fandom score, percentile, rank among fans, estimated
       flag; Phase 5), journal totals (albums logged, relistens, reviews, lists, comments; Phase 6), proof totals
       (verified tickets, merch, screenshots; Phase 7), listening totals for tracked artists only (liked tracks,
       playlist tracks, distinct albums, recent plays; Phase 4), points total from the ledger, followers and
-      following (Phase 8).
-- [ ] `GET /me/stats` and `GET /users/{userId}/stats` in `openapi.yaml`; *`GET /me/stats` done 2026-10-21 (StatsApiTests 3/3);
-      other fans' stats wait on profile visibility; since 2026-10-25 followers get a fan's top scores, albums logged,
-      verified photos/merch, and points as `stat` cards on the home feed.* counts exclude soft-deleted content and
-      reversed awards.
+      following (Phase 8). *Done 2026-10-30: the whole list is in `UserStats` (`social.followers` / `social.following`
+      were the last to be added); sources and exclusions per block in `services/api/src/features/stats/README.md`.*
+- [x] `GET /me/stats` and `GET /users/{handle}/stats` in `openapi.yaml`; *`GET /me/stats` done 2026-10-21 (StatsApiTests 3/3);
+      `GET /users/{handle}/stats` done 2026-10-25 (`ProfileStats`: no listening block; by handle like the other
+      profile routes, not by id); since 2026-10-25 followers get a fan's top scores, albums logged, verified
+      photos/merch, and points as `stat` cards on the home feed.* Counts exclude soft-deleted and taken-down content
+      and reversed awards; *fixed 2026-10-30: a comment on a log deleted afterwards no longer counts.*
 - [x] Visibility: own stats in full; followers see fandom stats; everyone else none (decided 2026-10-25: stats are
       followers-only, none public by default). Blocking isn't wanted for now (decided 2026-10-24). Verified 2026-10-25:
       ProfileApiTests (stranger 403, follower and self 200).
@@ -488,7 +490,13 @@ at request time.
       name in the feed, People, and prompt answers): basics, band links, public logs and prompt answers for everyone;
       fandom stats (`GET /users/{handle}/stats`, listening counts excluded) and the grab bag for followers and the fan.
       Verified: ProfileApiTests, FanProfileScreen tests, Chrome.*
-- [ ] Tests for counts after reversals and deletions, visibility, and blocked fans.
+- [x] Tests for counts after reversals and deletions, visibility, and blocked fans. *Done 2026-10-30, StatsApiTests 5/5:
+      deleted logs and comments (incl. a comment whose log was deleted later), a log deleted through the API (count
+      drops, award reversed, `score_events` rows kept), unverified proof, inactive artists, no data; follower 200
+      without listening and without private logs/lists, stranger `403 followers_only`, removed follower 403, the fan
+      200, deleted account `404 not_found`; follower counts drop on removal and on account deletion. Blocked fans:
+      nothing to test, blocking isn't wanted for now (decided 2026-10-24). Verified: `dotnet build` 0 warnings,
+      full suite 379/379; fan app `npm run typecheck` clean, Jest 301/301; promoter-web `npm run typecheck` clean; both `schema.d.ts` regenerated.*
 
 Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps/mobile/src/features/stats/TODO.md)
 

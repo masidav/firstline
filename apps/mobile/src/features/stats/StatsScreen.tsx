@@ -86,6 +86,11 @@ export function StatsScreen() {
           <Section title="Points" hint="Earned from your journal and verified proof; added to your Spotify scores.">
             <Stat label="Points earned" value={formatNumber(stats.ledger_points)} />
           </Section>
+
+          <Section title="People" hint="Fans here, not Spotify. Followers see your fandom stats and followers-only posts.">
+            <Stat label="Followers" value={stats.social.followers} />
+            <Stat label="Following" value={stats.social.following} />
+          </Section>
         </>
       )}
 
