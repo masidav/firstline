@@ -379,7 +379,15 @@ Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](servi
       beta configured 2026-10-28 (`promoters.beta.firstline.com`), not live yet: see Phase 12.*
 - [ ] First-party fan data sharing with artists/promoters, only with explicit fan consent.
 - [ ] Billing: per-event licence fee or take-rate for promoters; fan-side fee if adopted.
-- [ ] Reporting for the pilot case study: sell-through, scalping complaints, empty seats.
+- [x] Reporting for the pilot case study: sell-through, scalping complaints, empty seats. *Done 2026-10-30
+      (migration 0047, `AllocationEndpoints.Report.cs`): `GET /v1/organizations/{id}/events/{eventId}/report` (members)
+      and `GET /v1/admin/events/{eventId}/report` (staff) give, per published allocation and rolled up, seats offered,
+      registrations, eligible and ineligible (refused) fans, selected fans and +1s, tickets delivered, returns,
+      re-offers, hub against non-hub fill, seats unfilled (empty seats once the show has started), and sell-through.
+      Nothing in the platform sees a resale, so scalping complaints are entered by hand per allocation
+      (`PUT .../allocations/{id}/complaints`, admins and staff) and read as "not recorded" until then. The dashboard's
+      show page has the report with a CSV download. Verified: ShowReportApiTests 2 (a return re-offered, an unfilled
+      seat at show start), invariants (0047), promoter-web Vitest 25, typecheck.*
 
 Details: [Organizations](services/api/src/features/organizations/TODO.md) · [Allocations](services/api/src/features/allocations/TODO.md) · [Primary ticketing](services/api/src/integrations/primary-ticketing/TODO.md) · [Promoter dashboard](apps/promoter-web/TODO.md)
 
@@ -536,6 +544,10 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
 - [ ] Confirm the product and company name (summary proposes TrueFan Access or VerifyTicket; repo uses Fandom Score).
 - [x] User stats are followers-only; none are public by default (decided 2026-10-25, Phase 15).
 - [ ] Choose the primary ticketing model: white-labeled checkout through ticketer APIs, or direct allocation links.
+- [ ] Decide how scalping complaints reach the case study. The platform never sees a resale (tickets stay on the
+      account they were drawn for), so since 2026-10-30 promoters and staff enter a count and a note per allocation by
+      hand (migration 0047). Open: whether fans should be able to report a listing themselves, and whether a ticketer's
+      resale feed should be pulled in once a partner is chosen.
 - [ ] Confirm which primary ticketers will grant API access for reserved inventory, and on what terms.
 - [ ] Confirm Spotify's developer terms allow using listening data to decide ticket eligibility, and that the
       app qualifies for extended API quota. Same check for Apple Music. As of 2026-10-18 extended quota is

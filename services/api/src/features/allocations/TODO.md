@@ -58,6 +58,9 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       seats offered. No new index: one pass over `user_artist_scores_rank_idx`. Verified: EligibilityPreviewApiTests 2
       (above and below the threshold, hub and non-hub, held, deleted, and hub-less fans excluded, analyst reads,
       non-member gets 404, draft default threshold, published threshold), full `dotnet test`.
+- [x] Case-study report for the pilot: sell-through, returns and re-offers, empty seats, hub fill, hand-entered
+      scalping complaints. *Done 2026-10-30 (migration 0047, `AllocationEndpoints.Report.cs`, README "Case-study
+      report"). Verified: ShowReportApiTests 2, invariants (0047), full `dotnet test`.*
 
 ## Verification
 - [x] Add or update automated tests for the behavior above. *AllocationConcurrencyTests 7, invariants (0033).*

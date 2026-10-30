@@ -2629,6 +2629,44 @@ paths:
               schema: {$ref: '#/components/schemas/EventDetail'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+  /admin/events/{eventId}/report:
+    parameters:
+      - {$ref: '#/components/parameters/EventId'}
+    get:
+      tags: [Admin, Allocations]
+      operationId: getShowReportForStaff
+      summary: The pilot case-study report for any show
+      description: Same as `GET /organizations/{organizationId}/events/{eventId}/report`, for staff.
+      responses:
+        '200':
+          description: The report
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ShowReport'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/allocations/{allocationId}/complaints:
+    parameters:
+      - {$ref: '#/components/parameters/AllocationId'}
+    put:
+      tags: [Admin, Allocations]
+      operationId: putAllocationComplaintsForStaff
+      summary: Record scalping complaints for an allocation
+      description: Same as `PUT /organizations/{organizationId}/allocations/{allocationId}/complaints`, for staff.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComplaintsRequest'}
+      responses:
+        '200':
+          description: What is recorded now
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AllocationComplaints'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
   /admin/events/{eventId}:
     parameters:
       - {$ref: '#/components/parameters/EventId'}
@@ -3829,6 +3867,51 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/EligibilityPreview'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /organizations/{organizationId}/events/{eventId}/report:
+    parameters:
+      - {$ref: '#/components/parameters/OrganizationId'}
+      - {$ref: '#/components/parameters/EventId'}
+    get:
+      tags: [Organizations, Allocations]
+      operationId: getOrganizationShowReport
+      summary: The pilot case-study report for a show
+      description: |
+        Per published allocation and rolled up: seats offered, registrations, eligible and ineligible fans, selected
+        fans, +1s, tickets delivered, returns and re-offers, seats unfilled (empty seats once the show has started),
+        hub against non-hub fill, sell-through, and the scalping complaints someone recorded. Any member.
+      responses:
+        '200':
+          description: The report
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ShowReport'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /organizations/{organizationId}/allocations/{allocationId}/complaints:
+    parameters:
+      - {$ref: '#/components/parameters/OrganizationId'}
+      - {$ref: '#/components/parameters/AllocationId'}
+    put:
+      tags: [Organizations, Allocations]
+      operationId: putOrganizationAllocationComplaints
+      summary: Record scalping complaints for an allocation
+      description: |
+        Admins and owners. The platform never sees a resale (tickets stay on the account they were drawn for), so
+        complaints that reach the promoter are entered by hand: a count and an optional note, replacing the previous
+        entry. Published allocations only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComplaintsRequest'}
+      responses:
+        '200':
+          description: What is recorded now
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AllocationComplaints'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
 components:
   securitySchemes:
     bearerAuth:
@@ -4753,6 +4836,74 @@ components:
         allocations:
           type: array
           items: {$ref: '#/components/schemas/Allocation'}
+    ShowReport:
+      type: object
+      description: |
+        The pilot case-study report for a show (Phase 11). `allocations` lists every published allocation;
+        `totals` rolls up those not cancelled. Computed from registrations, the recorded draw, reservations, and the
+        eligibility audit; only scalping complaints are entered by hand.
+      required: [event, generated_at, show_started, totals, allocations]
+      properties:
+        event: {$ref: '#/components/schemas/Event'}
+        generated_at: {type: string, format: date-time}
+        show_started: {type: boolean}
+        totals: {$ref: '#/components/schemas/ReportMetrics'}
+        allocations:
+          type: array
+          items: {$ref: '#/components/schemas/AllocationReport'}
+    AllocationReport:
+      type: object
+      required: [allocation, metrics, complaints]
+      properties:
+        allocation: {$ref: '#/components/schemas/Allocation'}
+        metrics: {$ref: '#/components/schemas/ReportMetrics'}
+        complaints: {oneOf: [{$ref: '#/components/schemas/AllocationComplaints'}, {type: 'null'}]}
+    ReportMetrics:
+      type: object
+      description: Seats, not fans, unless the name says fans (a +1 is two seats on one reservation).
+      required: [seats_offered, registrations, withdrawn, eligible_registrations, ineligible_attempts, hub_registrations,
+                 non_hub_registrations, selected_fans, selected_in_draw, plus_ones, seats_filled, hub_seats_filled,
+                 non_hub_seats_filled, tickets_delivered, returns, seats_returned, cancellations, re_offers, seats_re_offered,
+                 seats_unfilled, empty_seats, sell_through_percent, scalping_complaints]
+      properties:
+        seats_offered: {type: integer, description: The allocation's tickets}
+        registrations: {type: integer, description: Live registrations (not withdrawn)}
+        withdrawn: {type: integer}
+        eligible_registrations: {type: integer, description: Same as `registrations`; a fan registers only when eligible}
+        ineligible_attempts: {type: integer, description: Fans refused by the eligibility check (score, hub city, or a fraud hold), from the audit log}
+        hub_registrations: {type: integer, description: Registrations whose hub cities include the show's city}
+        non_hub_registrations: {type: integer}
+        selected_fans: {type: integer, description: Fans ever selected, in the draw or by a re-offer}
+        selected_in_draw: {type: integer, description: Fans the draw itself selected}
+        plus_ones: {type: integer, description: Live reservations with two seats}
+        seats_filled: {type: integer, description: Seats on live reservations}
+        hub_seats_filled: {type: integer}
+        non_hub_seats_filled: {type: integer}
+        tickets_delivered: {type: integer, description: Seats on live reservations past their delivery time}
+        returns: {type: integer, description: Reservations fans gave back}
+        seats_returned: {type: integer}
+        cancellations: {type: integer, description: Reservations cancelled (account deleted)}
+        re_offers: {type: integer, description: Reservations made after the draw, when returned or cancelled seats went to the next fans}
+        seats_re_offered: {type: integer}
+        seats_unfilled: {type: integer, description: Offered seats nobody holds right now}
+        empty_seats: {type: [integer, 'null'], description: Seats nobody held at show start; null until the show has started}
+        sell_through_percent: {type: [number, 'null'], description: seats_filled over seats_offered, one decimal; null with no seats offered}
+        scalping_complaints: {type: [integer, 'null'], description: Hand-entered; null until someone records them}
+    AllocationComplaints:
+      type: object
+      required: [allocation_id, scalping_complaints, note, updated_by_handle, updated_at]
+      properties:
+        allocation_id: {type: string, format: uuid}
+        scalping_complaints: {type: integer, minimum: 0}
+        note: {type: [string, 'null'], maxLength: 2000}
+        updated_by_handle: {type: string}
+        updated_at: {type: string, format: date-time}
+    ComplaintsRequest:
+      type: object
+      required: [scalping_complaints]
+      properties:
+        scalping_complaints: {type: integer, minimum: 0, maximum: 1000000}
+        note: {type: [string, 'null'], maxLength: 2000}
     EventCreate:
       type: object
       required: [artist_id, name, city_id, starts_at]

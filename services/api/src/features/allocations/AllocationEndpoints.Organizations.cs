@@ -12,7 +12,7 @@ namespace FandomScore.Api.Features.Allocations;
 /// </summary>
 public static partial class AllocationEndpoints
 {
-    private static void MapOrganizationShows(RouteGroupBuilder v1)
+    private static RouteGroupBuilder MapOrganizationShows(RouteGroupBuilder v1)
     {
         var organization = v1.MapGroup("/organizations/{organizationId:guid}");
         var read = OrganizationAccess.Require("analyst");
@@ -32,6 +32,7 @@ public static partial class AllocationEndpoints
         organization.MapGet("/allocations/{allocationId:guid}/registrations", ListRegistrationsForOrganizationAsync).AddEndpointFilter(read);
         organization.MapGet("/allocations/{allocationId:guid}/reservations", ListReservationsForStaffAsync).AddEndpointFilter(read);
         organization.MapGet("/allocations/{allocationId:guid}/eligibility-preview", GetEligibilityPreviewAsync).AddEndpointFilter(read);
+        return organization;
     }
 
     /// <summary>

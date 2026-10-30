@@ -110,6 +110,19 @@ Every hub city has its IANA time zone (`cities.time_zone`, checked against Postg
   same counts at half, double, and four times the threshold against the seats offered. One pass over
   `user_artist_scores_rank_idx (artist_id, raw_score)`; computed on every call from today's scores.
 
+- Promoter organizations: the same handlers under `/v1/organizations/{id}` (`AllocationEndpoints.Organizations.cs`).
+
+## Case-study report (migration 0047, `AllocationEndpoints.Report.cs`)
+`GET /v1/organizations/{id}/events/{eventId}/report` (any member) and `GET /v1/admin/events/{eventId}/report` (staff)
+give the pilot's numbers per published allocation and rolled up over those not cancelled: seats offered,
+registrations (live and withdrawn; every live registration was eligible), ineligible attempts (fans the eligibility
+check refused, from `eligibility_audit`), hub and non-hub registrations, fans selected (in the draw and by re-offer),
++1s, seats filled by hub and non-hub fans, tickets delivered, returns, cancellations, re-offers (reservations made
+after the draw ran), seats unfilled now, `empty_seats` once the show has started, and sell-through. The platform
+never sees a resale, so `scalping_complaints` is hand-entered per allocation (`allocation_complaints`:
+`PUT .../allocations/{id}/complaints` by organization admins or staff) and null until someone records it.
+Tests: `ShowReportApiTests`, invariants (0047).
+
 Locally, `tools/dev/allocations.py` creates a show with a published allocation as a dev staff user, and can close
 registration (`close`) and run the draw (`draw`).
 

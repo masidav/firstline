@@ -16,15 +16,17 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       yet (the real API needs seeded fans with scores).*
 - [x] Monitor registration and selection in near real time; trigger or schedule the draw. *Registrations refresh
       every 10 s while open; the draw is queued and followed every 3 s until done.*
-- [ ] Export reports and consented fan data; download the case-study metrics. *CSV of registrations and tickets done;
-      consented fan data and case-study metrics not yet.*
+- [ ] Export reports and consented fan data; download the case-study metrics. *CSV of registrations and tickets done.
+      Case-study metrics done 2026-10-30: the show page's "Case-study report" (`ShowReport.tsx`) shows every published
+      allocation beside the roll-up with a CSV download, and admins record scalping complaints per allocation.
+      Verified: Vitest 25 (2 new), typecheck. Consented fan data not yet.*
 - [ ] Accessibility (WCAG 2.2 AA) and responsive layout. *2026-10-30: axe scans in CI, every page the journeys visit
       (`e2e/accessibility.spec.ts`, serious/critical fail) plus vitest-axe on error states (`src/accessibility.test.tsx`).
       The first scan found a red status pill at 4.36:1 contrast (darkened to #b0262c), no `h1` on organization pages
       (the organization's name is now the `h1`), buttons posing as list items in the search picker (now a real list),
       and empty action-column headers (now hidden "Actions" text); all fixed, scans clean at every impact. No manual
       screen-reader or keyboard audit yet; responsive layout not checked below 1280 px.*
-- [x] Component tests (Vitest) and end-to-end tests (Playwright). *26 component tests, 3 journeys plus the
+- [x] Component tests (Vitest) and end-to-end tests (Playwright). *27 component tests, 3 journeys plus the
       accessibility scan, all in CI.*
 - [ ] Host it on beta. *2026-10-28: `Dockerfile` target `promoter-web` (nginx, settings from `/config.js` at
       startup), Kubernetes manifests, its own hostname and certificate (`promoters.beta.firstline.com`). The image
