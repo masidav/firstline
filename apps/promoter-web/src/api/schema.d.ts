@@ -609,9 +609,10 @@ export interface paths {
         /**
          * My stats in one list
          * @description The signed-in fan's numbers, read from stored state and the ledger (never from Spotify at request time).
-         *     Deleted logs and comments and reversed awards don't count. Listening totals cover active tracked artists
-         *     only. `ledger_points` is the sum of unreversed awards (journal, proof of fandom). Other fans' stats:
-         *     `GET /users/{handle}/stats`.
+         *     Deleted or taken-down logs, deleted comments (and comments on deleted or taken-down logs), unverified proof,
+         *     and reversed awards don't count. Listening totals cover active tracked artists only. `ledger_points` is the
+         *     sum of unreversed awards (journal, proof of fandom). `social` counts followers and following on this platform
+         *     (live accounts). Other fans' stats: `GET /users/{handle}/stats`.
          */
         get: operations["getMyStats"];
         put?: never;
@@ -1696,8 +1697,9 @@ export interface paths {
         /**
          * A fan's fandom stats
          * @description For the fan and their followers (decided 2026-10-20: followers see top fandom stats): artists with percentile
-         *     and rank, journal and proof counts, ledger points. Listening counts stay private. Stats are followers-only
-         *     (decided 2026-10-25: none are public by default), so others get 403.
+         *     and rank, journal and proof counts, follower and following counts, ledger points. Listening counts stay
+         *     private; private logs and lists aren't counted. Stats are followers-only (decided 2026-10-25: none are public
+         *     by default), so others get 403; a deleted or unknown handle is 404.
          */
         get: operations["getUserStats"];
         put?: never;
@@ -4579,6 +4581,7 @@ export interface components {
                 merch: number;
                 screenshots: number;
             };
+            social: components["schemas"]["SocialStats"];
             ledger_points: number;
         };
         /** @description A fan's fandom stats as their followers see them. Listening counts stay private. */
@@ -4612,7 +4615,13 @@ export interface components {
                 merch: number;
                 screenshots: number;
             };
+            social: components["schemas"]["SocialStats"];
             ledger_points: number;
+        };
+        /** @description Followers and following on this platform (live accounts only), not Spotify follows. */
+        SocialStats: {
+            followers: number;
+            following: number;
         };
         ScoreSummaryPage: {
             items: components["schemas"]["ScoreSummary"][];

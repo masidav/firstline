@@ -27,6 +27,7 @@ const empty = {
   },
   journal: { logs: 0, albums_logged: 0, relistens: 0, reviews: 0, ratings: 0, lists: 0, comments: 0 },
   proof: { tickets: 0, merch: 0, screenshots: 0 },
+  social: { followers: 0, following: 0 },
   ledger_points: 0,
 };
 
@@ -50,6 +51,7 @@ test('shows artist ranks, labels estimates, and lists every total', async () => 
       listening: { ...empty.listening, artists: 1, liked_tracks: 42 },
       journal: { ...empty.journal, albums_logged: 7, reviews: 2 },
       proof: { ...empty.proof, tickets: 1 },
+      social: { followers: 12, following: 3 },
       ledger_points: 59.5,
     }),
   );
@@ -62,6 +64,8 @@ test('shows artist ranks, labels estimates, and lists every total', async () => 
   expect(screen.getByLabelText('Reviews: 2')).toBeTruthy();
   expect(screen.getByLabelText('Tickets: 1')).toBeTruthy();
   expect(screen.getByLabelText('Points earned: 59.50')).toBeTruthy();
+  expect(screen.getByLabelText('Followers: 12')).toBeTruthy();
+  expect(screen.getByLabelText('Following: 3')).toBeTruthy();
   expect(mockApi.GET).toHaveBeenCalledWith('/me/stats');
 });
 
