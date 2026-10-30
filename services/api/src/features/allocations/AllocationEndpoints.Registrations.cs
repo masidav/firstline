@@ -45,8 +45,8 @@ public static partial class AllocationEndpoints
 
     /// <summary>
     /// Whether the fan can register now. <c>Reason</c> is null when they can (or already have), else one of
-    /// not_open, artist_not_active, under_review, hub_city_required, no_score, below_threshold, already_registered,
-    /// named_as_guest.
+    /// not_open, artist_not_active, under_review, unavailable, hub_city_required, no_score, below_threshold,
+    /// already_registered, named_as_guest.
     /// </summary>
     public sealed record Eligibility(
         Guid AllocationId, bool Eligible, string? Reason, decimal? MinRawScore, decimal? RawScore, decimal? Percentile,
@@ -379,6 +379,9 @@ public static partial class AllocationEndpoints
             "Someone named you as their +1 for this show. Decline it to register yourself."),
         "under_review" => new(StatusCodes.Status403Forbidden, "under_review", "Your account is under review",
             "A fraud review is holding your account, so you can't register for fan tickets right now. You can appeal it from Account review."),
+        // An automatic fraud flag no one has reviewed yet: neutral on purpose (migration 0044).
+        "unavailable" => new(StatusCodes.Status403Forbidden, "registration_unavailable", "Registration unavailable",
+            "Registration isn't available for your account right now."),
         "no_score" => new(StatusCodes.Status403Forbidden, "not_eligible", "Not eligible",
             "You don't have a fandom score for this artist yet. Connect Spotify and listen to them."),
         "below_threshold" => new(StatusCodes.Status403Forbidden, "not_eligible", "Not eligible",

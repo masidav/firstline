@@ -10,6 +10,12 @@ Migration `0042_fraud_review.sql`, endpoints in `FraudEndpoints.cs`. Tests: `Fra
   last day and raise a flag with `source = 'rule'`, the rules that fired, and what they measured in `evidence.rules`.
   A fan already held isn't flagged again; a rule whose flag staff cleared waits `cooldown_days` (30). Thresholds are
   data (`fraud_rules.params`), provisional. Strategies and rules: `docs/security/gaming-strategies.md`.
+- **Hidden until reviewed** (migration 0044, decided 2026-10-30): a rule flag isn't shown to the fan until staff uphold
+  it (`shown_to_fan_at`). Until then: no notice, nothing at `/me/fraud-review` or in the data download, no appeal, and
+  registering is refused with the neutral `registration_unavailable` ("Registration isn't available for your account
+  right now"). Upholding tells the fan (`fraud_hold`); clearing it unreviewed tells them nothing. Staff get
+  `staff_flag_before_draw` when a rule flags a fan who's in a draw still to run, and the queue lists those first
+  (`context.next_draw_closes_at`).
 - **The hold.** While a flag is `open` or `upheld` (`fan_on_hold()`), the fan can't register
   (`registration_blocker()` answers `under_review`; the API returns `403 under_review`). The full hold applies to an
   upheld flag, or an open one staff raised (`fan_full_hold_flag()`; an open *rule* flag only blocks registering,

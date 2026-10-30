@@ -12,7 +12,8 @@ namespace FandomScore.Api.Features.Fraud;
 /// Fraud review (migration 0042): staff flag a fan, which holds them out of fan tickets (no registering; the draw and
 /// returned seats pass them by) until the flag is cleared. The fan sees the reason category and can appeal once per
 /// flag; staff grant (clears the flag) or deny (upholds it). The rules and the eligibility audit log live in the
-/// database; this file checks input and shapes the answers.
+/// database; this file checks input and shapes the answers. A rule flag stays hidden from the fan until staff uphold
+/// it (<c>shown_to_fan_at</c>, migration 0044).
 /// </summary>
 public static class FraudEndpoints
 {
@@ -38,12 +39,14 @@ public static class FraudEndpoints
 
     public sealed record FanReview(bool OnHold, IReadOnlyList<FanFlag> Flags);
 
-    public sealed record FlagContext(DateTime AccountCreatedAt, JsonElement TrustParts, int LiveRegistrations, int HeldReservations);
+    /// <summary><c>NextDrawClosesAt</c>: when registration closes for the soonest draw the fan is in, if any.</summary>
+    public sealed record FlagContext(
+        DateTime AccountCreatedAt, JsonElement TrustParts, int LiveRegistrations, int HeldReservations, DateTime? NextDrawClosesAt);
 
     public sealed record Flag(
         Guid Id, Guid UserId, SubmissionEndpoints.UserRef User, string Reason, JsonElement Evidence, string? Note, string Source,
         string? RaisedBy, DateTime RaisedAt, string Status, string? DecidedBy, DateTime? DecidedAt, string? DecisionNote,
-        Appeal? Appeal, string? AppealDecidedBy, FlagContext Context);
+        Appeal? Appeal, string? AppealDecidedBy, FlagContext Context, DateTime? ShownToFanAt);
 
     public sealed record FlagPage(IReadOnlyList<Flag> Items, string? NextCursor);
 
@@ -64,7 +67,7 @@ public static class FraudEndpoints
              SELECT f.id AS Id, f.reason AS Reason, f.status AS Status, f.raised_at AS RaisedAt, f.decided_at AS DecidedAt,
                     {AppealColumns}
                FROM fraud_flags f LEFT JOIN fraud_appeals ap ON ap.flag_id = f.id
-              WHERE f.user_id = @userId
+              WHERE f.user_id = @userId AND f.shown_to_fan_at IS NOT NULL
               ORDER BY f.raised_at DESC
              """,
             new { userId });
@@ -86,7 +89,8 @@ public static class FraudEndpoints
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         if (!await connection.ExecuteScalarAsync<bool>(
-                "SELECT EXISTS (SELECT 1 FROM fraud_flags WHERE id = @flagId AND user_id = @userId)", new { flagId, userId }, transaction))
+                "SELECT EXISTS (SELECT 1 FROM fraud_flags WHERE id = @flagId AND user_id = @userId AND shown_to_fan_at IS NOT NULL)",
+                new { flagId, userId }, transaction))
         {
             throw NotFound("Review not found.");
         }
@@ -102,6 +106,10 @@ public static class FraudEndpoints
         catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
         {
             throw AppealUnavailable("You've already appealed this review.");
+        }
+        catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.RaiseException && e.MessageText == "appeal blocked: not_shown")
+        {
+            throw NotFound("Review not found.");
         }
         catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.RaiseException && e.MessageText == "appeal blocked: flag_cleared")
         {
@@ -130,7 +138,9 @@ public static class FraudEndpoints
                 ? """
                   SELECT f.id FROM fraud_flags f LEFT JOIN fraud_appeals ap ON ap.flag_id = f.id
                    WHERE f.status = 'open' OR ap.status = 'pending'
-                   ORDER BY COALESCE(LEAST(f.raised_at, ap.filed_at), f.raised_at), f.id
+                   ORDER BY (SELECT min(a.registration_closes_at) FROM allocation_registrations r JOIN allocations a ON a.id = r.allocation_id
+                              WHERE r.user_id = f.user_id AND r.withdrawn_at IS NULL AND r.outcome IS NULL) NULLS LAST,
+                            COALESCE(LEAST(f.raised_at, ap.filed_at), f.raised_at), f.id
                    LIMIT @take OFFSET @offset
                   """
                 : "SELECT id FROM fraud_flags WHERE status = @status ORDER BY raised_at DESC, id LIMIT @take OFFSET @offset",
@@ -341,7 +351,10 @@ public static class FraudEndpoints
                     (SELECT count(*)::int FROM allocation_registrations x WHERE x.user_id = f.user_id AND x.withdrawn_at IS NULL
                         AND x.outcome IS NULL) AS LiveRegistrations,
                     (SELECT count(*)::int FROM reservations x JOIN events e ON e.id = x.event_id
-                      WHERE x.user_id = f.user_id AND x.returned_at IS NULL AND x.cancelled_at IS NULL AND e.starts_at > now()) AS HeldReservations
+                      WHERE x.user_id = f.user_id AND x.returned_at IS NULL AND x.cancelled_at IS NULL AND e.starts_at > now()) AS HeldReservations,
+                    (SELECT min(a.registration_closes_at) FROM allocation_registrations x JOIN allocations a ON a.id = x.allocation_id
+                      WHERE x.user_id = f.user_id AND x.withdrawn_at IS NULL AND x.outcome IS NULL) AS NextDrawClosesAt,
+                    f.shown_to_fan_at AS ShownToFanAt
                FROM fraud_flags f JOIN users u ON u.id = f.user_id
                LEFT JOIN users rb ON rb.id = f.raised_by LEFT JOIN users db ON db.id = f.decided_by
                LEFT JOIN fraud_appeals ap ON ap.flag_id = f.id LEFT JOIN users adb ON adb.id = ap.decided_by
@@ -351,7 +364,8 @@ public static class FraudEndpoints
         return new Flag(r.Id, r.UserId, new SubmissionEndpoints.UserRef(r.Deleted ? null : r.Handle, r.Deleted, r.Deleted ? null : r.DisplayName, null),
             r.Reason, Parse(r.Evidence), r.Note, r.Source, r.RaisedBy, r.RaisedAt, r.Status, r.DecidedBy, r.DecidedAt, r.DecisionNote,
             r.ToAppeal(), r.AppealDecidedBy,
-            new FlagContext(r.AccountCreatedAt, Parse(r.TrustParts), r.LiveRegistrations, r.HeldReservations));
+            new FlagContext(r.AccountCreatedAt, Parse(r.TrustParts), r.LiveRegistrations, r.HeldReservations, r.NextDrawClosesAt),
+            r.ShownToFanAt);
     }
 
     private class AppealRow
@@ -398,6 +412,8 @@ public static class FraudEndpoints
         public string TrustParts { get; init; } = "{}";
         public int LiveRegistrations { get; init; }
         public int HeldReservations { get; init; }
+        public DateTime? NextDrawClosesAt { get; init; }
+        public DateTime? ShownToFanAt { get; init; }
     }
 
     private sealed record AuditRow(

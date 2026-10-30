@@ -264,14 +264,20 @@ public static class DataExportEndpoints
                 SELECT f.id, f.reason, f.status, f.raised_at, f.decided_at, ap.message AS appeal_message,
                        ap.filed_at AS appeal_filed_at, ap.status AS appeal_status, ap.decided_at AS appeal_decided_at,
                        ap.response AS appeal_response
-                FROM fraud_flags f LEFT JOIN fraud_appeals ap ON ap.flag_id = f.id WHERE f.user_id = @me ORDER BY f.raised_at
+                FROM fraud_flags f LEFT JOIN fraud_appeals ap ON ap.flag_id = f.id
+                WHERE f.user_id = @me AND f.shown_to_fan_at IS NOT NULL ORDER BY f.raised_at
                 """)),
             // The eligibility audit about the fan; the inputs of flag decisions can hold staff notes, so they're left out.
+            // A flag the fan hasn't been shown (an unreviewed rule flag, migration 0044) leaves no trace: its own rows are
+            // skipped and refusals it caused don't name it.
             ("eligibility_decisions", Rows(
                 """
-                SELECT x.at, x.action, x.reason, x.allocation_id, x.registration_id, x.flag_id, x.appeal_id,
-                       CASE WHEN x.action LIKE 'flag_%' THEN NULL ELSE x.inputs END AS inputs
-                FROM eligibility_audit x WHERE x.user_id = @me ORDER BY x.id
+                SELECT x.at, x.action, x.reason, x.allocation_id, x.registration_id,
+                       CASE WHEN f.shown_to_fan_at IS NOT NULL THEN x.flag_id END AS flag_id, x.appeal_id,
+                       CASE WHEN x.action LIKE 'flag_%' THEN NULL ELSE x.inputs - 'flag_id' END AS inputs
+                FROM eligibility_audit x LEFT JOIN fraud_flags f ON f.id = x.flag_id
+                WHERE x.user_id = @me AND (x.flag_id IS NULL OR f.shown_to_fan_at IS NOT NULL OR x.action = 'registration_blocked')
+                ORDER BY x.id
                 """)),
         ]),
     ];

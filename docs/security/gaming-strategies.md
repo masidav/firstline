@@ -26,7 +26,9 @@ trivia). Most Spotify signals saturate on a log or linear curve, so volume past 
 
 ## Detection rules (migration 0043)
 Thresholds are data in `fraud_rules` and provisional (PROJECT_TODO.md). An automatic flag only blocks registering
-until staff uphold it (decided 2026-10-29), so a false positive costs a real fan a review, not a seat already won.
+until staff uphold it (decided 2026-10-29), so a false positive costs a real fan a review, not a seat already won. The
+fan isn't told about it until then, and the refusal is deliberately vague (decided 2026-10-30), so a gamer can't use
+the rules as a test harness.
 
 | Rule | Flags as | Fires when (starting values) |
 |---|---|---|

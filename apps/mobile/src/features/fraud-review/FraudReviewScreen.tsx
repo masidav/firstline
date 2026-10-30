@@ -126,6 +126,12 @@ export function FraudReviewScreen() {
             <Text style={styles.meta}>
               Raised {dateTimeLabel(flag.raised_at)} by {flag.source === 'rule' ? 'a rule' : flag.raised_by ? `@${flag.raised_by}` : 'staff'}
             </Text>
+            {flag.shown_to_fan_at === null && flag.status !== 'cleared' && (
+              <Text style={styles.text}>The fan doesn't know about this flag. Upholding it tells them.</Text>
+            )}
+            {flag.context.next_draw_closes_at && flag.status === 'open' && (
+              <Text style={styles.text}>Review before {dateTimeLabel(flag.context.next_draw_closes_at)}: they're in a draw.</Text>
+            )}
             {flag.note ? <Text style={styles.text}>Note: {flag.note}</Text> : null}
             {flag.decided_at && (
               <Text style={styles.text}>

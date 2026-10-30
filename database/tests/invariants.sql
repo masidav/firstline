@@ -2483,4 +2483,41 @@ END $$;
 SELECT pg_temp.expect_error($$INSERT INTO fraud_rules (rule_key, reason, params, description) VALUES ('x', 'vibes', '{}', 'x')$$,
   'fraud_rules_reason_check');
 
+-- ------------------------------------------------------------ hidden rule flags (0044)
+-- A staff flag is shown at once; a rule flag only once upheld, which is when the fan is told; a rule flag cleared
+-- unreviewed is never shown or told; only a shown flag can be appealed; shown_to_fan_at is set once.
+DO $$
+DECLARE fan uuid; staff uuid; f uuid; g uuid; s timestamptz;
+BEGIN
+  INSERT INTO users (handle, email) VALUES ('hid_fan', 'hid_fan@example.test') RETURNING id INTO fan;
+  INSERT INTO users (handle, email, is_staff) VALUES ('hid_staff', 'hid_staff@example.test', true) RETURNING id INTO staff;
+
+  INSERT INTO fraud_flags (user_id, reason, source) VALUES (fan, 'bot', 'rule') RETURNING id INTO f;
+  ASSERT (SELECT shown_to_fan_at FROM fraud_flags WHERE id = f) IS NULL, 'a rule flag starts hidden';
+  ASSERT NOT EXISTS (SELECT 1 FROM notifications WHERE user_id = fan), 'and the fan is not told';
+  BEGIN
+    INSERT INTO fraud_appeals (flag_id, user_id, message) VALUES (f, fan, 'what flag?');
+    RAISE EXCEPTION 'appealing a hidden flag should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%not_shown%', SQLERRM;
+  END;
+  UPDATE fraud_flags SET shown_to_fan_at = now() WHERE id = f;
+  ASSERT (SELECT shown_to_fan_at FROM fraud_flags WHERE id = f) IS NULL, 'shown only by upholding';
+
+  UPDATE fraud_flags SET status = 'cleared', decided_by = staff WHERE id = f;
+  ASSERT (SELECT shown_to_fan_at FROM fraud_flags WHERE id = f) IS NULL, 'cleared unreviewed: never shown';
+  ASSERT NOT EXISTS (SELECT 1 FROM notifications WHERE user_id = fan), 'cleared unreviewed: never told';
+
+  INSERT INTO fraud_flags (user_id, reason, source) VALUES (fan, 'streaming_farm', 'rule') RETURNING id INTO g;
+  UPDATE fraud_flags SET status = 'upheld', decided_by = staff WHERE id = g;
+  SELECT shown_to_fan_at INTO s FROM fraud_flags WHERE id = g;
+  ASSERT s IS NOT NULL, 'upheld: shown';
+  ASSERT EXISTS (SELECT 1 FROM notifications WHERE user_id = fan AND kind = 'fraud_hold' AND subject_id = g), 'upheld: told';
+  UPDATE fraud_flags SET status = 'cleared', decided_by = staff WHERE id = g;
+  ASSERT (SELECT shown_to_fan_at FROM fraud_flags WHERE id = g) = s, 'shown_to_fan_at is kept';
+  ASSERT EXISTS (SELECT 1 FROM notifications WHERE user_id = fan AND kind = 'fraud_cleared' AND subject_id = g), 'cleared after shown: told';
+
+  INSERT INTO fraud_flags (user_id, reason, raised_by) VALUES (fan, 'other', staff) RETURNING id INTO f;
+  ASSERT (SELECT shown_to_fan_at IS NOT NULL FROM fraud_flags WHERE id = f), 'a staff flag is shown at once';
+END $$;
+
 \echo ALL INVARIANT TESTS PASSED

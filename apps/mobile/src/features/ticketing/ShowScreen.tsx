@@ -19,6 +19,7 @@ const reasons: Record<string, string> = {
   not_open: "Registration isn't open right now.",
   artist_not_active: "This artist isn't active right now, so registration is paused.",
   under_review: "Your account is on hold for fan tickets for now, so you can't register. Your account review has the details.",
+  unavailable: "Registration isn't available for your account right now.",
   hub_city_required: 'Choose your hub cities before registering.',
   no_score: "You don't have a fandom score for this artist yet. Connect Spotify and listen to them.",
   below_threshold: "Your fandom score for this artist is below this allocation's minimum.",

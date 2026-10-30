@@ -311,8 +311,12 @@ Details: [Notifications](services/api/src/features/notifications/TODO.md) · [Mo
 - [ ] Fraud detection thresholds set provisionally (2026-10-29), confirm or change: 24/7 = plays in 20+ hours of a day
       on 3 of 14 days; rapid = 70 % of 100+ plays under 40 s apart in a week; looping = 300+ plays of an artist in a
       week, 90 % on 3 tracks (artists with 10+ tracks); spike = 300+ plays in a week and 10x the usual week while the
-      artist's fan tickets are open or within 14 days; a cleared rule waits 30 days; the sweep runs every 6 hours; the fan
-      is told when a rule flags them.
+      artist's fan tickets are open or within 14 days; a cleared rule waits 30 days; the sweep runs every 6 hours.
+- [x] Automatic flags stay hidden from the fan until a person reviews them (decided 2026-10-30): registering is refused
+      with a neutral "Registration isn't available for your account right now"; no notice, review screen, appeal, or
+      data-download trace until staff uphold; an unreviewed flag leaves the fan in the draw, and staff are told when a
+      flagged fan is in a draw still to run. *Done 2026-10-30 (migration 0044). Verified: `dotnet test`
+      (FraudReviewApiTests 7, invariants), app Jest 301/301.*
 - [ ] Add verification sources: Apple Music (MusicKit), direct-to-consumer store purchases, verified attendance history.
 - [ ] Bind one person to one account (phone or ID verification at allocation time) without over-collecting personal data.
 - [x] Add fraud review tooling, an appeals process, and audit logging for every eligibility decision.

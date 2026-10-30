@@ -13,8 +13,11 @@ const flag = (overrides: Record<string, unknown> = {}) => ({
   id: 'f1', user_id: 'u1', user: { handle: 'suspect', deleted: false }, reason: 'streaming_farm',
   evidence: { plays_per_hour: 400 }, note: 'Loops one track all night', source: 'staff', raised_by: 'staffer',
   raised_at: '2026-10-27T12:00:00Z', status: 'open', decided_by: null, decided_at: null, decision_note: null,
-  appeal: null, appeal_decided_by: null,
-  context: { account_created_at: '2026-10-01T00:00:00Z', trust_parts: { account_age: 0.25, spotify: 1 }, live_registrations: 2, held_reservations: 1 },
+  appeal: null, appeal_decided_by: null, shown_to_fan_at: '2026-10-27T12:00:00Z',
+  context: {
+    account_created_at: '2026-10-01T00:00:00Z', trust_parts: { account_age: 0.25, spotify: 1 }, live_registrations: 2,
+    held_reservations: 1, next_draw_closes_at: null,
+  },
   ...overrides,
 });
 
@@ -50,6 +53,18 @@ test('staff see a flag with evidence and context, and uphold it with a note', as
   );
   // Upheld with no pending appeal no longer needs action.
   expect(await screen.findByText('Nothing needs a decision.')).toBeTruthy();
+});
+
+test('an unreviewed rule flag says the fan does not know and when the draw closes', async () => {
+  queue([flag({
+    source: 'rule', raised_by: null, note: null, shown_to_fan_at: null,
+    context: { account_created_at: '2026-10-01T00:00:00Z', trust_parts: {}, live_registrations: 1, held_reservations: 0, next_draw_closes_at: '2026-11-02T18:00:00Z' },
+  })]);
+  render(<FraudReviewScreen />);
+
+  expect(await screen.findByText(/by a rule/)).toBeTruthy();
+  expect(screen.getByText("The fan doesn't know about this flag. Upholding it tells them.")).toBeTruthy();
+  expect(screen.getByText(/^Review before .*: they're in a draw\.$/)).toBeTruthy();
 });
 
 test('staff answer a pending appeal with a response the fan sees', async () => {

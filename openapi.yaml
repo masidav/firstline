@@ -2298,7 +2298,8 @@ paths:
       summary: Can I register for this allocation?
       description: |
         `reason` says why not: `not_open`, `artist_not_active`, `under_review` (a fraud review holds the fan; see
-        `GET /me/fraud-review`), `hub_city_required`, `no_score`,
+        `GET /me/fraud-review`), `unavailable` (deliberately vague: an automatic fraud flag no one has reviewed yet),
+        `hub_city_required`, `no_score`,
         `below_threshold` (raw score under `min_raw_score`), `already_registered` (for another allocation of the
         same show), or `named_as_guest` (someone named the fan as their +1 for it; `POST /events/{eventId}/guest-invite/decline`
         frees them). `raw_score`, `percentile`, and `hub_match` are the fan's
@@ -2358,7 +2359,8 @@ paths:
         '403':
           description: |
             No score for the artist, or below the threshold (`code: not_eligible`); or a fraud review holds the fan
-            (`code: under_review`, see `GET /me/fraud-review`). Every refusal is recorded in the eligibility audit.
+            (`code: under_review`, see `GET /me/fraud-review`), or an automatic flag no one has reviewed yet
+            (`code: registration_unavailable`, deliberately vague). Every refusal is recorded in the eligibility audit.
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
@@ -2949,8 +2951,8 @@ paths:
       summary: Fraud reviews of my account, and my appeals
       description: |
         `on_hold` is true while a flag is `open` (under review) or `upheld`: the fan can't register for fan tickets.
-        An upheld flag, or an open one staff raised, also has the draw and returned seats pass them by; an open flag
-        raised by the automatic rules only blocks registering until staff uphold it. Each flag shows its reason category and status, never the
+        An upheld flag, or an open one staff raised, also has the draw and returned seats pass them by. A flag raised
+        by the automatic rules isn't shown here (or anywhere to the fan) until staff uphold it. Each flag shows its reason category and status, never the
         evidence or staff notes. `can_appeal` while the flag holds the fan and they haven't appealed it yet.
       responses:
         '200':
@@ -2996,7 +2998,8 @@ paths:
       operationId: listFraudFlags
       summary: Fraud review queue
       description: |
-        `needs_action` (the default): open flags and flags with a pending appeal, oldest first. The other filters list
+        `needs_action` (the default): open flags and flags with a pending appeal, those of fans in the soonest draw
+        first, then oldest first. The other filters list
         flags by status, newest first. Each flag comes with context for the decision: account age, the trust parts,
         live registrations, and tickets held. Flags with `source: rule` were raised by the automatic rules (every 6
         hours over the play history); their `evidence.rules` holds what each rule measured.
@@ -3970,6 +3973,7 @@ components:
             - already_registered
             - named_as_guest
             - under_review
+            - registration_unavailable
             - flag_open
             - appeal_unavailable
             - plus_one_unavailable
@@ -4045,7 +4049,7 @@ components:
       type: object
       description: A flag as staff see it, with the evidence and context for deciding.
       required: [id, user_id, user, reason, evidence, note, source, raised_by, raised_at, status, decided_by, decided_at,
-                 decision_note, appeal, appeal_decided_by, context]
+                 decision_note, appeal, appeal_decided_by, context, shown_to_fan_at]
       properties:
         id: {type: string, format: uuid}
         user_id: {type: string, format: uuid}
@@ -4063,14 +4067,19 @@ components:
         appeal:
           oneOf: [{$ref: '#/components/schemas/FraudAppeal'}, {type: 'null'}]
         appeal_decided_by: {type: [string, 'null'], description: Staff handle}
+        shown_to_fan_at:
+          type: [string, 'null']
+          format: date-time
+          description: When the fan could first see the flag; null for a rule flag staff haven't upheld (the fan doesn't know).
         context:
           type: object
-          required: [account_created_at, trust_parts, live_registrations, held_reservations]
+          required: [account_created_at, trust_parts, live_registrations, held_reservations, next_draw_closes_at]
           properties:
             account_created_at: {type: string, format: date-time}
             trust_parts: {type: object, additionalProperties: {type: number}, description: 'Each part of the trust score, 0 to 1'}
             live_registrations: {type: integer, minimum: 0}
             held_reservations: {type: integer, minimum: 0, description: Tickets the fan holds for shows not yet started}
+            next_draw_closes_at: {type: [string, 'null'], format: date-time, description: 'When registration closes for the soonest draw the fan is in; review before then'}
     FraudFlagPage:
       type: object
       required: [items, next_cursor]
@@ -4831,7 +4840,7 @@ components:
         eligible: {type: boolean, description: 'True if the fan can register now, or already has'}
         reason:
           type: [string, 'null']
-          enum: [not_open, artist_not_active, under_review, hub_city_required, no_score, below_threshold, already_registered, named_as_guest, null]
+          enum: [not_open, artist_not_active, under_review, unavailable, hub_city_required, no_score, below_threshold, already_registered, named_as_guest, null]
         min_raw_score: {type: [number, 'null']}
         raw_score: {type: [number, 'null']}
         percentile: {type: [number, 'null']}
@@ -4869,7 +4878,7 @@ components:
         id: {type: string, format: uuid}
         kind:
           type: string
-          enum: [draw_selected, draw_not_selected, seat_backfilled, ticket_delivered, presale, guest_named, fraud_hold, fraud_cleared, appeal_decided, staff_report, staff_review, staff_draw, staff_redaction, staff_show_changed, staff_appeal]
+          enum: [draw_selected, draw_not_selected, seat_backfilled, ticket_delivered, presale, guest_named, fraud_hold, fraud_cleared, appeal_decided, staff_report, staff_review, staff_draw, staff_redaction, staff_show_changed, staff_appeal, staff_flag_before_draw]
         title: {type: string}
         body: {type: string}
         link: {type: string, description: 'App route to open, e.g. /tickets or /show/{id}'}

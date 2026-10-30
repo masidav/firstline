@@ -1987,7 +1987,8 @@ export interface paths {
         /**
          * Can I register for this allocation?
          * @description `reason` says why not: `not_open`, `artist_not_active`, `under_review` (a fraud review holds the fan; see
-         *     `GET /me/fraud-review`), `hub_city_required`, `no_score`,
+         *     `GET /me/fraud-review`), `unavailable` (deliberately vague: an automatic fraud flag no one has reviewed yet),
+         *     `hub_city_required`, `no_score`,
          *     `below_threshold` (raw score under `min_raw_score`), `already_registered` (for another allocation of the
          *     same show), or `named_as_guest` (someone named the fan as their +1 for it; `POST /events/{eventId}/guest-invite/decline`
          *     frees them). `raw_score`, `percentile`, and `hub_match` are the fan's
@@ -2560,8 +2561,8 @@ export interface paths {
         /**
          * Fraud reviews of my account, and my appeals
          * @description `on_hold` is true while a flag is `open` (under review) or `upheld`: the fan can't register for fan tickets.
-         *     An upheld flag, or an open one staff raised, also has the draw and returned seats pass them by; an open flag
-         *     raised by the automatic rules only blocks registering until staff uphold it. Each flag shows its reason category and status, never the
+         *     An upheld flag, or an open one staff raised, also has the draw and returned seats pass them by. A flag raised
+         *     by the automatic rules isn't shown here (or anywhere to the fan) until staff uphold it. Each flag shows its reason category and status, never the
          *     evidence or staff notes. `can_appeal` while the flag holds the fan and they haven't appealed it yet.
          */
         get: operations["getMyFraudReview"];
@@ -2605,7 +2606,8 @@ export interface paths {
         };
         /**
          * Fraud review queue
-         * @description `needs_action` (the default): open flags and flags with a pending appeal, oldest first. The other filters list
+         * @description `needs_action` (the default): open flags and flags with a pending appeal, those of fans in the soonest draw
+         *     first, then oldest first. The other filters list
          *     flags by status, newest first. Each flag comes with context for the decision: account age, the trust parts,
          *     live registrations, and tickets held. Flags with `source: rule` were raised by the automatic rules (every 6
          *     hours over the play history); their `evidence.rules` holds what each rule measured.
@@ -3304,7 +3306,7 @@ export interface components {
              * @description Stable machine-readable code.
              * @enum {string}
              */
-            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "named_as_guest" | "under_review" | "flag_open" | "appeal_unavailable" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "reservation_unavailable" | "trivia_answered" | "trivia_expired" | "prompt_closed" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_track_not_found" | "followers_only" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "spotify_no_device" | "spotify_premium_required" | "spotify_player_refused" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
+            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "named_as_guest" | "under_review" | "registration_unavailable" | "flag_open" | "appeal_unavailable" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "reservation_unavailable" | "trivia_answered" | "trivia_expired" | "prompt_closed" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_track_not_found" | "followers_only" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "spotify_no_device" | "spotify_premium_required" | "spotify_player_refused" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
             errors?: {
                 field?: string;
                 message?: string;
@@ -3383,6 +3385,11 @@ export interface components {
             appeal: components["schemas"]["FraudAppeal"] | null;
             /** @description Staff handle */
             appeal_decided_by: string | null;
+            /**
+             * Format: date-time
+             * @description When the fan could first see the flag; null for a rule flag staff haven't upheld (the fan doesn't know).
+             */
+            shown_to_fan_at: string | null;
             context: {
                 /** Format: date-time */
                 account_created_at: string;
@@ -3393,6 +3400,11 @@ export interface components {
                 live_registrations: number;
                 /** @description Tickets the fan holds for shows not yet started */
                 held_reservations: number;
+                /**
+                 * Format: date-time
+                 * @description When registration closes for the soonest draw the fan is in; review before then
+                 */
+                next_draw_closes_at: string | null;
             };
         };
         FraudFlagPage: {
@@ -4116,7 +4128,7 @@ export interface components {
             /** @description True if the fan can register now, or already has */
             eligible: boolean;
             /** @enum {string|null} */
-            reason?: "not_open" | "artist_not_active" | "under_review" | "hub_city_required" | "no_score" | "below_threshold" | "already_registered" | "named_as_guest" | null;
+            reason?: "not_open" | "artist_not_active" | "under_review" | "unavailable" | "hub_city_required" | "no_score" | "below_threshold" | "already_registered" | "named_as_guest" | null;
             min_raw_score: number | null;
             raw_score?: number | null;
             percentile?: number | null;
@@ -4153,7 +4165,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             /** @enum {string} */
-            kind: "draw_selected" | "draw_not_selected" | "seat_backfilled" | "ticket_delivered" | "presale" | "guest_named" | "fraud_hold" | "fraud_cleared" | "appeal_decided" | "staff_report" | "staff_review" | "staff_draw" | "staff_redaction" | "staff_show_changed" | "staff_appeal";
+            kind: "draw_selected" | "draw_not_selected" | "seat_backfilled" | "ticket_delivered" | "presale" | "guest_named" | "fraud_hold" | "fraud_cleared" | "appeal_decided" | "staff_report" | "staff_review" | "staff_draw" | "staff_redaction" | "staff_show_changed" | "staff_appeal" | "staff_flag_before_draw";
             title: string;
             body: string;
             /** @description App route to open, e.g. /tickets or /show/{id} */
@@ -8278,7 +8290,8 @@ export interface operations {
             };
             /**
              * @description No score for the artist, or below the threshold (`code: not_eligible`); or a fraud review holds the fan
-             *     (`code: under_review`, see `GET /me/fraud-review`). Every refusal is recorded in the eligibility audit.
+             *     (`code: under_review`, see `GET /me/fraud-review`), or an automatic flag no one has reviewed yet
+             *     (`code: registration_unavailable`, deliberately vague). Every refusal is recorded in the eligibility audit.
              */
             403: {
                 headers: {

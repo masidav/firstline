@@ -21,7 +21,8 @@ namespace FandomScore.Tests;
 /// <summary>
 /// Fraud review, appeals, and the eligibility audit (migration 0042): a flag holds a fan out of registering, the draw,
 /// and returned seats until it's cleared; the fan appeals once; every decision is in the audit log. Automatic
-/// detection (0043): an open rule flag only blocks registering until staff uphold it.
+/// detection (0043): an open rule flag only blocks registering until staff uphold it, and the fan doesn't know about
+/// it until then (0044).
 /// </summary>
 [Collection(PostgresCollection.Name)]
 public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifetime
@@ -310,9 +311,28 @@ public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifeti
             flag.GetProperty("source").GetString(), flag.GetProperty("reason").GetString(), flag.GetProperty("raised_by").ValueKind));
         Assert.Equal(150, flag.GetProperty("evidence").GetProperty("rules").GetProperty("rapid_plays").GetProperty("plays").GetInt32());
 
-        // Open rule flag: no new registrations...
+        // Staff hear about it before the draw; the fan learns nothing until a person reviews it.
+        Assert.Equal("rapid_bot", flag.GetProperty("user").GetProperty("handle").GetString());
+        Assert.Equal(JsonValueKind.Null, flag.GetProperty("shown_to_fan_at").ValueKind);
+        Assert.NotEqual(JsonValueKind.Null, flag.GetProperty("context").GetProperty("next_draw_closes_at").ValueKind);
+        var staffNotices = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/notifications", _staff), HttpStatusCode.OK);
+        Assert.Contains(staffNotices.GetProperty("items").EnumerateArray(), n => n.GetProperty("kind").GetString() == "staff_flag_before_draw");
+        var review = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/fraud-review", bot), HttpStatusCode.OK);
+        Assert.False(review.GetProperty("on_hold").GetBoolean());
+        Assert.Empty(review.GetProperty("flags").EnumerateArray());
+        Assert.Empty((await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/notifications", bot), HttpStatusCode.OK))
+            .GetProperty("items").EnumerateArray());
+        Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Post,
+            $"/v1/me/fraud-review/flags/{flag.GetProperty("id").GetString()}/appeal", bot, new { message = "?" })).StatusCode);
+
+        // Open rule flag: no new registrations, with a neutral reason...
+        var eligibility = await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/allocations/{second}/eligibility", bot), HttpStatusCode.OK);
+        Assert.Equal("unavailable", eligibility.GetProperty("reason").GetString());
         var blocked = await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{second}/registration", bot), HttpStatusCode.Forbidden);
-        Assert.Equal("under_review", blocked.GetProperty("code").GetString());
+        Assert.Equal("registration_unavailable", blocked.GetProperty("code").GetString());
+        var export = await (await SendAsync(HttpMethod.Get, "/v1/me/export", bot)).Content.ReadAsStringAsync();
+        Assert.DoesNotContain(flag.GetProperty("id").GetString()!, export, StringComparison.Ordinal);
+        Assert.DoesNotContain("flag_raised", export, StringComparison.Ordinal);
         // ...but the registration made before it stays in the draw (here it wins the one seat).
         await DrawAsync(allocationId);
         var mine = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/registrations", bot), HttpStatusCode.OK);
@@ -338,8 +358,22 @@ public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifeti
                 """);
         }
 
-        await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/fraud-flags/{flagId}/decision", _staff,
+        var bot2 = await TokenAsync("upheld_bot");
+        Assert.Empty((await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/fraud-review", bot2), HttpStatusCode.OK))
+            .GetProperty("flags").EnumerateArray());
+        var upheld = await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/fraud-flags/{flagId}/decision", _staff,
             new { decision = "uphold", note = "Checked: no human listens 24/7." }), HttpStatusCode.OK);
+        Assert.NotEqual(JsonValueKind.Null, upheld.GetProperty("shown_to_fan_at").ValueKind);
+
+        // Upheld by a person: now the fan is told, sees it, and can appeal; registering says under_review.
+        var notices = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/notifications", bot2), HttpStatusCode.OK);
+        Assert.Equal("fraud_hold", Assert.Single(notices.GetProperty("items").EnumerateArray()).GetProperty("kind").GetString());
+        var review = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/fraud-review", bot2), HttpStatusCode.OK);
+        Assert.True(review.GetProperty("on_hold").GetBoolean());
+        Assert.True(Assert.Single(review.GetProperty("flags").EnumerateArray()).GetProperty("can_appeal").GetBoolean());
+        var other2 = await AllocationAsync(tickets: 1);
+        Assert.Equal("under_review", (await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{other2}/registration", bot2),
+            HttpStatusCode.Forbidden)).GetProperty("code").GetString());
         await DrawAsync(allocationId);
 
         var mine = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/registrations", other), HttpStatusCode.OK);
