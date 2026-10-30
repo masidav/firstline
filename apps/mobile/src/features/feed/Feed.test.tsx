@@ -234,6 +234,31 @@ test('a prompt answer shows the prompt, the answer, and a way to all answers', a
   expect(screen.getByRole('button', { name: "Report Ben's post" })).toBeTruthy();
 });
 
+test('a failed feed load is shown with a Reload button, which tries again', async () => {
+  mockApi.GET.mockResolvedValueOnce({ error: { code: 'internal_error', title: 'Server error' }, response: { ok: false, status: 503 } })
+    .mockResolvedValueOnce(ok({ items: [photo], next_cursor: null, seed: 'abc' }));
+  render(<Feed />);
+
+  expect(screen.getByLabelText('Loading your feed')).toBeTruthy();
+  const reload = await screen.findByRole('button', { name: 'Reload feed' });
+  expect(screen.getByText('Server error')).toBeTruthy();
+  expect(screen.queryByLabelText('Loading your feed')).toBeNull();
+  expect(screen.queryByText(/Nothing yet/)).toBeNull();
+
+  fireEvent.press(reload);
+  expect(await screen.findByText('Front row!')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Reload feed' })).toBeNull();
+  expect(screen.queryByText('Server error')).toBeNull();
+  expect(mockApi.GET).toHaveBeenCalledTimes(2);
+});
+
+test('when the server cannot be reached, the feed says so', async () => {
+  mockApi.GET.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+  render(<Feed />);
+  expect(await screen.findByText(/Can't reach the server/)).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Reload feed' })).toBeTruthy();
+});
+
 test("tapping a fan's name opens their page", async () => {
   mockApi.GET.mockResolvedValue(ok({ items: [photo], next_cursor: null, seed: 'abc' }));
   render(<Feed />);

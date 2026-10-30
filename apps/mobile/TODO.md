@@ -12,8 +12,11 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       (`src/features/album-journal/journalQueue.ts`); details and verification in the album-journal TODO.*
 - [ ] Add accessibility labels, keyboard handling, and responsive layouts for mobile devices.
 - [ ] Handle API errors, network loss, expired sessions, and background/resume behavior.
-- [ ] Add component and screen tests using the existing test stack. *Plus browser end-to-end journeys since
-      2026-10-27 (`e2e/`, run in CI).*
+- [x] Add component and screen tests using the existing test stack. *Jest + `@testing-library/react-native` 13.3.3
+      (`jest-expo` preset), one `*.test.tsx` beside each screen, the API mocked at the generated client (`session.api`),
+      no network, no real timers. 2026-10-30: loading, empty, error-and-retry, and populated states for home, artist
+      search, settings, and reactions (the comments successor) added; `npm test` 51 suites, 327 tests, run by the CI job
+      "Fan app". Plus browser end-to-end journeys since 2026-10-27 (`e2e/`, run in CI).*
 - [ ] Verify iOS and Android builds and document required configuration. *Web build verified (CI and a Playwright
       WebKit run at iPhone size, 2026-10-18). iOS configured 2026-10-29: bundle ID `com.firstline.fandomscore`,
       icon and splash (`assets/`, drawn by `tools/dev/app-icons.mjs`), `app.config.ts` (Google scheme, EAS project id,
