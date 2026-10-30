@@ -44,7 +44,7 @@ API as UTC.
 | `src/pages/` | One file per page, plus `AllocationForm`. |
 | `src/lib/` | Time zones, money and CSV, artist names, `useLoad`. |
 | `src/ui/` | Shared components and the search picker. |
-| `e2e/` | Playwright journeys against the real API (`e2e/run.sh`). |
+| `e2e/` | Playwright journeys and the axe accessibility scan against the real API (`e2e/run.sh`). |
 
 ## Commands
 ```bash
@@ -70,10 +70,14 @@ e2e/run.sh             # journeys: throwaway database, migrations, seed, API, a 
 
 ## Tests
 - `src/**/*.test.ts(x)` (Vitest + Testing Library): time zones across daylight-saving changes, CSV, the shows list, the
-  draw button only for admins, CSV export, member management only for owners.
+  draw button only for admins, CSV export, member management only for owners. `src/accessibility.test.tsx` runs axe
+  (vitest-axe) on states the browser scan doesn't reach: validation errors, a failed draw, the server unreachable.
 - `e2e/promoter.spec.ts` (Playwright, in CI): a promoter creates a show and allocation, two fans register, the draw
   runs, results and export check out; an analyst can't change anything and another organization stays hidden; Google
   sign-in for a new promoter. The worker's draw is stood in for by the same database function.
+- `e2e/accessibility.spec.ts` (Playwright + `@axe-core/playwright`, in CI): every page the journeys visit, in the states
+  they reach (forms open, search results showing, registrations listed, the draw done with tickets held), scanned
+  against WCAG 2.0–2.2 A/AA and axe's best practices. Serious and critical violations fail; lesser ones print.
 
 ## Not yet
 An eligible-fan count before opening registration, reports beyond the CSV, and fan data sharing with consent.

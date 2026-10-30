@@ -49,11 +49,11 @@ export function Picker<T>({
     <div className="field">
       <Field label={label} placeholder={placeholder} value={query} onChange={(e) => setQuery(e.target.value)} />
       {results.length > 0 && (
-        <div className="picker" role="list" aria-label={`${label} results`}>
+        <ul className="picker" aria-label={`${label} results`}>
           {results.map((item) => (
-            <button key={keyOf(item)} type="button" role="listitem" onClick={() => onChange(item)}>{describe(item)}</button>
+            <li key={keyOf(item)}><button type="button" onClick={() => onChange(item)}>{describe(item)}</button></li>
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );

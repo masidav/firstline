@@ -1,6 +1,6 @@
 :root {
   --bg: #f6f7f9; --surface: #fff; --border: #d9dde3; --text: #16181d; --muted: #5d6573;
-  --accent: #5b4cdb; --accent-text: #fff; --danger: #c62f35; --good: #1d7a46; --warn: #9a6200;
+  --accent: #5b4cdb; --accent-text: #fff; --danger: #b0262c; --good: #1d7a46; --warn: #9a6200;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; color: var(--text); background: var(--bg);
   line-height: 1.45;
 }
@@ -11,7 +11,8 @@ h1 { font-size: 1.6rem; margin: 0 0 0.5rem; }
 h2 { font-size: 1.15rem; margin: 0; }
 .topbar { display: flex; align-items: center; gap: 1rem; padding: 0.75rem 1.5rem; background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .topbar .brand { font-weight: 700; color: var(--text); text-decoration: none; }
-.topbar nav { display: flex; gap: 1rem; flex: 1; flex-wrap: wrap; }
+.topbar nav { display: flex; gap: 1rem; flex: 1; flex-wrap: wrap; align-items: baseline; }
+.topbar h1 { display: inline; font-size: 1rem; margin: 0; }
 .topbar nav a[aria-current='page'] { font-weight: 700; text-decoration: none; }
 .page { max-width: 1100px; margin: 0 auto; padding: 1.5rem; display: grid; gap: 1rem; }
 .narrow { max-width: 460px; }
@@ -42,6 +43,6 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
 .status-allocation-cancelled, .status-draw-failed, .status-registration-withdrawn, .status-registration-not_selected { background: #fbe0e1; color: var(--danger); }
 .stats { display: flex; gap: 1.5rem; flex-wrap: wrap; }
 .stat strong { display: block; font-size: 1.4rem; }
-.picker { display: grid; gap: 0.25rem; max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; padding: 0.25rem; }
-.picker button { text-align: left; background: none; border: 0; padding: 0.35rem 0.5rem; border-radius: 4px; cursor: pointer; font: inherit; }
+.picker { display: grid; gap: 0.25rem; max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; padding: 0.25rem; margin: 0; list-style: none; }
+.picker button { width: 100%; text-align: left; background: none; border: 0; padding: 0.35rem 0.5rem; border-radius: 4px; cursor: pointer; font: inherit; }
 .picker button:hover, .picker button:focus { background: #eef0f6; }
