@@ -415,7 +415,13 @@ Details: [ADR 0002](docs/adr/0002-hosting-gcp-gke.md) · [Infrastructure](infras
 
 ## Phase 13 — UI testing and launch
 - [ ] Mobile component tests (Jest + React Native Testing Library) and end-to-end flows (Maestro) in CI.
-      *Web end-to-end journeys done 2026-10-27 (`apps/mobile/e2e`, Playwright, CI job "End-to-end journeys"): sign-up,
+      *Component and screen tests done 2026-10-30: `@testing-library/react-native` 13.3.3 on the `jest-expo` preset, one
+      `*.test.tsx` beside each screen, the API mocked at the generated client, no network or real timers; CI job "Fan
+      app" runs `npm test -- --ci`. Loading, empty, error-and-retry, and populated states for home (HomeScreen 17, Feed
+      12), artist search (ArtistSearch 9), settings (ProfileScreen 19: persistence and authorization), and reactions
+      (ReactionBar 5; comments were replaced by reactions). Verified: `npm test` 51 suites, 327 tests, `npm run typecheck`
+      clean. They found a taken handle shown twice on the profile page (fixed). Remaining: more Maestro flows.
+      Web end-to-end journeys done 2026-10-27 (`apps/mobile/e2e`, Playwright, CI job "End-to-end journeys"): sign-up,
       Google sign-in (stubbed Google), deep-link reloads, logging an album online and offline, registering for an
       allocation, sign-out, and account deletion, against the real API and a seeded database. Verified: 10 passed
       locally, and a reintroduced deep-link bug fails the reload journey. Native: since 2026-10-29 the workflow

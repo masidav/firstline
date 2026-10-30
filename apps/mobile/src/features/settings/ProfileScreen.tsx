@@ -131,7 +131,8 @@ export function ProfileScreen({ me }: { me: Me }) {
               bandUrl: e.fieldError('band_url'),
               instagram: e.fieldError('instagram_handle'),
               x: e.fieldError('x_handle'),
-              form: e.problem.errors ? undefined : errorMessage(e),
+              // A taken handle is already explained on its field; other problems without field errors go here.
+              form: e.problem.errors || e.code === 'handle_taken' ? undefined : errorMessage(e),
             }
           : { form: errorMessage(e) },
       );

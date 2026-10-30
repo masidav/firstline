@@ -9,7 +9,7 @@ const mockApi = { GET: jest.fn(), POST: jest.fn() };
 // Stable across renders, like the real context value.
 const mockSession = { api: mockApi };
 
-const mockState = { status: 'signedIn', me: { spotify: { connected: true } } };
+const mockState = { status: 'signedIn', me: { handle: 'fan_one', spotify: { connected: true } } };
 
 jest.mock('../../auth/SessionProvider', () => ({
   useSession: () => ({ session: mockSession, state: mockState }),
@@ -262,4 +262,66 @@ test('journal entries waiting to sync are announced above the feed', async () =>
   const { router } = jest.requireMock('expo-router');
   expect(router.push).toHaveBeenCalledWith('/journal');
   mockPendingLogs = [];
+});
+
+test('while your artists and the feed load, each shows a spinner, then the data', async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  mockApi.GET.mockImplementation(async (path: string) => {
+    await gate;
+    return path === '/me/scores' ? ok({ items: [score('Geese', 50, false)], next_cursor: null }) : ok({ items: [], next_cursor: null, seed: 'test' });
+  });
+  render(<HomeScreen />);
+
+  expect(screen.getByLabelText('Loading')).toBeTruthy();
+  expect(screen.getByLabelText('Loading your feed')).toBeTruthy();
+  expect(screen.queryByText(/None of the artists you listen to/)).toBeNull();
+
+  release();
+  expect(await screen.findByText('Geese')).toBeTruthy();
+  expect(await screen.findByText(/Nothing yet. Follow some fans/)).toBeTruthy();
+  expect(screen.queryByLabelText('Loading')).toBeNull();
+  expect(screen.queryByLabelText('Loading your feed')).toBeNull();
+});
+
+test('the header links and an artist row open their pages', async () => {
+  serve([], [], [score('Geese', 50, false)]);
+  render(<HomeScreen />);
+  const { router } = jest.requireMock('expo-router');
+
+  fireEvent.press(await screen.findByRole('button', { name: 'Open Geese' }));
+  expect(router.push).toHaveBeenCalledWith('/artist/id-Geese/albums');
+  for (const [label, href] of [['Tickets', '/tickets'], ['Journal', '/journal'], ['People', '/people'], ['Profile', '/profile']]) {
+    fireEvent.press(screen.getByRole('button', { name: label }));
+    expect(router.push).toHaveBeenCalledWith(href);
+  }
+});
+
+test("other fans' activity reaches home only through the feed, which the server filters by visibility", async () => {
+  // A followers-only log from a fan you follow: shown, and labelled. Private logs never leave the server (API
+  // tests), and the app asks for nothing per fan here: no journals, lists, or pages of other users.
+  const theirLog = {
+    type: 'album_log',
+    id: 'l1',
+    at: '2026-10-21T11:00:00Z',
+    user: { handle: 'fan_two', deleted: false, display_name: 'Ben' },
+    artist: { id: 'id-Geese', name: 'Geese', image_url: null },
+    following: true,
+    photo: null, grab_bag: null, concert: null, registration: null, stat: null,
+    log: { album: { id: 'al1', title: '3D Country', cover_url: null }, rating: 9, review: null, review_truncated: false, is_relisten: false, listened_on: '2026-10-20', visibility: 'followers' },
+  };
+  mockApi.GET.mockImplementation(async (path: string) =>
+    path === '/feed' ? ok({ items: [theirLog], next_cursor: null, seed: 'test' }) : ok({ items: [], next_cursor: null, unread_count: 0 }),
+  );
+  render(<HomeScreen />);
+
+  expect(await screen.findByRole('button', { name: 'Ben logged 3D Country by Geese' })).toBeTruthy();
+  expect(screen.getByText(/followers only/)).toBeTruthy();
+  expect(screen.getByRole('button', { name: "Report Ben's post" })).toBeTruthy();
+
+  await waitFor(() => expect(mockApi.GET).toHaveBeenCalledWith('/me/notifications', expect.anything()));
+  const paths = [...new Set(mockApi.GET.mock.calls.map(([path]) => path as string))].sort();
+  expect(paths).toEqual(['/artists', '/featured', '/feed', '/me/notifications', '/me/scores', '/me/trivia', '/prompts/today']);
 });

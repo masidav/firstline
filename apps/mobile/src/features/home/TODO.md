@@ -12,12 +12,21 @@ Use `- [x]` only after the task is implemented and verified.
 - [x] Home is one vertical scroll (2026-10-25): the feed (`features/feed`) is the list, with search, your artists, and
       Post a photo as its header; the feed hides while a search is typed. More loads on scroll; Shuffle reseeds.
       Verified: Jest (HomeScreen 11, Feed 7), Chrome at phone size.
-- [ ] Provide loading, empty, offline, and error states.
-- [ ] Link to artist search, journal, submissions, and profile areas as they become available.
-- [ ] Respect visibility and avoid showing private activity from other users.
-- [ ] Add screen tests for empty data, partial data, and navigation.
+- [x] Provide loading, empty, offline, and error states. (Verified 2026-10-30 by screen tests: spinners for your
+      artists and the feed while loading, the empty messages, a failed scores load with Try again, a failed feed load
+      with Reload feed, and the "Can't reach the server" message when the request itself fails. Offline journaling is
+      `features/album-journal`.)
+- [x] Link to artist search, journal, submissions, and profile areas as they become available. (Search is the box at
+      the top; Tickets, Journal, People, Profile buttons; artist rows open the artist's albums; camera opens Post a
+      photo. Tested 2026-10-30.)
+- [x] Respect visibility and avoid showing private activity from other users. (The server filters `GET /feed` by
+      visibility (API tests); the app shows other fans' activity only through it and labels followers-only posts. A
+      test pins the set of endpoints home calls, so a new per-fan source has to be reviewed. 2026-10-30.)
+- [x] Add screen tests for empty data, partial data, and navigation. (`HomeScreen.test.tsx`, 17 tests, 2026-10-30;
+      `Feed.test.tsx` 12.)
 
 ## Verification
-- [ ] Add or update automated tests.
-- [ ] Run the relevant tests and record actual results.
+- [x] Add or update automated tests. (`HomeScreen.test.tsx` 17, `Feed.test.tsx` 12, `ReactionBar.test.tsx` 5.)
+- [x] Run the relevant tests and record actual results. 2026-10-30: `npm test` 51 suites, 327 tests passed;
+      `npm run typecheck` clean.
 - [ ] Update the corresponding README and root project checklist.
