@@ -366,7 +366,10 @@ Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](servi
 - [ ] Primary ticketing integration (Ticketmaster, AXS, SeatGeek): reserve seats from the pool and hand off checkout.
 - [ ] Promoter web dashboard: set up allocations, monitor registration, export reports. *Built 2026-10-27
       (`apps/promoter-web`): shows and allocations in the show city's time zone, live registrations, the draw, tickets,
-      CSV export, members. Verified: Vitest 10, Playwright journeys 3 (in CI). No eligible-fan preview. Hosting on
+      CSV export, members. Verified: Vitest 10, Playwright journeys 3 (in CI). Eligible-fan preview added 2026-10-30
+      (`GET /v1/organizations/{id}/allocations/{id}/eligibility-preview`, counts only: fans with a score, how many clear
+      the threshold, local vs elsewhere, the same at other thresholds, against the tickets; shown on the allocation
+      page). Verified: EligibilityPreviewApiTests 2, Vitest 24. Hosting on
       beta configured 2026-10-28 (`promoters.beta.firstline.com`), not live yet: see Phase 12.*
 - [ ] First-party fan data sharing with artists/promoters, only with explicit fan consent.
 - [ ] Billing: per-event licence fee or take-rate for promoters; fan-side fee if adopted.

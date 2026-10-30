@@ -32,6 +32,17 @@ function api(role: 'owner' | 'admin' | 'analyst', allocationStatus = 'closed', d
     },
     'GET /organizations/{organizationId}/allocations/{allocationId}/selection': { allocation_id: 'al-1', queued_at: null, error: null, selection: null, ...draw },
     'GET /organizations/{organizationId}/allocations/{allocationId}/reservations': { items: [] },
+    'GET /organizations/{organizationId}/allocations/{allocationId}/eligibility-preview': {
+      allocation_id: 'al-1', tickets: 2, threshold: 1.5, threshold_is_default: false, scored_fans: 12, excluded: 1,
+      eligible: { threshold: 1.5, total: 7, local: 4, other: 3 },
+      alternatives: [
+        { threshold: 0.75, total: 10, local: 6, other: 4 },
+        { threshold: 1.5, total: 7, local: 4, other: 3 },
+        { threshold: 3, total: 3, local: 2, other: 1 },
+        { threshold: 6, total: 1, local: 1, other: 0 },
+      ],
+      computed_at: '2026-10-30T12:00:00Z',
+    },
     'POST /organizations/{organizationId}/allocations/{allocationId}/selection': { allocation_id: 'al-1', status: 'queued', queued_at: '2026-11-05T16:00:00Z', error: null, selection: null },
     'PUT /organizations/{organizationId}/members/{handle}': organization('owner'),
   });
@@ -77,6 +88,25 @@ test('analysts see the draw but cannot run it, and registrations export as CSV',
   const csv = await created.mock.calls[0]![0].text();
   expect(csv.split('\r\n')[0]).toBe('handle,status,local,plus_one,rank,seats,registered_at,withdrawn_at,reservation');
   expect(csv).toContain('fan_a,registered,true,true,');
+});
+
+test('the eligible-fan preview shows counts against the tickets, local fans apart, and other thresholds; fans are never named', async () => {
+  renderInOrganization(<AllocationPage />, 'shows/:eventId/allocations/:allocationId', '/o/org-1/shows/ev-1/allocations/al-1', api('admin', 'upcoming'));
+
+  const totals = await screen.findByLabelText('Eligible fan totals');
+  expect(within(totals).getAllByRole('strong').map((s) => s.textContent)).toEqual(['12', '7', '4', '3', '2']);
+  expect(screen.getByText(/3\.5 eligible fans per ticket/)).toBeInTheDocument();
+  expect(screen.getByText(/1 more have a score but can't register/)).toBeInTheDocument();
+  expect(screen.getByText(/threshold can be changed until registration opens/)).toBeInTheDocument();
+
+  const rows = within(screen.getByRole('table', { name: 'Other thresholds' })).getAllByRole('row').slice(1);
+  expect(rows.map((r) => within(r).getAllByRole('cell').map((c) => c.textContent))).toEqual([
+    ['0.75', '10', '6', '4', '5.0'],
+    ['1.5 (current)', '7', '4', '3', '3.5'],
+    ['3', '3', '2', '1', '1.5'],
+    ['6', '1', '1', '0', '0.5'],
+  ]);
+  expect(within(totals).queryByText(/@/)).not.toBeInTheDocument();
 });
 
 test('owners add members by handle with a role; admins only see the list', async () => {

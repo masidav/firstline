@@ -51,6 +51,14 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       racing registrations for one show, the draw waiting for an in-flight registration, two draws at once, and the
       stored seed repeating every rank.*
 
+- [x] Eligible-fan preview for promoters (2026-10-30): `GET /v1/organizations/{id}/allocations/{id}/eligibility-preview`
+      (analyst and up) returns counts only: fans with a score for the artist whom registration would let in today
+      (not deleted, not on fraud hold, a hub city set), how many clear `min_raw_score` (or the default publishing would
+      set), local fans apart from others, and the same counts at half, double, and four times the threshold, against the
+      seats offered. No new index: one pass over `user_artist_scores_rank_idx`. Verified: EligibilityPreviewApiTests 2
+      (above and below the threshold, hub and non-hub, held, deleted, and hub-less fans excluded, analyst reads,
+      non-member gets 404, draft default threshold, published threshold), full `dotnet test`.
+
 ## Verification
 - [x] Add or update automated tests for the behavior above. *AllocationConcurrencyTests 7, invariants (0033).*
 - [x] Run the relevant tests and record actual results. *2026-10-26: `dotnet test` (results in the commit), load test

@@ -3250,6 +3250,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/organizations/{organizationId}/allocations/{allocationId}/eligibility-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * How many fans could register, under this threshold and others
+         * @description Counts only, never a fan: fans with a score for the show's artist whom registration would let in today (not
+         *     deleted, not on fraud hold, a hub city set), how many clear the threshold, split into local fans (the show's
+         *     city is one of their hub cities; the draw puts them first) and others, and the same counts at a few other
+         *     thresholds so a promoter can see what changing `min_raw_score` would do before registration opens. Computed
+         *     from today's scores on every call, so it moves as fans listen; it isn't a forecast of who will register.
+         */
+        get: operations["getOrganizationEligibilityPreview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4294,6 +4321,34 @@ export interface components {
             seats_assigned: number;
             /** Format: date-time */
             ran_at: string;
+        };
+        /** @description How many fans could register for an allocation, as counts only (no fan identities, scores, or cities). */
+        EligibilityPreview: {
+            /** Format: uuid */
+            allocation_id: string;
+            /** @description Seats offered */
+            tickets: number;
+            /** @description `min_raw_score`, or the value publishing would set (a fan with two saved albums by the artist) */
+            threshold: number;
+            /** @description The allocation has no `min_raw_score` yet; `threshold` is what publishing would set */
+            threshold_is_default: boolean;
+            /** @description Fans with a score for the artist whom registration would let in today */
+            scored_fans: number;
+            /** @description Fans with a score who couldn't register (deleted */
+            excluded: number;
+            eligible: components["schemas"]["EligibilityCount"];
+            /** @description The same counts at other thresholds (half, double, and four times the threshold), lowest first; includes `eligible` */
+            alternatives: components["schemas"]["EligibilityCount"][];
+            /** Format: date-time */
+            computed_at: string;
+        };
+        /** @description Fans whose raw score is at least `threshold`. */
+        EligibilityCount: {
+            threshold: number;
+            total: number;
+            /** @description The show's city is one of their hub cities (the draw puts them first) */
+            local: number;
+            other: number;
         };
         EventPage: {
             items: components["schemas"]["Event"][];
@@ -10212,6 +10267,30 @@ export interface operations {
                             reservation: components["schemas"]["Reservation"];
                         }[];
                     };
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getOrganizationEligibilityPreview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                allocationId: components["parameters"]["AllocationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The eligible pool */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EligibilityPreview"];
                 };
             };
             404: components["responses"]["NotFound"];

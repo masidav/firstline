@@ -102,6 +102,13 @@ Every hub city has its IANA time zone (`cities.time_zone`, checked against Postg
 - Staff (`/v1/admin`, staff policy, until promoter organizations exist): create and edit shows, create and edit
   allocations (including `delivery_hours_before_show`), publish, cancel, delete drafts, queue the draw and read its state, list
   registrations in ranking order, and list who holds seats (`GET /admin/allocations/{id}/reservations`).
+- Promoters (`/v1/organizations/{id}`, members only, `AllocationEndpoints.Organizations.cs`): the same show and
+  allocation handlers for their own shows, registrations as handles and status only, and
+  `GET .../allocations/{id}/eligibility-preview`: counts only (never a fan) of fans with a score for the artist whom
+  registration would let in today (not deleted, not on fraud hold, a hub city set), how many clear the threshold
+  (`min_raw_score`, or `allocation_default_threshold()` for a draft without one), local fans apart from others, and the
+  same counts at half, double, and four times the threshold against the seats offered. One pass over
+  `user_artist_scores_rank_idx (artist_id, raw_score)`; computed on every call from today's scores.
 
 Locally, `tools/dev/allocations.py` creates a show with a published allocation as a dev staff user, and can close
 registration (`close`) and run the draw (`draw`).
