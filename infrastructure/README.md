@@ -196,17 +196,21 @@ Job's image is the same commit as the API.
   `app_settings` after the migrations on every deploy, so the file is the source of truth. Beta sets
   `engagement_cadence=daily` (trivia and prompts every day instead of Tuesdays and Thursdays, migration 0051); prod has
   no file and keeps the defaults.
-- **Demo data.** An overlay with a `seed` file (beta: `--fans 200 --artists 8 --shows 10 --seed 1`) gets the dev
-  seed (`tools/dev/seed.py`, "Cloud demo data") written through `db-shell.sh` right after the migrations: 200 fake
-  fans with scores, logs, follows, and grab bags, 8 made-up artists, 10 shows with allocations in every state, and a
+- **Demo data.** An overlay with a `seed` file (beta: `--fans 200 --artists 8 --shows 10 --seed 1 --demo-fan ...`)
+  gets the dev seed (`tools/dev/seed.py`, "Cloud demo data") written through `db-shell.sh` right after the migrations:
+  200 fake fans with scores, logs, follows, and grab bags, 8 artists, 10 shows with allocations in every state, and a
   `dev_staff` account nobody can sign in as (dev sign-in is off). The SQL is a no-op once the seed is present, so it
-  is written once and survives later deploys. `--demo-fan handle:email` entries (beta: `secondfan`) add accounts for
-  real people: hub cities, follows both ways, signals and scores for every seed artist, and album logs, so the feed
-  is full. The person claims the account at their first Google sign-in with that email (no handle step); if they
-  already signed up with it, their existing account is furnished instead, under its own handle. Each demo fan is set
-  up once (skipped when it already follows seeded fans), so more can be added to a seeded environment. To start over, delete the seed rows by hand; to stop seeding, delete
-  the file. The made-up artists make the weekly catalog refresh log one given-up job each, which the
-  `worker_jobs_given_up` alert reports. prod must never have a `seed` file.
+  is written once and survives later deploys. The artists are real ones from Spotify (Radiohead, Geese, Phoebe
+  Bridgers, ... in `seed.py` `REAL_ARTISTS`) when the workflow can read `Spotify__ClientSecret` (the deploy identity
+  has `secretAccessor` on that one secret, Terraform `deploy_reads_spotify`); otherwise they are made up, which makes
+  the weekly catalog refresh log one given-up job each (the `worker_jobs_given_up` alert reports it).
+  `--demo-fan handle:email` entries (beta: `secondfan`) add accounts for real people: hub cities, follows both ways,
+  signals and scores for every seed artist, and album logs, so the feed is full. The person claims the account at
+  their first Google sign-in with that email (no handle step); if they already signed up with it, their existing
+  account is furnished instead, under its own handle. Each demo fan is set up once (skipped when it already follows
+  seeded fans), so more can be added to a seeded environment. To start over (for example to switch from made-up to
+  real artists), run `infrastructure/k8s/db-wipe.sh beta` (drops everything the app user owns, accounts included)
+  and deploy again; to stop seeding, delete the file. prod must never have a `seed` file.
 - **Config change without a code change.** Edit the overlay and run `deploy.sh` with the current SHA. The
   ConfigMap name carries a content hash, so pods restart with the new values.
 - **Secret rotation.** Add a new secret version; restart the Deployment (`kubectl rollout restart deployment/api

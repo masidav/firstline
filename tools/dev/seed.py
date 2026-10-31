@@ -188,7 +188,7 @@ def fake_catalog(count, rng, now):
 
 def spotify_credentials(root):
     """(client id, client secret) from the environment, else from the repo's .env; None when either is missing."""
-    values = {key: os.environ.get(key, "") for key in ("Spotify__ClientId", "Spotify__ClientSecret")}
+    values = {key: os.environ.get(key, "").strip() for key in ("Spotify__ClientId", "Spotify__ClientSecret")}
     env_file = os.path.join(root, ".env")
     if not all(values.values()) and os.path.exists(env_file):
         with open(env_file, encoding="utf-8") as handle:
@@ -604,24 +604,26 @@ BEGIN
   ON CONFLICT DO NOTHING;
   INSERT INTO user_artist_signals (user_id, artist_id, liked_tracks, playlist_tracks, distinct_albums, top_artist_rank, recent_plays, synced_at)
   SELECT v_id, a.id, 14, 6, 3, row_number() OVER (ORDER BY a.name)::smallint, 45, now()
-    FROM artists a WHERE a.spotify_artist_id LIKE 'seed:%' AND a.status = 'active'
+    FROM artists a JOIN artist_baselines b ON b.artist_id = a.id WHERE b.proxy_metrics->>'source' = 'seed' AND a.status = 'active'
   ON CONFLICT DO NOTHING;
   INSERT INTO album_logs (user_id, album_id, rating, listened_on, created_at)
   SELECT v_id, id, 7 + n % 4, current_date - n * 9, now() - n * interval '9 days'
     FROM (SELECT al.id, row_number() OVER ()::int AS n FROM albums al JOIN artists a ON a.id = al.artist_id
-           WHERE a.spotify_artist_id LIKE 'seed:%' ORDER BY random() LIMIT 6) picked;
+           JOIN artist_baselines b ON b.artist_id = a.id
+           WHERE b.proxy_metrics->>'source' = 'seed' ORDER BY random() LIMIT 6) picked;
   INSERT INTO user_artist_scores (user_id, artist_id, raw_score, percentile, is_estimated, baseline_weight, breakdown)
   SELECT user_id, artist_id, raw_score, pct, false, 0, '{{"source": "seed", "demo": true}}'
     FROM (SELECT user_id, artist_id, raw_score,
                  round(100.0 * (rank() OVER (PARTITION BY artist_id ORDER BY raw_score) - 1
                                 + 0.5 * count(*) OVER (PARTITION BY artist_id, raw_score))
                        / count(*) OVER (PARTITION BY artist_id), 2) AS pct
-            FROM v_raw_scores WHERE artist_id IN (SELECT id FROM artists WHERE spotify_artist_id LIKE 'seed:%')) r
+            FROM v_raw_scores WHERE artist_id IN (SELECT artist_id FROM artist_baselines WHERE proxy_metrics->>'source' = 'seed')) r
    WHERE user_id = v_id
   ON CONFLICT (user_id, artist_id) DO UPDATE
     SET raw_score = EXCLUDED.raw_score, percentile = EXCLUDED.percentile, is_estimated = false, baseline_weight = 0,
         breakdown = EXCLUDED.breakdown;
-  PERFORM request_artist_rescore(id) FROM artists WHERE spotify_artist_id LIKE 'seed:%' AND status = 'active';
+  PERFORM request_artist_rescore(a.id) FROM artists a JOIN artist_baselines b ON b.artist_id = a.id
+   WHERE b.proxy_metrics->>'source' = 'seed' AND a.status = 'active';
   RAISE NOTICE 'demo fan {handle} is set up';
 END $$;"""
 

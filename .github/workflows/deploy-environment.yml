@@ -104,6 +104,21 @@ jobs:
           curl -fsSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.6.0/kustomize_v5.6.0_linux_amd64.tar.gz" \
             | sudo tar -xz -C /usr/local/bin kustomize
 
+      # The demo seed (deploy.sh) uses real artists from Spotify when it has the client secret. Reading it needs the
+      # deploy identity to have secretAccessor on Spotify__ClientSecret (Terraform); until then, or while the secret
+      # is the one-space placeholder, the seed uses made-up artists.
+      - name: Spotify client secret for the demo seed
+        if: steps.state.outputs.state == 'on' && hashFiles(format('infrastructure/k8s/overlays/{0}/seed', inputs.environment)) != ''
+        run: |
+          secret="$(gcloud secrets versions access latest --secret Spotify__ClientSecret --project "${{ vars.GCP_PROJECT_ID }}" 2>/dev/null | tr -d '[:space:]' || true)"
+          if [ -n "$secret" ]; then
+            echo "::add-mask::$secret"
+            echo "Spotify__ClientSecret=$secret" >> "$GITHUB_ENV"
+            echo "Found: the seed will use real artists."
+          else
+            echo "Not readable or not set: the seed will use made-up artists."
+          fi
+
       - name: Migrate and roll out
         if: steps.state.outputs.state == 'on'
         env:

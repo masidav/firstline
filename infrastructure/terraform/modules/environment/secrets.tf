@@ -31,3 +31,12 @@ resource "google_secret_manager_secret_iam_member" "readers" {
   role      = "roles/secretmanager.secretAccessor"
   member    = google_service_account.workload[each.value.workload].member
 }
+
+# The deploy identity reads the Spotify client secret so the demo seed (infrastructure/k8s/deploy.sh) can fetch real
+# artists from Spotify on the GitHub runner. It is the only application secret the deployer can read.
+resource "google_secret_manager_secret_iam_member" "deploy_reads_spotify" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.app["Spotify__ClientSecret"].secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = google_service_account.deploy.member
+}

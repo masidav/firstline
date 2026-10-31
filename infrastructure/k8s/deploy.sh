@@ -77,8 +77,14 @@ fi
 # is a no-op once the seed is present, so this runs every deploy and writes once. prod has no such file.
 if [ -f "${overlay}/seed" ]; then
   echo "== Demo data ($(tr -d '\n' < "${overlay}/seed"))"
-  # shellcheck disable=SC2046 # the file holds separate arguments
-  python3 "${root}/tools/dev/seed.py" --sql --fake --if-absent --no-photos $(cat "${overlay}/seed") \
+  # Real artists from Spotify when the workflow found the client secret (Spotify__ClientSecret in the environment);
+  # the client id is the overlay's. Otherwise made-up ones.
+  Spotify__ClientId="$(sed -n 's/^ *- Spotify__ClientId=//p' kustomization.yaml | tr -d '[:space:]')"
+  export Spotify__ClientId
+  artists=--fake
+  if [ -n "${Spotify__ClientSecret:-}" ] && [ -n "$Spotify__ClientId" ]; then artists=; echo "   artists: real, from Spotify"; else echo "   artists: made up (no Spotify credentials here)"; fi
+  # shellcheck disable=SC2046,SC2086 # the file holds separate arguments; $artists is one flag or nothing
+  python3 "${root}/tools/dev/seed.py" --sql $artists --if-absent --no-photos $(cat "${overlay}/seed") \
     | "${here}/db-shell.sh" "$environment"
 fi
 
