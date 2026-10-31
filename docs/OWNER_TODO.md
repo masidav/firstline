@@ -27,37 +27,30 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   gcloud container clusters get-credentials fandomscore-beta --region us-central1
   ```
 
-- [ ] **3. Apply Terraform on beta.** This adds the two web certificates.
+- [x] **3. Apply Terraform on beta.** Applied 2026-10-31: 11 added, 5 changed, 5 destroyed, as planned (the two web
+  certificates, and the redaction service account taking over bucket and secret access from the worker per commit
+  d75d4af). Terraform 1.17.1 and kubectl 1.37.2 live in `~/.local/bin`; `terraform.tfvars` is filled in (gitignored).
+  A re-plan still shows one cosmetic in-place change to the monitoring dashboard: the API adds default
+  `targetAxis`/`xPos`/`yPos` values the repo's JSON omits. Harmless; Claude can add the defaults to the JSON later.
   ```bash
   cd infrastructure/terraform/envs/beta
-  cp terraform.tfvars.example terraform.tfvars   # fill in billing_account_id and alert_email
-  terraform init -backend-config="bucket=project-ef36a8a9-d958-4163-b4c-tfstate"
-  terraform plan
+  terraform plan        # re-run after any change under infrastructure/terraform
   terraform apply
   ```
-  Done so far (2026-10-31): Terraform 1.17.1 and kubectl 1.37.2 are installed in `~/.local/bin`, `terraform.tfvars`
-  is filled in, `terraform init` ran, and Claude reviewed the plan. Only `terraform apply` is left; it must be run
-  by you (Claude's tooling blocks infrastructure applies). The reviewed plan is **11 to add, 5 to change, 5 to
-  destroy**, all expected:
-  - add: the two web certificates (DNS authorization, certificate, map entry each), the redaction service
-    account's Secret Manager reads and bucket roles;
-  - destroy: the worker's bucket roles and the redaction account's old roles, replaced by the adds above (commit
-    d75d4af moved redaction into its own Deployment);
-  - change: log metrics, the redaction-overdue alert, and the dashboard now also watch the `redaction` container.
-  Nothing is replaced. If the plan differs from this, stop and send it to Claude.
 
-- [ ] **4. Create the DNS records** in the firstline.com zone in Akamai Edge DNS. Still in `envs/beta`:
-  ```bash
-  terraform output -json environment | jq '{ip: .api_ip_address, api: .certificate_dns_record, web: .web_certificate_dns_records}'
-  ```
+- [ ] **4. Create the DNS records** in the firstline.com zone in Akamai Edge DNS. All six, exactly as below (values
+  from `terraform output -json environment` on 2026-10-31). Don't touch the apex or `www`.
+
   | Type | Name | Value |
   | --- | --- | --- |
   | A | `api.beta.firstline.com` | `136.81.191.137` |
   | A | `app.beta.firstline.com` | `136.81.191.137` |
   | A | `promoters.beta.firstline.com` | `136.81.191.137` |
-  | CNAME | each `name` in the output's `api` and `web` | its `data` |
+  | CNAME | `_acme-challenge.api.beta.firstline.com` | `c2e09f62-47fd-4bc5-8760-266b26d04d23.1.authorize.certificatemanager.goog.` |
+  | CNAME | `_acme-challenge.app.beta.firstline.com` | `90ffe718-0327-4d23-a261-ff7a4383a812.9.authorize.certificatemanager.goog.` |
+  | CNAME | `_acme-challenge.promoters.beta.firstline.com` | `115b4f6c-4d31-4b93-8d52-c722adf10763.17.authorize.certificatemanager.goog.` |
 
-  Each certificate turns `ACTIVE` within about an hour of its CNAME resolving:
+  All three certificates are `PROVISIONING` until their CNAME resolves, then turn `ACTIVE` within about an hour:
   ```bash
   gcloud certificate-manager certificates list --format='table(name.basename(), managed.domains.list(), managed.state)'
   ```
