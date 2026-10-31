@@ -48,7 +48,7 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   gcloud certificate-manager certificates list --format='table(name.basename(), managed.domains.list(), managed.state)'
   ```
 
-- [ ] **5. Google sign-in.** Cloud console, APIs & Services, Credentials, the web client
+- [x] **5. Google sign-in.** Done 2026-10-31. Cloud console, APIs & Services, Credentials, the web client
   `494880048811-14ch6rdq...`:
   - Authorized JavaScript origins: `https://app.beta.firstline-5730kl.com` and `https://promoters.beta.firstline-5730kl.com`.
   - Authorized redirect URIs: `https://app.beta.firstline-5730kl.com/google-callback` and
