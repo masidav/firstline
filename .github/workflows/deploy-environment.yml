@@ -1,5 +1,7 @@
 # Reusable deploy of one environment (called by deploy.yml). Builds and pushes the images at the commit SHA,
-# or copies them from another environment's registry, then runs infrastructure/k8s/deploy.sh.
+# or copies them from another environment's registry, then runs infrastructure/k8s/deploy.sh. When the file
+# infrastructure/k8s/overlays/<environment>/state says "off" it runs infrastructure/k8s/shutdown.sh instead
+# (set-state.sh writes and pushes that file).
 name: Deploy environment
 
 on:
@@ -39,6 +41,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - id: state
+        name: Desired state
+        run: |
+          file="infrastructure/k8s/overlays/${{ inputs.environment }}/state"
+          state="$(tr -d '[:space:]' < "$file")"
+          case "$state" in
+            on|off) ;;
+            *) echo "::error::${file} must say 'on' or 'off', not '${state}'"; exit 1 ;;
+          esac
+          echo "state=${state}" >> "$GITHUB_OUTPUT"
+          echo "${{ inputs.environment }} is '${state}' (${file})"
+
       - id: repository
         run: echo "image_repository=${IMAGE_REPOSITORY}" >> "$GITHUB_OUTPUT"
 
@@ -56,11 +70,11 @@ jobs:
         run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
 
       - name: Build and push images
-        if: inputs.promote_from == ''
+        if: steps.state.outputs.state == 'on' && inputs.promote_from == ''
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push api, worker, migrate, web, promoter-web
-        if: inputs.promote_from == ''
+        if: steps.state.outputs.state == 'on' && inputs.promote_from == ''
         run: |
           for target in api worker migrate web promoter-web; do
             docker buildx build --target "$target" --push \
@@ -69,11 +83,11 @@ jobs:
           done
 
       - name: Copy images from ${{ inputs.promote_from }}
-        if: inputs.promote_from != ''
+        if: steps.state.outputs.state == 'on' && inputs.promote_from != ''
         uses: imjasonh/setup-crane@v0.4
 
       - name: Copy images by digest
-        if: inputs.promote_from != ''
+        if: steps.state.outputs.state == 'on' && inputs.promote_from != ''
         run: |
           for target in api worker migrate web promoter-web; do
             crane copy "${{ inputs.promote_from }}/${target}:${TAG}" "${IMAGE_REPOSITORY}/${target}:${TAG}"
@@ -91,6 +105,11 @@ jobs:
             | sudo tar -xz -C /usr/local/bin kustomize
 
       - name: Migrate and roll out
+        if: steps.state.outputs.state == 'on'
         env:
           SKIP_HEALTH_CHECK: ${{ inputs.skip_health_check && '1' || '0' }}
         run: infrastructure/k8s/deploy.sh "${{ inputs.environment }}" "$TAG"
+
+      - name: Shut down (state is off)
+        if: steps.state.outputs.state == 'off'
+        run: infrastructure/k8s/shutdown.sh "${{ inputs.environment }}"

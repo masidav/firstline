@@ -60,7 +60,7 @@ export function SignInScreen({ initialCredential = null }: { initialCredential?:
 
   return (
     <Screen>
-      <Title>Fandom Score</Title>
+      <Title>FirstLine</Title>
       <Body muted>Prove you're a real fan. Get first access to fair, face-value tickets.</Body>
       {credential ? (
         <FinishSignIn credential={credential} onCancel={() => setCredential(null)} />

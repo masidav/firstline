@@ -59,7 +59,9 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   rolled out fine but failed its one-minute health check while the recreated Gateway was still provisioning; commit
   a438523 waits up to 10 minutes, and the next push deployed green). About 12 minutes after the Gateway appeared,
   the API, the fan app, and the promoter dashboard all answered over HTTPS with Google-issued certificates.
-  Every push to `main` now deploys beta. All three certificates
+  Every push to `main` now deploys beta. To pause beta while nobody is testing (it costs money idle):
+  `infrastructure/k8s/set-state.sh beta off`; `... beta on` brings it back in about 15 minutes
+  (`infrastructure/README.md`, "Turning an environment off and on"). All three certificates
   were `ACTIVE` by 2026-10-31 evening, but beta was torn down on 2026-10-27 (api and worker scaled to 0, Gateway and
   load balancer gone), so `https://` on the hostnames fails until this deploy recreates the Gateway.
   ```bash

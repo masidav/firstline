@@ -30,7 +30,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
 
   const expo: ExpoConfig = {
     ...config,
-    name: config.name ?? 'Fandom Score',
+    name: config.name ?? 'FirstLine',
     slug: config.slug ?? 'fandom-score',
     scheme: schemes,
     ios: {

@@ -54,7 +54,7 @@ export function SignInPage({ initialCredential }: { initialCredential?: Credenti
 
   return (
     <main className="page narrow">
-      <h1>Fandom Score for promoters</h1>
+      <h1>FirstLine for promoters</h1>
       <p className="muted">Run fan allocations for your shows: face-value tickets for the artist's verified top fans.</p>
       {needsHandle && credential ? (
         <form className="card" onSubmit={(e) => { e.preventDefault(); void submit(credential, handle.trim()); }}>

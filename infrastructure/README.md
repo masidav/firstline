@@ -199,6 +199,22 @@ Job's image is the same commit as the API.
   `Spotify__PreviousTokenKeys` as a secret (`gcloud secrets create`), grant the api and worker identities access,
   add it to both `SecretProviderClass` lists, deploy, and remove it after every user has synced.
 
+### Turning an environment off and on
+
+Beta costs money while it idles (Autopilot pods, the load balancer, Cloud SQL). Its desired state lives in git, in
+`infrastructure/k8s/overlays/beta/state` (`on` or `off`), and the Deploy workflow reconciles it on every push:
+
+```bash
+infrastructure/k8s/set-state.sh beta off   # commits "beta off" and pushes
+infrastructure/k8s/set-state.sh beta on    # commits "beta on" and pushes
+```
+
+`off` runs `infrastructure/k8s/shutdown.sh`: every Deployment goes to zero replicas and the Gateway is deleted, which
+removes the load balancer. Data, config, secrets, certificates, DNS, and Cloud SQL stay (stopping Cloud SQL is a
+manual `gcloud sql instances patch --activation-policy NEVER`, not done here). Pushes while the state is `off` still
+run CI but skip the image build and rollout. `on` is an ordinary deploy; a recreated Gateway needs about 5 minutes
+before HTTPS answers and about 15 before the web apps' backends are healthy, which `deploy.sh` waits for.
+
 ## On-sale traffic
 
 The HPA scales the API on CPU but reacts in minutes; registration windows open in seconds. Before a scheduled
