@@ -163,6 +163,8 @@ Details: [Scoring API](services/api/src/features/scoring/TODO.md) · [Scoring wo
       compared, whether picks earn points, and what results fans see. Playing it adds a little to the overall trust
       score and fan level (above).
 - [x] Trivia and prompts on a weekly cadence instead of daily (requested 2026-10-26): trivia on Tuesdays, prompts on
+      Thursdays. *Beta runs them daily since 2026-10-31 for demos (`app_settings.engagement_cadence`, migration 0051,
+      set from `infrastructure/k8s/overlays/beta/settings`); prod stays weekly.* Original note:
       Thursdays (UTC). *Done 2026-10-27 (migration 0034): `trivia_week_day()` and `prompt_week_day()`; the API and app
       say "this week's" and when the next one comes; staff schedule prompts by Thursday. Verified: `dotnet test`
       317/317, app Jest 260/260, dev seed.*

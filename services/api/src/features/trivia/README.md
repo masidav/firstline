@@ -1,6 +1,8 @@
 # Weekly trivia API
 
-Migrations 0022, 0024, and 0034 (weekly since 2026-10-27). One question a week per fan, out on Tuesdays (UTC) and
+Migrations 0022, 0024, 0034 (weekly since 2026-10-27), and 0051 (`app_settings.engagement_cadence`: `weekly`, the
+default, or `daily`, which beta uses so demos aren't stuck waiting; every rule below goes through `trivia_week_day()`,
+so "week" reads as "day" there). One question a week per fan, out on Tuesdays (UTC) and
 open until the fan answers it, even past its week; then its results show until the next Tuesday (migration 0035,
 `current_trivia_question()`; the `day` columns hold the Tuesday a question came out), about one of their active scored
 artists. Fans of the same artist share the week's question (`trivia_daily_questions`, made from the stored catalog by the

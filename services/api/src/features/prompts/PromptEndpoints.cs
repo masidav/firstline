@@ -40,12 +40,11 @@ public static class PromptEndpoints
         bool Mine, bool Following);
 
     /// <summary><c>FollowingAnswers</c>: up to three answers from people the caller follows, once the caller has answered.</summary>
-    /// <summary>This week's prompt (prompts come out on Thursdays, UTC, and stay open until the next one).</summary>
-    public sealed record PromptToday(Prompt Prompt, PromptAnswer? MyAnswer, IReadOnlyList<PromptAnswer> FollowingAnswers)
-    {
-        /// <summary>The next Thursday.</summary>
-        public DateOnly NextPromptOn => Prompt.Day.AddDays(7);
-    }
+    /// <summary>
+    /// The current prompt: prompts come out on Thursdays (UTC) and stay open until the next one, or every day where
+    /// app_settings.engagement_cadence is 'daily' (migration 0051). <c>NextPromptOn</c>: when the next one comes out.
+    /// </summary>
+    public sealed record PromptToday(Prompt Prompt, PromptAnswer? MyAnswer, IReadOnlyList<PromptAnswer> FollowingAnswers, DateOnly NextPromptOn);
 
     public sealed record AnswerPage(IReadOnlyList<PromptAnswer> Items, string? NextCursor);
 
@@ -181,7 +180,7 @@ public static class PromptEndpoints
         return Results.Ok(new AnswersWithPrompts([.. rows.Select(r => new AnswerWithPrompt(ToAnswer(r), prompts[r.PromptId].Text, prompts[r.PromptId].Day))]));
     }
 
-    // Staff: the last week and the next four, each day's prompt or none yet (a library prompt is chosen on the day).
+    // Staff: the last period and the next eight weeks, each release day's prompt or none yet (a library prompt is chosen on the day).
     private static async Task<IResult> ListForStaffAsync(NpgsqlDataSource db, CancellationToken cancellationToken)
     {
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
@@ -201,14 +200,15 @@ public static class PromptEndpoints
         }
 
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
-        if (date.DayOfWeek != DayOfWeek.Thursday)
+        // A release day: a Thursday on the weekly cadence, any day on the daily one (migration 0051).
+        if (!await connection.ExecuteScalarAsync<bool>("SELECT prompt_week_day(@date) = @date", new { date }))
         {
             throw ApiProblemException.Validation(new FieldError("day", "Prompts come out on Thursdays: pick a Thursday."));
         }
 
         if (date < await connection.ExecuteScalarAsync<DateOnly>("SELECT prompt_week_day()"))
         {
-            throw ApiProblemException.Validation(new FieldError("day", "Schedule this week's Thursday or a later one."));
+            throw ApiProblemException.Validation(new FieldError("day", "Schedule the current prompt's day or a later one."));
         }
 
         try
@@ -260,7 +260,8 @@ public static class PromptEndpoints
                  ORDER BY pa.created_at DESC, pa.id LIMIT 3
                  """,
                 new { promptId, me })).ToList();
-        return new PromptToday(prompt, mine is null ? null : ToAnswer(mine), [.. following.Select(ToAnswer)]);
+        var next = await connection.ExecuteScalarAsync<DateOnly>("SELECT prompt_next_day(@day)", new { day = prompt.Day });
+        return new PromptToday(prompt, mine is null ? null : ToAnswer(mine), [.. following.Select(ToAnswer)], next);
     }
 
     private static async Task RequireOpenAsync(NpgsqlConnection connection, Guid promptId)

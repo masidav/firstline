@@ -37,9 +37,10 @@ public static class TriviaEndpoints
     public sealed record TriviaResults(int Answered, int Right, int PercentRight, IReadOnlyList<SubmissionEndpoints.UserRef> FollowingRight);
 
     /// <summary>
-    /// The fan's question (trivia comes out on Tuesdays, UTC): an unanswered one stays until it's answered, even past its
-    /// week; an answered one shows its results until the next Tuesday (migration 0035). <c>Question</c> is null when the
-    /// fan has no artist with enough catalog to ask about yet. <c>NextQuestionOn</c>: the next Tuesday.
+    /// The fan's question (trivia comes out on Tuesdays, UTC, or every day where app_settings.engagement_cadence is
+    /// 'daily'; migration 0051): an unanswered one stays until it's answered, even past its period; an answered one shows
+    /// its results until the next question comes out (migration 0035). <c>Question</c> is null when the fan has no artist
+    /// with enough catalog to ask about yet. <c>NextQuestionOn</c>: when the next question comes out.
     /// </summary>
     public sealed record TriviaToday(TriviaQuestion? Question, DateOnly NextQuestionOn);
 
@@ -49,7 +50,7 @@ public static class TriviaEndpoints
     {
         var me = user.UserId();
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
-        var next = await connection.ExecuteScalarAsync<DateOnly>("SELECT trivia_week_day() + 7");
+        var next = await connection.ExecuteScalarAsync<DateOnly>("SELECT trivia_next_day()");
         var existing = await LoadTodayAsync(connection, me);
         if (existing is not null)
         {
@@ -82,6 +83,7 @@ public static class TriviaEndpoints
 
         var me = user.UserId();
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        var next = await connection.ExecuteScalarAsync<DateOnly>("SELECT trivia_next_day()");
         await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))
         {
             try
@@ -94,9 +96,9 @@ public static class TriviaEndpoints
                 throw e.MessageText["trivia blocked: ".Length..] switch
                 {
                     "answered" => new ApiProblemException(StatusCodes.Status409Conflict, "trivia_answered", "Already answered",
-                        "You've answered this question. A new one comes out on Tuesday."),
+                        $"You've answered this question. The next one comes out on {next:yyyy-MM-dd}."),
                     "expired" => new ApiProblemException(StatusCodes.Status409Conflict, "trivia_expired", "Question expired",
-                        "That was another week's question. This week's is waiting."),
+                        "That question has expired. The current one is waiting."),
                     "choice" => ApiProblemException.Validation(new FieldError("choice", "Pick one of the options.")),
                     _ => new ApiProblemException(StatusCodes.Status404NotFound, "not_found", "Not found", "No question of yours has this id."),
                 };
@@ -160,7 +162,7 @@ public static class TriviaEndpoints
         return new TriviaResults(answered, right, answered == 0 ? 0 : (int)Math.Round(100.0 * right / answered), [.. following]);
     }
 
-    // This week's shared question for one of the fan's active scored artists: the one another fan already started for
+    // The current shared question for one of the fan's active scored artists: the one another fan already started for
     // that artist, or a new one made from the catalog (the first insert wins). Artists are tried in random order;
     // null when none has enough catalog.
     private static async Task<Guid?> SharedQuestionAsync(NpgsqlConnection connection, Guid me)

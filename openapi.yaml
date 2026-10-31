@@ -1773,7 +1773,8 @@ paths:
       operationId: getTodaysTrivia
       summary: This week's music trivia
       description: |
-        One question a week about one of the fan's scored artists: trivia comes out on Tuesdays (UTC). A question stays
+        One question a week about one of the fan's scored artists: trivia comes out on Tuesdays (UTC), or every day where
+        the environment runs trivia daily (beta, for demos). A question stays
         the fan's until they answer it, even past its week; once answered, it shows with its results until the next
         Tuesday (`next_question_on`), when a new one comes (decided 2026-10-27). It is shared by the artist's fans that week (made from the album
         catalog by the first who asks). Once answered, `results` names up to two people the fan follows who
@@ -1791,7 +1792,7 @@ paths:
                 properties:
                   question:
                     oneOf: [{$ref: '#/components/schemas/TriviaQuestion'}, {type: 'null'}]
-                  next_question_on: {type: string, format: date, description: The next Tuesday.}
+                  next_question_on: {type: string, format: date, description: When the next question comes out (the next Tuesday; the next day where the environment runs trivia daily).}
   /me/trivia/{questionId}/answer:
     parameters:
       - {name: questionId, in: path, required: true, schema: {type: string, format: uuid}}
@@ -1874,7 +1875,8 @@ paths:
       summary: This week's music prompt
       description: |
         One open question a week for everyone: prompts come out on Thursdays (UTC) and stay open until the next Thursday
-        (`next_prompt_on`), from staff or the built-in library, for example "What's your best
+        (`next_prompt_on`), or every day where the environment runs prompts daily (beta, for demos), from staff or the
+        built-in library, for example "What's your best
         hypothetical band name?". `following_answers` (up to three answers from people the caller follows) is only
         filled once the caller has answered.
       responses:
@@ -1979,7 +1981,7 @@ paths:
       tags: [Admin]
       operationId: schedulePrompt
       summary: Set a week's prompt
-      description: A Thursday (prompts come out on Thursdays), this week's or later. Refused once fans have answered that week's prompt.
+      description: A release day (a Thursday, or any day where the environment runs prompts daily), the current one or later. Refused once fans have answered that prompt.
       requestBody:
         required: true
         content:
@@ -6040,7 +6042,7 @@ components:
       required: [prompt, my_answer, following_answers, next_prompt_on]
       properties:
         prompt: {$ref: '#/components/schemas/Prompt'}
-        next_prompt_on: {type: string, format: date, description: The next Thursday.}
+        next_prompt_on: {type: string, format: date, description: When the next prompt comes out (the next Thursday; the next day where the environment runs prompts daily).}
         my_answer:
           oneOf: [{$ref: '#/components/schemas/PromptAnswer'}, {type: 'null'}]
         following_answers:

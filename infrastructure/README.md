@@ -192,6 +192,10 @@ Job's image is the same commit as the API.
   then `gcloud sql backups list --instance fandomscore-beta` and `gcloud sql backups restore <id> --restore-instance
   fandomscore-beta`, redeploy the previous commit, and scale back up. Writes made after the backup are lost;
   for a narrower window, clone to a point in time instead (Backups and restore). On prod, prefer the clone.
+- **Environment settings.** An overlay with a `settings` file (`key=value` lines) gets those rows written to
+  `app_settings` after the migrations on every deploy, so the file is the source of truth. Beta sets
+  `engagement_cadence=daily` (trivia and prompts every day instead of Tuesdays and Thursdays, migration 0051); prod has
+  no file and keeps the defaults.
 - **Demo data.** An overlay with a `seed` file (beta: `--fans 200 --artists 8 --shows 10 --seed 1`) gets the dev
   seed (`tools/dev/seed.py`, "Cloud demo data") written through `db-shell.sh` right after the migrations: 200 fake
   fans with scores, logs, follows, and grab bags, 8 made-up artists, 10 shows with allocations in every state, and a

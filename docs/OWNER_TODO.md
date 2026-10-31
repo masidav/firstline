@@ -60,7 +60,8 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   a438523 waits up to 10 minutes, and the next push deployed green). About 12 minutes after the Gateway appeared,
   the API, the fan app, and the promoter dashboard all answered over HTTPS with Google-issued certificates.
   Every push to `main` now deploys beta. Since 2026-10-31 the deploy also writes demo data once (200 fake fans, 8
-  made-up artists, 10 shows; `infrastructure/README.md`, "Demo data"), so the app isn't empty when you show it.
+  made-up artists, 10 shows; `infrastructure/README.md`, "Demo data"), so the app isn't empty when you show it, and
+  beta runs trivia and prompts daily instead of weekly (`overlays/beta/settings`, "Environment settings").
   To pause beta while nobody is testing (it costs money idle):
   `infrastructure/k8s/set-state.sh beta off`; `... beta on` brings it back in about 15 minutes
   (`infrastructure/README.md`, "Turning an environment off and on"). All three certificates

@@ -28,20 +28,24 @@ export function pointsLabel(points: number): string {
 }
 
 /**
- * Music trivia (GET /me/trivia): one question a week, out on Tuesdays, about one of the fan's artists. It stays until
- * the fan answers it; then its results show until the next Tuesday. Tapping an option answers
+ * Music trivia (GET /me/trivia): one question per period (a week, out on Tuesdays; or a day where the environment runs
+ * trivia daily), about one of the fan's artists. It stays until the fan answers it; then its results show until the
+ * next one comes out (next_question_on). Tapping an option answers
  * it (POST /me/trivia/{id}/answer); the card then shows the right answer and the points a right answer earned (a tenth
  * of logging an album). Hidden when the fan has no artist with enough catalog for a question.
  */
 export function DailyTriviaCard() {
   const { session } = useSession();
   const [question, setQuestion] = useState<TriviaQuestion | null | undefined>(undefined);
+  const [nextOn, setNextOn] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
   const load = useCallback(async () => {
     try {
-      setQuestion(unwrap(await session.api.GET('/me/trivia')).question ?? null);
+      const today = unwrap(await session.api.GET('/me/trivia'));
+      setQuestion(today.question ?? null);
+      setNextOn(today.next_question_on);
     } catch {
       setQuestion(null);   // trivia is a bonus; the feed carries on without it
     }
@@ -93,8 +97,8 @@ export function DailyTriviaCard() {
       {question.answered && (
         <Text style={[styles.result, question.correct ? styles.good : styles.muted]}>
           {question.correct
-            ? `Right! ${pointsLabel(question.points_earned ?? question.points_for_right)} for ${question.artist.name}. New trivia every Tuesday.`
-            : 'Not this time. New trivia every Tuesday.'}
+            ? `Right! ${pointsLabel(question.points_earned ?? question.points_for_right)} for ${question.artist.name}. ${nextTrivia(nextOn)}`
+            : `Not this time. ${nextTrivia(nextOn)}`}
         </Text>
       )}
       {question.answered && question.results && (
@@ -106,6 +110,13 @@ export function DailyTriviaCard() {
       <ErrorText>{error}</ErrorText>
     </View>
   );
+}
+
+/** "New trivia on Nov 3." from the API's next_question_on (a date), or a plain promise when it's unknown. */
+function nextTrivia(day: string | undefined): string {
+  if (!day) return 'New trivia soon.';
+  const when = new Date(`${day}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  return `New trivia on ${when}.`;
 }
 
 const styles = StyleSheet.create({

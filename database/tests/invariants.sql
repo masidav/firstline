@@ -2772,4 +2772,21 @@ SELECT pg_temp.expect_error($$INSERT INTO allocation_complaints (allocation_id, 
   SELECT id, 0, '   ', (SELECT id FROM users WHERE handle = 'cmp_staff') FROM allocations WHERE name = 'Complaints allocation'$$,
   'allocation_complaints_note_check');
 
+-- ------------------------------------------------------------ engagement cadence (0051)
+-- app_settings.engagement_cadence: 'weekly' (default; the 0034 checks above) or 'daily', when every day is its own
+-- trivia and prompt day and the next one is tomorrow. Unknown values and keys are refused.
+DO $$
+BEGIN
+  ASSERT app_setting('engagement_cadence') = 'weekly', 'weekly by default';
+  ASSERT trivia_next_day('2026-10-27') = '2026-11-03' AND prompt_next_day('2026-10-29') = '2026-11-05', 'weekly: the next one is a week later';
+  UPDATE app_settings SET value = 'daily' WHERE key = 'engagement_cadence';
+  ASSERT trivia_week_day('2026-10-28') = '2026-10-28' AND prompt_week_day('2026-10-28') = '2026-10-28', 'daily: a Wednesday is its own day';
+  ASSERT trivia_week_day() = (now() AT TIME ZONE 'UTC')::date AND prompt_week_day() = (now() AT TIME ZONE 'UTC')::date, 'daily: today';
+  ASSERT trivia_next_day('2026-10-28') = '2026-10-29' AND prompt_next_day() = (now() AT TIME ZONE 'UTC')::date + 1, 'daily: the next one is tomorrow';
+  UPDATE app_settings SET value = 'weekly' WHERE key = 'engagement_cadence';
+  ASSERT extract(isodow FROM trivia_week_day()) = 2, 'back to weekly';
+END $$;
+SELECT pg_temp.expect_error($$UPDATE app_settings SET value = 'hourly' WHERE key = 'engagement_cadence'$$, 'app_settings_engagement_cadence');
+SELECT pg_temp.expect_error($$INSERT INTO app_settings (key, value) VALUES ('Bad Key', 'x')$$, 'app_settings_key_check');
+
 \echo ALL INVARIANT TESTS PASSED

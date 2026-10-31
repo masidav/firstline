@@ -14,7 +14,7 @@ export type PromptToday = components['schemas']['PromptToday'];
 const MAX = 280;
 
 /**
- * This week's music prompt (GET /prompts/today; out on Thursdays), for example "What's your best hypothetical band name?". The fan answers
+ * The current music prompt (GET /prompts/today; out on Thursdays, or daily where the environment runs prompts daily), for example "What's your best hypothetical band name?". The fan answers
  * in a line (PUT /prompts/{id}/answer); answers are public and show on the feed. Once answered, the card
  * shows the answer (edit or delete on the day) and up to three answers from people the fan follows.
  */
@@ -78,7 +78,7 @@ export function DailyPromptCard() {
   const writing = !mine || editing;
   return (
     <View style={styles.card}>
-      <Text style={styles.kicker}>This week's prompt</Text>
+      <Text style={styles.kicker}>Music prompt</Text>
       <Text style={styles.prompt}>{prompt.text}</Text>
       {writing ? (
         <>

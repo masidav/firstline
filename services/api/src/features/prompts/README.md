@@ -1,6 +1,8 @@
 # Music prompts API
 
-Migrations 0025 and 0034 (weekly since 2026-10-27). One open question a week for every fan, out on Thursdays (UTC)
+Migrations 0025, 0034 (weekly since 2026-10-27), and 0051 (`app_settings.engagement_cadence`: `weekly`, the default,
+or `daily`, which beta uses so demos aren't stuck waiting; every rule below goes through `prompt_week_day()`, so
+"week" reads as "day" there). One open question a week for every fan, out on Thursdays (UTC)
 and open until the next Thursday (`prompt_week_day()`; `prompts.day` holds that Thursday), for example "What's your best
 hypothetical band name?".
 

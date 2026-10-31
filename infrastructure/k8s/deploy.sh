@@ -14,8 +14,8 @@
 #   SKIP_BACKUP=1      no Cloud SQL backup before migrating (the first deploy of an empty database)
 #   SKIP_HEALTH_CHECK=1  don't call the public health endpoint afterwards (before DNS and the certificate exist)
 #
-# If the overlay has a `seed` file, the demo data from tools/dev/seed.py is written after the migrations (once; later
-# deploys find it present and do nothing).
+# If the overlay has a `settings` file (key=value lines), those app_settings rows are written after the migrations. If it
+# has a `seed` file, the demo data from tools/dev/seed.py is written too (once; later deploys find it present and do nothing).
 set -euo pipefail
 
 environment="${1:?environment (beta, prod)}"
@@ -61,6 +61,17 @@ if ! kubectl wait job/migrate -n "$namespace" --for=condition=complete --timeout
   exit 1
 fi
 kubectl logs job/migrate -n "$namespace"
+
+# Environment settings (app_settings, migration 0051): the overlay's `settings` file holds key=value lines, written
+# every deploy so the file is the source of truth. Keys and values are plain identifiers (the table checks too).
+if [ -f "${overlay}/settings" ]; then
+  echo "== Settings ($(grep -v '^#' "${overlay}/settings" | tr '\n' ' '))"
+  grep -v '^#' "${overlay}/settings" | grep . | while IFS='=' read -r key value; do
+    case "$key" in *[!a-z0-9_]*|'') echo "Bad settings key '${key}' in ${overlay}/settings" >&2; exit 1 ;; esac
+    case "$value" in *[!a-z0-9_.:-]*|'') echo "Bad settings value '${value}' in ${overlay}/settings" >&2; exit 1 ;; esac
+    printf "INSERT INTO app_settings (key, value) VALUES ('%s', '%s')\n  ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now() WHERE app_settings.value <> EXCLUDED.value;\n" "$key" "$value"
+  done | "${here}/db-shell.sh" "$environment"
+fi
 
 # Demo data (tools/dev/seed.py, "Cloud demo data"): the overlay's `seed` file holds the script's arguments. The SQL
 # is a no-op once the seed is present, so this runs every deploy and writes once. prod has no such file.
