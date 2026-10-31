@@ -1,30 +1,49 @@
 import { router } from 'expo-router';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { type components, unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
+import { stars } from '../feed/feedText';
+import { profileBandLinks } from '../profiles/FanProfileScreen';
 
 export type UserStats = components['schemas']['UserStats'];
 type ArtistStat = UserStats['artists'][number];
+type AlbumLog = components['schemas']['AlbumLog'];
+type AnswerWithPrompt = { answer: components['schemas']['PromptAnswer']; prompt_text: string; day: string };
 
-/** The signed-in fan's numbers in one list (GET /me/stats): artist scores first, then everything behind them. */
+/**
+ * The signed-in fan's page about themselves (decided 2026-10-31, replacing the "Your public page" entry): who they are,
+ * their numbers (GET /me/stats, artist scores first), then their recent albums and prompt answers as followers see them.
+ */
 export function StatsScreen() {
-  const { session } = useSession();
+  const { session, state } = useSession();
+  const me = state.status === 'signedIn' ? state.me : undefined;
+  const handle = me?.handle;
   const [stats, setStats] = useState<UserStats | null>(null);
+  const [logs, setLogs] = useState<AlbumLog[]>([]);
+  const [answers, setAnswers] = useState<AnswerWithPrompt[]>([]);
   const [error, setError] = useState<string>();
 
   const load = useCallback(async () => {
     setError(undefined);
     try {
       setStats(unwrap(await session.api.GET('/me/stats')));
+      if (handle) {
+        const [logPage, answerPage] = await Promise.all([
+          session.api.GET('/users/{handle}/logs', { params: { path: { handle }, query: { limit: 5 } } }),
+          session.api.GET('/users/{handle}/answers', { params: { path: { handle } } }),
+        ]);
+        setLogs(unwrap(logPage).items);
+        setAnswers(unwrap(answerPage).items.slice(0, 5));
+      }
     } catch (e) {
       setError(errorMessage(e));
     }
-  }, [session]);
+  }, [session, handle]);
 
   useEffect(() => {
     void load();
@@ -34,9 +53,24 @@ export function StatsScreen() {
     return <Loading />;
   }
 
+  const links = me ? profileBandLinks(me) : [];
   return (
     <Screen>
-      <Title>Your stats</Title>
+      <Title>Stats</Title>
+      {me && (
+        <>
+          <Body>{me.display_name || `@${me.handle}`}</Body>
+          <Text style={styles.hint}>
+            @{me.handle}
+            {me.is_artist ? ' · artist' : ''}
+          </Text>
+          {links.map((link) => (
+            <Pressable key={link.url} accessibilityRole="link" accessibilityLabel={`Open ${link.label}`} onPress={() => void Linking.openURL(link.url)}>
+              <Text style={styles.link}>{link.label}</Text>
+            </Pressable>
+          ))}
+        </>
+      )}
       <ErrorText>{error}</ErrorText>
       {error && <Button label="Try again" kind="secondary" onPress={() => void load()} />}
 
@@ -91,6 +125,36 @@ export function StatsScreen() {
             <Stat label="Followers" value={stats.social.followers} />
             <Stat label="Following" value={stats.social.following} />
           </Section>
+
+          {logs.length > 0 && (
+            <Section title="Recent albums" hint="Your latest logs, as they appear on your page.">
+              {logs.map((log) => (
+                <Pressable key={log.id} accessibilityRole="button" accessibilityLabel={`Open ${log.album.title}`}
+                  onPress={() => router.push(`/album/${log.album.id}`)} style={styles.row}>
+                  {log.album.cover_url ? <Image source={{ uri: log.album.cover_url }} style={styles.cover} /> : <View style={styles.cover} />}
+                  <View style={styles.grow}>
+                    <Text style={styles.strong} numberOfLines={1}>{log.album.title}</Text>
+                    <Text style={styles.hint} numberOfLines={1}>
+                      {log.album.artist?.name ?? ''}
+                      {log.rating != null ? ` · ${stars(log.rating)}` : ''}
+                      {log.visibility === 'followers' ? ' · followers only' : ''}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+            </Section>
+          )}
+
+          {answers.length > 0 && (
+            <Section title="Prompt answers" hint="Your latest answers, as they appear on your page.">
+              {answers.map(({ answer, prompt_text }) => (
+                <View key={answer.id} style={styles.answer}>
+                  <Text style={styles.hint}>{prompt_text}</Text>
+                  <Text style={styles.label}>“{answer.body}”</Text>
+                </View>
+              ))}
+            </Section>
+          )}
         </>
       )}
 
@@ -149,4 +213,10 @@ const styles = StyleSheet.create({
   },
   label: { color: colors.text, fontSize: 16, flexShrink: 1 },
   value: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  link: { color: colors.accent, fontSize: 15, fontWeight: '600' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  grow: { flex: 1, gap: 2 },
+  cover: { width: 44, height: 44, borderRadius: 6, backgroundColor: colors.surface },
+  strong: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  answer: { gap: 2, paddingVertical: space.xs, borderBottomWidth: 1, borderBottomColor: colors.border },
 });

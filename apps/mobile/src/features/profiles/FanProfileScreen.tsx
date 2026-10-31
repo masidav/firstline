@@ -18,8 +18,8 @@ type GrabBag = components['schemas']['GrabBag'];
 type AlbumLog = components['schemas']['AlbumLog'];
 type AnswerWithPrompt = { answer: components['schemas']['PromptAnswer']; prompt_text: string; day: string };
 
-/** The band's links from a profile: the band page, Instagram, and X (handles are stored bare). */
-export function profileBandLinks(user: Pick<UserPublic, 'is_artist' | 'band_url' | 'instagram_handle' | 'x_handle'>) {
+/** The band's links from a profile (or the signed-in fan): the band page, Instagram, and X (handles are stored bare). */
+export function profileBandLinks(user: { is_artist: boolean; band_url?: string | null; instagram_handle?: string | null; x_handle?: string | null }) {
   if (!user.is_artist) return [];
   const links: { label: string; url: string }[] = [];
   if (user.band_url) links.push({ label: 'Band page', url: user.band_url });

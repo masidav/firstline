@@ -8,9 +8,27 @@ const problem = (status: number) => ({ error: { code: 'internal_error' }, respon
 const mockApi = { GET: jest.fn() };
 // Stable across renders, like the real context value.
 const mockSession = { api: mockApi };
+const me = { handle: 'cat', display_name: 'Cat', is_artist: true, band_url: null, instagram_handle: 'catband', x_handle: null };
+const mockState = { status: 'signedIn', me };
 
-jest.mock('../../auth/SessionProvider', () => ({ useSession: () => ({ session: mockSession }) }));
-jest.mock('expo-router', () => ({ router: { replace: jest.fn() } }));
+jest.mock('../../auth/SessionProvider', () => ({ useSession: () => ({ session: mockSession, state: mockState }) }));
+jest.mock('expo-router', () => ({ router: { replace: jest.fn(), push: jest.fn() } }));
+
+const log = { id: 'l1', user: { handle: 'cat', deleted: false }, album: { id: 'al1', title: '3D Country', album_type: 'album', cover_url: null,
+  artist: { id: 'a1', name: 'Geese', image_url: null } }, rating: 9, listened_on: '2026-10-20', is_relisten: false, visibility: 'followers', created_at: '2026-10-20T00:00:00Z' };
+const answer = { answer: { id: 'pa1', prompt_id: 'p1', user: { handle: 'cat', deleted: false }, body: 'The Velvet Ropes', visibility: 'public',
+  created_at: '2026-10-25T00:00:00Z', updated_at: '2026-10-25T00:00:00Z', mine: true, following: false }, prompt_text: 'Best band name?', day: '2026-10-25' };
+
+/** Serves the stats, plus the fan's own logs and answers (empty unless given). */
+function serve(stats: unknown, extras: { logs?: unknown[]; answers?: unknown[] } = {}) {
+  mockApi.GET.mockImplementation(async (path: string) => {
+    switch (path) {
+      case '/users/{handle}/logs': return ok({ items: extras.logs ?? [], next_cursor: null });
+      case '/users/{handle}/answers': return ok({ items: extras.answers ?? [] });
+      default: return ok(stats);
+    }
+  });
+}
 
 const empty = {
   artists: [],
@@ -33,9 +51,9 @@ const empty = {
 
 beforeEach(() => jest.clearAllMocks());
 
-test('shows artist ranks, labels estimates, and lists every total', async () => {
-  mockApi.GET.mockResolvedValue(
-    ok({
+test('shows who you are, artist ranks, estimates, every total, and your recent albums and answers', async () => {
+  serve(
+    {
       ...empty,
       artists: [
         {
@@ -53,11 +71,16 @@ test('shows artist ranks, labels estimates, and lists every total', async () => 
       proof: { ...empty.proof, tickets: 1 },
       social: { followers: 12, following: 3 },
       ledger_points: 59.5,
-    }),
+    },
+    { logs: [log], answers: [answer] },
   );
   render(<StatsScreen />);
 
   expect(await screen.findByLabelText('Geese: Top 16% · #3 of 18 fans · score 61 · estimate')).toBeTruthy();
+  expect(screen.getByText('Stats')).toBeTruthy();
+  expect(screen.getByText('Cat')).toBeTruthy();
+  expect(screen.getByText('@cat · artist')).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Open Instagram @catband' })).toBeTruthy();
   expect(screen.getByText(/An estimate means few fans/)).toBeTruthy();
   expect(screen.getByLabelText('Liked songs: 42')).toBeTruthy();
   expect(screen.getByLabelText('Albums logged: 7')).toBeTruthy();
@@ -67,20 +90,32 @@ test('shows artist ranks, labels estimates, and lists every total', async () => 
   expect(screen.getByLabelText('Followers: 12')).toBeTruthy();
   expect(screen.getByLabelText('Following: 3')).toBeTruthy();
   expect(mockApi.GET).toHaveBeenCalledWith('/me/stats');
+
+  // The old public page's content now lives here: recent albums (opening the album) and prompt answers.
+  expect(screen.getByText('Geese · ★ 4.5 · followers only')).toBeTruthy();
+  fireEvent.press(screen.getByRole('button', { name: 'Open 3D Country' }));
+  expect(jest.requireMock('expo-router').router.push).toHaveBeenCalledWith('/album/al1');
+  expect(screen.getByText('Best band name?')).toBeTruthy();
+  expect(screen.getByText('“The Velvet Ropes”')).toBeTruthy();
+  expect(mockApi.GET).toHaveBeenCalledWith('/users/{handle}/logs', { params: { path: { handle: 'cat' }, query: { limit: 5 } } });
 });
 
-test('a new fan sees how scores appear, and zeros', async () => {
-  mockApi.GET.mockResolvedValue(ok(empty));
+test('a new fan sees how scores appear, zeros, and no album or answer sections', async () => {
+  serve(empty);
   render(<StatsScreen />);
 
   expect(await screen.findByText(/No scores yet. Connect Spotify/)).toBeTruthy();
   expect(screen.queryByText(/An estimate means/)).toBeNull();
   expect(screen.getByLabelText('Points earned: 0')).toBeTruthy();
+  expect(screen.queryByText('Recent albums')).toBeNull();
+  expect(screen.queryByText('Prompt answers')).toBeNull();
 });
 
 test('a failed load can be retried', async () => {
-  mockApi.GET.mockResolvedValueOnce(problem(503)).mockResolvedValueOnce(ok(empty));
+  mockApi.GET.mockResolvedValueOnce(problem(503));
   render(<StatsScreen />);
+  await screen.findByRole('button', { name: 'Try again' });
+  serve(empty);
 
   fireEvent.press(await screen.findByRole('button', { name: 'Try again' }));
 

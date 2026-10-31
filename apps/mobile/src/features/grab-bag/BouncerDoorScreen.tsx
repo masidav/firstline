@@ -85,7 +85,7 @@ export function BouncerDoorScreen() {
         <Body>Nobody you follow has put a song in their grab bag yet. Fill yours and they might follow suit.</Body>
       )}
       {draw && song && <Button label="Draw another" busy={drawing} onPress={() => void load()} />}
-      <Button label="Your grab bag" kind="secondary" onPress={() => router.push('/grab-bag')} />
+      <Button label="GrabBag" kind="secondary" onPress={() => router.push('/grab-bag')} />
     </Screen>
   );
 }

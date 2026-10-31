@@ -128,7 +128,7 @@ export function GrabBagScreen() {
   return (
     <Screen>
       <Button label="Back" kind="secondary" onPress={() => (router.canGoBack() ? router.back() : router.replace('/home'))} />
-      <Title>Your grab bag</Title>
+      <Title>GrabBag</Title>
       <Body muted>
         Five songs you love. Fans who follow you see them on their feed with your name, and each one opens in Spotify.
       </Body>

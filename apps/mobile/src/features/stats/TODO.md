@@ -4,7 +4,9 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 
 ## Implementation checklist
 - [x] Stats screen for the signed-in fan: per-artist scores first, then journal, proof, listening, points, and social totals.
-      (`/stats`, from the profile's "Your stats" button. Social totals ("People": followers, following) added 2026-10-30.)
+      (`/stats`, from the profile's "Stats" button. Social totals ("People": followers, following) added 2026-10-30.
+      2026-10-31: the profile's "Your public page" and "Bouncer door" entries were removed; the stats page now also
+      shows the fan's name, handle, band links, recent albums, and prompt answers. `/fans/{handle}` stays for other fans.)
 - [x] Same screen for another fan's profile, showing only what the API returns for the viewer.
       *Fan pages (`/fans/{handle}`, `features/profiles/FanProfileScreen`) show followers the top five artist standings,
       albums logged, reviews, verified proof, and points from `GET /users/{handle}/stats`; strangers get a follow prompt.*

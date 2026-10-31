@@ -277,7 +277,9 @@ test('staff-only entries show for staff and for nobody else', () => {
   const staffOnly = ['Review queue', 'Reported posts', 'Fraud review', 'Photo redaction', 'Artist links and sources', 'Featured artist', 'Weekly prompts'];
   const { rerender } = render(<ProfileScreen me={fan} />);
   for (const label of staffOnly) expect(screen.queryByRole('button', { name: label })).toBeNull();
-  expect(screen.getByRole('button', { name: 'Your public page' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Stats' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Your public page' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Bouncer door' })).toBeNull();
 
   rerender(<ProfileScreen me={{ ...fan, is_staff: true }} />);
   for (const label of staffOnly) expect(screen.getByRole('button', { name: label })).toBeTruthy();
