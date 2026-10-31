@@ -18,11 +18,11 @@ const answer = (id: string, body: string, handle: string, extra: object = {}) =>
 
 beforeEach(() => jest.clearAllMocks());
 
-test('a fan answers the prompt followers-only, then sees answers from people they follow', async () => {
+test('a fan answers the prompt, then sees answers from people they follow', async () => {
   mockApi.GET.mockResolvedValue(ok({ prompt, my_answer: null, following_answers: [] }));
   mockApi.PUT.mockResolvedValue(ok({
     prompt: { ...prompt, answer_count: 3 },
-    my_answer: answer('a1', 'Face Value', 'ana', { mine: true, visibility: 'followers' }),
+    my_answer: answer('a1', 'Face Value', 'ana', { mine: true }),
     following_answers: [answer('a2', 'The Velvet Ropes', 'ben', { following: true })],
   }));
   render(<DailyPromptCard />);
@@ -30,15 +30,15 @@ test('a fan answers the prompt followers-only, then sees answers from people the
   expect(await screen.findByText("What's your best hypothetical band name?")).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Post answer' })).toBeDisabled();
   fireEvent.changeText(screen.getByLabelText('Your answer'), '  Face Value ');
-  fireEvent(screen.getByLabelText('Followers only'), 'valueChange', true);
   fireEvent.press(screen.getByRole('button', { name: 'Post answer' }));
 
   expect(await screen.findByText('“Face Value”')).toBeTruthy();
   expect(mockApi.PUT).toHaveBeenCalledWith('/prompts/{promptId}/answer', {
     params: { path: { promptId: 'p1' } },
-    body: { body: 'Face Value', visibility: 'followers' },
+    body: { body: 'Face Value', visibility: 'public' },
   });
-  expect(screen.getByText('Your answer · followers only')).toBeTruthy();
+  expect(screen.queryByLabelText('Followers only')).toBeNull();
+  expect(screen.getByText('Your answer · on the feed')).toBeTruthy();
   expect(screen.getByText('“The Velvet Ropes”')).toBeTruthy();
   fireEvent.press(screen.getByRole('button', { name: 'See all 3 answers' }));
   expect(jest.requireMock('expo-router').router.push).toHaveBeenCalledWith('/prompts/p1');

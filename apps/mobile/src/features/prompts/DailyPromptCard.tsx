@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, Switch, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { type components, unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
@@ -15,14 +15,13 @@ const MAX = 280;
 
 /**
  * This week's music prompt (GET /prompts/today; out on Thursdays), for example "What's your best hypothetical band name?". The fan answers
- * in a line (PUT /prompts/{id}/answer), public or followers-only; answers show on the feed. Once answered, the card
+ * in a line (PUT /prompts/{id}/answer); answers are public and show on the feed. Once answered, the card
  * shows the answer (edit or delete on the day) and up to three answers from people the fan follows.
  */
 export function DailyPromptCard() {
   const { session } = useSession();
   const [today, setToday] = useState<PromptToday | null>(null);
   const [draft, setDraft] = useState('');
-  const [followersOnly, setFollowersOnly] = useState(false);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -50,7 +49,7 @@ export function DailyPromptCard() {
         unwrap(
           await session.api.PUT('/prompts/{promptId}/answer', {
             params: { path: { promptId: prompt.id } },
-            body: { body: draft.trim(), visibility: followersOnly ? 'followers' : 'public' },
+            body: { body: draft.trim(), visibility: 'public' },
           }),
         ),
       );
@@ -85,10 +84,6 @@ export function DailyPromptCard() {
         <>
           <Field label="Your answer" value={draft} onChangeText={setDraft} maxLength={MAX} multiline autoCapitalize="sentences"
             placeholder="Shared on the feed" />
-          <View style={styles.switchRow}>
-            <Text style={styles.muted}>Followers only</Text>
-            <Switch accessibilityLabel="Followers only" value={followersOnly} onValueChange={setFollowersOnly} />
-          </View>
           <Button label={mine ? 'Save' : 'Post answer'} busy={busy} disabled={draft.trim().length === 0} onPress={() => void post()} />
           {editing && <Button label="Cancel" kind="secondary" onPress={() => setEditing(false)} />}
         </>
@@ -99,7 +94,6 @@ export function DailyPromptCard() {
           <View style={styles.row}>
             <Button label="Edit" kind="secondary" onPress={() => {
               setDraft(mine.body);
-              setFollowersOnly(mine.visibility === 'followers');
               setEditing(true);
             }} />
             <Button label="Delete" accessibilityLabel="Delete your answer" kind="secondary" busy={busy} onPress={() => void remove()} />
@@ -124,7 +118,6 @@ const styles = StyleSheet.create({
   card: { gap: space.sm, padding: space.md, borderRadius: 12, borderWidth: 1, borderColor: '#e57373', backgroundColor: colors.surface },
   kicker: { color: '#e57373', fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   prompt: { color: colors.text, fontSize: 18, fontWeight: '800', lineHeight: 24 },
-  switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   row: { flexDirection: 'row', gap: space.sm },
   answer: { color: colors.text, fontSize: 17, fontWeight: '600' },
   other: { gap: 2, paddingTop: space.xs, borderTopWidth: 1, borderTopColor: colors.border },
