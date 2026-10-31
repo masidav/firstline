@@ -200,7 +200,10 @@ Job's image is the same commit as the API.
   seed (`tools/dev/seed.py`, "Cloud demo data") written through `db-shell.sh` right after the migrations: 200 fake
   fans with scores, logs, follows, and grab bags, 8 made-up artists, 10 shows with allocations in every state, and a
   `dev_staff` account nobody can sign in as (dev sign-in is off). The SQL is a no-op once the seed is present, so it
-  is written once and survives later deploys. To start over, delete the seed rows by hand; to stop seeding, delete
+  is written once and survives later deploys. `--demo-fan handle:email` entries (beta: `secondfan`) add accounts for
+  real people: hub cities, follows both ways, signals and scores for every seed artist, and album logs, so the feed
+  is full; the person claims the account at their first Google sign-in with that email (no handle step). Each demo
+  fan is written only if absent, so more can be added to a seeded environment. To start over, delete the seed rows by hand; to stop seeding, delete
   the file. The made-up artists make the weekly catalog refresh log one given-up job each, which the
   `worker_jobs_given_up` alert reports. prod must never have a `seed` file.
 - **Config change without a code change.** Edit the overlay and run `deploy.sh` with the current SHA. The

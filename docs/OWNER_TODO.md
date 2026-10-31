@@ -61,7 +61,9 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   the API, the fan app, and the promoter dashboard all answered over HTTPS with Google-issued certificates.
   Every push to `main` now deploys beta. Since 2026-10-31 the deploy also writes demo data once (200 fake fans, 8
   made-up artists, 10 shows; `infrastructure/README.md`, "Demo data"), so the app isn't empty when you show it, and
-  beta runs trivia and prompts daily instead of weekly (`overlays/beta/settings`, "Environment settings").
+  beta runs trivia and prompts daily instead of weekly (`overlays/beta/settings`, "Environment settings"). The demo
+  account `secondfan` (d57590971@gmail.com) is pre-provisioned with a full feed: sign in with Google as that address
+  and it's yours, no handle step. Add that Google account as an OAuth test user first (step 5).
   To pause beta while nobody is testing (it costs money idle):
   `infrastructure/k8s/set-state.sh beta off`; `... beta on` brings it back in about 15 minutes
   (`infrastructure/README.md`, "Turning an environment off and on"). All three certificates

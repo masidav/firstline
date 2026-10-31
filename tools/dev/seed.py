@@ -53,6 +53,7 @@ import json
 import math
 import os
 import random
+import re
 import struct
 import subprocess
 import sys
@@ -268,10 +269,13 @@ def lognormal_curve(median, sigma):
             for z in range(-30, 31)]
 
 
-def generate(fans, artists, shows, seed, catalog_source=None, if_absent=False, photos=True):
+def generate(fans, artists, shows, seed, catalog_source=None, if_absent=False, photos=True, demo_fans=()):
     """The seed SQL. catalog_source: artists from fetch_real_catalog (real), or None for made-up ones. if_absent: a
     database that already holds the seed makes psql quit quietly instead of failing. photos: share merch to the feed
-    with placeholder photo files (False when the files cannot be written, as in a cloud environment)."""
+    with placeholder photo files (False when the files cannot be written, as in a cloud environment). demo_fans:
+    (handle, email) accounts for real people to claim at their first sign-in, each set up with hub cities, follows,
+    listening signals and scores for every seed artist, and a few album logs, so their feed is full; written after
+    the seed, each only if absent, so they can be added to an environment that is already seeded."""
     rng = random.Random(seed)
     now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
     new_id = lambda: uuid.UUID(int=rng.getrandbits(128), version=4)  # noqa: E731 (deterministic ids)
@@ -284,7 +288,7 @@ def generate(fans, artists, shows, seed, catalog_source=None, if_absent=False, p
     sql = ["\\set ON_ERROR_STOP on"]
     if if_absent:
         sql += [f"SELECT {present} AS seed_present \\gset",
-                "\\if :seed_present", "\\echo seed data is already present; nothing to do", "\\quit", "\\endif"]
+                "\\if :seed_present", "\\echo seed data is already present; nothing to do", "\\else"]
     sql += ["BEGIN;",
             f"DO $$ BEGIN IF {present} THEN\n"
             "  RAISE EXCEPTION 'seed data (or one of its artists) is already present; wipe the local database first "
@@ -442,9 +446,10 @@ def generate(fans, artists, shows, seed, catalog_source=None, if_absent=False, p
         f"({lit(user_id)}::uuid, {lit(rng.choice(answers))}, {lit('followers' if rng.random() < 0.2 else 'public')})"
         for user_id in fan_ids if rng.random() < 0.33)
     if answer_values:
-        sql.append("-- This week's prompt (Thursday's) is the band-name one, as staff would schedule it, and answers to it.\n"
+        sql.append("-- The current prompt is the band-name one, as staff would schedule it (unless the environment already has one\n"
+                   "-- for this period: a live beta does), and answers to it.\n"
                    "INSERT INTO prompts (day, text, source, created_by) VALUES (prompt_week_day(), "
-                   f"'What''s your best hypothetical band name?', 'staff', {lit(staff_id)});\n"
+                   f"'What''s your best hypothetical band name?', 'staff', {lit(staff_id)}) ON CONFLICT ON CONSTRAINT prompts_one_a_day DO NOTHING;\n"
                    "INSERT INTO prompt_answers (prompt_id, user_id, body, visibility)\n"
                    "SELECT (prompt_for_day(prompt_week_day())).id, a.u, a.body, a.v::visibility FROM (VALUES\n  "
                    + answer_values + ") AS a (u, body, v);")
@@ -554,8 +559,58 @@ UNION ALL SELECT 'grab-bag songs', count(*) FROM grab_bag_songs
 UNION ALL SELECT 'shared photos', count(*) FROM submissions WHERE shared_at IS NOT NULL
 UNION ALL SELECT 'photo files', count(*) FROM submission_files
 UNION ALL SELECT 'prompt answers this week', count(*) FROM prompt_answers;""")
+    if if_absent:
+        sql.append("\\endif")
+    for handle, email in demo_fans:
+        sql.append(demo_fan_sql(handle, email))
     examples = [u[1] for u in users[1:6]]
     return "\n\n".join(sql) + "\n", examples, files
+
+
+def demo_fan_sql(handle, email):
+    """An account for a real person, claimed at their first verified sign-in with this email (the API links the
+    identity to a user that has none). Hub cities, follows both ways with seeded fans, listening signals and provisional
+    scores for every seed artist (a rescore is queued), and a few album logs: a full feed from the first visit.
+    Idempotent: nothing happens when the handle or email is already taken."""
+    display = handle.replace("_", " ").title()
+    return f"""-- Demo account {handle}: for a real person, claimed at their first sign-in with {email} (AuthEndpoints).
+DO $$
+DECLARE v_id uuid; v_cities text[];
+BEGIN
+  IF EXISTS (SELECT 1 FROM users WHERE handle = {lit(handle)} OR email = {lit(email)}) THEN
+    RAISE NOTICE 'demo fan {handle} is already there'; RETURN;
+  END IF;
+  INSERT INTO users (handle, email, display_name, created_at)
+  VALUES ({lit(handle)}, {lit(email)}, {lit(display)}, now() - interval '200 days') RETURNING id INTO v_id;
+  SELECT array_agg(id) INTO v_cities FROM (SELECT id FROM cities WHERE active ORDER BY id LIMIT 2) c;
+  PERFORM set_hub_cities(v_id, v_cities);
+  INSERT INTO follows (follower_id, followee_id, created_at)
+  SELECT v_id, id, now() - random() * interval '120 days' FROM users
+   WHERE email LIKE '%@example.test' AND NOT is_staff AND deleted_at IS NULL ORDER BY random() LIMIT 60;
+  INSERT INTO follows (follower_id, followee_id, created_at)
+  SELECT id, v_id, now() - random() * interval '120 days' FROM users
+   WHERE email LIKE '%@example.test' AND NOT is_staff AND deleted_at IS NULL ORDER BY random() LIMIT 25;
+  INSERT INTO user_artist_signals (user_id, artist_id, liked_tracks, playlist_tracks, distinct_albums, top_artist_rank, recent_plays, synced_at)
+  SELECT v_id, a.id, 14, 6, 3, row_number() OVER (ORDER BY a.name)::smallint, 45, now()
+    FROM artists a WHERE a.spotify_artist_id LIKE 'seed:%' AND a.status = 'active';
+  INSERT INTO album_logs (user_id, album_id, rating, listened_on, created_at)
+  SELECT v_id, id, 7 + n % 4, current_date - n * 9, now() - n * interval '9 days'
+    FROM (SELECT al.id, row_number() OVER ()::int AS n FROM albums al JOIN artists a ON a.id = al.artist_id
+           WHERE a.spotify_artist_id LIKE 'seed:%' ORDER BY random() LIMIT 6) picked;
+  INSERT INTO user_artist_scores (user_id, artist_id, raw_score, percentile, is_estimated, baseline_weight, breakdown)
+  SELECT user_id, artist_id, raw_score, pct, false, 0, '{{"source": "seed", "demo": true}}'
+    FROM (SELECT user_id, artist_id, raw_score,
+                 round(100.0 * (rank() OVER (PARTITION BY artist_id ORDER BY raw_score) - 1
+                                + 0.5 * count(*) OVER (PARTITION BY artist_id, raw_score))
+                       / count(*) OVER (PARTITION BY artist_id), 2) AS pct
+            FROM v_raw_scores WHERE artist_id IN (SELECT id FROM artists WHERE spotify_artist_id LIKE 'seed:%')) r
+   WHERE user_id = v_id
+  ON CONFLICT (user_id, artist_id) DO UPDATE
+    SET raw_score = EXCLUDED.raw_score, percentile = EXCLUDED.percentile, is_estimated = false, baseline_weight = 0,
+        breakdown = EXCLUDED.breakdown;
+  PERFORM request_artist_rescore(id) FROM artists WHERE spotify_artist_id LIKE 'seed:%' AND status = 'active';
+  RAISE NOTICE 'demo fan {handle} is ready';
+END $$;"""
 
 
 def main():
@@ -571,6 +626,9 @@ def main():
                         help="with --sql: a database that already holds the seed is left alone instead of failing")
     parser.add_argument("--no-photos", action="store_true",
                         help="don't share merch to the feed or write placeholder photo files (cloud environments)")
+    parser.add_argument("--demo-fan", action="append", default=[], metavar="HANDLE:EMAIL",
+                        help="an account for a real person with a full feed, claimed at their first sign-in with that email "
+                             "(repeatable; written only if absent)")
     parser.add_argument("--storage", default=None,
                         help="where to write the placeholder photo files (the API's Storage__LocalPath; "
                              "default services/api/.local-storage)")
@@ -593,8 +651,14 @@ def main():
         print("No Spotify credentials (Spotify__ClientId, Spotify__ClientSecret): seeding made-up artists.", file=sys.stderr)
     if args.if_absent and not args.sql:
         sys.exit("--if-absent is for --sql (the local run refuses a seeded database on purpose).")
+    demo_fans = []
+    for entry in args.demo_fan:
+        handle, _, email = entry.partition(":")
+        if not re.fullmatch(r"[a-z0-9_]{3,30}", handle) or not re.fullmatch(r"[^@\s:]+@[^@\s:]+\.[^@\s:]+", email):
+            sys.exit(f"--demo-fan wants handle:email (handle: 3 to 30 of a-z 0-9 _), not '{entry}'.")
+        demo_fans.append((handle, email))
     sql, examples, files = generate(args.fans, args.artists, args.shows, args.seed, real,
-                                    if_absent=args.if_absent, photos=not args.no_photos)
+                                    if_absent=args.if_absent, photos=not args.no_photos, demo_fans=demo_fans)
     if args.sql:
         sys.stdout.write(sql)
         return

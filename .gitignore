@@ -7,3 +7,6 @@ obj/
 TestResults/
 __pycache__/
 .local-storage/
+
+# A stray secret file seen in the working tree on 2026-10-31; never commit it.
+sportifySecret.txt

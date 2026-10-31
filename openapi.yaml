@@ -112,7 +112,9 @@ paths:
         other invalid token, so a token issued for another sign-in can't be replayed. (Developer sign-in tokens,
         Development only, are not real tokens; the request still needs a nonce.)
         A new provider account whose email already belongs to another account gets `409 email_in_use`;
-        each email belongs to one account, and accounts are not linked across providers.
+        each email belongs to one account, and accounts are not linked across providers. The one exception is a
+        pre-provisioned account (a handle and an email with no sign-in identity yet, written for demos): the first
+        verified sign-in with that email claims it, no handle needed, and answers 200 with `is_new_user` false.
         App Store rules may require offering Sign in with Apple; verify against current guidelines.
       security: []
       requestBody:

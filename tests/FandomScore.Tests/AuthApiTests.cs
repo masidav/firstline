@@ -1,5 +1,6 @@
 using FandomScore.Tests.Contract;
 using System.Collections.Concurrent;
+using Dapper;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -120,6 +121,29 @@ public sealed class AuthApiTests(PostgresFixture postgres) : IAsyncLifetime
 
         var email = await ProblemAsync(
             await PostSignInAsync(TestAuth.IdToken("a-1", "fan@example.test"), "fan_two", provider: "apple"), 409);
+        Assert.Equal("email_in_use", email.GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task A_provisioned_account_is_claimed_by_the_first_verified_sign_in_with_its_email()
+    {
+        // The seed writes demo accounts with a handle and an email and no identity (tools/dev/seed.py --demo-fan).
+        await using (var connection = new NpgsqlConnection(_connectionString))
+        {
+            await connection.ExecuteAsync("INSERT INTO users (handle, email) VALUES ('secondfan', 'second@example.test')");
+        }
+
+        var unverified = await ProblemAsync(
+            await PostSignInAsync(TestAuth.IdToken("g-9", "second@example.test", verified: false), "whatever"), 422);
+        Assert.Equal("validation_failed", unverified.GetProperty("code").GetString());
+
+        var session = await SignInAsync(TestAuth.IdToken("g-9", "second@example.test"), handle: null, HttpStatusCode.OK);
+        Assert.False(session.GetProperty("is_new_user").GetBoolean());
+        Assert.Equal("secondfan", session.GetProperty("user").GetProperty("handle").GetString());
+
+        // Claimed once: another provider account with the same email is a plain conflict from now on.
+        var email = await ProblemAsync(
+            await PostSignInAsync(TestAuth.IdToken("a-9", "second@example.test"), "thirdfan", provider: "apple"), 409);
         Assert.Equal("email_in_use", email.GetProperty("code").GetString());
     }
 

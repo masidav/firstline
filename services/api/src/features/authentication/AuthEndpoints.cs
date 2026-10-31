@@ -65,6 +65,10 @@ public static class AuthEndpoints
             """,
             new { request.Provider, identity.Subject }, transaction);
 
+        // A pre-provisioned account (demo accounts written by the seed; handle and email, no identity yet) is claimed by
+        // the first verified sign-in with its email, whatever the provider. Still one email per account (ADR 0003): an
+        // account that already has an identity is never linked to another one.
+        userId ??= await ClaimProvisionedAccountAsync(connection, transaction, request, identity);
         var isNewUser = userId is null;
         userId ??= await CreateAccountAsync(connection, transaction, request, identity);
 
@@ -76,6 +80,33 @@ public static class AuthEndpoints
         return Results.Json(
             new SessionResponse(tokens.AccessToken, tokens.RefreshToken, tokens.ExpiresIn, "Bearer", isNewUser, me),
             statusCode: isNewUser ? StatusCodes.Status201Created : StatusCodes.Status200OK);
+    }
+
+    private static async Task<Guid?> ClaimProvisionedAccountAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, SessionRequest request, ProviderIdentity identity)
+    {
+        if (string.IsNullOrEmpty(identity.Email) || !identity.EmailVerified)
+        {
+            return null;
+        }
+
+        var userId = await connection.QuerySingleOrDefaultAsync<Guid?>(
+            """
+            SELECT u.id FROM users u
+            WHERE u.email = @Email AND u.deleted_at IS NULL
+              AND NOT EXISTS (SELECT 1 FROM auth_identities i WHERE i.user_id = u.id)
+            FOR UPDATE
+            """,
+            new { identity.Email }, transaction);
+        if (userId is null)
+        {
+            return null;
+        }
+
+        await connection.ExecuteAsync(
+            "INSERT INTO auth_identities (provider, subject, user_id) VALUES (@Provider::auth_provider, @Subject, @userId)",
+            new { request.Provider, identity.Subject, userId }, transaction);
+        return userId;
     }
 
     private static async Task<Guid> CreateAccountAsync(
