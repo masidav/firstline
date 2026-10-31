@@ -55,7 +55,11 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
     `https://promoters.beta.firstline-5730kl.com/google-callback`.
   - OAuth consent screen: while it's in Testing, add each tester's Google account as a test user (up to 100).
 
-- [ ] **6. Turn deploys on and deploy beta.** After this, every push to `main` deploys beta. All three certificates
+- [x] **6. Turn deploys on and deploy beta.** Done 2026-10-31: `DEPLOY_ENABLED=true`, beta deployed (the first run
+  rolled out fine but failed its one-minute health check while the recreated Gateway was still provisioning; commit
+  a438523 waits up to 10 minutes, and the next push deployed green). About 12 minutes after the Gateway appeared,
+  the API, the fan app, and the promoter dashboard all answered over HTTPS with Google-issued certificates.
+  Every push to `main` now deploys beta. All three certificates
   were `ACTIVE` by 2026-10-31 evening, but beta was torn down on 2026-10-27 (api and worker scaled to 0, Gateway and
   load balancer gone), so `https://` on the hostnames fails until this deploy recreates the Gateway.
   ```bash
