@@ -44,6 +44,28 @@ export function playerMessage(error: unknown): string {
   }
 }
 
+/** What the bar says when adding a song to the queue didn't work. */
+export function queueMessage(error: unknown): string {
+  if (error instanceof ApiError && error.code === 'spotify_no_device') return "Spotify isn't playing right now, so there's no queue to add to.";
+  if (error instanceof ApiError && error.code === 'spotify_premium_required') return 'Adding to the queue needs Spotify Premium.';
+  return playerMessage(error).replace('play songs here', 'add songs to your queue');
+}
+
+/** What the bar says when a Like didn't reach the fan's Spotify library. */
+export function libraryMessage(error: unknown): string {
+  if (!(error instanceof ApiError)) return "Couldn't reach Spotify. Try again in a moment.";
+  switch (error.code) {
+    case 'spotify_not_connected':
+      return 'Connect Spotify in your profile to like songs here.';
+    case 'spotify_reauth_required':
+      return 'Connect Spotify again in your profile to like songs here.';
+    case 'spotify_unavailable':
+      return "Spotify isn't responding. Try again in a moment.";
+    default:
+      return "Spotify didn't accept that. Try it in the Spotify app.";
+  }
+}
+
 /** The song's position now, counting on from the last answer while it plays. */
 export function progressAt(player: SpotifyPlayer | null, msSinceFetch: number): number | null {
   if (!player?.track || player.progress_ms == null) return null;

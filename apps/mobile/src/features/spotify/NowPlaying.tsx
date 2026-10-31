@@ -5,7 +5,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { unwrap } from '../../api/client';
 import { useSession } from '../../auth/SessionProvider';
 import { colors, space } from '../../ui/theme';
-import { AFTER_COMMAND_MS, IDLE_POLL_MS, isActive, opensInSpotify, playerMessage, POLL_MS, progressAt, type SpotifyPlayer } from './player';
+import { ActionButton } from './ActionButton';
+import { AFTER_COMMAND_MS, IDLE_POLL_MS, isActive, opensInSpotify, playerMessage, POLL_MS, progressAt, queueMessage, type SpotifyPlayer } from './player';
 
 interface NowPlaying {
   player: SpotifyPlayer | null;
@@ -14,8 +15,14 @@ interface NowPlaying {
   message: string | null;
   /** Plays a song on the fan's Spotify, or opens it in Spotify when that can't work. */
   play: (spotifyTrackId: string, spotifyUrl: string) => Promise<void>;
+  /** Plays an album from its first track, or opens it in Spotify when that can't work. */
+  playAlbum: (spotifyAlbumId: string, spotifyUrl: string) => Promise<void>;
+  /** Adds a song after what's playing. Only offered while Spotify is playing or paused. */
+  queue: (spotifyTrackId: string) => Promise<void>;
   toggle: () => Promise<void>;
   skip: (forward: boolean) => Promise<void>;
+  /** Shows a line in the bar for a few seconds (other Spotify buttons report through it too). */
+  notify: (message: string) => void;
   dismiss: () => void;
 }
 
@@ -27,8 +34,13 @@ const fallback: NowPlaying = {
   play: async (_id, url) => {
     await Linking.openURL(url);
   },
+  playAlbum: async (_id, url) => {
+    await Linking.openURL(url);
+  },
+  queue: async () => {},
   toggle: async () => {},
   skip: async () => {},
+  notify: () => {},
   dismiss: () => {},
 };
 
@@ -99,15 +111,15 @@ export function NowPlayingProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
-  const play = useCallback(
-    async (spotifyTrackId: string, spotifyUrl: string) => {
+  const start = useCallback(
+    async (body: { spotify_track_id?: string; spotify_album_id?: string }, spotifyUrl: string) => {
       const status = playerRef.current?.status;
       if (status === 'not_connected' || status === 'reconnect_needed') {
         await Linking.openURL(spotifyUrl);
         return;
       }
       try {
-        unwrap(await session.api.PUT('/me/spotify/player/play', { body: { spotify_track_id: spotifyTrackId } }));
+        unwrap(await session.api.PUT('/me/spotify/player/play', { body }));
         setMessage(null);
       } catch (error) {
         setMessage(playerMessage(error));
@@ -116,6 +128,21 @@ export function NowPlayingProvider({ children }: { children: ReactNode }) {
       setTimeout(() => void refresh(), AFTER_COMMAND_MS);
     },
     [session, refresh],
+  );
+
+  const play = useCallback((spotifyTrackId: string, spotifyUrl: string) => start({ spotify_track_id: spotifyTrackId }, spotifyUrl), [start]);
+  const playAlbum = useCallback((spotifyAlbumId: string, spotifyUrl: string) => start({ spotify_album_id: spotifyAlbumId }, spotifyUrl), [start]);
+
+  const queue = useCallback(
+    async (spotifyTrackId: string) => {
+      try {
+        unwrap(await session.api.POST('/me/spotify/player/queue', { body: { spotify_track_id: spotifyTrackId } }));
+        setMessage('Added to your Spotify queue.');
+      } catch (error) {
+        setMessage(queueMessage(error));
+      }
+    },
+    [session],
   );
 
   const toggle = useCallback(
@@ -142,8 +169,8 @@ export function NowPlayingProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<NowPlaying>(
-    () => ({ player, fetchedAt, message, play, toggle, skip, dismiss: () => setMessage(null) }),
-    [player, fetchedAt, message, play, toggle, skip],
+    () => ({ player, fetchedAt, message, play, playAlbum, queue, toggle, skip, notify: setMessage, dismiss: () => setMessage(null) }),
+    [player, fetchedAt, message, play, playAlbum, queue, toggle, skip],
   );
   return <NowPlayingContext.Provider value={value}>{children}</NowPlayingContext.Provider>;
 }
@@ -222,8 +249,10 @@ function Control({ label, accessibilityLabel, onPress, big }: { label: string; a
   );
 }
 
+export type SongProps = { spotifyTrackId: string; spotifyUrl: string; title: string; compact?: boolean };
+
 /** Plays a song on the fan's Spotify; pauses it when it's the one playing. Sits beside "Open in Spotify" links. */
-export function PlayButton({ spotifyTrackId, spotifyUrl, title }: { spotifyTrackId: string; spotifyUrl: string; title: string }) {
+export function PlayButton({ spotifyTrackId, spotifyUrl, title, compact }: SongProps) {
   const { player, play, toggle } = usePlayer();
   const [busy, setBusy] = useState(false);
   const current = player?.track?.spotify_track_id === spotifyTrackId && isActive(player);
@@ -239,19 +268,42 @@ export function PlayButton({ spotifyTrackId, spotifyUrl, title }: { spotifyTrack
     }
   };
 
+  const label = compact ? (playing ? '❚❚' : '▶') : playing ? '❚❚ Pause' : current ? '▶ Resume' : '▶ Play';
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={playing ? `Pause ${title}` : `Play ${title}`}
-      accessibilityState={{ busy }}
-      disabled={busy}
-      onPress={() => void press()}
-      hitSlop={8}
-      style={({ pressed }) => [styles.playButton, (pressed || busy) && styles.pressed]}
-    >
-      <Text style={styles.playLabel}>{playing ? '❚❚ Pause' : current ? '▶ Resume' : '▶ Play'}</Text>
-    </Pressable>
+    <ActionButton accessibilityLabel={playing ? `Pause ${title}` : `Play ${title}`} label={label} busy={busy} onPress={press} compact={compact} primary />
   );
+}
+
+/** Plays an album from its first track. Beside the album's Spotify link on the album screen. */
+export function PlayAlbumButton({ spotifyAlbumId, spotifyUrl, title }: { spotifyAlbumId: string; spotifyUrl: string; title: string }) {
+  const { playAlbum } = usePlayer();
+  const [busy, setBusy] = useState(false);
+  const press = async () => {
+    setBusy(true);
+    try {
+      await playAlbum(spotifyAlbumId, spotifyUrl);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return <ActionButton accessibilityLabel={`Play ${title}`} label="▶ Play album" busy={busy} onPress={press} primary />;
+}
+
+/** Adds a song after what's playing. Shown only while the fan's Spotify is playing or paused another song. */
+export function QueueButton({ spotifyTrackId, title, compact }: Omit<SongProps, 'spotifyUrl'>) {
+  const { player, queue } = usePlayer();
+  const [busy, setBusy] = useState(false);
+  if (!isActive(player) || player?.track?.spotify_track_id === spotifyTrackId) return null;
+
+  const press = async () => {
+    setBusy(true);
+    try {
+      await queue(spotifyTrackId);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return <ActionButton accessibilityLabel={`Add ${title} to the queue`} label={compact ? '+' : '+ Queue'} busy={busy} onPress={press} compact={compact} />;
 }
 
 const styles = StyleSheet.create({
@@ -271,6 +323,4 @@ const styles = StyleSheet.create({
   controlLabelBig: { color: colors.background, fontSize: 16, fontWeight: '700' },
   pressed: { opacity: 0.6 },
   message: { color: colors.muted, fontSize: 13, paddingVertical: space.xs },
-  playButton: { alignSelf: 'flex-start', paddingVertical: 6, paddingHorizontal: 14, borderRadius: 16, backgroundColor: colors.accent },
-  playLabel: { color: colors.onAccent, fontSize: 14, fontWeight: '700' },
 });

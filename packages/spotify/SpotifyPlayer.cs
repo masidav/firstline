@@ -53,15 +53,25 @@ public sealed partial class SpotifyClient
     }
 
     /// <summary>
-    /// Plays a track from the start, or resumes when <paramref name="spotifyTrackId"/> is null. A null
+    /// Plays a song or an album from the start, or resumes when <paramref name="target"/> is null. A null
     /// <paramref name="deviceId"/> means the active device; Spotify answers 404 when there is none.
     /// </summary>
-    public Task PlayAsync(string accessToken, string? spotifyTrackId, string? deviceId, CancellationToken cancellationToken)
+    public Task PlayAsync(string accessToken, SpotifyPlayTarget? target, string? deviceId, CancellationToken cancellationToken)
     {
         var path = deviceId is null ? "me/player/play" : $"me/player/play?device_id={Uri.EscapeDataString(deviceId)}";
-        return CommandAsync(HttpMethod.Put, path, accessToken, "play", cancellationToken,
-            spotifyTrackId is null ? null : new { uris = new[] { $"spotify:track:{spotifyTrackId}" } });
+        object? body = target switch
+        {
+            null => null,
+            { IsContext: true } album => new { context_uri = album.Uri },
+            var track => new { uris = new[] { track.Value.Uri } },
+        };
+        return CommandAsync(HttpMethod.Put, path, accessToken, "play", cancellationToken, body);
     }
+
+    /// <summary>Adds a song after what's playing. Spotify answers 404 when nothing is playing anywhere.</summary>
+    public Task QueueAsync(string accessToken, string spotifyTrackId, CancellationToken cancellationToken) =>
+        CommandAsync(HttpMethod.Post, $"me/player/queue?uri={Uri.EscapeDataString($"spotify:track:{spotifyTrackId}")}",
+            accessToken, "queue", cancellationToken);
 
     public Task PauseAsync(string accessToken, CancellationToken cancellationToken) =>
         CommandAsync(HttpMethod.Put, "me/player/pause", accessToken, "pause", cancellationToken);

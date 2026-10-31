@@ -13,6 +13,9 @@ import { LogForm } from './LogForm';
 import type { PendingLog } from './pendingLogs';
 import { PendingLogCard } from './PendingLogCard';
 import { SpotifyAttribution } from './SpotifyAttribution';
+import { LikeButton } from '../spotify/Library';
+import { PlayAlbumButton } from '../spotify/NowPlaying';
+import { SongControls } from '../spotify/SongControls';
 
 /**
  * One album (GET /albums/{id}): cover and details, tracks, the fan's latest log with edit and "log again",
@@ -101,6 +104,12 @@ export function AlbumScreen({ albumId }: { albumId: string }) {
         </View>
       </View>
       {album.delisted && <Body muted>Spotify no longer lists this release; your logs of it are kept.</Body>}
+      {album.spotify_album_id && spotifyUrl && !album.delisted && (
+        <View style={styles.albumActions}>
+          <PlayAlbumButton spotifyAlbumId={album.spotify_album_id} spotifyUrl={spotifyUrl} title={album.title} />
+          <LikeButton kind="album" id={album.spotify_album_id} title={album.title} />
+        </View>
+      )}
       <SpotifyAttribution url={spotifyUrl} />
       <ErrorText>{error}</ErrorText>
 
@@ -150,10 +159,22 @@ export function AlbumScreen({ albumId }: { albumId: string }) {
             Tracks
           </Text>
           {album.tracks.map((track) => (
-            <Body key={track.id}>
-              {track.track_number != null ? `${track.track_number}. ` : ''}
-              {track.title}
-            </Body>
+            <View key={track.id} style={styles.track}>
+              <View style={styles.trackTitle}>
+                <Body>
+                  {track.track_number != null ? `${track.track_number}. ` : ''}
+                  {track.title}
+                </Body>
+              </View>
+              {track.spotify_track_id && !album.delisted && (
+                <SongControls
+                  spotifyTrackId={track.spotify_track_id}
+                  spotifyUrl={`https://open.spotify.com/track/${track.spotify_track_id}`}
+                  title={track.title}
+                  compact
+                />
+              )}
+            </View>
           ))}
         </>
       )}
@@ -197,4 +218,7 @@ const styles = StyleSheet.create({
   section: { color: colors.text, fontSize: 18, fontWeight: '700', marginTop: space.md },
   log: { gap: 2, padding: space.md, borderRadius: 12, backgroundColor: colors.surface },
   actions: { gap: space.sm },
+  albumActions: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' },
+  track: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  trackTitle: { flex: 1 },
 });

@@ -4,7 +4,7 @@ import { Image, Linking, Platform, Pressable, StyleSheet, Text, View } from 'rea
 import { type components, unwrap } from '../../api/client';
 import { useSession } from '../../auth/SessionProvider';
 import { colors, space } from '../../ui/theme';
-import { PlayButton } from '../spotify/NowPlaying';
+import { SongControls } from '../spotify/SongControls';
 
 export type FeaturedArtist = components['schemas']['FeaturedArtist'];
 
@@ -77,7 +77,7 @@ export function FeaturedArtistCard() {
             <Text style={styles.muted} numberOfLines={1}>{song.album_title ? `${song.album_title} · ` : ''}Listen on Spotify</Text>
           </View>
         </Pressable>
-        <PlayButton spotifyTrackId={song.spotify_track_id} spotifyUrl={song.spotify_url} title={song.title} />
+        <SongControls spotifyTrackId={song.spotify_track_id} spotifyUrl={song.spotify_url} title={song.title} />
       </View>
     </View>
   );

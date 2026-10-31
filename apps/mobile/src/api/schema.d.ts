@@ -209,7 +209,8 @@ export interface paths {
          *     their artists appear on the home screen right away, and scores tracked artists already active.
          *
          *     Request every scope: `user-library-read`, `user-top-read`, `user-read-recently-played`,
-         *     `playlist-read-private`, `playlist-read-collaborative`, `user-follow-read`. `redirect_uri` must be one the server allows
+         *     `playlist-read-private`, `playlist-read-collaborative`, `user-follow-read`, `user-read-playback-state`,
+         *     `user-modify-playback-state`, `user-library-modify`. `redirect_uri` must be one the server allows
          *     (`Spotify__RedirectUris`) and the same one used for the authorization.
          *
          *     `422 validation_failed` (field `code`) when Spotify rejects the code, a scope is missing, or Spotify
@@ -291,8 +292,9 @@ export interface paths {
         };
         get?: never;
         /**
-         * Play a song, or resume
-         * @description Plays `spotify_track_id` from the start on the fan's Spotify, or resumes without it. Spotify plays on the
+         * Play a song or an album, or resume
+         * @description Plays `spotify_track_id` from the start on the fan's Spotify, or `spotify_album_id` from its first track
+         *     (one of the two, added 2026-10-31), or resumes with neither. Spotify plays on the
          *     device the fan has Spotify open on; when none is active, the fan's phone, computer, or tablet that Spotify
          *     lists is used (never a speaker or TV). Errors (`409`): `spotify_not_connected`; `spotify_reauth_required`
          *     (connect again, also when the connection lacks the playback scopes); `spotify_no_device` (Spotify isn't
@@ -321,6 +323,28 @@ export interface paths {
          */
         put: operations["pauseSpotify"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/spotify/player/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a song to the queue
+         * @description Adds `spotify_track_id` after what the fan's Spotify is playing (requested 2026-10-31). Only meaningful while
+         *     Spotify is playing or paused somewhere: with nothing active, `409 spotify_no_device` (no device fallback, unlike
+         *     play). Other errors as `PUT /me/spotify/player/play`.
+         */
+        post: operations["queueSpotify"];
         delete?: never;
         options?: never;
         head?: never;
@@ -362,6 +386,88 @@ export interface paths {
          */
         post: operations["skipSpotifyPrevious"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/spotify/library": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Which songs and albums are in the fan's Spotify library
+         * @description For the app's Like buttons (requested 2026-10-31): whether each song is in the fan's Liked Songs and each
+         *     album is saved, read from Spotify on request and never stored. Never an error for the connection's state:
+         *     `not_connected` without a connection, `reconnect_needed` when the connection lacks `user-library-modify`
+         *     (made before 2026-10-31) or Spotify no longer accepts it; the lists are then empty. `503 spotify_unavailable`
+         *     while Spotify is down or a sync of this fan is renewing the authorization (`Retry-After`).
+         */
+        get: operations["getSpotifyLibrary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/spotify/library/tracks/{spotifyTrackId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spotifyTrackId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Like a song (save it to the fan's Spotify library)
+         * @description Adds the song to the fan's Liked Songs on Spotify, the one change the app makes to a fan's library, and only
+         *     when they press Like. Already saved is fine. The like counts for the fan's score like any other saved track
+         *     once synced, so a quiet sync is queued unless one ran in the last 15 minutes (see `POST /me/spotify/sync`;
+         *     whether in-app likes should count is an open decision in `PROJECT_TODO.md`). Errors (`409`):
+         *     `spotify_not_connected`; `spotify_reauth_required` (connect again, also when the connection lacks
+         *     `user-library-modify` or Spotify no longer allows library changes); `spotify_library_refused` (any other
+         *     refusal).
+         */
+        put: operations["saveSpotifyTrack"];
+        post?: never;
+        /**
+         * Unlike a song (remove it from the fan's Spotify library)
+         * @description Same errors as `PUT`. Not saved is fine. No sync is queued.
+         */
+        delete: operations["removeSpotifyTrack"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/spotify/library/albums/{spotifyAlbumId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spotifyAlbumId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Like an album (save it to the fan's Spotify library)
+         * @description Like `PUT /me/spotify/library/tracks/{spotifyTrackId}`, for an album.
+         */
+        put: operations["saveSpotifyAlbum"];
+        post?: never;
+        /**
+         * Unlike an album (remove it from the fan's Spotify library)
+         * @description Same errors as `PUT`. Not saved is fine. No sync is queued.
+         */
+        delete: operations["removeSpotifyAlbum"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3429,7 +3535,7 @@ export interface components {
              * @description Stable machine-readable code.
              * @enum {string}
              */
-            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "named_as_guest" | "under_review" | "registration_unavailable" | "flag_open" | "appeal_unavailable" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "reservation_unavailable" | "trivia_answered" | "trivia_expired" | "prompt_closed" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_track_not_found" | "followers_only" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "spotify_no_device" | "spotify_premium_required" | "spotify_player_refused" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
+            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "named_as_guest" | "under_review" | "registration_unavailable" | "flag_open" | "appeal_unavailable" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "reservation_unavailable" | "trivia_answered" | "trivia_expired" | "prompt_closed" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_track_not_found" | "followers_only" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "spotify_no_device" | "spotify_premium_required" | "spotify_player_refused" | "spotify_library_refused" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
             errors?: {
                 field?: string;
                 message?: string;
@@ -3712,7 +3818,9 @@ export interface components {
              * @description Scopes the connection was made with. A connection made before `user-follow-read` was required lacks it;
              *     the sync then skips followed artists, and the app should ask the fan to connect again. Connections made
              *     before 2026-10-26 also lack `user-read-playback-state` and `user-modify-playback-state`, which the
-             *     now-playing bar and play buttons need (`GET /me/spotify/player` says `reconnect_needed`).
+             *     now-playing bar and play buttons need (`GET /me/spotify/player` says `reconnect_needed`). Connections made
+             *     before 2026-10-31 lack `user-library-modify`, which the Like buttons need (`GET /me/spotify/library` says
+             *     `reconnect_needed`).
              */
             scopes?: string[];
             /** Format: date-time */
@@ -3777,8 +3885,28 @@ export interface components {
             } | null;
         };
         SpotifyPlay: {
-            /** @description The song to play from the start. Leave it out to resume. */
+            /** @description The song to play from the start. Leave both out to resume. */
             spotify_track_id?: string | null;
+            /** @description The album to play from its first track. Not with `spotify_track_id`. */
+            spotify_album_id?: string | null;
+        };
+        SpotifyQueue: {
+            spotify_track_id: string;
+        };
+        SpotifyLibrary: {
+            /** @enum {string} */
+            status: "ok" | "reconnect_needed" | "not_connected";
+            /** @description One per requested track id, in request order; empty unless `ok`. */
+            tracks: {
+                spotify_track_id: string;
+                /** @description In the fan's Liked Songs. */
+                saved: boolean;
+            }[];
+            /** @description One per requested album id, in request order; empty unless `ok`. */
+            albums: {
+                spotify_album_id: string;
+                saved: boolean;
+            }[];
         };
         DeviceRegistration: {
             push_token: string;
@@ -6013,6 +6141,31 @@ export interface operations {
             503: components["responses"]["SpotifyUnavailable"];
         };
     };
+    queueSpotify: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpotifyQueue"];
+            };
+        };
+        responses: {
+            /** @description Spotify accepted it. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["SpotifyUnavailable"];
+        };
+    };
     skipSpotifyNext: {
         parameters: {
             query?: never;
@@ -6050,6 +6203,125 @@ export interface operations {
                 content?: never;
             };
             409: components["responses"]["Conflict"];
+            503: components["responses"]["SpotifyUnavailable"];
+        };
+    };
+    getSpotifyLibrary: {
+        parameters: {
+            query?: {
+                /** @description Comma-separated Spotify track ids, at most 50. */
+                track_ids?: string;
+                /** @description Comma-separated Spotify album ids, at most 20. */
+                album_ids?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saved state per id */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpotifyLibrary"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["SpotifyUnavailable"];
+        };
+    };
+    saveSpotifyTrack: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spotifyTrackId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saved. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["SpotifyUnavailable"];
+        };
+    };
+    removeSpotifyTrack: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spotifyTrackId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["SpotifyUnavailable"];
+        };
+    };
+    saveSpotifyAlbum: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spotifyAlbumId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saved. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["SpotifyUnavailable"];
+        };
+    };
+    removeSpotifyAlbum: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spotifyAlbumId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
             503: components["responses"]["SpotifyUnavailable"];
         };
     };

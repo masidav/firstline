@@ -85,6 +85,15 @@ Details: [Artists](services/api/src/features/artists/TODO.md) · [Artist search 
       `user-read-playback-state`, `user-modify-playback-state` (existing fans connect again); playback is never stored.
       `/me/spotify/player` (ADR 0005 amended). Verified: `dotnet test` 309/309 with contract checks (SpotifyPlayerApiTests 5), app Jest
       260/260 (NowPlaying 7), typecheck. Not yet tried against real Spotify or seen on a phone.
+- [x] Like, Queue, and Play album (requested 2026-10-31): every song in the app (feed, bouncer door, featured artist,
+      fan profiles, album tracks) gets ♡ Like (saves it to the fan's Spotify Liked Songs, ♥ when it already is) and,
+      while Spotify is playing, + Queue; the album screen gets Play album and Like album. New scope
+      `user-library-modify` (existing fans connect again; a Like before that asks them to). Saved state is read from
+      Spotify per screen, never stored; a Like queues a quiet sync so it counts for the score (see the open decision
+      below). Spotify has no album queue call, so albums get Play, not Queue. `/me/spotify/library`,
+      `POST /me/spotify/player/queue`, `spotify_album_id` on play (ADR 0005 amended). Verified 2026-10-31: `dotnet test`
+      389/389 with contract checks (SpotifyPlayerApiTests 9), app Jest 334/334 (Library 4, NowPlaying 10), typecheck.
+      Not yet tried against real Spotify.
 
 Details: [Spotify API feature](services/api/src/features/spotify-sync/TODO.md) · [Spotify integration](packages/spotify/TODO.md) · [Spotify mobile UI](apps/mobile/src/features/spotify/TODO.md) · [Sync worker](workers/spotify-sync/TODO.md)
 
@@ -566,6 +575,10 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
 - [ ] Decide how Spotify signals credit co-credited tracks. The sync counts the primary artist only for now
       (`SpotifySignals.Reduce`).
 - [ ] Decide how to handle co-credited albums and collaborations.
+- [ ] Decide whether songs and albums a fan likes **from inside the app** (Like buttons, 2026-10-31) should count toward
+      their fandom score. *Since 2026-10-31 they count like any other saved track or album* (Spotify cannot tell where a
+      like came from, and the fan could do the same in Spotify); the log curve caps the gain, but a tap in the feed is
+      now a direct lever on a score signal. The alternative is to record in-app likes ourselves and leave them out.
 - [ ] Confirm the product and company name (summary proposes TrueFan Access or VerifyTicket; repo uses Fandom Score).
 - [x] User stats are followers-only; none are public by default (decided 2026-10-25, Phase 15).
 - [ ] Choose the primary ticketing model: white-labeled checkout through ticketer APIs, or direct allocation links.

@@ -14,6 +14,7 @@ export const SPOTIFY_SCOPES = [
   'user-follow-read',
   'user-read-playback-state',
   'user-modify-playback-state',
+  'user-library-modify',
 ];
 
 /** Scopes a connection must have for every signal to count; older connections may lack newer ones. */

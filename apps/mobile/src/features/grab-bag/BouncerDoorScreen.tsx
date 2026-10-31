@@ -8,7 +8,7 @@ import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { fanName } from '../follows/follows';
-import { PlayButton } from '../spotify/NowPlaying';
+import { SongControls } from '../spotify/SongControls';
 
 export type BouncerDoor = components['schemas']['BouncerDoor'];
 
@@ -63,7 +63,7 @@ export function BouncerDoorScreen() {
             </View>
           </View>
           <View style={styles.songActions}>
-            <PlayButton spotifyTrackId={song.spotify_track_id} spotifyUrl={song.spotify_url} title={song.title} />
+            <SongControls spotifyTrackId={song.spotify_track_id} spotifyUrl={song.spotify_url} title={song.title} />
             <Pressable
               accessibilityRole="link"
               accessibilityLabel={`Open ${song.title} on Spotify`}

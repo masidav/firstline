@@ -11,8 +11,9 @@ namespace FandomScore.Api.Features.SpotifyPlayer;
 
 /// <summary>
 /// openapi <c>/me/spotify/player</c>: the fan's own Spotify playback for the app's now-playing bar, and play, pause,
-/// and skip for its buttons (requested 2026-10-26). Spotify plays on the fan's phone or computer app (Spotify
-/// Connect); nothing about playback is stored. See README.md here and docs/adr/0005-spotify-integration.md.
+/// skip, and queue for its buttons (requested 2026-10-26; album play and queue 2026-10-31). Spotify plays on the
+/// fan's phone or computer app (Spotify Connect); nothing about playback is stored. See README.md here and
+/// docs/adr/0005-spotify-integration.md.
 /// </summary>
 public static partial class SpotifyPlayerEndpoints
 {
@@ -28,6 +29,7 @@ public static partial class SpotifyPlayerEndpoints
         v1.MapGet("/me/spotify/player", GetAsync);
         v1.MapPut("/me/spotify/player/play", PlayAsync);
         v1.MapPut("/me/spotify/player/pause", PauseAsync);
+        v1.MapPost("/me/spotify/player/queue", QueueAsync);
         v1.MapPost("/me/spotify/player/next", (ClaimsPrincipal user, SpotifyPlayerAccess access, SpotifyClient spotify,
             IMemoryCache cache, IOptions<SpotifyOptions> options, CancellationToken ct) =>
             CommandAsync(user, access, cache, options, (token, c) => spotify.SkipAsync(token, forward: true, c), ct));
@@ -36,7 +38,10 @@ public static partial class SpotifyPlayerEndpoints
             CommandAsync(user, access, cache, options, (token, c) => spotify.SkipAsync(token, forward: false, c), ct));
     }
 
-    public sealed record PlayRequest(string? SpotifyTrackId);
+    /// <summary>One of the two, or neither to resume.</summary>
+    public sealed record PlayRequest(string? SpotifyTrackId, string? SpotifyAlbumId);
+
+    public sealed record QueueRequest(string? SpotifyTrackId);
 
     public sealed record PlayerArtist(string SpotifyArtistId, string Name);
 
@@ -122,16 +127,30 @@ public static partial class SpotifyPlayerEndpoints
         IOptions<SpotifyOptions> options, CancellationToken cancellationToken)
     {
         var trackId = request?.SpotifyTrackId;
-        if (trackId is not null && !TrackIdPattern().IsMatch(trackId))
+        var albumId = request?.SpotifyAlbumId;
+        if (trackId is not null && !SpotifyIdPattern().IsMatch(trackId))
         {
             throw ApiProblemException.Validation(new FieldError("spotify_track_id", "Send a Spotify track id (22 letters and digits)."));
         }
 
+        if (albumId is not null && !SpotifyIdPattern().IsMatch(albumId))
+        {
+            throw ApiProblemException.Validation(new FieldError("spotify_album_id", "Send a Spotify album id (22 letters and digits)."));
+        }
+
+        if (trackId is not null && albumId is not null)
+        {
+            throw ApiProblemException.Validation(new FieldError("spotify_album_id", "Send a song or an album, not both."));
+        }
+
+        SpotifyPlayTarget? target = trackId is not null ? SpotifyPlayTarget.Track(trackId)
+            : albumId is not null ? SpotifyPlayTarget.Album(albumId)
+            : null;
         return await CommandAsync(user, access, cache, options, async (token, ct) =>
         {
             try
             {
-                await spotify.PlayAsync(token, trackId, deviceId: null, ct);
+                await spotify.PlayAsync(token, target, deviceId: null, ct);
             }
             catch (SpotifyRequestException e) when (e.IsNoActiveDevice)
             {
@@ -142,9 +161,23 @@ public static partial class SpotifyPlayerEndpoints
                     .OrderByDescending(d => d.IsActive)
                     .ThenBy(d => Array.FindIndex(PersonalDevices, t => string.Equals(t, d.Type, StringComparison.OrdinalIgnoreCase)))
                     .FirstOrDefault() ?? throw NoDevice();
-                await spotify.PlayAsync(token, trackId, device.Id, ct);
+                await spotify.PlayAsync(token, target, device.Id, ct);
             }
         }, cancellationToken);
+    }
+
+    // No device fallback: a queue only means something while Spotify is playing (the app shows the button then).
+    private static Task<IResult> QueueAsync(
+        ClaimsPrincipal user, QueueRequest? request, SpotifyPlayerAccess access, SpotifyClient spotify, IMemoryCache cache,
+        IOptions<SpotifyOptions> options, CancellationToken cancellationToken)
+    {
+        var trackId = request?.SpotifyTrackId;
+        if (trackId is null || !SpotifyIdPattern().IsMatch(trackId))
+        {
+            throw ApiProblemException.Validation(new FieldError("spotify_track_id", "Send a Spotify track id (22 letters and digits)."));
+        }
+
+        return CommandAsync(user, access, cache, options, (token, ct) => spotify.QueueAsync(token, trackId, ct), cancellationToken);
     }
 
     private static Task<IResult> PauseAsync(
@@ -210,6 +243,7 @@ public static partial class SpotifyPlayerEndpoints
         new(StatusCodes.Status409Conflict, "spotify_no_device", "Spotify isn't open",
             "Open Spotify on your phone or computer, then try again.");
 
+    /// <summary>Spotify track and album ids: 22 base-62 characters.</summary>
     [GeneratedRegex("^[0-9A-Za-z]{22}$")]
-    private static partial Regex TrackIdPattern();
+    internal static partial Regex SpotifyIdPattern();
 }

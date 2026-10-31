@@ -10,7 +10,7 @@ import { colors, space } from '../../ui/theme';
 import { stars } from '../feed/feedText';
 import { FollowButton } from '../follows/FollowButton';
 import { setFollowing } from '../follows/follows';
-import { PlayButton } from '../spotify/NowPlaying';
+import { SongControls } from '../spotify/SongControls';
 
 export type UserPublic = components['schemas']['UserPublic'];
 type ProfileStats = components['schemas']['ProfileStats'];
@@ -177,7 +177,7 @@ export function FanProfileScreen({ handle }: { handle: string }) {
                   <Text style={styles.muted} numberOfLines={1}>{song.artist.name}</Text>
                 </View>
               </Pressable>
-              <PlayButton spotifyTrackId={song.spotify_track_id} spotifyUrl={song.spotify_url} title={song.title} />
+              <SongControls spotifyTrackId={song.spotify_track_id} spotifyUrl={song.spotify_url} title={song.title} />
             </View>
           ))}
         </Section>

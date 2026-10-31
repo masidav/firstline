@@ -173,7 +173,7 @@ public static partial class SpotifyEndpoints
         return Results.NoContent();
     }
 
-    private sealed record SyncRequestState(string SyncState, double? WaitSeconds, bool? SyncedRecently);
+    private sealed record SyncRequestState(string SyncState, double? WaitSeconds);
 
     // A sync already queued or running is returned as is. Otherwise one manual sync per ManualSyncInterval.
     // background=true is the app's sync on opening (decided 2026-10-25): it never errors for timing or a lapsed
@@ -184,21 +184,27 @@ public static partial class SpotifyEndpoints
         var userId = user.UserId();
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        if (background == true)
+        {
+            var queued = await SpotifyConnections.RequestBackgroundSyncAsync(connection, transaction, userId, options.Value.ManualSyncInterval);
+            var current = await SpotifyConnections.LoadStatusAsync(connection, userId, transaction);
+            if (!current.Connected)
+            {
+                throw SpotifyConnections.NotConnected();
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+            return queued ? Results.Accepted("/v1/me/spotify", current) : Results.Ok(current);
+        }
+
         var state = await connection.QuerySingleOrDefaultAsync<SyncRequestState>(
             """
             SELECT sync_state AS SyncState,
-                   extract(epoch FROM sync_requested_at + @interval - now())::float8 AS WaitSeconds,
-                   last_synced_at > now() - @interval AS SyncedRecently
+                   extract(epoch FROM sync_requested_at + @interval - now())::float8 AS WaitSeconds
             FROM spotify_connections WHERE user_id = @userId FOR UPDATE
             """,
             new { userId, interval = options.Value.ManualSyncInterval }, transaction)
             ?? throw SpotifyConnections.NotConnected();
-
-        var quiet = background == true;
-        if (quiet && (state.SyncState == "reauth_required" || state.WaitSeconds > 0 || state.SyncedRecently == true))
-        {
-            return Results.Ok(await SpotifyConnections.LoadStatusAsync(connection, userId, transaction));
-        }
 
         switch (state.SyncState)
         {

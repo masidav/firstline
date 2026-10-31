@@ -49,6 +49,39 @@ public static class SpotifyConnections
         public int TopArtistsAdded { get; init; }
     }
 
+    /// <summary>
+    /// Queues a sync of the fan's library unless one ran or was asked for in the last <paramref name="interval"/>
+    /// (the app's quiet sync on opening, decided 2026-10-25; also after a Like, 2026-10-31). Never an error: without a
+    /// connection, with a lapsed authorization, or with a sync already queued or running, nothing happens. True when
+    /// this call queued a sync.
+    /// </summary>
+    public static async Task<bool> RequestBackgroundSyncAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, Guid userId, TimeSpan interval)
+    {
+        var state = await connection.QuerySingleOrDefaultAsync<BackgroundSyncState>(
+            """
+            SELECT sync_state AS SyncState,
+                   (sync_requested_at > now() - @interval OR last_synced_at > now() - @interval) AS Recent
+            FROM spotify_connections WHERE user_id = @userId FOR UPDATE
+            """,
+            new { userId, interval }, transaction);
+        switch (state)
+        {
+            case null or { SyncState: "reauth_required" or "queued" or "running" } or { Recent: true }:
+                return false;
+        }
+
+        await connection.ExecuteAsync(
+            """
+            UPDATE spotify_connections SET sync_requested_at = now() WHERE user_id = @userId;
+            SELECT request_spotify_sync(@userId);
+            """,
+            new { userId }, transaction);
+        return true;
+    }
+
+    private sealed record BackgroundSyncState(string SyncState, bool? Recent);
+
     public static ApiProblemException NotConnected() =>
         new(StatusCodes.Status409Conflict, "spotify_not_connected", "Spotify is not connected", "Connect Spotify first.");
 

@@ -16,6 +16,10 @@ public sealed record PlayerConnection(string SpotifyUserId, string[] Scopes, str
         SyncState != "reauth_required"
         && Scopes.Contains(SpotifyOptions.PlaybackReadScope)
         && Scopes.Contains(SpotifyOptions.PlaybackControlScope);
+
+    /// <summary>Made with the library scope (Like buttons, 2026-10-31) and still accepted by Spotify.</summary>
+    public bool CanUseLibrary =>
+        SyncState != "reauth_required" && Scopes.Contains(SpotifyOptions.LibraryModifyScope);
 }
 
 /// <summary>

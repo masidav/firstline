@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 import { Linking } from 'react-native';
 
 import { ApiError } from '../../api/client';
-import { NowPlayingBar, NowPlayingProvider, PlayButton } from './NowPlaying';
+import { NowPlayingBar, NowPlayingProvider, PlayAlbumButton, PlayButton, QueueButton } from './NowPlaying';
 import { opensInSpotify, progressAt, type SpotifyPlayer } from './player';
 
 const ok = (data: unknown, status = 200) => ({ data, response: { ok: true, status } });
@@ -18,6 +18,8 @@ jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({
 
 const SONG = '4uLU6hMCjMI75M1A2tKUQC';
 const URL = `https://open.spotify.com/track/${SONG}`;
+const ALBUM = '6kZ42qRrzov54LcAk4onW9';
+const ALBUM_URL = `https://open.spotify.com/album/${ALBUM}`;
 const playing: SpotifyPlayer = {
   status: 'playing',
   progress_ms: 30_000,
@@ -39,6 +41,9 @@ function App() {
     <NowPlayingProvider>
       <PlayButton spotifyTrackId={SONG} spotifyUrl={URL} title="Hard Times" />
       <PlayButton spotifyTrackId="0bbbbbbbbbbbbbbbbbbbbb" spotifyUrl="https://open.spotify.com/track/0bbbbbbbbbbbbbbbbbbbbb" title="Other Song" />
+      <QueueButton spotifyTrackId={SONG} title="Hard Times" />
+      <QueueButton spotifyTrackId="0bbbbbbbbbbbbbbbbbbbbb" title="Other Song" />
+      <PlayAlbumButton spotifyAlbumId={ALBUM} spotifyUrl={ALBUM_URL} title="After Laughter" />
       <NowPlayingBar />
     </NowPlayingProvider>
   );
@@ -123,4 +128,40 @@ test('only connection and device problems open the song instead', () => {
   expect(opensInSpotify(new ApiError(409, { code: 'spotify_premium_required' }))).toBe(true);
   expect(opensInSpotify(new ApiError(503, { code: 'spotify_unavailable' }))).toBe(false);
   expect(opensInSpotify(new TypeError('offline'))).toBe(true);
+});
+
+test('Queue is offered for other songs while Spotify plays, and adds them after the current one', async () => {
+  mockApi.GET.mockResolvedValue(ok(playing));
+  mockApi.POST.mockResolvedValue(done());
+  render(<App />);
+  expect(await screen.findByText('Hard Times')).toBeTruthy();
+
+  // Not for the song already playing.
+  expect(screen.queryByRole('button', { name: 'Add Hard Times to the queue' })).toBeNull();
+  fireEvent.press(screen.getByRole('button', { name: 'Add Other Song to the queue' }));
+  await waitFor(() => expect(mockApi.POST).toHaveBeenCalledWith('/me/spotify/player/queue', { body: { spotify_track_id: '0bbbbbbbbbbbbbbbbbbbbb' } }));
+  expect(await screen.findByText('Added to your Spotify queue.')).toBeTruthy();
+});
+
+test('with nothing playing there is no Queue button', async () => {
+  mockApi.GET.mockResolvedValue(ok(idle('nothing_playing')));
+  render(<App />);
+  await waitFor(() => expect(mockApi.GET).toHaveBeenCalled());
+  await act(async () => {});
+  expect(screen.queryByRole('button', { name: /to the queue/ })).toBeNull();
+});
+
+test('Play album starts the album, or opens it in Spotify when Spotify is closed', async () => {
+  mockApi.GET.mockResolvedValue(ok(idle('nothing_playing')));
+  mockApi.PUT.mockResolvedValue(done());
+  render(<App />);
+  await waitFor(() => expect(mockApi.GET).toHaveBeenCalled());
+
+  fireEvent.press(screen.getByRole('button', { name: 'Play After Laughter' }));
+  await waitFor(() => expect(mockApi.PUT).toHaveBeenCalledWith('/me/spotify/player/play', { body: { spotify_album_id: ALBUM } }));
+  expect(Linking.openURL).not.toHaveBeenCalled();
+
+  mockApi.PUT.mockResolvedValue(problem(409, 'spotify_no_device'));
+  fireEvent.press(screen.getByRole('button', { name: 'Play After Laughter' }));
+  await waitFor(() => expect(Linking.openURL).toHaveBeenCalledWith(ALBUM_URL));
 });

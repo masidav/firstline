@@ -18,7 +18,7 @@ using Npgsql;
 
 namespace FandomScore.Tests;
 
-/// <summary>/me/spotify/player (now-playing bar and play buttons) against a real database, with Spotify faked.</summary>
+/// <summary>/me/spotify/player and /me/spotify/library (now-playing bar, play, queue, and Like buttons) against a real database, with Spotify faked.</summary>
 [Collection(PostgresCollection.Name)]
 public sealed class SpotifyPlayerApiTests(PostgresFixture postgres) : IAsyncLifetime, IDisposable
 {
@@ -194,6 +194,126 @@ public sealed class SpotifyPlayerApiTests(PostgresFixture postgres) : IAsyncLife
         await sync.ExecuteAsync("SELECT pg_advisory_unlock(hashtextextended(@key, 0))", new { key = $"spotify.sync:{userId}" });
         Assert.Equal("playing", (await PlayerAsync(token)).GetProperty("status").GetString());
     }
+
+    [Fact]
+    public async Task Queue_adds_the_song_after_what_is_playing_and_needs_something_playing()
+    {
+        var token = await SignInAsync("queuer");
+        await ConnectAsync(token);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await QueueAsync(token, Song.Id)).StatusCode);
+        var queue = Assert.Single(_spotify.Calls, c => c.Path == "me/player/queue");
+        Assert.Equal("POST", queue.Method);
+        Assert.Equal($"?uri={Uri.EscapeDataString($"spotify:track:{Song.Id}")}", queue.Query);
+
+        await AssertProblemAsync(await QueueAsync(token, "nope"), HttpStatusCode.UnprocessableEntity, "validation_failed");
+        await AssertProblemAsync(await SendAsync(HttpMethod.Post, "/v1/me/spotify/player/queue", token, JsonContent.Create(new { })),
+            HttpStatusCode.UnprocessableEntity, "validation_failed");
+
+        // Nothing playing anywhere: no device fallback, the app hides the button in that case anyway.
+        _spotify.Devices.Add(FakeSpotify.Device("phone-1", "Fan's iPhone", "Smartphone"));
+        _spotify.Interruptions.Enqueue(("me/player/queue", () => FakeSpotify.PlayerError(HttpStatusCode.NotFound, "NO_ACTIVE_DEVICE")));
+        await AssertProblemAsync(await QueueAsync(token, Song.Id), HttpStatusCode.Conflict, "spotify_no_device");
+        Assert.DoesNotContain(_spotify.Calls, c => c.Path == "me/player/devices");
+    }
+
+    [Fact]
+    public async Task Play_album_starts_the_album_as_a_context_and_not_together_with_a_song()
+    {
+        var token = await SignInAsync("albumfan");
+        await ConnectAsync(token);
+        const string album = "6kZ42qRrzov54LcAk4onW9";
+
+        var response = await SendAsync(HttpMethod.Put, "/v1/me/spotify/player/play", token, JsonContent.Create(new { spotify_album_id = album }));
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        var play = Assert.Single(_spotify.Calls, c => c.Path == "me/player/play");
+        Assert.Contains($"\"context_uri\":\"spotify:album:{album}\"", play.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("uris", play.Body, StringComparison.Ordinal);
+
+        await AssertProblemAsync(
+            await SendAsync(HttpMethod.Put, "/v1/me/spotify/player/play", token, JsonContent.Create(new { spotify_album_id = album, spotify_track_id = Song.Id })),
+            HttpStatusCode.UnprocessableEntity, "validation_failed");
+        await AssertProblemAsync(
+            await SendAsync(HttpMethod.Put, "/v1/me/spotify/player/play", token, JsonContent.Create(new { spotify_album_id = "short" })),
+            HttpStatusCode.UnprocessableEntity, "validation_failed");
+    }
+
+    [Fact]
+    public async Task Likes_save_to_the_fans_library_show_as_saved_and_queue_one_quiet_sync()
+    {
+        var token = await SignInAsync("liker");
+        await ConnectAsync(token);
+        // The first sync has run a while ago, so a like may ask for another.
+        await ExecuteAsync("UPDATE spotify_connections SET sync_state = 'idle', sync_requested_at = now() - interval '1 hour', last_synced_at = now() - interval '1 hour'");
+        await ExecuteAsync("DELETE FROM jobs");
+        const string album = "6kZ42qRrzov54LcAk4onW9";
+        const string other = "0bbbbbbbbbbbbbbbbbbbbb";
+        _spotify.LibraryAlbumIds.Add(album);
+
+        var library = await LibraryAsync(token, $"track_ids={Song.Id},{other}&album_ids={album}");
+        Assert.Equal("ok", library.GetProperty("status").GetString());
+        Assert.Equal([false, false], library.GetProperty("tracks").EnumerateArray().Select(t => t.GetProperty("saved").GetBoolean()));
+        Assert.Equal(Song.Id, library.GetProperty("tracks")[0].GetProperty("spotify_track_id").GetString());
+        Assert.True(library.GetProperty("albums")[0].GetProperty("saved").GetBoolean());
+
+        Assert.Equal(HttpStatusCode.NoContent, (await SendAsync(HttpMethod.Put, $"/v1/me/spotify/library/tracks/{Song.Id}", token)).StatusCode);
+        var save = Assert.Single(_spotify.Calls, c => c is { Method: "PUT", Path: "me/tracks" });
+        Assert.Equal($"?ids={Song.Id}", save.Query);
+        Assert.Contains(Song.Id, _spotify.LibraryTrackIds);
+        library = await LibraryAsync(token, $"track_ids={Song.Id}");
+        Assert.True(library.GetProperty("tracks")[0].GetProperty("saved").GetBoolean());
+
+        // One sync was queued for the like; a second like within 15 minutes queues nothing more.
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            Assert.Equal("queued", await connection.ExecuteScalarAsync<string>("SELECT sync_state FROM spotify_connections"));
+            Assert.Equal(1, await connection.ExecuteScalarAsync<int>("SELECT count(*)::int FROM jobs WHERE kind = 'spotify.sync'"));
+        }
+
+        Assert.Equal(HttpStatusCode.NoContent, (await SendAsync(HttpMethod.Put, $"/v1/me/spotify/library/albums/{album}", token)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await SendAsync(HttpMethod.Delete, $"/v1/me/spotify/library/albums/{album}", token)).StatusCode);
+        Assert.DoesNotContain(album, _spotify.LibraryAlbumIds);
+        Assert.Equal(HttpStatusCode.NoContent, (await SendAsync(HttpMethod.Delete, $"/v1/me/spotify/library/tracks/{Song.Id}", token)).StatusCode);
+        Assert.DoesNotContain(Song.Id, _spotify.LibraryTrackIds);
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            Assert.Equal(1, await connection.ExecuteScalarAsync<int>("SELECT count(*)::int FROM jobs WHERE kind = 'spotify.sync'"));
+        }
+
+        await AssertProblemAsync(await SendAsync(HttpMethod.Put, "/v1/me/spotify/library/tracks/nope", token), HttpStatusCode.UnprocessableEntity, "validation_failed");
+        await AssertProblemAsync(await SendAsync(HttpMethod.Get, $"/v1/me/spotify/library?track_ids={string.Join(',', Enumerable.Range(0, 51).Select(i => $"{i:D22}"))}", token),
+            HttpStatusCode.UnprocessableEntity, "validation_failed");
+    }
+
+    [Fact]
+    public async Task Likes_need_the_library_scope_and_a_connection()
+    {
+        var token = await SignInAsync("oldliker");
+        Assert.Equal("not_connected", (await LibraryAsync(token, $"track_ids={Song.Id}")).GetProperty("status").GetString());
+        await AssertProblemAsync(await SendAsync(HttpMethod.Put, $"/v1/me/spotify/library/tracks/{Song.Id}", token), HttpStatusCode.Conflict, "spotify_not_connected");
+
+        // A connection made before 2026-10-31 lacks user-library-modify.
+        await ConnectAsync(token);
+        await ExecuteAsync("UPDATE spotify_connections SET scopes = array_remove(scopes, 'user-library-modify')");
+        var library = await LibraryAsync(token, $"track_ids={Song.Id}");
+        Assert.Equal("reconnect_needed", library.GetProperty("status").GetString());
+        Assert.Empty(library.GetProperty("tracks").EnumerateArray());
+        await AssertProblemAsync(await SendAsync(HttpMethod.Put, $"/v1/me/spotify/library/tracks/{Song.Id}", token), HttpStatusCode.Conflict, "spotify_reauth_required");
+        Assert.DoesNotContain(_spotify.Calls, c => c.Path.StartsWith("me/tracks", StringComparison.Ordinal));
+
+        // The fan took the permission away in Spotify: a 403 means connect again.
+        await ConnectAsync(token);
+        _spotify.Interruptions.Enqueue(("me/tracks", () => FakeSpotify.Status(HttpStatusCode.Forbidden)));
+        await AssertProblemAsync(await SendAsync(HttpMethod.Put, $"/v1/me/spotify/library/tracks/{Song.Id}", token), HttpStatusCode.Conflict, "spotify_reauth_required");
+        _spotify.Interruptions.Enqueue(("me/tracks", () => FakeSpotify.Status(HttpStatusCode.BadRequest)));
+        await AssertProblemAsync(await SendAsync(HttpMethod.Put, $"/v1/me/spotify/library/tracks/{Song.Id}", token), HttpStatusCode.Conflict, "spotify_library_refused");
+    }
+
+    private async Task<JsonElement> LibraryAsync(string token, string query) =>
+        await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/me/spotify/library?{query}", token), HttpStatusCode.OK);
+
+    private Task<HttpResponseMessage> QueueAsync(string token, string trackId) =>
+        SendAsync(HttpMethod.Post, "/v1/me/spotify/player/queue", token, JsonContent.Create(new { spotify_track_id = trackId }));
 
     private async Task<JsonElement> PlayerAsync(string token) =>
         await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/spotify/player", token), HttpStatusCode.OK);

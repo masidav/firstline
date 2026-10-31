@@ -95,4 +95,12 @@ public sealed record SpotifyDevice(string? Id, string Name, string Type, bool Is
 /// What the fan's Spotify is doing right now. <see cref="Track"/> is null for podcasts, ads, and local files.
 /// Held in memory only and shown to the fan; never stored.
 /// </summary>
+/// <summary>What a play starts: one song from the start, or an album (a playback context) from its first track.</summary>
+public readonly record struct SpotifyPlayTarget(string Uri, bool IsContext)
+{
+    public static SpotifyPlayTarget Track(string spotifyTrackId) => new($"spotify:track:{spotifyTrackId}", IsContext: false);
+
+    public static SpotifyPlayTarget Album(string spotifyAlbumId) => new($"spotify:album:{spotifyAlbumId}", IsContext: true);
+}
+
 public sealed record SpotifyPlayback(bool IsPlaying, int? ProgressMs, int? DurationMs, SpotifyTrackDetail? Track, SpotifyDevice? Device);

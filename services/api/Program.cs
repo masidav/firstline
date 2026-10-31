@@ -83,6 +83,7 @@ v1.MapAppleNotifications();
 v1.MapMe();
 v1.MapSpotify();
 v1.MapSpotifyPlayer();
+v1.MapSpotifyLibrary();
 v1.MapArtists();
 v1.MapAllocations();
 v1.MapOrganizations();

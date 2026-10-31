@@ -175,6 +175,11 @@ public sealed class FakeSpotify : HttpMessageHandler
         },
     };
 
+    /// <summary>Ids in the fan's Liked Songs and saved albums, for <c>me/tracks</c> and <c>me/albums</c> (contains, PUT, DELETE).</summary>
+    public HashSet<string> LibraryTrackIds { get; } = [];
+
+    public HashSet<string> LibraryAlbumIds { get; } = [];
+
     /// <summary>A player command's error, as Spotify sends it.</summary>
     public static HttpResponseMessage PlayerError(HttpStatusCode status, string reason) =>
         new(status) { Content = JsonContent.Create(new { error = new { status = (int)status, message = "Player command failed", reason } }) };
@@ -268,11 +273,29 @@ public sealed class FakeSpotify : HttpMessageHandler
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(Playback) };
             case "me/player/devices":
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { devices = Devices }) };
-            case "me/player/play" or "me/player/pause" or "me/player/next" or "me/player/previous":
+            case "me/player/play" or "me/player/pause" or "me/player/next" or "me/player/previous" or "me/player/queue":
                 return new HttpResponseMessage(HttpStatusCode.NoContent);
         }
 
         var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        if (path is "me/tracks" or "me/albums" && request.Method != HttpMethod.Get)
+        {
+            var library = path == "me/tracks" ? LibraryTrackIds : LibraryAlbumIds;
+            foreach (var id in (query["ids"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                _ = request.Method == HttpMethod.Put ? library.Add(id) : library.Remove(id);
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        }
+
+        if (path is "me/tracks/contains" or "me/albums/contains")
+        {
+            var library = path == "me/tracks/contains" ? LibraryTrackIds : LibraryAlbumIds;
+            var contains = (query["ids"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Select(library.Contains).ToArray();
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(contains) };
+        }
+
         var limit = int.Parse(query["limit"] ?? "20", System.Globalization.CultureInfo.InvariantCulture);
         var offset = int.Parse(query["offset"] ?? "0", System.Globalization.CultureInfo.InvariantCulture);
         object body = path switch

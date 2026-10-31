@@ -12,7 +12,7 @@ import { standingMessage } from '../ticketing/standing';
 import { type FeedItem, formatWhen, stars, statSentence, ticketsLine } from './feedText';
 import { ReactionBar } from './ReactionBar';
 import { ReportForm } from './ReportForm';
-import { PlayButton } from '../spotify/NowPlaying';
+import { SongControls } from '../spotify/SongControls';
 
 export type FeedCardProps = {
   item: FeedItem;
@@ -166,7 +166,7 @@ function GrabBagCard(props: FeedCardProps) {
         </View>
       </View>
       <View style={styles.songActions}>
-        <PlayButton spotifyTrackId={song.spotify_track_id} spotifyUrl={song.spotify_url} title={song.title} />
+        <SongControls spotifyTrackId={song.spotify_track_id} spotifyUrl={song.spotify_url} title={song.title} />
         <Pressable
           accessibilityRole="link"
           accessibilityLabel={`Open ${song.title} on Spotify`}

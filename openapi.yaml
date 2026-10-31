@@ -346,7 +346,8 @@ paths:
         their artists appear on the home screen right away, and scores tracked artists already active.
 
         Request every scope: `user-library-read`, `user-top-read`, `user-read-recently-played`,
-        `playlist-read-private`, `playlist-read-collaborative`, `user-follow-read`. `redirect_uri` must be one the server allows
+        `playlist-read-private`, `playlist-read-collaborative`, `user-follow-read`, `user-read-playback-state`,
+        `user-modify-playback-state`, `user-library-modify`. `redirect_uri` must be one the server allows
         (`Spotify__RedirectUris`) and the same one used for the authorization.
 
         `422 validation_failed` (field `code`) when Spotify rejects the code, a scope is missing, or Spotify
@@ -439,9 +440,10 @@ paths:
     put:
       tags: [Me]
       operationId: playSpotify
-      summary: Play a song, or resume
+      summary: Play a song or an album, or resume
       description: |
-        Plays `spotify_track_id` from the start on the fan's Spotify, or resumes without it. Spotify plays on the
+        Plays `spotify_track_id` from the start on the fan's Spotify, or `spotify_album_id` from its first track
+        (one of the two, added 2026-10-31), or resumes with neither. Spotify plays on the
         device the fan has Spotify open on; when none is active, the fan's phone, computer, or tablet that Spotify
         lists is used (never a speaker or TV). Errors (`409`): `spotify_not_connected`; `spotify_reauth_required`
         (connect again, also when the connection lacks the playback scopes); `spotify_no_device` (Spotify isn't
@@ -467,6 +469,25 @@ paths:
         '204': {description: Spotify accepted it.}
         '409': {$ref: '#/components/responses/Conflict'}
         '503': {$ref: '#/components/responses/SpotifyUnavailable'}
+  /me/spotify/player/queue:
+    post:
+      tags: [Me]
+      operationId: queueSpotify
+      summary: Add a song to the queue
+      description: |
+        Adds `spotify_track_id` after what the fan's Spotify is playing (requested 2026-10-31). Only meaningful while
+        Spotify is playing or paused somewhere: with nothing active, `409 spotify_no_device` (no device fallback, unlike
+        play). Other errors as `PUT /me/spotify/player/play`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SpotifyQueue'}
+      responses:
+        '204': {description: Spotify accepted it.}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '503': {$ref: '#/components/responses/SpotifyUnavailable'}
   /me/spotify/player/next:
     post:
       tags: [Me]
@@ -486,6 +507,93 @@ paths:
       responses:
         '204': {description: Spotify accepted it.}
         '409': {$ref: '#/components/responses/Conflict'}
+        '503': {$ref: '#/components/responses/SpotifyUnavailable'}
+  /me/spotify/library:
+    get:
+      tags: [Me]
+      operationId: getSpotifyLibrary
+      summary: Which songs and albums are in the fan's Spotify library
+      description: |
+        For the app's Like buttons (requested 2026-10-31): whether each song is in the fan's Liked Songs and each
+        album is saved, read from Spotify on request and never stored. Never an error for the connection's state:
+        `not_connected` without a connection, `reconnect_needed` when the connection lacks `user-library-modify`
+        (made before 2026-10-31) or Spotify no longer accepts it; the lists are then empty. `503 spotify_unavailable`
+        while Spotify is down or a sync of this fan is renewing the authorization (`Retry-After`).
+      parameters:
+        - name: track_ids
+          in: query
+          schema: {type: string}
+          description: Comma-separated Spotify track ids, at most 50.
+        - name: album_ids
+          in: query
+          schema: {type: string}
+          description: Comma-separated Spotify album ids, at most 20.
+      responses:
+        '200':
+          description: Saved state per id
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SpotifyLibrary'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '503': {$ref: '#/components/responses/SpotifyUnavailable'}
+  /me/spotify/library/tracks/{spotifyTrackId}:
+    parameters:
+      - name: spotifyTrackId
+        in: path
+        required: true
+        schema: {type: string, pattern: '^[0-9A-Za-z]{22}$'}
+    put:
+      tags: [Me]
+      operationId: saveSpotifyTrack
+      summary: Like a song (save it to the fan's Spotify library)
+      description: |
+        Adds the song to the fan's Liked Songs on Spotify, the one change the app makes to a fan's library, and only
+        when they press Like. Already saved is fine. The like counts for the fan's score like any other saved track
+        once synced, so a quiet sync is queued unless one ran in the last 15 minutes (see `POST /me/spotify/sync`;
+        whether in-app likes should count is an open decision in `PROJECT_TODO.md`). Errors (`409`):
+        `spotify_not_connected`; `spotify_reauth_required` (connect again, also when the connection lacks
+        `user-library-modify` or Spotify no longer allows library changes); `spotify_library_refused` (any other
+        refusal).
+      responses:
+        '204': {description: Saved.}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '503': {$ref: '#/components/responses/SpotifyUnavailable'}
+    delete:
+      tags: [Me]
+      operationId: removeSpotifyTrack
+      summary: Unlike a song (remove it from the fan's Spotify library)
+      description: Same errors as `PUT`. Not saved is fine. No sync is queued.
+      responses:
+        '204': {description: Removed.}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '503': {$ref: '#/components/responses/SpotifyUnavailable'}
+  /me/spotify/library/albums/{spotifyAlbumId}:
+    parameters:
+      - name: spotifyAlbumId
+        in: path
+        required: true
+        schema: {type: string, pattern: '^[0-9A-Za-z]{22}$'}
+    put:
+      tags: [Me]
+      operationId: saveSpotifyAlbum
+      summary: Like an album (save it to the fan's Spotify library)
+      description: Like `PUT /me/spotify/library/tracks/{spotifyTrackId}`, for an album.
+      responses:
+        '204': {description: Saved.}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '503': {$ref: '#/components/responses/SpotifyUnavailable'}
+    delete:
+      tags: [Me]
+      operationId: removeSpotifyAlbum
+      summary: Unlike an album (remove it from the fan's Spotify library)
+      description: Same errors as `PUT`. Not saved is fine. No sync is queued.
+      responses:
+        '204': {description: Removed.}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
         '503': {$ref: '#/components/responses/SpotifyUnavailable'}
   /me/devices/{deviceId}:
     parameters:
@@ -4101,6 +4209,7 @@ components:
             - spotify_no_device
             - spotify_premium_required
             - spotify_player_refused
+            - spotify_library_refused
             - duplicate_submission
             - score_not_ready
             - upload_expired
@@ -4391,7 +4500,9 @@ components:
             Scopes the connection was made with. A connection made before `user-follow-read` was required lacks it;
             the sync then skips followed artists, and the app should ask the fan to connect again. Connections made
             before 2026-10-26 also lack `user-read-playback-state` and `user-modify-playback-state`, which the
-            now-playing bar and play buttons need (`GET /me/spotify/player` says `reconnect_needed`).
+            now-playing bar and play buttons need (`GET /me/spotify/player` says `reconnect_needed`). Connections made
+            before 2026-10-31 lack `user-library-modify`, which the Like buttons need (`GET /me/spotify/library` says
+            `reconnect_needed`).
         connected_at: {type: [string, 'null'], format: date-time}
         last_synced_at: {type: [string, 'null'], format: date-time}
         sync_state:
@@ -4459,7 +4570,41 @@ components:
         spotify_track_id:
           type: [string, 'null']
           pattern: '^[0-9A-Za-z]{22}$'
-          description: The song to play from the start. Leave it out to resume.
+          description: The song to play from the start. Leave both out to resume.
+        spotify_album_id:
+          type: [string, 'null']
+          pattern: '^[0-9A-Za-z]{22}$'
+          description: The album to play from its first track. Not with `spotify_track_id`.
+    SpotifyQueue:
+      type: object
+      required: [spotify_track_id]
+      properties:
+        spotify_track_id: {type: string, pattern: '^[0-9A-Za-z]{22}$'}
+    SpotifyLibrary:
+      type: object
+      required: [status, tracks, albums]
+      properties:
+        status:
+          type: string
+          enum: [ok, reconnect_needed, not_connected]
+        tracks:
+          type: array
+          description: One per requested track id, in request order; empty unless `ok`.
+          items:
+            type: object
+            required: [spotify_track_id, saved]
+            properties:
+              spotify_track_id: {type: string}
+              saved: {type: boolean, description: In the fan's Liked Songs.}
+        albums:
+          type: array
+          description: One per requested album id, in request order; empty unless `ok`.
+          items:
+            type: object
+            required: [spotify_album_id, saved]
+            properties:
+              spotify_album_id: {type: string}
+              saved: {type: boolean}
     DeviceRegistration:
       type: object
       required: [push_token, platform]

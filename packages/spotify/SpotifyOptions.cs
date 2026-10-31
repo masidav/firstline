@@ -23,6 +23,7 @@ public sealed class SpotifyOptions
         FollowScope,                   // artists they follow
         PlaybackReadScope,             // what's playing, and on which device
         PlaybackControlScope,          // play, pause, skip when the fan presses a button
+        LibraryModifyScope,            // save a song or album to the fan's library when they press Like
     ];
 
     /// <summary>
@@ -39,6 +40,14 @@ public sealed class SpotifyOptions
 
     /// <inheritdoc cref="PlaybackReadScope"/>
     public const string PlaybackControlScope = "user-modify-playback-state";
+
+    /// <summary>
+    /// Scope for the app's Like buttons, added 2026-10-31: saving a song or album to the fan's Spotify library and
+    /// removing it again. Connections made before lack it: <c>GET /me/spotify/library</c> says <c>reconnect_needed</c>
+    /// and the app asks the fan to connect again. The only scope that writes to the fan's library, and only when
+    /// the fan presses a button.
+    /// </summary>
+    public const string LibraryModifyScope = "user-library-modify";
 
     /// <summary>Client ID of the app in the Spotify developer dashboard. Not a secret. Empty disables Spotify.</summary>
     public string ClientId { get; set; } = "";
