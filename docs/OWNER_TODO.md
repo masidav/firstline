@@ -55,7 +55,9 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
     `https://promoters.beta.firstline-5730kl.com/google-callback`.
   - OAuth consent screen: while it's in Testing, add each tester's Google account as a test user (up to 100).
 
-- [ ] **6. Turn deploys on and deploy beta.** After this, every push to `main` deploys beta.
+- [ ] **6. Turn deploys on and deploy beta.** After this, every push to `main` deploys beta. All three certificates
+  were `ACTIVE` by 2026-10-31 evening, but beta was torn down on 2026-10-27 (api and worker scaled to 0, Gateway and
+  load balancer gone), so `https://` on the hostnames fails until this deploy recreates the Gateway.
   ```bash
   gh variable set DEPLOY_ENABLED --body true --repo masidav/firstline
   gh workflow run Deploy --repo masidav/firstline -f environment=beta   # add -f skip_health_check=true if a certificate isn't ACTIVE yet
