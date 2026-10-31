@@ -568,31 +568,44 @@ UNION ALL SELECT 'prompt answers this week', count(*) FROM prompt_answers;""")
 
 
 def demo_fan_sql(handle, email):
-    """An account for a real person, claimed at their first verified sign-in with this email (the API links the
-    identity to a user that has none). Hub cities, follows both ways with seeded fans, listening signals and provisional
-    scores for every seed artist (a rescore is queued), and a few album logs: a full feed from the first visit.
-    Idempotent: nothing happens when the handle or email is already taken."""
+    """An account for a real person with a full feed: hub cities, follows both ways with seeded fans, listening signals
+    and provisional scores for every seed artist (a rescore is queued), and a few album logs. The account is created
+    (handle and email, no identity; the first verified sign-in with the email claims it) unless someone has already
+    signed up with that email, in which case that account is furnished under whatever handle it chose. Idempotent:
+    an account that already follows seeded fans is left alone."""
     display = handle.replace("_", " ").title()
-    return f"""-- Demo account {handle}: for a real person, claimed at their first sign-in with {email} (AuthEndpoints).
+    return f"""-- Demo account {handle} ({email}): for a real person; created if needed, furnished once (AuthEndpoints claims it).
 DO $$
 DECLARE v_id uuid; v_cities text[];
 BEGIN
-  IF EXISTS (SELECT 1 FROM users WHERE handle = {lit(handle)} OR email = {lit(email)}) THEN
-    RAISE NOTICE 'demo fan {handle} is already there'; RETURN;
+  SELECT id INTO v_id FROM users WHERE email = {lit(email)} AND deleted_at IS NULL;
+  IF v_id IS NULL THEN
+    IF EXISTS (SELECT 1 FROM users WHERE handle = {lit(handle)}) THEN
+      RAISE NOTICE 'demo fan {handle}: the handle belongs to another account; nothing done'; RETURN;
+    END IF;
+    INSERT INTO users (handle, email, display_name, created_at)
+    VALUES ({lit(handle)}, {lit(email)}, {lit(display)}, now() - interval '200 days') RETURNING id INTO v_id;
+    RAISE NOTICE 'demo fan {handle} created';
   END IF;
-  INSERT INTO users (handle, email, display_name, created_at)
-  VALUES ({lit(handle)}, {lit(email)}, {lit(display)}, now() - interval '200 days') RETURNING id INTO v_id;
-  SELECT array_agg(id) INTO v_cities FROM (SELECT id FROM cities WHERE active ORDER BY id LIMIT 2) c;
-  PERFORM set_hub_cities(v_id, v_cities);
+  IF EXISTS (SELECT 1 FROM follows f JOIN users u ON u.id = f.followee_id WHERE f.follower_id = v_id AND u.email LIKE '%@example.test') THEN
+    RAISE NOTICE 'demo fan {handle} is already set up'; RETURN;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM user_hub_cities WHERE user_id = v_id) THEN
+    SELECT array_agg(id) INTO v_cities FROM (SELECT id FROM cities WHERE active ORDER BY id LIMIT 2) c;
+    PERFORM set_hub_cities(v_id, v_cities);
+  END IF;
   INSERT INTO follows (follower_id, followee_id, created_at)
   SELECT v_id, id, now() - random() * interval '120 days' FROM users
-   WHERE email LIKE '%@example.test' AND NOT is_staff AND deleted_at IS NULL ORDER BY random() LIMIT 60;
+   WHERE email LIKE '%@example.test' AND NOT is_staff AND deleted_at IS NULL ORDER BY random() LIMIT 60
+  ON CONFLICT DO NOTHING;
   INSERT INTO follows (follower_id, followee_id, created_at)
   SELECT id, v_id, now() - random() * interval '120 days' FROM users
-   WHERE email LIKE '%@example.test' AND NOT is_staff AND deleted_at IS NULL ORDER BY random() LIMIT 25;
+   WHERE email LIKE '%@example.test' AND NOT is_staff AND deleted_at IS NULL ORDER BY random() LIMIT 25
+  ON CONFLICT DO NOTHING;
   INSERT INTO user_artist_signals (user_id, artist_id, liked_tracks, playlist_tracks, distinct_albums, top_artist_rank, recent_plays, synced_at)
   SELECT v_id, a.id, 14, 6, 3, row_number() OVER (ORDER BY a.name)::smallint, 45, now()
-    FROM artists a WHERE a.spotify_artist_id LIKE 'seed:%' AND a.status = 'active';
+    FROM artists a WHERE a.spotify_artist_id LIKE 'seed:%' AND a.status = 'active'
+  ON CONFLICT DO NOTHING;
   INSERT INTO album_logs (user_id, album_id, rating, listened_on, created_at)
   SELECT v_id, id, 7 + n % 4, current_date - n * 9, now() - n * interval '9 days'
     FROM (SELECT al.id, row_number() OVER ()::int AS n FROM albums al JOIN artists a ON a.id = al.artist_id
@@ -609,7 +622,7 @@ BEGIN
     SET raw_score = EXCLUDED.raw_score, percentile = EXCLUDED.percentile, is_estimated = false, baseline_weight = 0,
         breakdown = EXCLUDED.breakdown;
   PERFORM request_artist_rescore(id) FROM artists WHERE spotify_artist_id LIKE 'seed:%' AND status = 'active';
-  RAISE NOTICE 'demo fan {handle} is ready';
+  RAISE NOTICE 'demo fan {handle} is set up';
 END $$;"""
 
 
