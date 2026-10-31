@@ -35,7 +35,7 @@ configMapGenerator:
   - name: web-config
     behavior: merge
     literals:
-      - API_URL=https://api.beta.firstline.com/v1
+      - API_URL=https://api.beta.firstline-5730kl.com/v1
       # The same Google web client the API accepts (Auth__Google__ClientIds) and Spotify app (Spotify__ClientId).
       - GOOGLE_WEB_CLIENT_ID=494880048811-14ch6rdq1p4vuatcebg2qq187dkgm4iv.apps.googleusercontent.com
       - SPOTIFY_CLIENT_ID=
@@ -49,14 +49,14 @@ configMapGenerator:
       # The API's public URL (gateway.yaml hostname). Every absolute link it hands out (signed file links, score
       # cards) starts with this, never with the request's Host header; the API won't start without it outside
       # Development. Host itself is not filtered, so probes and load-balancer health checks (pod IP as Host) still work.
-      - App__PublicOrigin=https://api.beta.firstline.com
+      - App__PublicOrigin=https://api.beta.firstline-5730kl.com
       # Non-secret provider settings (.env.example). Secrets are in Secret Manager (secrets.yaml).
       - Auth__Apple__ClientIds=
       - Auth__Google__ClientIds=494880048811-14ch6rdq1p4vuatcebg2qq187dkgm4iv.apps.googleusercontent.com
       - Spotify__ClientId=
       - Spotify__RedirectUris=
       # The two web apps call the API from their own hostnames (gateway.yaml).
-      - Cors__AllowedOrigins=https://app.beta.firstline.com,https://promoters.beta.firstline.com
+      - Cors__AllowedOrigins=https://app.beta.firstline-5730kl.com,https://promoters.beta.firstline-5730kl.com
       # Buckets from terraform output buckets: Terraform names them after the project ("<project_id>-quarantine").
       - Storage__QuarantineBucket=project-ef36a8a9-d958-4163-b4c-quarantine
       - Storage__ArchiveBucket=project-ef36a8a9-d958-4163-b4c-archive

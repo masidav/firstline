@@ -92,7 +92,7 @@ dev server and ship them in the build. `dist/` is a single-page app: the host mu
 (e.g. `/profile`). Cloudflare
 Pages and Firebase Hosting do this with a rewrite rule; `python -m http.server` does not.
 
-Beta hosts it at `https://app.beta.firstline.com`: the `Dockerfile` target `web` builds it and serves it with nginx
+Beta hosts it at `https://app.beta.firstline-5730kl.com`: the `Dockerfile` target `web` builds it and serves it with nginx
 (`infrastructure/README.md` "Web apps"). That image is built without `EXPO_PUBLIC_` values; the settings come
 at startup from `/config.js`, which nginx writes from its environment, so one image serves beta and prod
 (`src/config.ts`). Locally nothing writes `/config.js` and the build-time values apply.
@@ -182,7 +182,7 @@ plain `http://192.168.x.x` works too (`app.config.ts` adds the local-networking 
 Spotify sign-in need HTTPS, so a tunnel is simpler. `--profile development-simulator` makes a simulator build for a
 Mac.
 
-**Beta (TestFlight):** `eas build -p ios --profile beta` builds against `https://api.beta.firstline.com/v1` with the
+**Beta (TestFlight):** `eas build -p ios --profile beta` builds against `https://api.beta.firstline-5730kl.com/v1` with the
 build number incremented, then `eas submit -p ios --profile beta` uploads it to App Store Connect; add testers in
 TestFlight. `production` is the same against the production API, whose hostname is still the placeholder from
 `infrastructure/k8s/overlays/prod` (change both when it's decided).
@@ -200,7 +200,7 @@ TestFlight. `production` is the same against the production API, whose hostname 
 
 Not tried yet, in this order, once a build exists: Sign in with Apple and Google, connecting Spotify, push
 notifications on a real phone, the share sheets, and the offline journal queue (Keychain and file storage are
-written and unit-tested with the modules mocked). Universal links (`https://app.beta.firstline.com/...` opening
+written and unit-tested with the modules mocked). Universal links (`https://app.beta.firstline-5730kl.com/...` opening
 the app) and EAS Update (over-the-air JavaScript fixes) are not set up.
 
 ## Not done yet

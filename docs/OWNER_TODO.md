@@ -11,14 +11,16 @@ off since 2026-10-27, no DNS records exist, and no certificate is issued. The be
 ## A. Turn on everything already built (beta)
 
 Do these in order, from the repo root unless a step says otherwise. At the end beta serves the API, the fan app at
-https://app.beta.firstline.com, and the promoter dashboard at https://promoters.beta.firstline.com, with Google
+https://app.beta.firstline-5730kl.com, and the promoter dashboard at https://promoters.beta.firstline-5730kl.com, with Google
 sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
 
-- [x] **1. Confirm you control firstline.com.** Confirmed 2026-10-31: firstline.com is the domain, and beta lives
-  under `beta.firstline.com`. The zone is in Akamai Edge DNS (registrar CSC Corporate Domains) and `www` already
-  serves the FirstLine Mortgages site, so the records in step 4 go into that existing zone; don't change anything
-  at the apex or `www`. To switch domains later, the hostnames are in Terraform (`api_domain`, `web_domains`), the
-  beta overlay (`gateway.yaml`, `web-config`, `Cors__AllowedOrigins`), and `.github/workflows/mobile-ios.yml`.
+- [x] **1. Domain.** `firstline-5730kl.com`, registered through Cloud Domains on 2026-10-31 (renews 2027-10-31 on
+  the project's billing). Cloud Domains created its Cloud DNS zone `firstline-5730kl-com` and pointed the registrar
+  at it, and Terraform manages the beta records in that zone (`dns_zone_name` in `envs/beta`), so no outside DNS
+  provider is involved. firstline.com was ruled out: it belongs to FirstLine Mortgages and its DNS is at Akamai.
+  To switch domains later, the hostnames are in Terraform (`envs/beta/variables.tf`, `terraform.tfvars`), the beta
+  overlay (`gateway.yaml`, `web-config`, `Cors__AllowedOrigins`), `.github/workflows/mobile-ios.yml`,
+  `apps/mobile/eas.json`, and the docs; grep for the old domain.
 
 - [ ] **2. Sign in to Google Cloud.**
   ```bash
@@ -38,28 +40,28 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   terraform apply
   ```
 
-- [ ] **4. Create the DNS records** in the firstline.com zone in Akamai Edge DNS. All six, exactly as below (values
-  from `terraform output -json environment` on 2026-10-31). Don't touch the apex or `www`.
-
-  | Type | Name | Value |
-  | --- | --- | --- |
-  | A | `api.beta.firstline.com` | `136.81.191.137` |
-  | A | `app.beta.firstline.com` | `136.81.191.137` |
-  | A | `promoters.beta.firstline.com` | `136.81.191.137` |
-  | CNAME | `_acme-challenge.api.beta.firstline.com` | `c2e09f62-47fd-4bc5-8760-266b26d04d23.1.authorize.certificatemanager.goog.` |
-  | CNAME | `_acme-challenge.app.beta.firstline.com` | `90ffe718-0327-4d23-a261-ff7a4383a812.9.authorize.certificatemanager.goog.` |
-  | CNAME | `_acme-challenge.promoters.beta.firstline.com` | `115b4f6c-4d31-4b93-8d52-c722adf10763.17.authorize.certificatemanager.goog.` |
-
-  All three certificates are `PROVISIONING` until their CNAME resolves, then turn `ACTIVE` within about an hour:
+- [ ] **4. Apply the domain change and wait for the certificates.** The first apply (step 3) issued certificates for
+  the firstline.com names; this one replaces them with `firstline-5730kl.com` ones and creates the six DNS records
+  (three A, three certificate CNAMEs) in Cloud DNS. Claude's plan on 2026-10-31 was **17 to add, 2 to change, 10 to
+  destroy**: the three DNS authorizations, certificates, and map entries replaced; the API uptime check replaced
+  and its alert updated for the new host; six record sets and the Cloud DNS API added; the usual cosmetic dashboard
+  change. Anything else: stop and send it to Claude.
+  ```bash
+  cd infrastructure/terraform/envs/beta
+  terraform plan
+  terraform apply
+  ```
+  Each certificate turns `ACTIVE` within about an hour:
   ```bash
   gcloud certificate-manager certificates list --format='table(name.basename(), managed.domains.list(), managed.state)'
+  dig +short api.beta.firstline-5730kl.com   # 136.81.191.137
   ```
 
 - [ ] **5. Google sign-in.** Cloud console, APIs & Services, Credentials, the web client
   `494880048811-14ch6rdq...`:
-  - Authorized JavaScript origins: `https://app.beta.firstline.com` and `https://promoters.beta.firstline.com`.
-  - Authorized redirect URIs: `https://app.beta.firstline.com/google-callback` and
-    `https://promoters.beta.firstline.com/google-callback`.
+  - Authorized JavaScript origins: `https://app.beta.firstline-5730kl.com` and `https://promoters.beta.firstline-5730kl.com`.
+  - Authorized redirect URIs: `https://app.beta.firstline-5730kl.com/google-callback` and
+    `https://promoters.beta.firstline-5730kl.com/google-callback`.
   - OAuth consent screen: while it's in Testing, add each tester's Google account as a test user (up to 100).
 
 - [ ] **6. Turn deploys on and deploy beta.** After this, every push to `main` deploys beta.
@@ -69,11 +71,11 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   ```
   Check:
   ```bash
-  curl https://api.beta.firstline.com/v1/health
-  curl https://app.beta.firstline.com/config.js
+  curl https://api.beta.firstline-5730kl.com/v1/health
+  curl https://app.beta.firstline-5730kl.com/config.js
   ```
 
-- [ ] **7. Sign up, then make yourself staff.** Open https://app.beta.firstline.com, choose Continue with Google,
+- [ ] **7. Sign up, then make yourself staff.** Open https://app.beta.firstline-5730kl.com, choose Continue with Google,
   and pick a handle. Then:
   ```bash
   infrastructure/k8s/db-shell.sh beta <<'SQL'
@@ -85,7 +87,7 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   hasn't been run against the cluster yet; if it fails, send Claude the output.
 
 - [ ] **8. Create a promoter organization** with you as owner, then try the dashboard at
-  https://promoters.beta.firstline.com.
+  https://promoters.beta.firstline-5730kl.com.
   ```bash
   infrastructure/k8s/db-shell.sh beta <<'SQL'
   WITH me AS (SELECT id FROM users WHERE email = 'YOUR_EMAIL'),
@@ -99,7 +101,7 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
 
 - [ ] **Spotify** (listening score, artist search, album catalog, Spotify connect). Off on beta today.
   1. developer.spotify.com, Dashboard: create an app for beta (Web API), with the redirect URI
-     `https://app.beta.firstline.com/spotify-callback`.
+     `https://app.beta.firstline-5730kl.com/spotify-callback`.
   2. User Management: add each tester's Spotify account (development mode allows 5).
   3. Store the client secret without it landing in your shell history:
      ```bash

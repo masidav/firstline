@@ -3,7 +3,7 @@ using Microsoft.Extensions.Options;
 namespace FandomScore.Api.Infrastructure;
 
 /// <summary>
-/// Configuration section <c>App</c>. <c>App:PublicOrigin</c> (e.g. <c>https://api.beta.firstline.com</c>) is the
+/// Configuration section <c>App</c>. <c>App:PublicOrigin</c> (e.g. <c>https://api.beta.firstline-5730kl.com</c>) is the
 /// API's public address; every absolute link the API hands out (signed file links, score cards, featured videos)
 /// starts with it, never with the request's Host header, which a client can set to anything.
 /// </summary>

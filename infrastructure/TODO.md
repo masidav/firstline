@@ -72,7 +72,7 @@ overlays, Docker builds of the three images, `dotnet test`). Not yet applied to 
 - [ ] Rehearse a Cloud SQL point-in-time restore and record the result.
 - [ ] Host the fan web app and the promoter dashboard (`README.md` "Web apps"). (2026-10-28: `Dockerfile` targets
   `web` and `promoter-web` on unprivileged nginx with a read-only root and settings from `/config.js` at startup;
-  `k8s/base/web.yaml`; beta hostnames `app.beta.firstline.com` and `promoters.beta.firstline.com` in the overlay's
+  `k8s/base/web.yaml`; beta hostnames `app.beta.firstline-5730kl.com` and `promoters.beta.firstline-5730kl.com` in the overlay's
   `gateway.yaml`; certificates via Terraform `web_domains`; deploy, CI, and `deploy.sh` build and roll out both.
   Verified locally: both images run read-only, and the fan (10) and promoter (3) Playwright journeys pass against
   them; Terraform validate and both overlays build. Not yet: `terraform apply` on beta, DNS records, Google OAuth

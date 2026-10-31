@@ -16,7 +16,7 @@ metadata:
   name: api
 spec:
   hostnames:
-    - api.beta.firstline.com
+    - api.beta.firstline-5730kl.com
 ---
 apiVersion: networking.gke.io/v1
 kind: GCPBackendPolicy
@@ -34,7 +34,7 @@ metadata:
   name: web
 spec:
   hostnames:
-    - app.beta.firstline.com
+    - app.beta.firstline-5730kl.com
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -42,7 +42,7 @@ metadata:
   name: promoter-web
 spec:
   hostnames:
-    - promoters.beta.firstline.com
+    - promoters.beta.firstline-5730kl.com
 ---
 apiVersion: networking.gke.io/v1
 kind: GCPBackendPolicy

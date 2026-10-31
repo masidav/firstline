@@ -103,3 +103,9 @@ variable "application_secrets" {
     "Ticketmaster__ApiKey",
   ]
 }
+
+variable "dns_zone_name" {
+  description = "Name of the public Cloud DNS managed zone that holds api_domain and web_domains (e.g. the zone Cloud Domains created with the registration). When set, Terraform manages the A records and the certificate authorization CNAMEs there. Null: create them at the DNS provider from the outputs."
+  type        = string
+  default     = null
+}

@@ -36,6 +36,7 @@ module "environment" {
   region             = var.region
   api_domain         = var.api_domain
   web_domains        = var.web_domains
+  dns_zone_name      = var.dns_zone_name
   billing_account_id = var.billing_account_id
   budget_monthly_usd = var.budget_monthly_usd
   alert_email        = var.alert_email

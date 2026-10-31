@@ -29,7 +29,7 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [x] Component tests (Vitest) and end-to-end tests (Playwright). *27 component tests, 3 journeys plus the
       accessibility scan, all in CI.*
 - [ ] Host it on beta. *2026-10-28: `Dockerfile` target `promoter-web` (nginx, settings from `/config.js` at
-      startup), Kubernetes manifests, its own hostname and certificate (`promoters.beta.firstline.com`). The image
+      startup), Kubernetes manifests, its own hostname and certificate (`promoters.beta.firstline-5730kl.com`). The image
       passed the Playwright journeys locally; not live until DNS, the certificate, and deploys are on.*
 
 ## Verification

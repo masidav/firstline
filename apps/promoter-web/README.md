@@ -56,11 +56,11 @@ npm run build          # static site in dist/ (any static host; serve index.html
 ```
 
 ## Hosting
-Beta hosts it at `https://promoters.beta.firstline.com`: the `Dockerfile` target `promoter-web` builds it and serves it
+Beta hosts it at `https://promoters.beta.firstline-5730kl.com`: the `Dockerfile` target `promoter-web` builds it and serves it
 with nginx (`infrastructure/README.md` "Web apps"). Settings come at startup from `/config.js`, which nginx writes
 from its environment, so the same image serves beta and prod; locally the `VITE_` values apply (`src/config.ts`).
-Google sign-in needs `https://promoters.beta.firstline.com` as an authorized origin of the web client and
-`https://promoters.beta.firstline.com/google-callback` as a redirect URI.
+Google sign-in needs `https://promoters.beta.firstline-5730kl.com` as an authorized origin of the web client and
+`https://promoters.beta.firstline-5730kl.com/google-callback` as a redirect URI.
 
 ```bash
 docker build --target promoter-web -t promoter-web .

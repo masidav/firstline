@@ -43,6 +43,7 @@ resource "google_project_service" "apis" {
     "compute.googleapis.com",
     "container.googleapis.com",
     "containerscanning.googleapis.com",
+    "dns.googleapis.com",
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",
     "logging.googleapis.com",

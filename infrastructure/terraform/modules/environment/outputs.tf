@@ -91,3 +91,8 @@ output "dashboard_url" {
   description = "The environment's Cloud Monitoring dashboard."
   value       = "https://console.cloud.google.com/monitoring/dashboards/builder/${element(split("/", google_monitoring_dashboard.main.id), length(split("/", google_monitoring_dashboard.main.id)) - 1)}?project=${var.project_id}"
 }
+
+output "dns_name_servers" {
+  description = "Name servers of the Cloud DNS zone that holds the hostnames (empty when DNS is elsewhere). Cloud Domains sets these at the registrar."
+  value       = var.dns_zone_name == null ? [] : data.google_dns_managed_zone.public[0].name_servers
+}

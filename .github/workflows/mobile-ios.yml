@@ -13,7 +13,7 @@ on:
     inputs:
       api_url:
         description: The API the build talks to
-        default: https://api.beta.firstline.com/v1
+        default: https://api.beta.firstline-5730kl.com/v1
         type: string
   schedule:
     - cron: '17 6 * * 1'
@@ -36,7 +36,7 @@ jobs:
       run:
         working-directory: apps/mobile
     env:
-      EXPO_PUBLIC_API_URL: ${{ inputs.api_url || 'https://api.beta.firstline.com/v1' }}
+      EXPO_PUBLIC_API_URL: ${{ inputs.api_url || 'https://api.beta.firstline-5730kl.com/v1' }}
       EXPO_PUBLIC_DEV_SIGN_IN: 'false'
     steps:
       - uses: actions/checkout@v4

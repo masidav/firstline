@@ -19,7 +19,7 @@
       "channel": "beta",
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.beta.firstline.com/v1",
+        "EXPO_PUBLIC_API_URL": "https://api.beta.firstline-5730kl.com/v1",
         "EXPO_PUBLIC_DEV_SIGN_IN": "false"
       }
     },

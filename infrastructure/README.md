@@ -63,7 +63,7 @@ use it, then approve prod.
   (`ForwardedHeaders__KnownNetworks`, `ForwardedHeaders__KnownProxies`), so the sign-in rate limit sees the
   real client.
 - The API builds every absolute link it hands out (signed file links, score cards, featured videos) from
-  `App__PublicOrigin` (the overlay's `app-config`, e.g. `https://api.beta.firstline.com`), never from the request's
+  `App__PublicOrigin` (the overlay's `app-config`, e.g. `https://api.beta.firstline-5730kl.com`), never from the request's
   Host header, and refuses to start without it outside Development. It does not filter Host (`AllowedHosts` stays
   `*`): the kubelet probes and the load balancer's health checks send the pod address as Host and would be refused.
 - Secrets never leave Secret Manager as environment variables: the GKE Secret Manager add-on mounts each one as a
@@ -153,7 +153,7 @@ The fan app (`apps/mobile`, its web build) and the promoter dashboard (`apps/pro
 is an image (`Dockerfile` targets `web` and `promoter-web`) holding the built files and an unprivileged nginx
 (`infrastructure/web/`) that serves them, sends every unknown path to `index.html` so deep links reload, caches
 the hashed assets for a year, and adds security headers. They run in the same cluster behind the same Gateway and
-address as the API, each on its own hostname (beta: `app.beta.firstline.com` and `promoters.beta.firstline.com`),
+address as the API, each on its own hostname (beta: `app.beta.firstline-5730kl.com` and `promoters.beta.firstline-5730kl.com`),
 with its own certificate in the same certificate map (Terraform `web_domains`) and the same Cloud Armor policy.
 
 - **One image for every environment.** The deploy promotes beta's image digests to prod, so nothing
@@ -162,12 +162,12 @@ with its own certificate in the same certificate map (Terraform `web_domains`) a
   loads it before the app. These are public values; nothing secret belongs there.
 - **The API must allow both origins**: `Cors__AllowedOrigins` in the overlay's `app-config`.
 - **Google sign-in**: in the Google Cloud console, the web OAuth client (the one in `web-config`) needs both
-  hostnames as authorized JavaScript origins (`https://app.beta.firstline.com`,
-  `https://promoters.beta.firstline.com`) and `https://<host>/google-callback` for each as an authorized
+  hostnames as authorized JavaScript origins (`https://app.beta.firstline-5730kl.com`,
+  `https://promoters.beta.firstline-5730kl.com`) and `https://<host>/google-callback` for each as an authorized
   redirect URI.
 - **Spotify** (when `Spotify__ClientId` is set): the Spotify app and the API's `Spotify__RedirectUris` need the
-  fan app's callback, `https://app.beta.firstline.com/spotify-callback`.
-- **Check**: `curl https://app.beta.firstline.com/config.js` shows the settings; `deploy.sh` checks both hostnames
+  fan app's callback, `https://app.beta.firstline-5730kl.com/spotify-callback`.
+- **Check**: `curl https://app.beta.firstline-5730kl.com/config.js` shows the settings; `deploy.sh` checks both hostnames
   after a rollout and warns (does not fail) if one doesn't answer yet, since a new hostname waits for DNS and its
   certificate.
 

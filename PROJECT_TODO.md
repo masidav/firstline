@@ -387,7 +387,7 @@ Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](servi
       (`GET /v1/organizations/{id}/allocations/{id}/eligibility-preview`, counts only: fans with a score, how many clear
       the threshold, local vs elsewhere, the same at other thresholds, against the tickets; shown on the allocation
       page). Verified: EligibilityPreviewApiTests 2, Vitest 24. Hosting on
-      beta configured 2026-10-28 (`promoters.beta.firstline.com`), not live yet: see Phase 12.*
+      beta configured 2026-10-28 (`promoters.beta.firstline-5730kl.com`), not live yet: see Phase 12.*
 - [ ] First-party fan data sharing with artists/promoters, only with explicit fan consent.
 - [ ] Billing: per-event licence fee or take-rate for promoters; fan-side fee if adopted.
 - [x] Reporting for the pilot case study: sell-through, scalping complaints, empty seats. *Done 2026-10-30
@@ -417,7 +417,7 @@ built, images built locally). Nothing is applied to a GCP project yet; `infrastr
 
 - [ ] Host the fan web app and the promoter dashboard. (2026-10-28: nginx images with settings from `/config.js` at
       startup, so beta's image is promoted to prod unchanged; Deployments behind the same Gateway on
-      `app.beta.firstline.com` and `promoters.beta.firstline.com`, certificates in Terraform `web_domains`. Both
+      `app.beta.firstline-5730kl.com` and `promoters.beta.firstline-5730kl.com`, certificates in Terraform `web_domains`. Both
       images passed their Playwright journeys locally. Live once `terraform apply`, the DNS records, the Google
       OAuth origins, and deploys are done: `infrastructure/README.md` "Web apps".)
 

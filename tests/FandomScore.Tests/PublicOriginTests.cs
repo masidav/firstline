@@ -69,7 +69,7 @@ public sealed class PublicOriginTests(PostgresFixture postgres) : IAsyncLifetime
     [Theory]
     [InlineData("10.52.3.17:8080")] // kubelet probe: the pod address
     [InlineData("10.128.0.5")] // load balancer health check
-    [InlineData("api.beta.firstline.com")]
+    [InlineData("api.beta.firstline-5730kl.com")]
     public async Task Health_answers_for_any_host(string host)
     {
         await using var factory = Factory("Production", TestAuth.PublicOrigin);

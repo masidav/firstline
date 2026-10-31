@@ -33,7 +33,14 @@ variable "github_repository" {
 variable "web_domains" {
   type = map(string)
   default = {
-    app       = "app.beta.firstline.com"
-    promoters = "promoters.beta.firstline.com"
+    app       = "app.beta.firstline-5730kl.com"
+    promoters = "promoters.beta.firstline-5730kl.com"
   }
+}
+
+# The Cloud DNS zone Cloud Domains created when firstline-5730kl.com was registered (2026-10-31). Terraform manages
+# the beta records in it.
+variable "dns_zone_name" {
+  type    = string
+  default = "firstline-5730kl-com"
 }
