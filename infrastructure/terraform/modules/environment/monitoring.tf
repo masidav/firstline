@@ -75,6 +75,12 @@ resource "google_monitoring_uptime_check_config" "api_health" {
     }
   }
 
+  # The api_down alert filters on this check's id. Changing the host replaces the check, and Google refuses to
+  # delete a check an alert still references, so the new check must exist (and the alert move to it) first.
+  lifecycle {
+    create_before_destroy = true
+  }
+
   depends_on = [google_project_service.apis]
 }
 
