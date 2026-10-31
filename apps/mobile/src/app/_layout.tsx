@@ -1,4 +1,4 @@
-import { Stack } from 'expo-router';
+import { Stack, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -11,6 +11,8 @@ import { NowPlayingBar, NowPlayingProvider } from '../features/spotify/NowPlayin
 import { colors } from '../ui/theme';
 
 export default function RootLayout() {
+  // On the tabs the now-playing bar sits above the tab bar (see (tabs)/_layout.tsx), not under it.
+  const inTabs = useSegments()[0] === '(tabs)';
   return (
     <SafeAreaProvider>
       <SessionProvider>
@@ -19,10 +21,10 @@ export default function RootLayout() {
         <StatusBar style="light" />
         <NowPlayingProvider>
           <SpotifyLibraryProvider>
-            {/* The now-playing bar sits under every screen while the fan's Spotify is playing or paused. */}
+            {/* The now-playing bar sits under every other screen while the fan's Spotify is playing or paused. */}
             <View style={{ flex: 1, backgroundColor: colors.background }}>
               <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }} />
-              <NowPlayingBar />
+              {!inTabs && <NowPlayingBar />}
             </View>
           </SpotifyLibraryProvider>
         </NowPlayingProvider>

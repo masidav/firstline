@@ -7,7 +7,7 @@ const mockApi = { GET: jest.fn(), PUT: jest.fn(), DELETE: jest.fn() };
 const mockSession = { api: mockApi };
 
 jest.mock('../../auth/SessionProvider', () => ({ useSession: () => ({ session: mockSession, state: { status: 'signedIn', me: { handle: 'ana' } } }) }));
-jest.mock('expo-router', () => ({ router: { push: jest.fn(), back: jest.fn(), replace: jest.fn(), canGoBack: () => false } }));
+jest.mock('expo-router', () => ({ useFocusEffect: (effect: () => void) => jest.requireActual('react').useEffect(effect, [effect]), router: { push: jest.fn(), back: jest.fn(), replace: jest.fn(), canGoBack: () => false } }));
 
 const ben = { handle: 'ben', deleted: false, display_name: 'Ben', avatar_url: null, followed_by_me: true, follows_me: false };
 const cat = { handle: 'cat', deleted: false, display_name: null, avatar_url: null, followed_by_me: false, follows_me: true };

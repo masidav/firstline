@@ -1,8 +1,8 @@
 import { Redirect } from 'expo-router';
 
-import { useSession } from '../auth/SessionProvider';
-import { HomeScreen } from '../features/home/HomeScreen';
-import { Loading } from '../ui/components';
+import { useSession } from '../../auth/SessionProvider';
+import { HomeScreen } from '../../features/home/HomeScreen';
+import { Loading } from '../../ui/components';
 
 export default function Home() {
   const { state } = useSession();

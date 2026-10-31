@@ -111,7 +111,7 @@ test('with no scores yet, a connected fan is told how scores appear', async () =
 });
 
 test('a failed load of your artists can be retried', async () => {
-  // Only the scores request fails (the Alerts badge and the feed load too).
+  // Only the scores request fails (the feed loads too).
   let failed = false;
   mockApi.GET.mockImplementation(async (path: string) => {
     if (path === '/me/scores' && !failed) {
@@ -236,16 +236,12 @@ test('one letter is too short for Spotify', async () => {
   expect(calls('/artists/search')).toHaveLength(0);
 });
 
-test('a camera button posts a photo, and Alerts shows the unread count', async () => {
-  mockApi.GET.mockImplementation(async (path: string) =>
-    path === '/me/notifications' ? ok({ items: [], unread_count: 3, next_cursor: null }) : ok({ items: [], next_cursor: null }),
-  );
+test('a camera button posts a photo', async () => {
+  mockApi.GET.mockResolvedValue(ok({ items: [], next_cursor: null }));
   render(<HomeScreen />);
 
   fireEvent.press(await screen.findByRole('button', { name: 'Post a photo' }));
   expect(jest.requireMock('expo-router').router.push).toHaveBeenCalledWith('/post');
-  fireEvent.press(await screen.findByRole('button', { name: 'Alerts, 3 unread' }));
-  expect(jest.requireMock('expo-router').router.push).toHaveBeenCalledWith('/notifications');
 
   // While searching, the camera button steps aside.
   fireEvent.changeText(screen.getByLabelText('Search artists'), 'gee');
@@ -286,17 +282,13 @@ test('while your artists and the feed load, each shows a spinner, then the data'
   expect(screen.queryByLabelText('Loading your feed')).toBeNull();
 });
 
-test('the header links and an artist row open their pages', async () => {
+test('an artist row opens its page', async () => {
   serve([], [], [score('Geese', 50, false)]);
   render(<HomeScreen />);
   const { router } = jest.requireMock('expo-router');
 
   fireEvent.press(await screen.findByRole('button', { name: 'Open Geese' }));
   expect(router.push).toHaveBeenCalledWith('/artist/id-Geese/albums');
-  for (const [label, href] of [['Tickets', '/tickets'], ['Journal', '/journal'], ['People', '/people'], ['Profile', '/profile']]) {
-    fireEvent.press(screen.getByRole('button', { name: label }));
-    expect(router.push).toHaveBeenCalledWith(href);
-  }
 });
 
 test("other fans' activity reaches home only through the feed, which the server filters by visibility", async () => {
@@ -321,7 +313,7 @@ test("other fans' activity reaches home only through the feed, which the server 
   expect(screen.getByText(/followers only/)).toBeTruthy();
   expect(screen.getByRole('button', { name: "Report Ben's post" })).toBeTruthy();
 
-  await waitFor(() => expect(mockApi.GET).toHaveBeenCalledWith('/me/notifications', expect.anything()));
+  await waitFor(() => expect(mockApi.GET.mock.calls.map(([path]) => path)).toContain('/prompts/today'));
   const paths = [...new Set(mockApi.GET.mock.calls.map(([path]) => path as string))].sort();
-  expect(paths).toEqual(['/artists', '/featured', '/feed', '/me/notifications', '/me/scores', '/me/trivia', '/prompts/today']);
+  expect(paths).toEqual(['/artists', '/featured', '/feed', '/me/scores', '/me/trivia', '/prompts/today']);
 });

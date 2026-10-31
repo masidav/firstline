@@ -7,7 +7,7 @@ const mockApi = { GET: jest.fn(), POST: jest.fn() };
 const mockSession = { api: mockApi };
 
 jest.mock('../../auth/SessionProvider', () => ({ useSession: () => ({ session: mockSession, state: { status: 'signedIn', me: { handle: 'ana' } } }) }));
-jest.mock('expo-router', () => ({ router: { push: jest.fn(), back: jest.fn(), replace: jest.fn(), canGoBack: () => false } }));
+jest.mock('expo-router', () => ({ useFocusEffect: (effect: () => void) => jest.requireActual('react').useEffect(effect, [effect]), router: { push: jest.fn(), back: jest.fn(), replace: jest.fn(), canGoBack: () => false } }));
 
 const event = { id: 'e1', artist_id: 'a1', name: 'Geese at Metro', venue: 'Metro', city_id: 'us-il-chicago', city: 'Chicago', region: 'IL', country: 'US', starts_at: '2026-11-20T02:00:00Z', tickets_available: false, source: null, ticket_url: null, status: 'scheduled', time_tba: false, public_sale_starts_at: null, public_sale_ends_at: null, presales: [] };
 const base = {

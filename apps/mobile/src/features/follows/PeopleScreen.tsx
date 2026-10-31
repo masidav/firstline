@@ -1,5 +1,5 @@
-import { router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { unwrap } from '../../api/client';
@@ -39,9 +39,12 @@ export function PeopleScreen() {
     }
   }, [session]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // Tabs stay mounted, so reload each time this one is shown (and on first open).
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
   async function search() {
     const text = query.trim();
@@ -123,7 +126,6 @@ export function PeopleScreen() {
 
   return (
     <Screen>
-      <Button label="Back" kind="secondary" onPress={() => (router.canGoBack() ? router.back() : router.replace('/home'))} />
       <Title>People</Title>
       <Body muted>
         Follow fans to see their grab bags, followers-only album logs, and top fandom stats on your feed. No approval

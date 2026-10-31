@@ -1,5 +1,5 @@
-import { router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { unwrap } from '../../api/client';
@@ -35,9 +35,12 @@ export function JournalScreen() {
     [session],
   );
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // Tabs stay mounted, so reload each time this one is shown (and on first open).
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
   // An entry that was waiting is now a real log: show it in its place.
   useSyncedLogs(useCallback(() => void load(), [load]));
@@ -57,7 +60,6 @@ export function JournalScreen() {
 
   return (
     <Screen>
-      <Button label="Back to home" kind="secondary" onPress={() => router.replace('/home')} />
       <Title>Your journal</Title>
       <ErrorText>{error}</ErrorText>
       {pending.length > 0 && (

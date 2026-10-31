@@ -9,6 +9,7 @@ import { Body, Button, ErrorText, Field, Screen, Title } from '../../ui/componen
 import { colors, space } from '../../ui/theme';
 import { reauthenticateWithApple } from '../authentication/appleSignIn';
 import { cityLabel, formatDay } from '../hub-cities/HubCitiesScreen';
+import { AlertsButton } from '../notifications/AlertsButton';
 import { unregisterPush } from '../notifications/push';
 import { FanLevelSection } from '../fan-level/FanLevelSection';
 import { PushSettingsSection } from '../notifications/PushSettingsSection';
@@ -165,9 +166,11 @@ export function ProfileScreen({ me }: { me: Me }) {
 
   return (
     <Screen>
-      <Button label="Back to home" kind="secondary" onPress={() => router.replace('/home')} />
       <Title>Your profile</Title>
       <Body muted>Signed in as {me.email}</Body>
+      <View style={styles.alerts}>
+        <AlertsButton />
+      </View>
       {links.length > 0 && (
         <View style={styles.links}>
           <Body>Your band</Body>
@@ -301,6 +304,7 @@ export function ProfileScreen({ me }: { me: Me }) {
 }
 
 const styles = StyleSheet.create({
+  alerts: { flexDirection: 'row', marginTop: space.sm },
   links: { marginTop: space.sm, gap: space.xs },
   link: { color: colors.accent, fontSize: 16, fontWeight: '600' },
   switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: space.md },

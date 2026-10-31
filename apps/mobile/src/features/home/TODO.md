@@ -25,6 +25,12 @@ Use `- [x]` only after the task is implemented and verified.
 - [x] Add screen tests for empty data, partial data, and navigation. (`HomeScreen.test.tsx`, 17 tests, 2026-10-30;
       `Feed.test.tsx` 12.)
 
+- [x] Tabs instead of header buttons (requested 2026-10-31): a bottom tab bar, Feed first, then Tickets, Journal,
+      People, Profile (`src/app/(tabs)/_layout.tsx`, expo-router `Tabs` with the text-only `ui/TabBar`). Each tab stays
+      mounted and reloads on focus (`useFocusEffect`); the Back buttons on those pages are gone; URLs are unchanged.
+      The now-playing bar sits above the tab bar. Alerts live on the Profile page (notifications TODO).
+      Verified: Jest 54 suites, 341 tests; typecheck; `e2e/run.sh` 10 passed (sign-up lands on the tabs, journal, reload of /journal and /profile).
+
 ## Verification
 - [x] Add or update automated tests. (`HomeScreen.test.tsx` 17, `Feed.test.tsx` 12, `ReactionBar.test.tsx` 5.)
 - [x] Run the relevant tests and record actual results. 2026-10-30: `npm test` 51 suites, 327 tests passed;

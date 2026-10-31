@@ -1,8 +1,8 @@
 import { Redirect } from 'expo-router';
 
-import { useSession } from '../auth/SessionProvider';
-import { ProfileScreen } from '../features/settings/ProfileScreen';
-import { Loading } from '../ui/components';
+import { useSession } from '../../auth/SessionProvider';
+import { ProfileScreen } from '../../features/settings/ProfileScreen';
+import { Loading } from '../../ui/components';
 
 export default function Profile() {
   const { state } = useSession();

@@ -12,7 +12,6 @@ import { usePendingLogs } from '../album-journal/journalQueue';
 import { CameraIcon } from '../../ui/CameraIcon';
 import { Feed } from '../feed/Feed';
 import { FeaturedArtistCard } from '../featured/FeaturedArtistCard';
-import { AlertsButton } from '../notifications/AlertsButton';
 import { DailyPromptCard } from '../prompts/DailyPromptCard';
 import { DailyTriviaCard } from '../trivia/DailyTriviaCard';
 import { YourArtists } from './YourArtists';
@@ -22,7 +21,7 @@ import type { SpotifyStatus } from '../spotify/spotifyConnect';
 const DEBOUNCE_MS = 300;
 
 /**
- * Home after sign-in: one vertical scroll (Feed). While the search box is empty its header shows the fan's artists
+ * The Feed tab (home after sign-in): one vertical scroll (Feed). While the search box is empty its header shows the fan's artists
  * with their scores (YourArtists) and a button to post a photo, and below them the mixed feed. Otherwise a
  * search of the artists already on Fandom Score as you type (GET /artists, no Spotify calls), with the feed hidden.
  * Pressing Enter with no exact match asks Spotify (GET /artists/search) and offers to add an artist (POST /artists).
@@ -138,13 +137,6 @@ export function HomeScreen() {
       <View style={styles.header}>
         <Title>Your artists</Title>
       </View>
-      <View style={styles.headerButtons}>
-        <AlertsButton />
-        <Button label="Tickets" kind="secondary" onPress={() => router.push('/tickets')} />
-        <Button label="Journal" kind="secondary" onPress={() => router.push('/journal')} />
-        <Button label="People" kind="secondary" onPress={() => router.push('/people')} />
-        <Button label="Profile" kind="secondary" onPress={() => router.push('/profile')} />
-      </View>
       {pendingLogs.length > 0 && (
         <Pressable accessibilityRole="button" onPress={() => router.push('/journal')} style={styles.pendingBanner}>
           <Text style={styles.pendingText}>
@@ -243,8 +235,6 @@ function describeResult(result: ArtistSearchResult): string | undefined {
 
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md },
-  // Wraps on narrow phones instead of pushing the last button off the screen.
-  headerButtons: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   pendingBanner: { padding: space.sm, borderRadius: 8, borderWidth: 1, borderColor: colors.accent },
   pendingText: { color: colors.text, fontSize: 14 },
   section: { color: colors.text, fontSize: 18, fontWeight: '700', marginTop: space.md },

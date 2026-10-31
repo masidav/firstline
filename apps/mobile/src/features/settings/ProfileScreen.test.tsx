@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { Linking } from 'react-native';
 
-import Profile from '../../app/profile';
+import Profile from '../../app/(tabs)/profile';
 import { ProfileScreen, bandLinks } from './ProfileScreen';
 
 const ok = (data: unknown, status = 200) => ({ data, response: { ok: true, status } });
@@ -307,4 +307,20 @@ test('Sign out forgets this device for push before ending the session', async ()
   await waitFor(() => expect(mockSession.signOut).toHaveBeenCalledTimes(1));
   expect(unregisterPush).toHaveBeenCalledWith(mockApi);
   expect(unregisterPush.mock.invocationCallOrder[0]).toBeLessThan(mockSession.signOut.mock.invocationCallOrder[0]!);
+});
+
+test('Alerts sits on the profile page, turns red with the unread count, and opens the alerts', async () => {
+  const { publishUnread } = jest.requireActual('../notifications/unread');
+  render(<ProfileScreen me={fan as never} />);
+
+  const alerts = screen.getByRole('button', { name: 'Alerts' });
+  expect(screen.getByText('Alerts')).not.toHaveStyle({ color: '#e5484d' });
+
+  act(() => publishUnread(2));
+  expect(await screen.findByRole('button', { name: 'Alerts, 2 unread' })).toBeTruthy();
+  expect(screen.getByText('Alerts')).toHaveStyle({ color: '#e5484d' });
+  expect(screen.getByText('2')).toBeTruthy();
+
+  fireEvent.press(alerts);
+  expect(jest.requireMock('expo-router').router.push).toHaveBeenCalledWith('/notifications');
 });

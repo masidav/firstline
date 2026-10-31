@@ -1,5 +1,5 @@
-import { router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { type components, unwrap } from '../../api/client';
@@ -50,9 +50,12 @@ export function MyTicketsScreen() {
     }
   }, [session]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // Tabs stay mounted, so reload each time this one is shown (and on first open).
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
   async function giveBack(reservation: Reservation) {
     setBusy(reservation.id);
@@ -72,7 +75,6 @@ export function MyTicketsScreen() {
 
   return (
     <Screen>
-      <Button label="Back" kind="secondary" onPress={() => (router.canGoBack() ? router.back() : router.replace('/home'))} />
       <Title>Your tickets</Title>
       <Body muted>
         Face-value seats from the fan draws. Tickets are tied to your account and arrive shortly before the show. Can't

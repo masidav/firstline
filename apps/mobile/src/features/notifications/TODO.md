@@ -16,6 +16,9 @@ Use `- [x]` only after the task is implemented and verified.
 - [x] Alerts button on the home screen with the unread count (polled every minute, updated when notifications are
       read), and an Alerts screen (`/notifications`): tap opens the right screen and marks it read; "Mark all read".
       Verified: NotificationsScreen and HomeScreen tests, Chrome at phone size.
+- [x] Alerts moved to the Profile page (requested 2026-10-31): the Alerts button sits at the top of Your profile, red
+      with the count while anything is unread, and the Profile tab turns red with the same count. The tabs layout polls
+      the count once for the app (`useUnreadCount` in `unread.ts`). Verified: ProfileScreen and TabBar tests.
 
 ## Verification
 - [ ] Add or update automated tests.

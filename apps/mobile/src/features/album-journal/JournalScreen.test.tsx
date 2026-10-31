@@ -9,7 +9,7 @@ const ok = (data: unknown, status = 200) => ({ data, response: { ok: true, statu
 const mockApi = { GET: jest.fn(), DELETE: jest.fn() };
 const mockSession = { api: mockApi };
 jest.mock('../../auth/SessionProvider', () => ({ useSession: () => ({ session: mockSession, state: { status: 'signedIn' } }) }));
-jest.mock('expo-router', () => ({ router: { push: jest.fn(), replace: jest.fn() } }));
+jest.mock('expo-router', () => ({ useFocusEffect: (effect: () => void) => jest.requireActual('react').useEffect(effect, [effect]), router: { push: jest.fn(), replace: jest.fn() } }));
 jest.mock('expo-crypto', () => ({ randomUUID: () => 'key-1' }));
 jest.mock('./queueStore', () => ({ queueStore: jest.requireActual('./pendingLogs').memoryQueueStore() }));
 

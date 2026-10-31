@@ -175,8 +175,11 @@ export function NowPlayingProvider({ children }: { children: ReactNode }) {
   return <NowPlayingContext.Provider value={value}>{children}</NowPlayingContext.Provider>;
 }
 
-/** The bar along the bottom of every screen while the fan's Spotify is playing or paused. */
-export function NowPlayingBar() {
+/**
+ * The bar along the bottom of every screen while the fan's Spotify is playing or paused. On the tabs it sits above the
+ * tab bar, which pads for the bottom inset itself (`insetBottom={false}`).
+ */
+export function NowPlayingBar({ insetBottom = true }: { insetBottom?: boolean } = {}) {
   const { player, fetchedAt, message, toggle, skip, dismiss } = usePlayer();
   const insets = useSafeAreaInsets();
   const [now, setNow] = useState(Date.now());
@@ -196,7 +199,7 @@ export function NowPlayingBar() {
   const artists = track?.artists.map((a) => a.name).join(', ') ?? '';
 
   return (
-    <View style={[styles.bar, { paddingBottom: space.sm + insets.bottom }]} accessibilityLabel="Now playing on Spotify">
+    <View style={[styles.bar, { paddingBottom: space.sm + (insetBottom ? insets.bottom : 0) }]} accessibilityLabel="Now playing on Spotify">
       {track && (
         <>
           <View style={styles.progressTrack}>
