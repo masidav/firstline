@@ -14,9 +14,11 @@ Do these in order, from the repo root unless a step says otherwise. At the end b
 https://app.beta.firstline.com, and the promoter dashboard at https://promoters.beta.firstline.com, with Google
 sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
 
-- [ ] **1. Confirm you control firstline.com.** Its DNS is hosted on Akamai, and none of the beta hostnames resolve
-  yet. If it isn't your domain, pick one you own and ask Claude to switch: the hostnames are in Terraform
-  (`api_domain`, `web_domains`) and the beta overlay (`gateway.yaml`, `web-config`, `Cors__AllowedOrigins`).
+- [x] **1. Confirm you control firstline.com.** Confirmed 2026-10-31: firstline.com is the domain, and beta lives
+  under `beta.firstline.com`. The zone is in Akamai Edge DNS (registrar CSC Corporate Domains) and `www` already
+  serves the FirstLine Mortgages site, so the records in step 4 go into that existing zone; don't change anything
+  at the apex or `www`. To switch domains later, the hostnames are in Terraform (`api_domain`, `web_domains`), the
+  beta overlay (`gateway.yaml`, `web-config`, `Cors__AllowedOrigins`), and `.github/workflows/mobile-ios.yml`.
 
 - [ ] **2. Sign in to Google Cloud.**
   ```bash
@@ -36,7 +38,7 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   Expect about 6 resources to add (a DNS authorization, certificate, and map entry for each web app) and nothing
   to destroy or replace. If the plan wants to destroy or replace anything, stop and send it to Claude.
 
-- [ ] **4. Create the DNS records** wherever firstline.com's DNS is managed. Still in `envs/beta`:
+- [ ] **4. Create the DNS records** in the firstline.com zone in Akamai Edge DNS. Still in `envs/beta`:
   ```bash
   terraform output -json environment | jq '{ip: .api_ip_address, api: .certificate_dns_record, web: .web_certificate_dns_records}'
   ```
