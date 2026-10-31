@@ -40,21 +40,12 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   terraform apply
   ```
 
-- [ ] **4. Apply the domain change and wait for the certificates.** The first apply (step 3) issued certificates for
-  the firstline.com names; this one replaces them with `firstline-5730kl.com` ones and creates the six DNS records
-  (three A, three certificate CNAMEs) in Cloud DNS. Claude's plan on 2026-10-31 was **17 to add, 2 to change, 10 to
-  destroy**: the three DNS authorizations, certificates, and map entries replaced; the API uptime check replaced
-  and its alert updated for the new host; six record sets and the Cloud DNS API added; the usual cosmetic dashboard
-  change. Anything else: stop and send it to Claude.
-  ```bash
-  cd infrastructure/terraform/envs/beta
-  terraform plan
-  terraform apply
-  ```
-  Each certificate turns `ACTIVE` within about an hour:
+- [x] **4. Apply the domain change and wait for the certificates.** Applied 2026-10-31 (17 added, 2 changed, 1
+  destroyed; the first attempt failed until the uptime check became create-before-destroy, commit 540e9e5). The six
+  records exist in Cloud DNS and all three hostnames resolve to `136.81.191.137` publicly. The certificates were
+  `PROVISIONING`/`AUTHORIZING` right after the apply and turn `ACTIVE` on their own, usually within an hour:
   ```bash
   gcloud certificate-manager certificates list --format='table(name.basename(), managed.domains.list(), managed.state)'
-  dig +short api.beta.firstline-5730kl.com   # 136.81.191.137
   ```
 
 - [ ] **5. Google sign-in.** Cloud console, APIs & Services, Credentials, the web client
