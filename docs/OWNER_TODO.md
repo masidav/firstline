@@ -35,8 +35,16 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   terraform plan
   terraform apply
   ```
-  Expect about 6 resources to add (a DNS authorization, certificate, and map entry for each web app) and nothing
-  to destroy or replace. If the plan wants to destroy or replace anything, stop and send it to Claude.
+  Done so far (2026-10-31): Terraform 1.17.1 and kubectl 1.37.2 are installed in `~/.local/bin`, `terraform.tfvars`
+  is filled in, `terraform init` ran, and Claude reviewed the plan. Only `terraform apply` is left; it must be run
+  by you (Claude's tooling blocks infrastructure applies). The reviewed plan is **11 to add, 5 to change, 5 to
+  destroy**, all expected:
+  - add: the two web certificates (DNS authorization, certificate, map entry each), the redaction service
+    account's Secret Manager reads and bucket roles;
+  - destroy: the worker's bucket roles and the redaction account's old roles, replaced by the adds above (commit
+    d75d4af moved redaction into its own Deployment);
+  - change: log metrics, the redaction-overdue alert, and the dashboard now also watch the `redaction` container.
+  Nothing is replaced. If the plan differs from this, stop and send it to Claude.
 
 - [ ] **4. Create the DNS records** in the firstline.com zone in Akamai Edge DNS. Still in `envs/beta`:
   ```bash
