@@ -22,7 +22,7 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   overlay (`gateway.yaml`, `web-config`, `Cors__AllowedOrigins`), `.github/workflows/mobile-ios.yml`,
   `apps/mobile/eas.json`, and the docs; grep for the old domain.
 
-- [ ] **2. Sign in to Google Cloud.**
+- [x] **2. Sign in to Google Cloud.** Done 2026-10-31.
   ```bash
   gcloud auth login --update-adc
   gcloud config set project project-ef36a8a9-d958-4163-b4c
