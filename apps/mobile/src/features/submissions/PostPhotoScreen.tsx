@@ -26,7 +26,7 @@ const UNLISTED = 'unlisted';
 
 /**
  * Post a concert photo, merch, or ticket (route /post). It goes to staff as proof of fandom; once verified it earns
- * points, and a concert or merch photo can then be shared to the home feed from My posts.
+ * points, and a concert or merch photo can then be shared to the home feed from Posts.
  */
 export function PostPhotoScreen() {
   const { session } = useSession();
@@ -121,9 +121,9 @@ export function PostPhotoScreen() {
         <Title>Sent for review</Title>
         <Body>
           Staff check every post. Once it's verified you earn points
-          {kind === 'ticket' ? '.' : ', and you can share it to the home feed from My posts.'}
+          {kind === 'ticket' ? '.' : ', and you can share it to the home feed from Posts.'}
         </Body>
-        <Button label="My posts" onPress={() => router.replace('/posts')} />
+        <Button label="Posts" onPress={() => router.replace('/posts')} />
         <Button label="Back to home" kind="secondary" onPress={() => router.replace('/home')} />
       </Screen>
     );

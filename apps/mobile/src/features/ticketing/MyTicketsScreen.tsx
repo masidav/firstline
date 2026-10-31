@@ -29,7 +29,7 @@ export function reservationLine(reservation: Reservation): string {
 }
 
 /**
- * Your tickets (GET /me/reservations): the seats you hold from the draws, and the ones you are the named +1 of.
+ * Tickets (GET /me/reservations): the seats you hold from the draws, and the ones you are the named +1 of.
  * A ticket is non-transferable and arrives shortly before the show (the allocation's delivery rule); until then the
  * reservation says when. A holder who can't go returns it (POST /reservations/{id}/return) and the seats go to
  * the next fan in the ranking at face value.
@@ -75,7 +75,7 @@ export function MyTicketsScreen() {
 
   return (
     <Screen>
-      <Title>Your tickets</Title>
+      <Title>Tickets</Title>
       <Body muted>
         Face-value seats from the fan draws. Tickets are tied to your account and arrive shortly before the show. Can't
         go? Return it and the seat goes to the next fan in line.

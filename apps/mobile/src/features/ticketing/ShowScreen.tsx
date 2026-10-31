@@ -176,7 +176,7 @@ function AllocationCard({ allocation }: { allocation: Allocation }) {
               ? 'Your ticket has been delivered.'
               : 'Your seat is held; the ticket arrives shortly before the show.'}
           </Body>
-          <Button label="Your tickets" kind="secondary" onPress={() => router.push('/tickets')} />
+          <Button label="Tickets" kind="secondary" onPress={() => router.push('/tickets')} />
         </>
       )}
       {registration?.status === 'returned' && <Body>You returned your seat; it went to the next fan in line.</Body>}

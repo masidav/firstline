@@ -64,7 +64,7 @@ export function MyPostsScreen() {
 
   return (
     <Screen>
-      <Title>My posts</Title>
+      <Title>Posts</Title>
       <Button label="Post a photo" onPress={() => router.push('/post')} />
       <ErrorText>{error}</ErrorText>
       {posts?.length === 0 && <Body muted>Nothing yet. Post a concert photo, merch, or a ticket to earn points.</Body>}

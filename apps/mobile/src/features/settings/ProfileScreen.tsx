@@ -220,11 +220,11 @@ export function ProfileScreen({ me }: { me: Me }) {
           ))}
         </View>
       )}
-      <Button label="Your tickets" kind="secondary" onPress={() => router.push('/tickets')} />
+      <Button label="Tickets" kind="secondary" onPress={() => router.push('/tickets')} />
       <Button label="Stats" kind="secondary" onPress={() => router.push('/stats')} />
-      <Button label="My posts" kind="secondary" onPress={() => router.push('/posts')} />
+      <Button label="Posts" kind="secondary" onPress={() => router.push('/posts')} />
       <Button label="GrabBag" kind="secondary" onPress={() => router.push('/grab-bag')} />
-      <Button label="People you follow" kind="secondary" onPress={() => router.push('/people')} />
+      <Button label="Follows" kind="secondary" onPress={() => router.push('/people')} />
       {me.is_staff && <Button label="Review queue" kind="secondary" onPress={() => router.push('/review')} />}
       {me.is_staff && <Button label="Reported posts" kind="secondary" onPress={() => router.push('/moderation')} />}
       {me.is_staff && <Button label="Fraud review" kind="secondary" onPress={() => router.push('/fraud')} />}
