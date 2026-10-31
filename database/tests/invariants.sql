@@ -1726,8 +1726,12 @@ BEGIN
   p := prompt_for_day(today);
   again := prompt_for_day(today);
   ASSERT p.id = again.id AND p.source = 'library', 'the library fills a day without a staff prompt, once';
-  ASSERT (SELECT text FROM prompt_library ORDER BY position OFFSET ((today - date '2026-01-01') % 30 + 30) % 30 LIMIT 1) = p.text,
+  ASSERT (SELECT text FROM prompt_library ORDER BY position
+           OFFSET ((today - date '2026-01-01') % (SELECT count(*) FROM prompt_library) + (SELECT count(*) FROM prompt_library))
+                  % (SELECT count(*) FROM prompt_library) LIMIT 1) = p.text,
          'the library rotates by day';
+  ASSERT NOT EXISTS (SELECT 1 FROM prompt_library WHERE text LIKE 'Which album would you hand someone%'),
+         'the prompt dropped in 0050 is gone from the library';
   INSERT INTO prompts (day, text, source) VALUES (today + 7, 'Staff prompt', 'staff');
   ASSERT (prompt_for_day(today + 7)).text = 'Staff prompt', 'a staff prompt wins';
 
