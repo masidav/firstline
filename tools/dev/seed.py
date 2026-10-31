@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
-"""Fill the LOCAL development database (dev, 127.0.0.1) with fake fans, artists, shows, allocations, and registrations.
+"""Fill a database with fake fans, artists, shows, allocations, and registrations: the LOCAL development database
+(dev, 127.0.0.1) by default, or, as SQL, a cloud environment whose overlay asks for demo data (see "Cloud demo data").
 
 Usage, from the repo root with the compose database running and migrations applied (docs/DEVELOPMENT.md):
   python3 tools/dev/seed.py                          # 200 fans, 8 artists, 10 shows
   python3 tools/dev/seed.py --fans 1000 --seed 7     # more fans, a different deterministic data set
   python3 tools/dev/seed.py --wipe                   # wipe the local database first (testScripts/wipeLocalDb.sh asks)
   python3 tools/dev/seed.py --sql | psql ...         # print the SQL instead of running it (CI does this)
+
+Cloud demo data: infrastructure/k8s/deploy.sh runs this with --sql --fake --if-absent --no-photos plus the arguments
+in infrastructure/k8s/overlays/<env>/seed (beta has one; prod must not) and pipes the SQL through db-shell.sh after
+the migrations, every deploy. --if-absent makes a database that already holds the seed a no-op instead of an error,
+so it is written once. --no-photos keeps merch off the feed (the placeholder files would not exist in Cloud Storage).
+Nobody can sign in as the fake fans there (dev sign-in is off); they fill the feed, scores, and allocations.
 
 What you get, all deterministic for a given --seed:
   - fans with hub cities, Spotify-like signals, album journal logs (which award ledger points through the real
@@ -34,7 +41,8 @@ with made-up ones it will log a failed job per 'seed:' id after a week. Re-seed 
 Refuses to run on a database that already holds seed data, or that already tracks one of the real artists: wipe
 first. Stdlib only.
 
-LOCAL ONLY. The fans and their activity are fake. Never run this against beta or prod.
+The fans and their activity are fake: never let this near prod. Running it directly (without --sql) only ever
+targets the local compose database.
 """
 
 import argparse
@@ -260,8 +268,10 @@ def lognormal_curve(median, sigma):
             for z in range(-30, 31)]
 
 
-def generate(fans, artists, shows, seed, catalog_source=None):
-    """The seed SQL. catalog_source: artists from fetch_real_catalog (real), or None for made-up ones."""
+def generate(fans, artists, shows, seed, catalog_source=None, if_absent=False, photos=True):
+    """The seed SQL. catalog_source: artists from fetch_real_catalog (real), or None for made-up ones. if_absent: a
+    database that already holds the seed makes psql quit quietly instead of failing. photos: share merch to the feed
+    with placeholder photo files (False when the files cannot be written, as in a cloud environment)."""
     rng = random.Random(seed)
     now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
     new_id = lambda: uuid.UUID(int=rng.getrandbits(128), version=4)  # noqa: E731 (deterministic ids)
@@ -269,11 +279,16 @@ def generate(fans, artists, shows, seed, catalog_source=None):
     files = []  # (storage key, bytes): placeholder photos to write under the API's local storage
     source = (catalog_source or fake_catalog(artists, rng, now))[:artists]
     seeded_ids = [a["spotify_id"] for a in source]
-    sql = ["\\set ON_ERROR_STOP on", "BEGIN;",
-           "DO $$ BEGIN IF EXISTS (SELECT 1 FROM users WHERE handle = 'dev_staff')\n"
-           f"  OR EXISTS (SELECT 1 FROM artists WHERE spotify_artist_id LIKE 'seed:%' OR spotify_artist_id = ANY({lit(seeded_ids)})) THEN\n"
-           "  RAISE EXCEPTION 'seed data (or one of its artists) is already present; wipe the local database first "
-           "(testScripts/wipeLocalDb.sh or seed.py --wipe)'; END IF; END $$;"]
+    present = ("EXISTS (SELECT 1 FROM users WHERE handle = 'dev_staff')"
+               f" OR EXISTS (SELECT 1 FROM artists WHERE spotify_artist_id LIKE 'seed:%' OR spotify_artist_id = ANY({lit(seeded_ids)}))")
+    sql = ["\\set ON_ERROR_STOP on"]
+    if if_absent:
+        sql += [f"SELECT {present} AS seed_present \\gset",
+                "\\if :seed_present", "\\echo seed data is already present; nothing to do", "\\quit", "\\endif"]
+    sql += ["BEGIN;",
+            f"DO $$ BEGIN IF {present} THEN\n"
+            "  RAISE EXCEPTION 'seed data (or one of its artists) is already present; wipe the local database first "
+            "(testScripts/wipeLocalDb.sh or seed.py --wipe)'; END IF; END $$;"]
 
     # --- staff and fans -------------------------------------------------------------------------------------------
     staff_id = new_id()
@@ -374,11 +389,12 @@ def generate(fans, artists, shows, seed, catalog_source=None):
                           [(s[0], s[1], s[2], s[3], s[4]) for s in submission_rows]))
         ids = ", ".join(lit(s[0]) for s in submission_rows)
         sql.append(f"UPDATE submissions SET status = 'verified' WHERE id IN ({ids});")
-        sql.append("-- Verified merch goes on the feed, as PUT /submissions/{id}/share does, with a placeholder photo file.\n"
-                   f"UPDATE submissions SET shared_at = submitted_at + interval '2 days' WHERE kind = 'merch' AND id IN ({ids});")
+        if photos:
+            sql.append("-- Verified merch goes on the feed, as PUT /submissions/{id}/share does, with a placeholder photo file.\n"
+                       f"UPDATE submissions SET shared_at = submitted_at + interval '2 days' WHERE kind = 'merch' AND id IN ({ids});")
         file_values = []
         for submission in submission_rows:
-            if submission[3] != "merch":
+            if submission[3] != "merch" or not photos:
                 continue
             file_id = new_id()
             png = placeholder_png(rng)
@@ -551,6 +567,10 @@ def main():
     parser.add_argument("--wipe", action="store_true", help="run testScripts/wipeLocalDb.sh first (it asks)")
     parser.add_argument("--sql", action="store_true", help="print the SQL instead of running it")
     parser.add_argument("--fake", action="store_true", help="made-up artists even when Spotify credentials are set")
+    parser.add_argument("--if-absent", action="store_true",
+                        help="with --sql: a database that already holds the seed is left alone instead of failing")
+    parser.add_argument("--no-photos", action="store_true",
+                        help="don't share merch to the feed or write placeholder photo files (cloud environments)")
     parser.add_argument("--storage", default=None,
                         help="where to write the placeholder photo files (the API's Storage__LocalPath; "
                              "default services/api/.local-storage)")
@@ -571,7 +591,10 @@ def main():
             sys.exit(f"Couldn't read the artists from Spotify ({e}). Check Spotify__ClientId and Spotify__ClientSecret, or use --fake.")
     else:
         print("No Spotify credentials (Spotify__ClientId, Spotify__ClientSecret): seeding made-up artists.", file=sys.stderr)
-    sql, examples, files = generate(args.fans, args.artists, args.shows, args.seed, real)
+    if args.if_absent and not args.sql:
+        sys.exit("--if-absent is for --sql (the local run refuses a seeded database on purpose).")
+    sql, examples, files = generate(args.fans, args.artists, args.shows, args.seed, real,
+                                    if_absent=args.if_absent, photos=not args.no_photos)
     if args.sql:
         sys.stdout.write(sql)
         return

@@ -192,6 +192,13 @@ Job's image is the same commit as the API.
   then `gcloud sql backups list --instance fandomscore-beta` and `gcloud sql backups restore <id> --restore-instance
   fandomscore-beta`, redeploy the previous commit, and scale back up. Writes made after the backup are lost;
   for a narrower window, clone to a point in time instead (Backups and restore). On prod, prefer the clone.
+- **Demo data.** An overlay with a `seed` file (beta: `--fans 200 --artists 8 --shows 10 --seed 1`) gets the dev
+  seed (`tools/dev/seed.py`, "Cloud demo data") written through `db-shell.sh` right after the migrations: 200 fake
+  fans with scores, logs, follows, and grab bags, 8 made-up artists, 10 shows with allocations in every state, and a
+  `dev_staff` account nobody can sign in as (dev sign-in is off). The SQL is a no-op once the seed is present, so it
+  is written once and survives later deploys. To start over, delete the seed rows by hand; to stop seeding, delete
+  the file. The made-up artists make the weekly catalog refresh log one given-up job each, which the
+  `worker_jobs_given_up` alert reports. prod must never have a `seed` file.
 - **Config change without a code change.** Edit the overlay and run `deploy.sh` with the current SHA. The
   ConfigMap name carries a content hash, so pods restart with the new values.
 - **Secret rotation.** Add a new secret version; restart the Deployment (`kubectl rollout restart deployment/api

@@ -49,8 +49,8 @@ python3 tools/dev/seed.py --fans 2000 --seed 7
 It refuses to run on a database that already has seed data. Sign in from the app with dev sign-in as `dev_staff`
 or any fan handle it prints (`Auth__DevSignIn=true`). Scores are provisional until the worker runs the queued
 rescores. Nobody has a Spotify connection; connect your own as usual. The artists are fake (`seed:` ids), so after a
-week the weekly catalog refresh logs a failed job per seed artist; re-seed or ignore. Local only: never run it
-against beta or prod (`infrastructure/README.md`).
+week the weekly catalog refresh logs a failed job per seed artist; re-seed or ignore. Beta gets the same data as
+demo content through its deploy (`infrastructure/README.md`, "Demo data"); prod never does.
 
 ## Fan app
 The app in `apps/mobile` runs in the browser for now; see its [README](../apps/mobile/README.md), including how to

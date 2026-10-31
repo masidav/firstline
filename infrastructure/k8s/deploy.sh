@@ -13,6 +13,9 @@
 #   GCP_PROJECT_ID     project for the backup instead of the one in the overlay's image repository
 #   SKIP_BACKUP=1      no Cloud SQL backup before migrating (the first deploy of an empty database)
 #   SKIP_HEALTH_CHECK=1  don't call the public health endpoint afterwards (before DNS and the certificate exist)
+#
+# If the overlay has a `seed` file, the demo data from tools/dev/seed.py is written after the migrations (once; later
+# deploys find it present and do nothing).
 set -euo pipefail
 
 environment="${1:?environment (beta, prod)}"
@@ -56,6 +59,15 @@ if ! kubectl wait job/migrate -n "$namespace" --for=condition=complete --timeout
   exit 1
 fi
 kubectl logs job/migrate -n "$namespace"
+
+# Demo data (tools/dev/seed.py, "Cloud demo data"): the overlay's `seed` file holds the script's arguments. The SQL
+# is a no-op once the seed is present, so this runs every deploy and writes once. prod has no such file.
+if [ -f "${overlay}/seed" ]; then
+  echo "== Demo data ($(tr -d '\n' < "${overlay}/seed"))"
+  # shellcheck disable=SC2046 # the file holds separate arguments
+  python3 "$(dirname "$0")/../../tools/dev/seed.py" --sql --fake --if-absent --no-photos $(cat "${overlay}/seed") \
+    | "$(dirname "$0")/db-shell.sh" "$environment"
+fi
 
 echo "== Rollout"
 kustomize build . | kubectl apply -f -
