@@ -8,11 +8,13 @@ import { Body, Button, ErrorText, Loading, Screen, Title } from '../../ui/compon
 import { AlbumRow } from './AlbumRow';
 import { type Album, describeAlbum } from './journal';
 import { SpotifyAttribution } from './SpotifyAttribution';
+import { SpotifyEmbed } from '../spotify/SpotifyEmbed';
 
 /** An artist's releases from the catalog (GET /artists/{id}/albums), newest first. */
 export function ArtistAlbumsScreen({ artistId }: { artistId: string }) {
   const { session } = useSession();
   const [albums, setAlbums] = useState<Album[] | null>(null);
+  const [spotifyArtistId, setSpotifyArtistId] = useState<string>();
   const [error, setError] = useState<string>();
 
   const load = useCallback(async () => {
@@ -25,6 +27,12 @@ export function ArtistAlbumsScreen({ artistId }: { artistId: string }) {
     } catch (e) {
       setError(errorMessage(e));
     }
+    // The artist's Spotify id, for the embedded player on the web build; the page is fine without it.
+    try {
+      setSpotifyArtistId(unwrap(await session.api.GET('/artists/{artistId}', { params: { path: { artistId } } })).spotify_artist_id);
+    } catch {
+      setSpotifyArtistId(undefined);
+    }
   }, [session, artistId]);
 
   useEffect(() => {
@@ -36,6 +44,7 @@ export function ArtistAlbumsScreen({ artistId }: { artistId: string }) {
     <Screen>
       <Button label="Back" kind="secondary" onPress={() => (router.canGoBack() ? router.back() : router.replace('/home'))} />
       <Title>{artistName ?? 'Albums'}</Title>
+      <SpotifyEmbed kind="artist" id={spotifyArtistId} title={artistName ?? 'Artist'} />
       <Button label="Upcoming shows" kind="secondary" onPress={() => router.push(`/artist/${artistId}/shows`)} />
       {error && (
         <>

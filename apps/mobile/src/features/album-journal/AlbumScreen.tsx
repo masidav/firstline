@@ -14,6 +14,7 @@ import type { PendingLog } from './pendingLogs';
 import { PendingLogCard } from './PendingLogCard';
 import { SpotifyAttribution } from './SpotifyAttribution';
 import { LikeButton } from '../spotify/Library';
+import { SpotifyEmbed } from '../spotify/SpotifyEmbed';
 import { PlayAlbumButton } from '../spotify/NowPlaying';
 import { SongControls } from '../spotify/SongControls';
 
@@ -110,6 +111,7 @@ export function AlbumScreen({ albumId }: { albumId: string }) {
           <LikeButton kind="album" id={album.spotify_album_id} title={album.title} />
         </View>
       )}
+      {!album.delisted && <SpotifyEmbed kind="album" id={album.spotify_album_id} title={album.title} />}
       <SpotifyAttribution url={spotifyUrl} />
       <ErrorText>{error}</ErrorText>
 
