@@ -46,8 +46,11 @@ public sealed class SpotifyOptions
     /// <summary>
     /// Client secret from the Spotify dashboard. Secret. Used only for app tokens (client credentials) for artist
     /// search and lookup; user connections use PKCE without it. Empty turns artist search and add off.
+    /// Surrounding whitespace is dropped: a value stored with a trailing newline (an editor, or echo instead of
+    /// printf into <c>gcloud secrets versions add</c>) would otherwise fail Spotify's client authentication.
     /// </summary>
-    public string ClientSecret { get; set; } = "";
+    public string ClientSecret { get => clientSecret; set => clientSecret = value.Trim(); }
+    private string clientSecret = "";
 
     /// <summary>
     /// Comma-separated redirect URIs the mobile app may use. Each must also be registered in the Spotify dashboard.

@@ -98,7 +98,9 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
 
 ## B. Features that need a provider account
 
-- [ ] **Spotify** (listening score, artist search, album catalog, Spotify connect). Off on beta today.
+- [x] **Spotify** (listening score, artist search, album catalog, Spotify connect). On beta since 2026-10-31: app
+  created, client ID `e2d216438a484d2299cfdc6608ac41e7` in the overlay, secret stored (it had a trailing newline;
+  the API now trims it). Still yours: add each tester's Spotify account under User Management.
   1. developer.spotify.com, Dashboard: create an app for beta (Web API), with the redirect URI
      `https://app.beta.firstline-5730kl.com/spotify-callback`.
   2. User Management: add each tester's Spotify account (development mode allows 5).

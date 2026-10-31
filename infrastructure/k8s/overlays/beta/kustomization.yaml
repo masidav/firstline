@@ -38,7 +38,7 @@ configMapGenerator:
       - API_URL=https://api.beta.firstline-5730kl.com/v1
       # The same Google web client the API accepts (Auth__Google__ClientIds) and Spotify app (Spotify__ClientId).
       - GOOGLE_WEB_CLIENT_ID=494880048811-14ch6rdq1p4vuatcebg2qq187dkgm4iv.apps.googleusercontent.com
-      - SPOTIFY_CLIENT_ID=
+      - SPOTIFY_CLIENT_ID=e2d216438a484d2299cfdc6608ac41e7
   - name: app-config
     behavior: merge
     literals:
@@ -53,8 +53,8 @@ configMapGenerator:
       # Non-secret provider settings (.env.example). Secrets are in Secret Manager (secrets.yaml).
       - Auth__Apple__ClientIds=
       - Auth__Google__ClientIds=494880048811-14ch6rdq1p4vuatcebg2qq187dkgm4iv.apps.googleusercontent.com
-      - Spotify__ClientId=
-      - Spotify__RedirectUris=
+      - Spotify__ClientId=e2d216438a484d2299cfdc6608ac41e7
+      - Spotify__RedirectUris=https://app.beta.firstline-5730kl.com/spotify-callback
       # The two web apps call the API from their own hostnames (gateway.yaml).
       - Cors__AllowedOrigins=https://app.beta.firstline-5730kl.com,https://promoters.beta.firstline-5730kl.com
       # Buckets from terraform output buckets: Terraform names them after the project ("<project_id>-quarantine").
