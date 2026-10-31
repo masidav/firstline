@@ -40,7 +40,9 @@ export interface paths {
          *     other invalid token, so a token issued for another sign-in can't be replayed. (Developer sign-in tokens,
          *     Development only, are not real tokens; the request still needs a nonce.)
          *     A new provider account whose email already belongs to another account gets `409 email_in_use`;
-         *     each email belongs to one account, and accounts are not linked across providers.
+         *     each email belongs to one account, and accounts are not linked across providers. The one exception is a
+         *     pre-provisioned account (a handle and an email with no sign-in identity yet, written for demos): the first
+         *     verified sign-in with that email claims it, no handle needed, and answers 200 with `is_new_user` false.
          *     App Store rules may require offering Sign in with Apple; verify against current guidelines.
          */
         post: operations["createSession"];
@@ -1513,7 +1515,8 @@ export interface paths {
         };
         /**
          * This week's music trivia
-         * @description One question a week about one of the fan's scored artists: trivia comes out on Tuesdays (UTC). A question stays
+         * @description One question a week about one of the fan's scored artists: trivia comes out on Tuesdays (UTC), or every day where
+         *     the environment runs trivia daily (beta, for demos). A question stays
          *     the fan's until they answer it, even past its week; once answered, it shows with its results until the next
          *     Tuesday (`next_question_on`), when a new one comes (decided 2026-10-27). It is shared by the artist's fans that week (made from the album
          *     catalog by the first who asks). Once answered, `results` names up to two people the fan follows who
@@ -1591,7 +1594,8 @@ export interface paths {
         /**
          * This week's music prompt
          * @description One open question a week for everyone: prompts come out on Thursdays (UTC) and stay open until the next Thursday
-         *     (`next_prompt_on`), from staff or the built-in library, for example "What's your best
+         *     (`next_prompt_on`), or every day where the environment runs prompts daily (beta, for demos), from staff or the
+         *     built-in library, for example "What's your best
          *     hypothetical band name?". `following_answers` (up to three answers from people the caller follows) is only
          *     filled once the caller has answered.
          */
@@ -1684,7 +1688,7 @@ export interface paths {
         get?: never;
         /**
          * Set a week's prompt
-         * @description A Thursday (prompts come out on Thursdays), this week's or later. Refused once fans have answered that week's prompt.
+         * @description A release day (a Thursday, or any day where the environment runs prompts daily), the current one or later. Refused once fans have answered that prompt.
          */
         put: operations["schedulePrompt"];
         post?: never;
@@ -5296,7 +5300,7 @@ export interface components {
             prompt: components["schemas"]["Prompt"];
             /**
              * Format: date
-             * @description The next Thursday.
+             * @description When the next prompt comes out (the next Thursday; the next day where the environment runs prompts daily).
              */
             next_prompt_on: string;
             my_answer: components["schemas"]["PromptAnswer"] | null;
@@ -7901,7 +7905,7 @@ export interface operations {
                         question: components["schemas"]["TriviaQuestion"] | null;
                         /**
                          * Format: date
-                         * @description The next Tuesday.
+                         * @description When the next question comes out (the next Tuesday; the next day where the environment runs trivia daily).
                          */
                         next_question_on: string;
                     };
