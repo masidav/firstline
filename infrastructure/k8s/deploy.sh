@@ -24,7 +24,9 @@ case "$environment" in
   beta|prod) ;;
   *) echo "Unknown environment '${environment}': beta or prod (dev runs locally, see docs/DEVELOPMENT.md)." >&2; exit 1 ;;
 esac
-overlay="$(cd "$(dirname "$0")/overlays/${environment}" && pwd)"
+here="$(cd "$(dirname "$0")" && pwd)"   # infrastructure/k8s, absolute: the script cds into the overlay below
+root="$(cd "${here}/../.." && pwd)"
+overlay="${here}/overlays/${environment}"
 namespace=fandomscore
 instance="fandomscore-${environment}"
 
@@ -65,8 +67,8 @@ kubectl logs job/migrate -n "$namespace"
 if [ -f "${overlay}/seed" ]; then
   echo "== Demo data ($(tr -d '\n' < "${overlay}/seed"))"
   # shellcheck disable=SC2046 # the file holds separate arguments
-  python3 "$(dirname "$0")/../../tools/dev/seed.py" --sql --fake --if-absent --no-photos $(cat "${overlay}/seed") \
-    | "$(dirname "$0")/db-shell.sh" "$environment"
+  python3 "${root}/tools/dev/seed.py" --sql --fake --if-absent --no-photos $(cat "${overlay}/seed") \
+    | "${here}/db-shell.sh" "$environment"
 fi
 
 echo "== Rollout"
