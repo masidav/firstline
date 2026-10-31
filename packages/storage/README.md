@@ -10,7 +10,7 @@ Stored files behind one seam, shared by the API (uploads, downloads) and the wor
 | `StorageSetup.cs` | `AddFileStore(configuration, contentRoot)`: registers the store for a process. |
 
 Keys start with their tier: `quarantine/` (unredacted uploads), `archive/` (redacted proof only; the schema checks the
-prefix), `media/` (staff-published media such as featured videos).
+prefix), `media/` (staff-published media such as featured videos, and fans' profile pictures under `media/avatars/`).
 
 ## Local disk (default)
 `Storage__LocalPath` (default `.local-storage`, relative to the process's content root) must point the API and the
@@ -45,5 +45,7 @@ The emulator drops content types on upload (real Cloud Storage keeps them), and 
   original with its GPS location is never written anywhere.
 - `GET /v1/files/{id}` and `GET /v1/featured/videos/{id}` check the API's own link signature, then redirect to a
   15-minute storage link (`SignedReadUrlAsync`), or serve the bytes when the store can't sign (local disk).
+  `GET /v1/avatars/{id}` (profile pictures) does the same without a signature: the link works only while the upload is
+  a fan's current picture (`services/api/src/features/users/README.md`).
 
 Tests: `GcsFileStoreTests` (needs Docker; pulls `fsouza/fake-gcs-server`).

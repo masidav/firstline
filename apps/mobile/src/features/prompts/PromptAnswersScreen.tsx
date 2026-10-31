@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { type components, unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
+import { Avatar } from '../../ui/Avatar';
 import { Body, Button, ErrorText, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { ReportForm } from '../feed/ReportForm';
@@ -47,11 +48,14 @@ export function PromptAnswersScreen({ promptId }: { promptId: string }) {
       {items?.length === 0 && <Body muted>No answers yet.</Body>}
       {items?.map((answer) => (
         <View key={answer.id} style={[styles.row, answer.mine && styles.mine]}>
-          <Text style={styles.who} onPress={answer.user.handle ? () => router.push(`/fans/${answer.user.handle}`) : undefined}>
-            {answer.mine ? 'You' : fanName(answer.user)}
-            {answer.following && !answer.mine ? ' · you follow' : ''}
-            {answer.visibility === 'followers' ? ' · followers only' : ''}
-          </Text>
+          <View style={styles.whoRow}>
+            <Avatar user={answer.user} size={24} />
+            <Text style={styles.who} onPress={answer.user.handle ? () => router.push(`/fans/${answer.user.handle}`) : undefined}>
+              {answer.mine ? 'You' : fanName(answer.user)}
+              {answer.following && !answer.mine ? ' · you follow' : ''}
+              {answer.visibility === 'followers' ? ' · followers only' : ''}
+            </Text>
+          </View>
           <Text style={styles.text}>“{answer.body}”</Text>
           {!answer.mine &&
             (reporting === answer.id ? (
@@ -71,6 +75,7 @@ export function PromptAnswersScreen({ promptId }: { promptId: string }) {
 const styles = StyleSheet.create({
   row: { gap: space.xs, padding: space.md, borderRadius: 12, borderWidth: 1, borderColor: colors.border },
   mine: { borderColor: colors.accent },
+  whoRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   who: { color: colors.muted, fontSize: 13, fontWeight: '700' },
   text: { color: colors.text, fontSize: 16 },
   report: { color: colors.muted, fontSize: 13, textDecorationLine: 'underline', alignSelf: 'flex-end' },

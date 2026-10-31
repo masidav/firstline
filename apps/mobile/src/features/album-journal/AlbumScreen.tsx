@@ -5,6 +5,7 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 import { unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
+import { Avatar } from '../../ui/Avatar';
 import { Body, Button, ErrorText, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { type AlbumDetail, type AlbumLog, describeAlbum, describePoints, formatRating, type LogResult, spotifyAlbumUrl } from './journal';
@@ -188,9 +189,12 @@ export function AlbumScreen({ albumId }: { albumId: string }) {
           </Text>
           {community.map((log) => (
             <View key={log.id} style={styles.log}>
-              <Body>
-                {[log.user.deleted ? 'Deleted user' : `@${log.user.handle}`, formatRating(log.rating), log.listened_on].filter(Boolean).join(' · ')}
-              </Body>
+              <View style={styles.logWho}>
+                <Avatar user={log.user} size={24} />
+                <Body>
+                  {[log.user.deleted ? 'Deleted user' : `@${log.user.handle}`, formatRating(log.rating), log.listened_on].filter(Boolean).join(' · ')}
+                </Body>
+              </View>
               {log.review ? <Body muted>{log.review}</Body> : null}
             </View>
           ))}
@@ -219,6 +223,7 @@ const styles = StyleSheet.create({
   headerText: { flex: 1, gap: 2 },
   section: { color: colors.text, fontSize: 18, fontWeight: '700', marginTop: space.md },
   log: { gap: 2, padding: space.md, borderRadius: 12, backgroundColor: colors.surface },
+  logWho: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   actions: { gap: space.sm },
   albumActions: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' },
   track: { flexDirection: 'row', alignItems: 'center', gap: space.sm },

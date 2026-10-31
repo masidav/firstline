@@ -29,7 +29,7 @@ public static class MeEndpoints
 
     // MeUpdate: a missing field is left alone; display_name and avatar_upload_id accept null to clear.
     private static async Task<IResult> UpdateAsync(
-        ClaimsPrincipal user, JsonElement body, NpgsqlDataSource db, CancellationToken cancellationToken)
+        ClaimsPrincipal user, JsonElement body, HttpRequest request, NpgsqlDataSource db, CancellationToken cancellationToken)
     {
         if (body.ValueKind != JsonValueKind.Object)
         {
@@ -73,16 +73,24 @@ public static class MeEndpoints
             }
         }
 
+        // The picture is a finished avatar upload of this fan (Avatars); it's checked against the database below,
+        // once the rest of the body is known to be valid.
+        var avatarChange = false;
+        Guid? newAvatar = null;
         if (body.TryGetProperty("avatar_upload_id", out var avatar))
         {
-            // Uploads (POST /uploads) arrive with object storage; until then avatars can only be cleared.
             if (avatar.ValueKind == JsonValueKind.Null)
             {
-                sets.Add("avatar_url = NULL");
+                avatarChange = true;
+            }
+            else if (avatar.ValueKind == JsonValueKind.String && Guid.TryParse(avatar.GetString(), out var uploadId))
+            {
+                avatarChange = true;
+                newAvatar = uploadId;
             }
             else
             {
-                errors.Add(new FieldError("avatar_upload_id", "Avatar uploads are not available yet."));
+                errors.Add(new FieldError("avatar_upload_id", Avatars.UploadRule));
             }
         }
 
@@ -192,12 +200,39 @@ public static class MeEndpoints
         }
 
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        Guid? oldAvatar = null;
+        if (avatarChange)
+        {
+            oldAvatar = await connection.ExecuteScalarAsync<Guid?>(
+                "SELECT avatar_upload_id FROM users WHERE id = @id AND deleted_at IS NULL FOR UPDATE", new { id = user.UserId() }, transaction);
+            if (newAvatar is { } uploadId)
+            {
+                if (uploadId != oldAvatar && !await connection.ExecuteScalarAsync<bool>(
+                        "SELECT EXISTS (SELECT 1 FROM uploads WHERE id = @uploadId AND user_id = @id AND purpose = @purpose AND uploaded_at IS NOT NULL)",
+                        new { uploadId, id = user.UserId(), purpose = Avatars.Purpose }, transaction))
+                {
+                    throw ApiProblemException.Validation(new FieldError("avatar_upload_id", Avatars.UploadRule));
+                }
+
+                sets.Add("avatar_upload_id = @avatar_upload_id");
+                sets.Add("avatar_url = @avatar_url");
+                parameters.Add("avatar_upload_id", uploadId);
+                parameters.Add("avatar_url", Avatars.Url(request, uploadId));
+            }
+            else
+            {
+                sets.Add("avatar_upload_id = NULL");
+                sets.Add("avatar_url = NULL");   // the users_avatar trigger would clear it too
+            }
+        }
+
         if (sets.Count > 0)
         {
             try
             {
                 await connection.ExecuteAsync(
-                    $"UPDATE users SET {string.Join(", ", sets)} WHERE id = @id AND deleted_at IS NULL", parameters);
+                    $"UPDATE users SET {string.Join(", ", sets)} WHERE id = @id AND deleted_at IS NULL", parameters, transaction);
             }
             catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation && e.ConstraintName == "users_handle_key")
             {
@@ -209,7 +244,16 @@ public static class MeEndpoints
             }
         }
 
-        return Results.Ok(await LoadAsync(connection, user.UserId()));
+        // The old picture's upload goes with it: its link stops now, and the delete queues the stored file for
+        // storage.cleanup (migration 0027).
+        if (avatarChange && oldAvatar is { } previous && previous != newAvatar)
+        {
+            await connection.ExecuteAsync("DELETE FROM uploads WHERE id = @previous AND user_id = @id", new { previous, id = user.UserId() }, transaction);
+        }
+
+        var me = await LoadAsync(connection, user.UserId(), transaction);
+        await transaction.CommitAsync(cancellationToken);
+        return Results.Ok(me);
     }
 
     // One leading @ is allowed, as in openapi MeUpdate's handle patterns.
@@ -239,7 +283,7 @@ public static class MeEndpoints
         return Results.Accepted();
     }
 
-    private static async Task<MeResponse> LoadAsync(NpgsqlConnection connection, Guid userId) =>
-        await UserProfiles.LoadMeAsync(connection, userId)
+    private static async Task<MeResponse> LoadAsync(NpgsqlConnection connection, Guid userId, NpgsqlTransaction? transaction = null) =>
+        await UserProfiles.LoadMeAsync(connection, userId, transaction)
         ?? throw ApiProblemException.Unauthorized("The account no longer exists.");
 }

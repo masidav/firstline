@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
+import { Text } from 'react-native';
 
 import { TabBar } from './TabBar';
 
@@ -69,4 +70,14 @@ test('a view above the tabs (the now-playing bar) is rendered', () => {
   render(<TabBar {...props(0)} above={<Text>Now playing</Text>} />);
 
   expect(screen.getByText('Now playing')).toBeTruthy();
+});
+
+test("a tab's icon (the Profile tab's picture) renders with its label", () => {
+  const p = props(0);
+  (p.descriptors as Record<string, { options: Record<string, unknown> }>)['profile-1']!.options.tabBarIcon = ({ size }: { size: number }) => (
+    <Text>{`picture ${size}`}</Text>
+  );
+  render(<TabBar {...p} />);
+  expect(screen.getByText('picture 22')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Profile' })).toBeTruthy();
 });

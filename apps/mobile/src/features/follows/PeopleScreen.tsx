@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
+import { Avatar } from '../../ui/Avatar';
 import { Body, Button, ErrorText, Field, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { FollowButton } from './FollowButton';
@@ -101,6 +102,7 @@ export function PeopleScreen() {
 
   const row = (user: UserSummary, action: 'follow' | 'follower') => (
     <View key={user.handle} style={styles.row}>
+      <Avatar user={user} size={40} />
       <Pressable accessibilityRole="link" accessibilityLabel={`Open ${fanName(user)}'s page`} onPress={() => router.push(`/fans/${user.handle}`)}
         style={styles.rowText}>
         <Text style={styles.name} numberOfLines={1}>

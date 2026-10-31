@@ -5,9 +5,10 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, space } from './theme';
 
 /**
- * The bottom tab bar: text labels (no icon font in the app), a count badge from `tabBarBadge`, per-tab label colors
- * from `tabBarActiveTintColor` and `tabBarInactiveTintColor` (the Profile tab turns red for unread alerts), and an
- * optional view above the tabs (the now-playing bar). Tabs are buttons named by their title, like the links they replace.
+ * The bottom tab bar: text labels (no icon font in the app), an optional `tabBarIcon` left of the label (the Profile
+ * tab shows the fan's picture), a count badge from `tabBarBadge`, per-tab label colors from `tabBarActiveTintColor`
+ * and `tabBarInactiveTintColor` (the Profile tab turns red for unread alerts), and an optional view above the tabs
+ * (the now-playing bar). Tabs are buttons named by their title, like the links they replace.
  */
 export function TabBar({ state, descriptors, navigation, insets, above }: BottomTabBarProps & { above?: ReactNode }) {
   return (
@@ -20,6 +21,7 @@ export function TabBar({ state, descriptors, navigation, insets, above }: Bottom
           const title = options?.title ?? route.name;
           const badge = options?.tabBarBadge;
           const color = focused ? (options?.tabBarActiveTintColor ?? colors.text) : (options?.tabBarInactiveTintColor ?? colors.muted);
+          const icon = options?.tabBarIcon?.({ focused, color, size: 22 });
           const press = () => {
             const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
             if (!focused && !event.defaultPrevented) navigation.navigate(route.name, route.params);
@@ -36,6 +38,7 @@ export function TabBar({ state, descriptors, navigation, insets, above }: Bottom
               style={({ pressed }) => [styles.tab, pressed && styles.pressed]}
             >
               <View style={styles.labelWrap}>
+                {icon}
                 <Text style={[styles.label, { color }]} numberOfLines={1}>
                   {title}
                 </Text>
@@ -59,7 +62,7 @@ const styles = StyleSheet.create({
   bar: { flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, backgroundColor: colors.surface },
   tab: { flex: 1, minHeight: 52, alignItems: 'center', justifyContent: 'center', paddingHorizontal: space.xs },
   pressed: { opacity: 0.6 },
-  labelWrap: { alignItems: 'center', justifyContent: 'center' },
+  labelWrap: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   label: { fontSize: 13, fontWeight: '600' },
   badge: {
     position: 'absolute', top: -10, right: -18, minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 5,

@@ -628,10 +628,14 @@ paths:
       operationId: createUpload
       summary: Get a presigned upload URL
       description: |
-        Used for submission photos (avatars aren't supported yet). The client PUTs the file to `url` with
-        `headers`; the link is signed and short-lived, so it needs no sign-in. Files land in quarantine storage
-        with their metadata (EXIF location, camera details, comments) stripped. JPEG and PNG only: convert HEIC
-        or WebP on the device first. 50 uploads per day per user.
+        Used for submission photos and profile pictures. The client PUTs the file to `url` with `headers`; the
+        link is signed and short-lived, so it needs no sign-in. Submission photos (`purpose: submission`) land in
+        quarantine storage with their metadata (EXIF location, camera details, comments) stripped. JPEG and PNG
+        only: convert HEIC or WebP on the device first. 50 uploads per day per user.
+
+        A profile picture (`purpose: avatar`, JPEG or PNG up to 15 MB) is turned upright, cropped to its middle
+        square, scaled to at most 512 px, and re-encoded as a JPEG (no metadata survives). It becomes the fan's
+        picture once `PATCH /me` names it in `avatar_upload_id`; a picture never named is dropped after a day.
 
         Staff also upload featured-artist videos here (`purpose: featured_video`): MP4 up to 100 MB, stored as
         uploaded; others get 403.
@@ -678,6 +682,32 @@ paths:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+  /avatars/{uploadId}:
+    get:
+      tags: [Me]
+      operationId: getAvatar
+      summary: A fan's profile picture
+      description: |
+        The `avatar_url` of a fan: a square JPEG of at most 512 px. No sign-in and no signature, so image tags can
+        load it wherever a fan's name shows; the id is unguessable, and the link only answers while the upload is
+        a live fan's current picture. Where files are in Cloud Storage, this redirects (302) to a short-lived storage
+        link instead of sending the bytes. Once the fan changes or removes their picture, or deletes their account,
+        the link answers 404.
+      security: []
+      parameters:
+        - {name: uploadId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: The picture
+          content:
+            image/jpeg:
+              schema: {type: string, format: binary}
+        '302':
+          description: The picture is in Cloud Storage; `Location` is a short-lived link to it.
+          headers:
+            Location:
+              schema: {type: string, format: uri}
+        '404': {$ref: '#/components/responses/NotFound'}
   /files/{fileId}:
     get:
       tags: [Submissions]
@@ -4341,7 +4371,7 @@ components:
         handle: {type: [string, 'null'], description: Null when the account was deleted.}
         deleted: {type: boolean, description: True for deleted accounts; render as "Deleted user".}
         display_name: {type: [string, 'null']}
-        avatar_url: {type: [string, 'null'], format: uri}
+        avatar_url: {type: [string, 'null'], format: uri, description: 'The fan''s profile picture (`GET /avatars/{uploadId}`, no sign-in needed), or null.'}
     UserPublic:
       allOf:
         - $ref: '#/components/schemas/UserRef'
@@ -4407,7 +4437,12 @@ components:
         handle: {type: string}
         email: {type: string, format: email}
         display_name: {type: [string, 'null']}
-        avatar_url: {type: [string, 'null'], format: uri}
+        avatar_url:
+          type: [string, 'null']
+          format: uri
+          description: |
+            The fan's profile picture (`GET /avatars/{uploadId}`: a square JPEG of at most 512 px, no sign-in needed),
+            or null. Every `UserRef` and `UserSummary` carries the same link, so apps show it next to the fan's name.
         is_staff: {type: boolean}
         created_at: {type: string, format: date-time}
         is_artist:
@@ -4459,7 +4494,10 @@ components:
         avatar_upload_id:
           type: [string, 'null']
           format: uuid
-          description: Null removes the avatar. Setting one needs uploads (`POST /uploads`), not available yet.
+          description: |
+            The fan's new profile picture: the `upload_id` of a finished `POST /uploads` with purpose `avatar` (the
+            photo is cropped square and scaled to 512 px on upload). Null removes the picture. Either way the previous
+            picture's link stops working at once. Anything else is `422` on this field.
         is_artist:
           type: boolean
           description: Setting false also clears `band_url`, `instagram_handle`, and `x_handle`.
@@ -4620,7 +4658,7 @@ components:
       type: object
       required: [purpose, mime_type, bytes]
       properties:
-        purpose: {type: string, enum: [submission, featured_video]}
+        purpose: {type: string, enum: [submission, avatar, featured_video]}
         mime_type: {type: string, enum: [image/jpeg, image/png, video/mp4], description: 'video/mp4 only for featured_video'}
         bytes: {type: integer, minimum: 1, maximum: 104857600, description: 'Photos up to 15 MB, videos up to 100 MB'}
         sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
@@ -5958,7 +5996,7 @@ components:
         handle: {type: string}
         deleted: {type: boolean}
         display_name: {type: [string, 'null']}
-        avatar_url: {type: [string, 'null'], format: uri}
+        avatar_url: {type: [string, 'null'], format: uri, description: 'The fan''s profile picture (`GET /avatars/{uploadId}`, no sign-in needed), or null.'}
         followed_by_me: {type: boolean}
         follows_me: {type: boolean}
     UserPage:

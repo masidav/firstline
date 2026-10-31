@@ -4,7 +4,8 @@
 # redaction workload must move proof to the archive within that window. Rejected and taken-down files are also kept
 # 30 days in the app (storage.cleanup), so the rule only catches what the app missed.
 # Archive holds redacted files only (schema rule: never archive unredacted files) and keeps versions.
-# Media holds staff-published media (featured-artist videos); the app deletes what it no longer needs.
+# Media holds staff-published media (featured-artist videos) and fans' profile pictures (media/avatars/, migration
+# 0052); the app deletes what it no longer needs.
 # The app picks the bucket from the key's prefix (quarantine/, archive/, media/; packages/storage/GcsFileStore.cs).
 
 resource "google_storage_bucket" "quarantine" {

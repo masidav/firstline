@@ -9,6 +9,10 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [x] Artist profile: `is_artist` flag with the band's profile link, Instagram, and X (migration 0016; shown on the
   fan's page in the app). Verified 2026-10-24: `dotnet test` incl. `Artist_profile_links_need_the_artist_flag` and
   the invariants; `npm test` in `apps/mobile` (ProfileScreen tests).
+- [x] Profile pictures (2026-10-31, migration 0052): `POST /uploads` with purpose `avatar`, `PATCH /me`
+  `avatar_upload_id`, public `GET /avatars/{uploadId}`; every `UserRef`/`UserSummary` already carried `avatar_url`.
+  Verified 2026-10-31: `dotnet test` (AvatarApiTests 3, StorageCleanupJobTests, SecurityRouteTests, invariants);
+  fan app `npm test` 348/348 and `npm run typecheck`.
 - [ ] Define user identity and profile references consistently across feature APIs.
 - [ ] Implement user-facing privacy preferences required by journal and social features. *Moved to Phase 6 (journal and community), where they are used.*
 - [x] Coordinate account deletion with the privacy workflow and dependent records. (`DELETE /v1/me`; content retention still open)

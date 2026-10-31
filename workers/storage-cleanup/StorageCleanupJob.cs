@@ -11,8 +11,8 @@ namespace FandomScore.Worker.StorageCleanup;
 /// removed key to <c>storage_deletions</c> in the same statement; then the file is deleted from storage, then that
 /// row. A crash anywhere leaves a row naming the file, so the next run finishes the job. Removes:
 /// <list type="bullet">
-/// <item>upload slots that expired unused: not attached to a submission, not a featured artist's video, and
-/// <see cref="SlotGrace"/> past their expiry;</item>
+/// <item>upload slots that expired unused: not attached to a submission, not a featured artist's video, not a fan's
+/// profile picture, and <see cref="SlotGrace"/> past their expiry;</item>
 /// <item>every file of an account deleted more than 30 days ago and not purged yet (its submission files and upload
 /// slots), so <see cref="PurgeDeletedAccountsJob"/> can then purge it;</item>
 /// <item>the files of a submission rejected, or a photo taken down, more than <see cref="RejectedFileRetention"/>
@@ -38,6 +38,9 @@ public sealed partial class StorageCleanupJob(NpgsqlDataSource db, IFileStore fi
     private const int MaxBatches = 25;
 
     private const string NotFeatured = "NOT EXISTS (SELECT 1 FROM featured_artists f WHERE f.video_upload_id = uploads.id)";
+
+    /// <summary>A fan's current profile picture lives in an upload slot that expired long ago (migration 0052).</summary>
+    private const string NotAvatar = "NOT EXISTS (SELECT 1 FROM users a WHERE a.avatar_upload_id = uploads.id)";
 
     // Rejected (and still rejected) or taken down long enough ago. Re-checked by each delete, so a submission moved
     // back to review meanwhile keeps its files.
@@ -93,15 +96,15 @@ public sealed partial class StorageCleanupJob(NpgsqlDataSource db, IFileStore fi
             """,
             args, cancellationToken);
 
-        // Slots that expired unused. The conditions are repeated on the delete itself, so a slot attached or featured
-        // since the select is skipped (attaching locks the row, and the delete re-checks it).
+        // Slots that expired unused. The conditions are repeated on the delete itself, so a slot attached, featured, or
+        // made a profile picture since the select is skipped (attaching locks the row, and the delete re-checks it).
         var expiredSlots = await DeleteInBatchesAsync(connection,
             $"""
             DELETE FROM uploads WHERE id IN (
               SELECT id FROM uploads
-              WHERE submission_id IS NULL AND expires_at < now() - @grace AND {NotFeatured}
+              WHERE submission_id IS NULL AND expires_at < now() - @grace AND {NotFeatured} AND {NotAvatar}
               ORDER BY expires_at LIMIT @BatchSize)
-              AND submission_id IS NULL AND {NotFeatured}
+              AND submission_id IS NULL AND {NotFeatured} AND {NotAvatar}
             """,
             args, cancellationToken);
 

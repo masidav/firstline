@@ -27,7 +27,8 @@ Built: `POST /uploads` with signed `PUT` links, metadata stripping (JPEG/PNG), `
 `needs_review`; concert photos pinned to a show: `event_id` of the band's past show, or a typed-in `concert`),
 `GET /me/submissions`, `GET`/`DELETE /submissions/{id}`, `PUT /submissions/{id}/share`, the staff
 queue and decisions, and `GET /feed`. Tests: ProofApiTests (6), invariants for 0012.
-Not yet: automated checks, Cloud Storage in production, `client_extracted`, avatars, HEIC/WebP on the server.
+Not yet: automated checks, `client_extracted`, HEIC/WebP on the server. (Cloud Storage: Phase 12. Avatars: the users
+feature reuses `POST /uploads` with `purpose: avatar` since 2026-10-31.)
 
 ## Stored-file cleanup (2026-10-25)
 - [x] `IFileStore` is in `packages/storage`, shared with the worker.

@@ -5,6 +5,7 @@ import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 import { type components, unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
+import { Avatar } from '../../ui/Avatar';
 import { Body, Button, ErrorText, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { stars } from '../feed/feedText';
@@ -59,11 +60,16 @@ export function StatsScreen() {
       <Title>Stats</Title>
       {me && (
         <>
-          <Body>{me.display_name || `@${me.handle}`}</Body>
-          <Text style={styles.hint}>
-            @{me.handle}
-            {me.is_artist ? ' · artist' : ''}
-          </Text>
+          <View style={styles.who}>
+            <Avatar user={me} size={48} />
+            <View>
+              <Body>{me.display_name || `@${me.handle}`}</Body>
+              <Text style={styles.hint}>
+                @{me.handle}
+                {me.is_artist ? ' · artist' : ''}
+              </Text>
+            </View>
+          </View>
           {links.map((link) => (
             <Pressable key={link.url} accessibilityRole="link" accessibilityLabel={`Open ${link.label}`} onPress={() => void Linking.openURL(link.url)}>
               <Text style={styles.link}>{link.label}</Text>
@@ -202,6 +208,7 @@ function Stat({ label, value }: { label: string; value: string | number }) {
 const styles = StyleSheet.create({
   section: { gap: space.sm, marginTop: space.md },
   sectionTitle: { color: colors.text, fontSize: 18, fontWeight: '700' },
+  who: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   hint: { color: colors.muted, fontSize: 14 },
   stat: {
     flexDirection: 'row',

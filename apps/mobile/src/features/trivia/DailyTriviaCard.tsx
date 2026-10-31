@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { type components, unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
+import { Avatar } from '../../ui/Avatar';
 import { ErrorText } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { fanName } from '../follows/follows';
@@ -102,7 +103,12 @@ export function DailyTriviaCard() {
         </Text>
       )}
       {question.answered && question.results && (
-        <Text accessibilityRole="summary" style={styles.results}>{resultsLine(question.results, fanName)}</Text>
+        <View style={styles.resultsRow}>
+          {question.results.following_right.map((fan) => (
+            <Avatar key={fan.handle ?? '?'} user={fan} size={22} />
+          ))}
+          <Text accessibilityRole="summary" style={[styles.results, styles.grow]}>{resultsLine(question.results, fanName)}</Text>
+        </View>
       )}
       {!question.answered && (
         <Text style={styles.muted}>Answer right for {pointsLabel(question.points_for_right)} toward your {question.artist.name} score.</Text>
@@ -132,5 +138,7 @@ const styles = StyleSheet.create({
   result: { fontSize: 15, fontWeight: '600' },
   good: { color: '#3fb950' },
   muted: { color: colors.muted, fontSize: 14 },
+  resultsRow: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
+  grow: { flex: 1 },
   results: { color: colors.text, fontSize: 15, lineHeight: 21 },
 });

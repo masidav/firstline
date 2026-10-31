@@ -11,7 +11,7 @@ namespace FandomScore.Api.Features.Submissions;
 
 /// <summary>
 /// openapi <c>POST /uploads</c> and the signed links behind it: <c>PUT /uploads/{id}/content</c> takes the bytes and
-/// <c>GET /files/{id}</c> shows a stored file. Both links carry their own short-lived signature (like presigned
+/// <c>GET /files/{id}</c> shows a stored submission file (profile pictures have their own link, <see cref="Users.Avatars"/>). Both links carry their own short-lived signature (like presigned
 /// storage URLs), so they need no sign-in. Stored files have their metadata stripped (<see cref="ImageMetadata"/>).
 /// Uploads always go through the API, so nothing is stored before the metadata (GPS location included) is gone.
 /// Downloads redirect to a short-lived Cloud Storage link when the store can make one, so the API doesn't stream
@@ -106,9 +106,9 @@ public static class UploadEndpoints
         var errors = new List<FieldError>();
         var purpose = StringField(body, "purpose");
         var video = purpose == VideoPurpose;
-        if (purpose != "submission" && !video)
+        if (purpose is not ("submission" or Users.Avatars.Purpose) && !video)
         {
-            errors.Add(new FieldError("purpose", purpose == "avatar" ? "Avatars aren't supported yet." : "Use submission."));
+            errors.Add(new FieldError("purpose", "Use submission or avatar."));
         }
 
         var mimeType = StringField(body, "mime_type");
@@ -185,7 +185,7 @@ public static class UploadEndpoints
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
         var upload = await connection.QuerySingleOrDefaultAsync<UploadRow>(
             """
-            SELECT mime_type AS MimeType, declared_bytes AS DeclaredBytes, declared_sha256 AS DeclaredSha256,
+            SELECT purpose AS Purpose, mime_type AS MimeType, declared_bytes AS DeclaredBytes, declared_sha256 AS DeclaredSha256,
                    uploaded_at IS NOT NULL AS Uploaded, expires_at < now() AS Expired
             FROM uploads WHERE id = @uploadId
             """,
@@ -229,22 +229,40 @@ public static class UploadEndpoints
         }
 
         // Videos are stored as uploaded (staff-made promo clips; photo metadata stripping doesn't apply). An MP4
-        // starts with a box size and the "ftyp" box.
-        var stripped = upload.MimeType == "video/mp4"
-            ? (original.Length > 12 && original.AsSpan(4, 4).SequenceEqual("ftyp"u8)
+        // starts with a box size and the "ftyp" box. Featured videos are staff media, not proof: they live outside
+        // quarantine, which deletes everything at 30 days. So do profile pictures, which are re-encoded as square JPEGs
+        // (Users.Avatars); proof photos keep their pixels and lose their metadata.
+        byte[] stored;
+        string key;
+        var mimeType = upload.MimeType;
+        if (upload.MimeType == "video/mp4")
+        {
+            stored = original.Length > 12 && original.AsSpan(4, 4).SequenceEqual("ftyp"u8)
                 ? original
-                : throw ApiProblemException.Validation(new FieldError("body", "This isn't a valid MP4 video.")))
-            : ImageMetadata.Strip(original, upload.MimeType)
-              ?? throw ApiProblemException.Validation(new FieldError("body", $"This isn't a valid {(upload.MimeType == "image/png" ? "PNG" : "JPEG")} image."));
-        // Featured videos are staff media, not proof: they live outside quarantine, which deletes everything at 30 days.
-        var key = upload.MimeType == "video/mp4" ? $"media/{uploadId}" : $"quarantine/{uploadId}";
-        await files.PutAsync(key, stripped, cancellationToken);
+                : throw ApiProblemException.Validation(new FieldError("body", "This isn't a valid MP4 video."));
+            key = $"media/{uploadId}";
+        }
+        else if (upload.Purpose == Users.Avatars.Purpose)
+        {
+            stored = Users.Avatars.Process(original)
+                ?? throw ApiProblemException.Validation(new FieldError("body", "This isn't a photo we can read. Try a JPEG or PNG photo."));
+            key = Users.Avatars.StorageKey(uploadId);
+            mimeType = "image/jpeg";
+        }
+        else
+        {
+            stored = ImageMetadata.Strip(original, upload.MimeType)
+                ?? throw ApiProblemException.Validation(new FieldError("body", $"This isn't a valid {(upload.MimeType == "image/png" ? "PNG" : "JPEG")} image."));
+            key = $"quarantine/{uploadId}";
+        }
+
+        await files.PutAsync(key, stored, cancellationToken);
         var updated = await connection.ExecuteAsync(
             """
-            UPDATE uploads SET storage_key = @key, sha256 = @sha, bytes = @bytes, uploaded_at = now()
+            UPDATE uploads SET storage_key = @key, sha256 = @sha, bytes = @bytes, mime_type = @mimeType, uploaded_at = now()
             WHERE id = @uploadId AND uploaded_at IS NULL
             """,
-            new { uploadId, key, sha = SHA256.HashData(stripped), bytes = stripped.Length });
+            new { uploadId, key, sha = SHA256.HashData(stored), bytes = stored.Length, mimeType });
         if (updated == 0)
         {
             throw new ApiProblemException(StatusCodes.Status409Conflict, "conflict", "Already uploaded", "This upload already has its file.");
@@ -308,5 +326,5 @@ public static class UploadEndpoints
             ? value.GetString()
             : null;
 
-    private sealed record UploadRow(string MimeType, int DeclaredBytes, byte[]? DeclaredSha256, bool Uploaded, bool Expired);
+    private sealed record UploadRow(string Purpose, string MimeType, int DeclaredBytes, byte[]? DeclaredSha256, bool Uploaded, bool Expired);
 }

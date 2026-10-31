@@ -5,6 +5,7 @@ import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 import { type components, unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
+import { Avatar } from '../../ui/Avatar';
 import { Body, Button, ErrorText, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { stars } from '../feed/feedText';
@@ -115,6 +116,7 @@ export function FanProfileScreen({ handle }: { handle: string }) {
     <Screen>
       {back}
       <View style={styles.header}>
+        <Avatar user={profile} size={64} />
         <View style={styles.grow}>
           <Title>{name}</Title>
           <Text style={styles.muted}>

@@ -506,10 +506,14 @@ export interface paths {
         put?: never;
         /**
          * Get a presigned upload URL
-         * @description Used for submission photos (avatars aren't supported yet). The client PUTs the file to `url` with
-         *     `headers`; the link is signed and short-lived, so it needs no sign-in. Files land in quarantine storage
-         *     with their metadata (EXIF location, camera details, comments) stripped. JPEG and PNG only: convert HEIC
-         *     or WebP on the device first. 50 uploads per day per user.
+         * @description Used for submission photos and profile pictures. The client PUTs the file to `url` with `headers`; the
+         *     link is signed and short-lived, so it needs no sign-in. Submission photos (`purpose: submission`) land in
+         *     quarantine storage with their metadata (EXIF location, camera details, comments) stripped. JPEG and PNG
+         *     only: convert HEIC or WebP on the device first. 50 uploads per day per user.
+         *
+         *     A profile picture (`purpose: avatar`, JPEG or PNG up to 15 MB) is turned upright, cropped to its middle
+         *     square, scaled to at most 512 px, and re-encoded as a JPEG (no metadata survives). It becomes the fan's
+         *     picture once `PATCH /me` names it in `avatar_upload_id`; a picture never named is dropped after a day.
          *
          *     Staff also upload featured-artist videos here (`purpose: featured_video`): MP4 up to 100 MB, stored as
          *     uploaded; others get 403.
@@ -535,6 +539,30 @@ export interface paths {
          *     The body must be the declared type and no bigger than declared (and match `sha256` if it was declared).
          */
         put: operations["putUploadContent"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/avatars/{uploadId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A fan's profile picture
+         * @description The `avatar_url` of a fan: a square JPEG of at most 512 px. No sign-in and no signature, so image tags can
+         *     load it wherever a fan's name shows; the id is unguessable, and the link only answers while the upload is
+         *     a live fan's current picture. Where files are in Cloud Storage, this redirects (302) to a short-lived storage
+         *     link instead of sending the bytes. Once the fan changes or removes their picture, or deletes their account,
+         *     the link answers 404.
+         */
+        get: operations["getAvatar"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -3681,7 +3709,10 @@ export interface components {
             /** @description True for deleted accounts; render as "Deleted user". */
             deleted: boolean;
             display_name?: string | null;
-            /** Format: uri */
+            /**
+             * Format: uri
+             * @description The fan's profile picture (`GET /avatars/{uploadId}`, no sign-in needed), or null.
+             */
             avatar_url?: string | null;
         };
         UserPublic: components["schemas"]["UserRef"] & {
@@ -3740,7 +3771,11 @@ export interface components {
             /** Format: email */
             email: string;
             display_name?: string | null;
-            /** Format: uri */
+            /**
+             * Format: uri
+             * @description The fan's profile picture (`GET /avatars/{uploadId}`: a square JPEG of at most 512 px, no sign-in needed),
+             *     or null. Every `UserRef` and `UserSummary` carries the same link, so apps show it next to the fan's name.
+             */
             avatar_url?: string | null;
             is_staff?: boolean;
             /** Format: date-time */
@@ -3788,7 +3823,9 @@ export interface components {
             display_name?: string | null;
             /**
              * Format: uuid
-             * @description Null removes the avatar. Setting one needs uploads (`POST /uploads`), not available yet.
+             * @description The fan's new profile picture: the `upload_id` of a finished `POST /uploads` with purpose `avatar` (the
+             *     photo is cropped square and scaled to 512 px on upload). Null removes the picture. Either way the previous
+             *     picture's link stops working at once. Anything else is `422` on this field.
              */
             avatar_upload_id?: string | null;
             /** @description Setting false also clears `band_url`, `instagram_handle`, and `x_handle`. */
@@ -3920,7 +3957,7 @@ export interface components {
         };
         UploadIntentRequest: {
             /** @enum {string} */
-            purpose: "submission" | "featured_video";
+            purpose: "submission" | "avatar" | "featured_video";
             /**
              * @description video/mp4 only for featured_video
              * @enum {string}
@@ -5204,7 +5241,10 @@ export interface components {
             handle: string;
             deleted: boolean;
             display_name: string | null;
-            /** Format: uri */
+            /**
+             * Format: uri
+             * @description The fan's profile picture (`GET /avatars/{uploadId}`, no sign-in needed), or null.
+             */
             avatar_url: string | null;
             followed_by_me: boolean;
             follows_me: boolean;
@@ -6437,6 +6477,37 @@ export interface operations {
                 };
             };
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getAvatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                uploadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The picture */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                };
+            };
+            /** @description The picture is in Cloud Storage; `Location` is a short-lived link to it. */
+            302: {
+                headers: {
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
         };
     };
     getFile: {

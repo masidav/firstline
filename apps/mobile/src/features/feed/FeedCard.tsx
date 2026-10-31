@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { type ReactNode, useState } from 'react';
 import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { Avatar } from '../../ui/Avatar';
 import { Body } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { fanName } from '../follows/follows';
@@ -45,11 +46,12 @@ export function FeedCard(props: FeedCardProps) {
   }
 }
 
-/** Who posted it and, for other fans, a Follow toggle. */
+/** Who posted it (their picture and name) and, for other fans, a Follow toggle. */
 function Byline({ item, mine, following, onFollow, children }: FeedCardProps & { children: ReactNode }) {
   const handle = item.user?.handle;
   return (
     <View style={styles.byline}>
+      {item.user ? <Avatar user={item.user} size={32} /> : null}
       {handle ? (
         <Pressable accessibilityRole="link" accessibilityLabel={`Open ${fanName(item.user)}'s page`} onPress={() => router.push(`/fans/${handle}`)}
           style={styles.grow}>

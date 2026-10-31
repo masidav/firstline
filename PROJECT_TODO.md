@@ -36,6 +36,11 @@ Details: [API](services/api/TODO.md) · [Database](database/TODO.md) · [Tests](
 - [x] Implement user profile and authorization rules. `/me` read, update, and delete; bearer auth on all of `/v1`; staff policy for `/admin` (checked per request). Verified 2026-10-18: `dotnet test` 36/36.
 - [x] Implement account recovery and account deletion policy. Recovery is provider sign-in (no passwords). Deletion scrubs personal data at once; content is hard-deleted after 30 days (`accounts.purge_deleted` job). Verified 2026-10-18: `dotnet test` 45/45.
 - [x] Apple follow-ups: server-to-server notifications (`POST /v1/webhooks/apple`) and Apple sign-in revocation on account deletion. Verified 2026-10-18: AppleTests 8/8.
+- [x] Profile pictures (2026-10-31, migration 0052): a fan adds, changes, or removes a picture on their profile page
+      (the upload flow with `purpose: avatar`; the API crops it square at 512 px and re-encodes it, so no metadata
+      survives; public `GET /avatars/{uploadId}` that dies with the picture). The picture, or the fan's initial, shows
+      on the Profile tab and next to every fan's name in the app. Verified 2026-10-31: `dotnet test` 393/393;
+      fan app `npm test` 348/348, typecheck clean in both apps.
 
 Details: [Authentication](services/api/src/features/authentication/TODO.md) · [Users](services/api/src/features/users/TODO.md) · [Privacy](services/api/src/features/privacy/TODO.md)
 

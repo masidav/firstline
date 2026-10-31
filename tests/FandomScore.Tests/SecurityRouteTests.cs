@@ -33,6 +33,7 @@ public sealed class SecurityRouteTests(PostgresFixture postgres)
         ["POST /webhooks/apple"] = "Apple's server-to-server notifications; signature-checked JWT",
         ["PUT /uploads/{}/content"] = "upload bytes to a signed, expiring, single-use slot link",
         ["GET /files/{}"] = "a stored photo through a signed, expiring link",
+        ["GET /avatars/{}"] = "a fan's profile picture by its unguessable upload id; answers only while it is their current picture",
         ["GET /featured/videos/{}"] = "a featured video through a signed, expiring link",
         ["GET /score-cards/{}/{}.png"] = "a score card image through a signed, expiring link",
     };

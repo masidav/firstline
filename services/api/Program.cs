@@ -81,6 +81,7 @@ v1.MapGet("/health", () => Results.Ok(new { Status = "ok" })).AllowAnonymous();
 v1.MapAuth();
 v1.MapAppleNotifications();
 v1.MapMe();
+v1.MapAvatars();
 v1.MapSpotify();
 v1.MapSpotifyPlayer();
 v1.MapSpotifyLibrary();

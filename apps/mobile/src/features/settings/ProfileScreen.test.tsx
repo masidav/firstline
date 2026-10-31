@@ -36,6 +36,13 @@ jest.mock('expo-router', () => ({
 }));
 jest.mock('../authentication/appleSignIn', () => ({ reauthenticateWithApple: jest.fn() }));
 jest.mock('../privacy/downloadMyData', () => ({ downloadMyData: jest.fn() }));
+jest.mock('expo-image-manipulator', () => ({ manipulateAsync: jest.fn(async (uri: string) => ({ uri: `${uri}.jpeg` })), SaveFormat: { JPEG: 'jpeg' } }));
+jest.mock('expo-image-picker', () => ({ launchImageLibraryAsync: jest.fn() }));
+const { launchImageLibraryAsync } = jest.requireMock<{ launchImageLibraryAsync: jest.Mock }>('expo-image-picker');
+const realFetch = global.fetch;
+afterEach(() => {
+  global.fetch = realFetch;
+});
 
 const fan = {
   id: 'u-1',
@@ -323,4 +330,59 @@ test('Alerts sits on the profile page, turns red with the unread count, and open
 
   fireEvent.press(alerts);
   expect(jest.requireMock('expo-router').router.push).toHaveBeenCalledWith('/notifications');
+});
+
+const intent = ok(
+  { upload_id: 'up-1', method: 'PUT', url: 'https://api.test/v1/uploads/up-1/content?exp=1&sig=x', headers: { 'Content-Type': 'image/jpeg' }, expires_at: '2026-10-31T13:00:00Z' },
+  201,
+);
+
+test('Add a picture picks a photo, uploads it as a profile picture, and saves it to the session', async () => {
+  launchImageLibraryAsync.mockResolvedValue({ canceled: false, assets: [{ uri: 'file:///me.png', width: 3000 }] });
+  const fetchMock = jest.fn().mockResolvedValueOnce({ blob: async () => ({ size: 3 }) }).mockResolvedValueOnce({ ok: true, status: 204 });
+  global.fetch = fetchMock as unknown as typeof fetch;
+  mockApi.POST.mockResolvedValue(intent);
+  const saved = { ...fan, avatar_url: 'https://api.test/v1/avatars/up-1' };
+  mockApi.PATCH.mockResolvedValue(ok(saved));
+  render(<ProfileScreen me={fan} />);
+  expect(screen.getByText('F')).toBeTruthy(); // the initial stands in until there is a picture
+
+  fireEvent.press(screen.getByRole('button', { name: 'Add a picture' }));
+
+  await waitFor(() => expect(mockSetMe).toHaveBeenCalledWith(saved));
+  expect(launchImageLibraryAsync).toHaveBeenCalledWith(expect.objectContaining({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1] }));
+  expect(fetchMock).toHaveBeenNthCalledWith(1, 'file:///me.png.jpeg');
+  expect(mockApi.POST).toHaveBeenCalledWith('/uploads', { body: { purpose: 'avatar', mime_type: 'image/jpeg', bytes: 3 } });
+  expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://api.test/v1/uploads/up-1/content?exp=1&sig=x', expect.objectContaining({ method: 'PUT' }));
+  expect(mockApi.PATCH).toHaveBeenCalledWith('/me', { body: { avatar_upload_id: 'up-1' } });
+});
+
+test('backing out of the picker changes nothing; Remove picture clears it', async () => {
+  launchImageLibraryAsync.mockResolvedValue({ canceled: true, assets: null });
+  const withPicture = { ...fan, avatar_url: 'https://api.test/v1/avatars/up-1' };
+  mockApi.PATCH.mockResolvedValue(ok({ ...fan, avatar_url: null }));
+  render(<ProfileScreen me={withPicture} />);
+  expect(screen.getByLabelText("@fan's picture").props.source).toEqual({ uri: 'https://api.test/v1/avatars/up-1' });
+
+  fireEvent.press(screen.getByRole('button', { name: 'Change picture' }));
+  await waitFor(() => expect(launchImageLibraryAsync).toHaveBeenCalled());
+  expect(mockApi.POST).not.toHaveBeenCalled();
+  expect(mockApi.PATCH).not.toHaveBeenCalled();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Remove picture' }));
+  await waitFor(() => expect(mockApi.PATCH).toHaveBeenCalledWith('/me', { body: { avatar_upload_id: null } }));
+  expect(mockSetMe).toHaveBeenCalledWith({ ...fan, avatar_url: null });
+});
+
+test('a photo the server cannot read is explained, and the profile is left alone', async () => {
+  launchImageLibraryAsync.mockResolvedValue({ canceled: false, assets: [{ uri: 'file:///odd.heic', width: 100 }] });
+  global.fetch = jest.fn().mockResolvedValueOnce({ blob: async () => ({ size: 9 }) }).mockResolvedValueOnce({ ok: false, status: 422 }) as unknown as typeof fetch;
+  mockApi.POST.mockResolvedValue(intent);
+  render(<ProfileScreen me={fan} />);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Add a picture' }));
+
+  expect(await screen.findByText("That photo couldn't be read. Try another one.")).toBeTruthy();
+  expect(mockApi.PATCH).not.toHaveBeenCalled();
+  expect(mockSetMe).not.toHaveBeenCalled();
 });

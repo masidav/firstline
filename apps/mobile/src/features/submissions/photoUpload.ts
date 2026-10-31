@@ -24,12 +24,13 @@ export async function preparePhoto(uri: string, width?: number): Promise<string>
   return result.uri;
 }
 
-/** Uploads one prepared JPEG: asks the API for an upload slot, then PUTs the bytes to its signed link. */
-export async function uploadPhoto(api: Api, uri: string, fetchImpl: typeof fetch = fetch): Promise<string> {
+/**
+ * Uploads one prepared JPEG: asks the API for an upload slot (a proof photo, or a profile picture with purpose
+ * `avatar`), then PUTs the bytes to its signed link.
+ */
+export async function uploadPhoto(api: Api, uri: string, fetchImpl: typeof fetch = fetch, purpose: 'submission' | 'avatar' = 'submission'): Promise<string> {
   const blob = await (await fetchImpl(uri)).blob();
-  const intent = unwrap(
-    await api.POST('/uploads', { body: { purpose: 'submission', mime_type: 'image/jpeg', bytes: blob.size } }),
-  );
+  const intent = unwrap(await api.POST('/uploads', { body: { purpose, mime_type: 'image/jpeg', bytes: blob.size } }));
   // The link is signed, so no sign-in header (like a storage provider's presigned URL).
   const put = await fetchImpl(intent.url, { method: intent.method, headers: intent.headers ?? {}, body: blob });
   if (!put.ok) {

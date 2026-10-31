@@ -5,6 +5,10 @@ Use `- [x]` only after the task is implemented and verified.
 ## Implementation checklist
 - [x] Provide account and profile settings supported by the backend. (handle, display name, artist flag and band
   links; verified 2026-10-24: `npm test` ProfileScreen 5/5, `npm run typecheck`)
+- [x] Profile picture (2026-10-31): Add/Change/Remove picture on the profile page; the picture (or the fan's initial)
+      shows on the Profile tab and next to every fan's name (feed bylines, People, fan pages, album logs, prompt
+      answers, Stats, trivia results). Verified 2026-10-31: `npm test` 55 suites, 348 tests (ProfileScreen +3, Avatar 3,
+      TabBar +1); `npm run typecheck` clean.
 - [ ] Provide Spotify connection/disconnection controls.
 - [ ] Provide privacy and notification preferences.
 - [x] Provide account deletion entry point and explain its consequences.

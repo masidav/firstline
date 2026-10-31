@@ -2789,4 +2789,69 @@ END $$;
 SELECT pg_temp.expect_error($$UPDATE app_settings SET value = 'hourly' WHERE key = 'engagement_cadence'$$, 'app_settings_engagement_cadence');
 SELECT pg_temp.expect_error($$INSERT INTO app_settings (key, value) VALUES ('Bad Key', 'x')$$, 'app_settings_key_check');
 
+-- ------------------------------------------------------------ profile pictures (0052)
+-- A picture is a finished 'avatar' upload of the same fan; its public link lives and dies with the upload.
+DO $$
+DECLARE ana uuid := '00000000-0000-0000-0052-000000000001'; ben uuid := '00000000-0000-0000-0052-000000000002';
+        pic uuid; pending uuid; proof uuid; other uuid;
+BEGIN
+  INSERT INTO users (id, handle, email) VALUES (ana, 'avatar_ana', 'avatar_ana@example.test'), (ben, 'avatar_ben', 'avatar_ben@example.test');
+  INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes, storage_key, sha256, bytes, uploaded_at)
+  VALUES (ana, 'avatar', 'image/jpeg', 10, 'media/avatars/one', sha256('1'), 10, now()) RETURNING id INTO pic;
+  INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes) VALUES (ana, 'avatar', 'image/png', 10) RETURNING id INTO pending;
+  INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes, storage_key, sha256, bytes, uploaded_at)
+  VALUES (ana, 'submission', 'image/jpeg', 10, 'quarantine/proof', sha256('2'), 10, now()) RETURNING id INTO proof;
+  INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes, storage_key, sha256, bytes, uploaded_at)
+  VALUES (ben, 'avatar', 'image/jpeg', 10, 'media/avatars/ben', sha256('3'), 10, now()) RETURNING id INTO other;
+
+  -- Only a finished avatar upload of the same fan.
+  BEGIN
+    UPDATE users SET avatar_upload_id = pending, avatar_url = 'https://api.test/v1/avatars/' || pending WHERE id = ana;
+    RAISE EXCEPTION 'an unfinished upload should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%finished avatar upload%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE users SET avatar_upload_id = proof, avatar_url = 'https://api.test/v1/avatars/' || proof WHERE id = ana;
+    RAISE EXCEPTION 'a proof photo as a picture should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%finished avatar upload%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE users SET avatar_upload_id = other, avatar_url = 'https://api.test/v1/avatars/' || other WHERE id = ana;
+    RAISE EXCEPTION 'another fan''s upload should fail';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%finished avatar upload%', SQLERRM;
+  END;
+
+  -- The link and the upload go together.
+  BEGIN
+    UPDATE users SET avatar_upload_id = pic WHERE id = ana;
+    RAISE EXCEPTION 'an upload without its link should fail';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%users_avatar_link%', SQLERRM;
+  END;
+  UPDATE users SET avatar_upload_id = pic, avatar_url = 'https://api.test/v1/avatars/' || pic WHERE id = ana;
+  ASSERT (SELECT avatar_url FROM users WHERE id = ana) IS NOT NULL, 'the picture is set';
+  UPDATE users SET avatar_upload_id = NULL WHERE id = ana;
+  ASSERT (SELECT avatar_url FROM users WHERE id = ana) IS NULL, 'clearing the upload clears the link';
+  UPDATE users SET avatar_upload_id = pic, avatar_url = 'https://api.test/v1/avatars/' || pic WHERE id = ana;
+  DELETE FROM uploads WHERE id = pic;
+  ASSERT (SELECT avatar_upload_id IS NULL AND avatar_url IS NULL FROM users WHERE id = ana), 'a deleted upload takes the link with it';
+  ASSERT EXISTS (SELECT 1 FROM storage_deletions WHERE storage_key = 'media/avatars/one'), 'the stored picture is queued for deletion';
+
+  -- Deletion clears the picture, and it stays empty.
+  UPDATE users SET avatar_upload_id = other, avatar_url = 'https://api.test/v1/avatars/' || other WHERE id = ben;
+  UPDATE users SET deleted_at = now() WHERE id = ben;
+  ASSERT (SELECT avatar_upload_id IS NULL AND avatar_url IS NULL FROM users WHERE id = ben), 'deletion clears the picture';
+  BEGIN
+    UPDATE users SET avatar_upload_id = other, avatar_url = 'https://api.test/v1/avatars/' || other WHERE id = ben;
+    RAISE EXCEPTION 'a deleted fan should not get a picture';
+  EXCEPTION WHEN OTHERS THEN ASSERT SQLERRM LIKE '%personal fields stay empty%', SQLERRM;
+  END;
+
+  -- Pictures are photos: JPEG or PNG up to 15 MB, like proof.
+  BEGIN
+    INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes) VALUES (ana, 'avatar', 'video/mp4', 10);
+    RAISE EXCEPTION 'a video as a picture should fail';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%uploads_purpose_kind_check%', SQLERRM;
+  END;
+END $$;
+
 \echo ALL INVARIANT TESTS PASSED

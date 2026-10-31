@@ -58,6 +58,8 @@ public sealed class StorageCleanupJobTests(PostgresFixture postgres) : IAsyncLif
         var open = await SlotAsync(fan, expiredFor: TimeSpan.FromMinutes(-30));
         var featured = await SlotAsync(staff, expiredFor: TimeSpan.FromDays(30), purpose: "featured_video");
         await FeatureAsync(featured.Id, staff);
+        var picture = await SlotAsync(fan, expiredFor: TimeSpan.FromDays(30), purpose: "avatar");
+        await PictureAsync(picture.Id, fan);
         var pending = await SubmissionAsync(fan, "needs_review", slotExpiredFor: TimeSpan.FromDays(10));
         var verified = await SubmissionAsync(fan, "verified", slotExpiredFor: TimeSpan.FromDays(10));
         var rejected = await SubmissionAsync(fan, "rejected", slotExpiredFor: TimeSpan.FromDays(10));
@@ -67,7 +69,7 @@ public sealed class StorageCleanupJobTests(PostgresFixture postgres) : IAsyncLif
         Assert.False(await UploadExistsAsync(expired.Id));
         Assert.False(FileExists(expired.Key));
         Assert.False(await UploadExistsAsync(neverFilled.Id));
-        foreach (var kept in new[] { inGrace, open, featured, pending, verified, rejected })
+        foreach (var kept in new[] { inGrace, open, featured, picture, pending, verified, rejected })
         {
             Assert.True(await UploadExistsAsync(kept.Id), $"upload {kept.Key} is still in use");
             Assert.True(FileExists(kept.Key), $"file {kept.Key} is still in use");
@@ -81,7 +83,7 @@ public sealed class StorageCleanupJobTests(PostgresFixture postgres) : IAsyncLif
         var files = StoredFiles();
         await RunAsync();
         Assert.Equal(files, StoredFiles());
-        Assert.Equal(6, await CountAsync("SELECT count(*) FROM uploads"));
+        Assert.Equal(7, await CountAsync("SELECT count(*) FROM uploads"));
         await AssertEveryFileHasARowAsync();
     }
 
@@ -299,6 +301,15 @@ public sealed class StorageCleanupJobTests(PostgresFixture postgres) : IAsyncLif
             """,
             new { submissionId, id = slot.Id });
         return slot with { SubmissionId = submissionId };
+    }
+
+    /// <summary>Makes the upload the fan's profile picture (migration 0052), as PATCH /me does.</summary>
+    private async Task PictureAsync(Guid uploadId, Guid fan)
+    {
+        await using var connection = await _db.OpenConnectionAsync();
+        await connection.ExecuteAsync(
+            "UPDATE users SET avatar_upload_id = @uploadId, avatar_url = 'https://api.test/v1/avatars/' || @uploadId WHERE id = @fan",
+            new { uploadId, fan });
     }
 
     private async Task FeatureAsync(Guid uploadId, Guid staff)

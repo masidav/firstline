@@ -4,13 +4,14 @@ import { Tabs } from 'expo-router/js-tabs';
 import { useSession } from '../../auth/SessionProvider';
 import { useUnreadCount } from '../../features/notifications/unread';
 import { NowPlayingBar } from '../../features/spotify/NowPlaying';
+import { Avatar } from '../../ui/Avatar';
 import { Loading } from '../../ui/components';
 import { TabBar } from '../../ui/TabBar';
 import { colors } from '../../ui/theme';
 
 /**
- * The signed-in app's tabs: Feed (home), Tickets, Journal, People, Profile. Alerts live on the Profile page, whose tab
- * turns red while any are unread. Each stays mounted so switching
+ * The signed-in app's tabs: Feed (home), Tickets, Journal, People, Profile. The Profile tab shows the fan's picture
+ * (or their initial). Alerts live on the Profile page, whose tab turns red while any are unread. Each stays mounted so switching
  * back is instant and keeps its scroll position; the screens reload on focus. The URLs are unchanged (/home, /tickets…).
  */
 export default function TabsLayout() {
@@ -19,7 +20,8 @@ export default function TabsLayout() {
   if (state.status === 'loading') return <Loading />;
   if (state.status !== 'signedIn') return <Redirect href="/" />;
   // A hub city is required before anything else (decided 2026-10-20).
-  if (state.me.hub_cities.length === 0) return <Redirect href="/hub-cities" />;
+  const me = state.me;
+  if (me.hub_cities.length === 0) return <Redirect href="/hub-cities" />;
 
   return (
     <Tabs
@@ -34,6 +36,7 @@ export default function TabsLayout() {
         name="profile"
         options={{
           title: 'Profile',
+          tabBarIcon: ({ size }) => <Avatar user={me} size={size} />,
           tabBarBadge: unread > 0 ? unread : undefined,
           tabBarAccessibilityLabel: unread > 0 ? `Profile, ${unread} unread alerts` : 'Profile',
           ...(unread > 0 && { tabBarActiveTintColor: colors.danger, tabBarInactiveTintColor: colors.danger }),

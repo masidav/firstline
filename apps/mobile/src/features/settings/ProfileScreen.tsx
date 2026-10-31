@@ -5,6 +5,7 @@ import { Linking, Pressable, StyleSheet, Switch, Text, View } from 'react-native
 import { ApiError, type Me, unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
+import { Avatar } from '../../ui/Avatar';
 import { Body, Button, ErrorText, Field, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { reauthenticateWithApple } from '../authentication/appleSignIn';
@@ -15,6 +16,7 @@ import { FanLevelSection } from '../fan-level/FanLevelSection';
 import { PushSettingsSection } from '../notifications/PushSettingsSection';
 import { DownloadMyDataButton } from '../privacy/DownloadMyDataButton';
 import { connectErrorMessage, describeStatus } from '../spotify/spotifyConnect';
+import { changePicture, removePicture } from './avatar';
 
 type Errors = {
   handle?: string;
@@ -55,6 +57,23 @@ export function ProfileScreen({ me }: { me: Me }) {
   const [resyncing, setResyncing] = useState(false);
   const [resyncError, setResyncError] = useState<string>();
   const [remindersError, setRemindersError] = useState<string>();
+  const [pictureBusy, setPictureBusy] = useState(false);
+  const [pictureError, setPictureError] = useState<string>();
+
+  // The profile picture saves at once: pick a photo, upload it, PATCH /me; or remove it.
+  async function setPicture(change: () => Promise<Me | null>) {
+    setPictureBusy(true);
+    setPictureError(undefined);
+    try {
+      const next = await change();
+      if (next) session.setMe(next);
+    } catch (e) {
+      // Upload problems we explain ourselves are plain Errors; API errors and network failures use the usual wording.
+      setPictureError(e instanceof Error && !(e instanceof ApiError) && e.name === 'Error' ? e.message : errorMessage(e));
+    } finally {
+      setPictureBusy(false);
+    }
+  }
 
   // Resync now (POST /me/spotify/sync): one manual sync per 15 minutes; the app also syncs quietly when it opens.
   async function resync() {
@@ -168,6 +187,21 @@ export function ProfileScreen({ me }: { me: Me }) {
     <Screen>
       <Title>Your profile</Title>
       <Body muted>Signed in as {me.email}</Body>
+      <View style={styles.picture}>
+        <Avatar user={me} size={72} />
+        <View style={styles.pictureActions}>
+          <Button
+            label={me.avatar_url ? 'Change picture' : 'Add a picture'}
+            kind="secondary"
+            busy={pictureBusy}
+            onPress={() => void setPicture(() => changePicture(session.api))}
+          />
+          {me.avatar_url ? (
+            <Button label="Remove picture" kind="secondary" disabled={pictureBusy} onPress={() => void setPicture(() => removePicture(session.api))} />
+          ) : null}
+        </View>
+      </View>
+      <ErrorText>{pictureError}</ErrorText>
       <View style={styles.alerts}>
         <AlertsButton />
       </View>
@@ -305,6 +339,8 @@ export function ProfileScreen({ me }: { me: Me }) {
 
 const styles = StyleSheet.create({
   alerts: { flexDirection: 'row', marginTop: space.sm },
+  picture: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.md },
+  pictureActions: { flex: 1 },
   links: { marginTop: space.sm, gap: space.xs },
   link: { color: colors.accent, fontSize: 16, fontWeight: '600' },
   switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: space.md },
