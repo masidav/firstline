@@ -67,9 +67,12 @@ kubectl rollout status deployment/promoter-web -n "$namespace" --timeout=10m
 
 if [ "${SKIP_HEALTH_CHECK:-0}" != 1 ] && [ -n "$hostname" ]; then
   echo "== Health check https://${hostname}/v1/health"
+  # Up to 10 minutes: a freshly created Gateway takes several minutes before its HTTPS proxy exists (the HTTP
+  # listener comes up first). An existing load balancer answers on the first try.
   healthy=0
-  for _ in 1 2 3 4 5 6; do
+  for attempt in $(seq 1 60); do
     if curl -fsS --max-time 10 "https://${hostname}/v1/health" >/dev/null; then healthy=1; break; fi
+    [ $((attempt % 6)) -eq 0 ] && echo "   still waiting for https://${hostname} ($((attempt / 6)) min)"
     sleep 10
   done
   if [ "$healthy" != 1 ]; then
