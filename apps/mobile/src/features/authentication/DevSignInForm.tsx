@@ -48,6 +48,7 @@ export function DevSignInForm({ signIn }: { signIn: (idToken: string, handle?: s
       <Body muted>Developer sign-in: pick any test name. The same name signs back in to the same account.</Body>
       <Field
         label="Test account name"
+        testID="dev-sign-in-name"
         value={name}
         onChangeText={(value) => {
           setName(value);
@@ -62,6 +63,7 @@ export function DevSignInForm({ signIn }: { signIn: (idToken: string, handle?: s
           <Body>New account. Choose your handle:</Body>
           <Field
             label="Handle"
+            testID="dev-sign-in-handle"
             value={handle}
             onChangeText={setHandle}
             error={handleError}
@@ -71,7 +73,10 @@ export function DevSignInForm({ signIn }: { signIn: (idToken: string, handle?: s
         </>
       )}
       <ErrorText>{error}</ErrorText>
-      <Button label={choosingHandle ? 'Create account' : 'Sign in'} onPress={() => void submit()} busy={busy} />
+      <Button
+        label={choosingHandle ? 'Create account' : 'Sign in'}
+        testID="dev-sign-in-submit"
+        onPress={() => void submit()} busy={busy} />
     </>
   );
 }

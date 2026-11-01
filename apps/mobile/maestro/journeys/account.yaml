@@ -1,0 +1,53 @@
+# A fan signs out and back in to the same account, then deletes the account; signing in again with the same name
+# starts a new account, which asks for a handle (e2e/account.spec.ts in the browser).
+appId: com.firstline.fandomscore
+name: Sign out and delete the account
+---
+- runFlow: ../common/launch-signed-out.yaml
+- runFlow:
+    file: ../common/sign-in.yaml
+    env:
+      NAME: ${ACCOUNT_FAN}
+- tapOn:
+    id: tab-profile
+- scrollUntilVisible:
+    element:
+      id: sign-out
+    timeout: 30000
+- tapOn:
+    id: sign-out
+# Signed out: back at sign-in. The same name signs in to the same account (straight to home, no handle step).
+- runFlow:
+    file: ../common/sign-in.yaml
+    env:
+      NAME: ${ACCOUNT_FAN}
+- assertNotVisible:
+    id: dev-sign-in-handle
+- tapOn:
+    id: tab-profile
+- scrollUntilVisible:
+    element:
+      id: delete-account
+    timeout: 30000
+- tapOn:
+    id: delete-account
+- scrollUntilVisible:
+    element:
+      id: delete-account-confirm
+- tapOn:
+    id: delete-account-confirm
+- extendedWaitUntil:
+    visible:
+      id: dev-sign-in-name
+    timeout: 30000
+- tapOn:
+    id: dev-sign-in-name
+- inputText: ${ACCOUNT_FAN}
+- tapOn:
+    id: dev-sign-in-submit
+# The old account is gone, so this sign-in is a new account and asks for a handle.
+- extendedWaitUntil:
+    visible:
+      id: dev-sign-in-handle
+    timeout: 30000
+- takeScreenshot: account-deleted

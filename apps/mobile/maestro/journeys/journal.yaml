@@ -1,0 +1,63 @@
+# A fan finds an artist, opens an album, logs it with a rating and review, earns points, and finds the log in the
+# journal (e2e/journal.spec.ts in the browser).
+appId: com.firstline.fandomscore
+name: Log an album
+---
+- runFlow: ../common/launch-signed-out.yaml
+- runFlow:
+    file: ../common/sign-in.yaml
+    env:
+      NAME: ${JOURNAL_FAN}
+- tapOn:
+    id: artist-search
+- inputText: ${ARTIST_NAME}
+- extendedWaitUntil:
+    visible:
+      id: artist-${ARTIST_ID}
+    timeout: 15000
+- tapOn:
+    id: artist-${ARTIST_ID}
+- scrollUntilVisible:
+    element:
+      id: album-${ALBUM_ID}
+    timeout: 30000
+- tapOn:
+    id: album-${ALBUM_ID}
+- scrollUntilVisible:
+    element:
+      id: log-album
+    timeout: 30000
+- tapOn:
+    id: log-album
+- scrollUntilVisible:
+    element:
+      id: rating-8
+- tapOn:
+    id: rating-8
+- scrollUntilVisible:
+    element:
+      id: log-review
+- tapOn:
+    id: log-review
+- inputText: ${JOURNAL_REVIEW}
+- scrollUntilVisible:
+    element:
+      id: log-save
+- tapOn:
+    id: log-save
+# The points message is above the saved log, under "Your log".
+- scrollUntilVisible:
+    element:
+      text: "You earned .* points.*"
+    direction: UP
+    timeout: 30000
+# Back from the album and the artist to the tabs, then the Journal tab.
+- back
+- back
+- tapOn:
+    id: tab-journal
+- extendedWaitUntil:
+    visible:
+      text: ${JOURNAL_REVIEW}
+    timeout: 30000
+- takeScreenshot: journal

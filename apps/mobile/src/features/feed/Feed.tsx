@@ -116,7 +116,7 @@ export function Feed({ header, active = true, overlay }: { header?: ReactElement
               <BouncerDoorCard />
             </View>
           ) : (
-          <View style={styles.column}>
+          <View style={styles.column} testID={`feed-${item.type}`}>
             <FeedCard
               item={item as FeedItem}
               mine={item.user?.handle != null && item.user.handle === myHandle}

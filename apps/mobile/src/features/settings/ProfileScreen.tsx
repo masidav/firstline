@@ -315,6 +315,7 @@ export function ProfileScreen({ me }: { me: Me }) {
       <DownloadMyDataButton />
       <Button
         label="Sign out"
+        testID="sign-out"
         kind="secondary"
         onPress={() => void unregisterPush(session.api).then(() => session.signOut())}
       />
@@ -327,11 +328,11 @@ export function ProfileScreen({ me }: { me: Me }) {
             logs, lists, and comments are permanently deleted after 30 days. This can't be undone.
           </Body>
           <ErrorText>{deleteError}</ErrorText>
-          <Button label="Yes, delete my account" kind="danger" onPress={() => void deleteAccount()} busy={deleting} />
+          <Button label="Yes, delete my account" testID="delete-account-confirm" kind="danger" onPress={() => void deleteAccount()} busy={deleting} />
           <Button label="Keep my account" kind="secondary" onPress={() => setConfirmingDelete(false)} disabled={deleting} />
         </>
       ) : (
-        <Button label="Delete account" kind="secondary" onPress={() => setConfirmingDelete(true)} />
+        <Button label="Delete account" testID="delete-account" kind="secondary" onPress={() => setConfirmingDelete(true)} />
       )}
     </Screen>
   );

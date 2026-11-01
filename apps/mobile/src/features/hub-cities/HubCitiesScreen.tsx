@@ -127,6 +127,7 @@ export function HubCitiesScreen({ me }: { me: Me }) {
           <Field
             label={chosen.length === 0 ? 'Search for your city' : 'Add a backup city'}
             placeholder="City name"
+            testID="hub-city-search"
             value={query}
             onChangeText={setQuery}
             autoCapitalize="words"
@@ -145,6 +146,7 @@ export function HubCitiesScreen({ me }: { me: Me }) {
                   <Button
                     label={already ? 'Chosen' : 'Add'}
                     accessibilityLabel={`Add ${cityLabel(city)}`}
+                    testID={`hub-city-add-${city.id}`}
                     kind="secondary"
                     disabled={already}
                     onPress={() => add(city)}
@@ -160,7 +162,7 @@ export function HubCitiesScreen({ me }: { me: Me }) {
 
       <ErrorText>{error}</ErrorText>
       {firstTime ? (
-        <Button label="Continue" onPress={() => void save()} busy={saving} disabled={chosen.length === 0} />
+        <Button label="Continue" testID="hub-cities-continue" onPress={() => void save()} busy={saving} disabled={chosen.length === 0} />
       ) : confirming ? (
         <>
           <Body>

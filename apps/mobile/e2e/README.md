@@ -34,5 +34,5 @@ dev-server run and put them in the build.
 - On failure, Playwright keeps a screenshot and a trace in `e2e/test-results/` (CI uploads them as `e2e-report`):
   `npx playwright show-trace e2e/test-results/<test>/trace.zip`.
 
-Not covered here: the native iOS and Android apps (Maestro, `docs/plans/ui-testing-and-launch.md`), real Google and
+Not covered here: the native app (its journeys are Maestro flows on Android, `maestro/README.md`), real Google and
 Spotify sign-in, and staff screens.

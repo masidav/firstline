@@ -17,6 +17,9 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       no network, no real timers. 2026-10-30: loading, empty, error-and-retry, and populated states for home, artist
       search, settings, and reactions (the comments successor) added; `npm test` 51 suites, 327 tests, run by the CI job
       "Fan app". Plus browser end-to-end journeys since 2026-10-27 (`e2e/`, run in CI).*
+      *2026-11-01: native journeys in Maestro (`maestro/journeys`: sign-up, home and feed, log an album, register for
+      an allocation, sign-out and account deletion) on an Android emulator against the API and a seeded database,
+      workflow `mobile-android.yml`. Verified locally: 5/5 passed twice (2m50s); CI run: pending.*
 - [ ] Verify iOS and Android builds and document required configuration. *Web build verified (CI and a Playwright
       WebKit run at iPhone size, 2026-10-18). iOS configured 2026-10-29: bundle ID `com.firstline.fandomscore`,
       icon and splash (`assets/`, drawn by `tools/dev/app-icons.mjs`), `app.config.ts` (Google scheme, EAS project id,
@@ -24,7 +27,9 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       (iOS prebuild and Hermes bundle on Linux, now in CI), typecheck, Jest 297. The build itself waits on the Apple
       Developer Program and `eas init` (README "Building the iOS app"). Decided 2026-10-29: the first device test is
       a free-Apple-ID build on a Mac (`npm run ios:personal`: no Apple sign-in or push entitlement, `.dev` bundle ID;
-      verified here by prebuild in both modes). Android: package and adaptive icon set, never built.*
+      verified here by prebuild in both modes). Android: package and adaptive icon set; *2026-11-01: a Release APK
+      (x86_64, prebuild's debug key, http API) built locally and in CI for the Maestro journeys and ran in an Android 14
+      emulator; no Play signing or device build yet.*
 - [x] Google sign-in on web. *Done 2026-10-26: "Continue with Google" sends the fan to Google (OpenID Connect,
       ID token in the fragment, no Google script), `/google-callback` checks the state and signs in; a new account
       chooses a handle. Needs `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` and the redirect URI on the Google client (README).

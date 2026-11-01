@@ -145,7 +145,7 @@ export function AlbumScreen({ albumId }: { albumId: string }) {
       {form === 'closed' && !album.delisted && (
         <View style={styles.actions}>
           {mine && <Button label="Edit" kind="secondary" onPress={() => setForm('edit')} />}
-          <Button label={mine ? 'Log again' : 'Log this album'} onPress={() => setForm('new')} />
+          <Button label={mine ? 'Log again' : 'Log this album'} testID="log-album" onPress={() => setForm('new')} />
         </View>
       )}
       {form === 'new' && <LogForm albumId={album.id} album={albumInfo} onSaved={onSaved} onQueued={onQueued} onCancel={() => setForm('closed')} />}

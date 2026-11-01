@@ -135,7 +135,7 @@ export function HomeScreen() {
   const header = (
     <>
       <View style={styles.header}>
-        <Title>Your artists</Title>
+        <Title testID="home-title">Your artists</Title>
       </View>
       {pendingLogs.length > 0 && (
         <Pressable accessibilityRole="button" onPress={() => router.push('/journal')} style={styles.pendingBanner}>
@@ -148,6 +148,7 @@ export function HomeScreen() {
       <Field
         label="Search artists"
         placeholder="Artist name"
+        testID="artist-search"
         value={query}
         onChangeText={edit}
         onSubmitEditing={() => void submit()}
@@ -173,6 +174,7 @@ export function HomeScreen() {
           key={artist.id}
           name={artist.name}
           imageUrl={artist.image_url}
+          testID={`artist-${artist.id}`}
           note={artist.status === 'onboarding' ? 'Getting ready' : undefined}
           onPress={() => router.push(`/artist/${artist.id}/albums`)}
         />

@@ -1,0 +1,49 @@
+# An eligible fan opens a show (by deep link, as a push notification or shared link would), registers for its fan
+# allocation, is still registered after the app restarts, and withdraws (e2e/allocation.spec.ts in the browser).
+# setup.mjs opens the allocation as staff and gives the fan a fandom score for the artist.
+appId: com.firstline.fandomscore
+name: Register for an allocation
+---
+- runFlow: ../common/launch-signed-out.yaml
+- runFlow:
+    file: ../common/sign-in.yaml
+    env:
+      NAME: ${TICKET_FAN}
+- openLink: fandomscore://show/${SHOW_ID}
+- scrollUntilVisible:
+    element:
+      id: allocation-register
+    timeout: 30000
+- tapOn:
+    id: allocation-register
+- extendedWaitUntil:
+    visible:
+      id: allocation-registered
+    timeout: 30000
+# The registration is on the server, not just on screen: restart the app (the session is kept) and look again.
+- stopApp
+- retry:
+    maxRetries: 2
+    commands:
+      - launchApp
+      - extendedWaitUntil:
+          visible:
+            id: home-title
+          timeout: 45000
+- openLink: fandomscore://show/${SHOW_ID}
+- scrollUntilVisible:
+    element:
+      id: allocation-registered
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: allocation-withdraw
+- tapOn:
+    id: allocation-withdraw
+- scrollUntilVisible:
+    element:
+      id: allocation-register
+    timeout: 30000
+- assertNotVisible:
+    id: allocation-registered
+- takeScreenshot: allocation

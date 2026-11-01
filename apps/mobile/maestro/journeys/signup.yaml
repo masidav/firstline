@@ -1,0 +1,40 @@
+# A new fan signs up: developer sign-in, a handle, a hub city, then home (e2e/signup.spec.ts in the browser).
+appId: com.firstline.fandomscore
+name: Sign up
+---
+- runFlow: ../common/launch-signed-out.yaml
+- tapOn:
+    id: dev-sign-in-name
+- inputText: ${NEW_FAN}
+- tapOn:
+    id: dev-sign-in-submit
+# A new account: the handle field appears, filled in with the test name.
+- extendedWaitUntil:
+    visible:
+      id: dev-sign-in-handle
+    timeout: 30000
+- tapOn:
+    id: dev-sign-in-submit
+- extendedWaitUntil:
+    visible:
+      id: hub-city-search
+    timeout: 30000
+- tapOn:
+    id: hub-city-search
+- inputText: Chicago
+- extendedWaitUntil:
+    visible:
+      id: hub-city-add-us-il-chicago
+    timeout: 15000
+- tapOn:
+    id: hub-city-add-us-il-chicago
+- scrollUntilVisible:
+    element:
+      id: hub-cities-continue
+- tapOn:
+    id: hub-cities-continue
+- extendedWaitUntil:
+    visible:
+      id: home-title
+    timeout: 30000
+- takeScreenshot: signup-home

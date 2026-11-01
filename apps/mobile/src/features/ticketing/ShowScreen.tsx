@@ -181,7 +181,7 @@ function AllocationCard({ allocation }: { allocation: Allocation }) {
       )}
       {registration?.status === 'returned' && <Body>You returned your seat; it went to the next fan in line.</Body>}
       {registration?.status === 'not_selected' && <Body>You weren't selected this time.</Body>}
-      {registration?.status === 'registered' && <Text style={styles.good}>You're registered.</Text>}
+      {registration?.status === 'registered' && <Text style={styles.good} testID="allocation-registered">You're registered.</Text>}
 
       {message && (
         <View accessibilityRole="summary" style={[styles.standing, eligibility?.standing?.likely && styles.likely]}>
@@ -220,6 +220,7 @@ function AllocationCard({ allocation }: { allocation: Allocation }) {
       {!registration && eligibility?.eligible && allocation.status === 'open' && (
         <Button
           label="Register"
+          testID="allocation-register"
           busy={busy}
           onPress={() =>
             void act(async () => {
@@ -257,6 +258,7 @@ function AllocationCard({ allocation }: { allocation: Allocation }) {
       {registration?.status === 'registered' && allocation.status === 'open' && (
         <Button
           label="Withdraw"
+          testID="allocation-withdraw"
           kind="danger"
           busy={busy}
           onPress={() =>

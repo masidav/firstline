@@ -18,7 +18,7 @@ export function AlbumRow({
   trailing?: string;
 }) {
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`Open ${title}`} onPress={() => router.push(`/album/${albumId}`)} style={styles.row}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`Open ${title}`} testID={`album-${albumId}`} onPress={() => router.push(`/album/${albumId}`)} style={styles.row}>
       {coverUrl ? (
         <Image source={{ uri: coverUrl }} style={styles.cover} accessibilityIgnoresInvertColors />
       ) : (

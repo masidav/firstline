@@ -15,9 +15,9 @@ export function Screen({ children }: { children: ReactNode }) {
   );
 }
 
-export function Title({ children }: { children: ReactNode }) {
+export function Title({ children, testID }: { children: ReactNode; testID?: string }) {
   return (
-    <Text accessibilityRole="header" style={styles.title}>
+    <Text accessibilityRole="header" style={styles.title} testID={testID}>
       {children}
     </Text>
   );
@@ -42,6 +42,7 @@ export function Button({
   busy,
   disabled,
   kind = 'primary',
+  testID,
 }: {
   label: string;
   /** What screen readers say, when the visible label alone is unclear (a row of "Add" buttons). */
@@ -50,6 +51,8 @@ export function Button({
   busy?: boolean;
   disabled?: boolean;
   kind?: 'primary' | 'secondary' | 'danger';
+  /** For the Maestro flows (maestro/README.md); never shown or announced. */
+  testID?: string;
 }) {
   const inactive = disabled || busy;
   return (
@@ -59,6 +62,7 @@ export function Button({
       accessibilityState={{ disabled: inactive, busy }}
       disabled={inactive}
       onPress={onPress}
+      testID={testID}
       style={({ pressed }) => [styles.button, styles[kind], (pressed || inactive) && styles.dimmed]}
     >
       {busy ? (

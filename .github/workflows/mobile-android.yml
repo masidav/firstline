@@ -1,0 +1,130 @@
+# The native fan app's critical journeys in an Android emulator (apps/mobile/maestro/README.md): a Release build of
+# the app (JavaScript bundle embedded, developer sign-in on, API at http://127.0.0.1:5271 through `adb reverse`), the
+# API from source, and a seeded PostgreSQL 16, then the Maestro flows in apps/mobile/maestro/journeys. The browser
+# journeys (ci.yml, "End-to-end journeys") cover the same ground for the web build.
+#
+# Android rather than the iOS Simulator because it runs on a Linux runner (KVM), at a tenth of the macOS rate on a
+# private repository and in about half the time; the iOS build stays on demand (mobile-ios.yml). The release build is
+# signed with the debug key that `expo prebuild` generates, so it needs no store credentials.
+#
+# Runs on pushes to main that touch the fan app, the API, the database, or the seed, and on demand.
+name: Android app (emulator)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - apps/mobile/**
+      - '!apps/mobile/**/*.md'
+      - services/api/**
+      - packages/**
+      - database/migrations/**
+      - openapi.yaml
+      - tools/dev/seed.py
+      - .github/workflows/mobile-android.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Maestro CLI, pinned with its checksum (from the release's checksums_sha256.txt).
+  MAESTRO_VERSION: 2.12.0
+  MAESTRO_SHA256: a6044a84542f522f434c5dc3d609e60c7446d423f3ed1b2ae513f5c48663ec5e
+
+jobs:
+  journeys:
+    name: Maestro journeys (Android emulator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Install
+        working-directory: apps/mobile
+        run: npm ci
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('apps/mobile/package-lock.json') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      # Generates android/ from app.json and app.config.ts (the http API URL turns on cleartext traffic), then builds
+      # the Release APK for the emulator's ABI only.
+      - name: Build the app (Release, x86_64)
+        working-directory: apps/mobile
+        env:
+          EXPO_PUBLIC_API_URL: http://127.0.0.1:5271/v1
+          EXPO_PUBLIC_DEV_SIGN_IN: 'true'
+          EXPO_NO_DOTENV: '1'
+          EXPO_NO_TELEMETRY: '1'
+        run: |
+          npx expo prebuild --platform android --clean --no-install
+          cd android
+          ./gradlew :app:assembleRelease -PreactNativeArchitectures=x86_64 --no-daemon --quiet
+          ls -la app/build/outputs/apk/release/app-release.apk
+
+      # Built ahead so run.sh's `dotnet run --no-build` starts at once.
+      - name: Build the API
+        run: dotnet build services/api
+
+      - name: Install Maestro
+        run: |
+          curl -fsSL -o /tmp/maestro.zip \
+            "https://github.com/mobile-dev-inc/maestro/releases/download/cli-${MAESTRO_VERSION}/maestro.zip"
+          echo "${MAESTRO_SHA256}  /tmp/maestro.zip" | sha256sum -c -
+          unzip -q /tmp/maestro.zip -d "$HOME"
+          echo "$HOME/maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # run.sh starts PostgreSQL in Docker, migrates and seeds it, starts the API, installs the APK, prepares the
+      # journeys' accounts and allocation (setup.mjs), and runs the flows. The action runs each script line on its
+      # own, so this is one line.
+      - name: Journeys
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          MAESTRO_APK: ${{ github.workspace }}/apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          script: apps/mobile/maestro/run.sh
+
+      - name: Upload the Maestro report, screenshots, and API log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-android
+          path: apps/mobile/maestro-output
+          if-no-files-found: ignore

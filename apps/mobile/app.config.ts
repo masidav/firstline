@@ -1,6 +1,6 @@
 import plist, { type PlistObject } from '@expo/plist';
 import type { ConfigContext, ExpoConfig } from 'expo/config';
-import { IOSConfig, withFinalizedMod } from 'expo/config-plugins';
+import { IOSConfig, withAndroidManifest, withFinalizedMod } from 'expo/config-plugins';
 import { readFileSync, writeFileSync } from 'node:fs';
 
 /**
@@ -20,10 +20,12 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const googleIosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
   if (googleIosClientId) schemes.push(reversed(googleIosClientId));
 
-  // A development build against an API on the local network (http://192.168.x.x) needs the App Transport Security
-  // exception for local networking. Release builds point at https and get none.
+  // A development build against an API on the local network (http://192.168.x.x), or the Maestro builds against an
+  // API on the CI runner (maestro/README.md), needs plain HTTP: the App Transport Security exception for local
+  // networking on iOS, cleartext traffic on Android. Release builds point at https and get neither.
   const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? '';
-  const localNetworking = apiUrl.startsWith('http://') ? { NSAppTransportSecurity: { NSAllowsLocalNetworking: true } } : {};
+  const plainHttp = apiUrl.startsWith('http://');
+  const localNetworking = plainHttp ? { NSAppTransportSecurity: { NSAllowsLocalNetworking: true } } : {};
 
   // `eas init` records the project id in app.json (extra.eas.projectId); EAS_PROJECT_ID is for builds made elsewhere.
   const projectId = process.env.EAS_PROJECT_ID ?? (config.extra?.eas as { projectId?: string } | undefined)?.projectId;
@@ -46,8 +48,18 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       appleSignIn: !personalTeam,
     },
   };
-  return personalTeam ? withoutTeamEntitlements(expo) : expo;
+  const withHttp = plainHttp ? withCleartextTraffic(expo) : expo;
+  return personalTeam ? withoutTeamEntitlements(withHttp) : withHttp;
 };
+
+/** Lets an Android build reach an http:// API (only set when EXPO_PUBLIC_API_URL is one; see above). */
+function withCleartextTraffic(config: ExpoConfig): ExpoConfig {
+  return withAndroidManifest(config, (mod) => {
+    const application = mod.modResults.manifest.application?.[0];
+    if (application) application.$['android:usesCleartextTraffic'] = 'true';
+    return mod;
+  });
+}
 
 /**
  * Removes the entitlements a personal team can't be provisioned for. The installed modules' config plugins add them

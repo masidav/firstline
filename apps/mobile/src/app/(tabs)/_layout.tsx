@@ -28,14 +28,15 @@ export default function TabsLayout() {
       tabBar={(props) => <TabBar {...props} above={<NowPlayingBar insetBottom={false} />} />}
       screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.background } }}
     >
-      <Tabs.Screen name="home" options={{ title: 'Feed' }} />
-      <Tabs.Screen name="tickets" options={{ title: 'Tickets' }} />
-      <Tabs.Screen name="journal" options={{ title: 'Journal' }} />
-      <Tabs.Screen name="people" options={{ title: 'People' }} />
+      <Tabs.Screen name="home" options={{ title: 'Feed', tabBarButtonTestID: 'tab-home' }} />
+      <Tabs.Screen name="tickets" options={{ title: 'Tickets', tabBarButtonTestID: 'tab-tickets' }} />
+      <Tabs.Screen name="journal" options={{ title: 'Journal', tabBarButtonTestID: 'tab-journal' }} />
+      <Tabs.Screen name="people" options={{ title: 'People', tabBarButtonTestID: 'tab-people' }} />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
+          tabBarButtonTestID: 'tab-profile',
           tabBarIcon: ({ size }) => <Avatar user={me} size={size} />,
           tabBarBadge: unread > 0 ? unread : undefined,
           tabBarAccessibilityLabel: unread > 0 ? `Profile, ${unread} unread alerts` : 'Profile',

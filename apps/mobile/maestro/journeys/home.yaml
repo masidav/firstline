@@ -1,0 +1,21 @@
+# Home loads for a signed-in fan: the artist search, the tabs, and feed cards from the API (the seed's public logs
+# and prompt answers; the feed is shuffled, so this checks that cards arrive, not which).
+appId: com.firstline.fandomscore
+name: Home and feed
+---
+- runFlow: ../common/launch-signed-out.yaml
+- runFlow:
+    file: ../common/sign-in.yaml
+    env:
+      NAME: ${HOME_FAN}
+- assertVisible:
+    id: artist-search
+- assertVisible:
+    id: tab-journal
+- scrollUntilVisible:
+    element:
+      id: "feed-.*"
+    timeout: 30000
+- assertNotVisible:
+    text: "Nothing yet.*"
+- takeScreenshot: home-feed

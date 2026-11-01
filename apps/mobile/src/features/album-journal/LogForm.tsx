@@ -133,6 +133,7 @@ export function LogForm({
             key={value}
             accessibilityRole="button"
             accessibilityLabel={`Rate ${value / 2} stars`}
+            testID={`rating-${value}`}
             accessibilityState={{ selected: rating === value }}
             onPress={() => setRating(rating === value ? null : value)}
             style={[styles.choice, rating === value && styles.selected]}
@@ -143,6 +144,7 @@ export function LogForm({
       </View>
       <Field
         label="Review"
+        testID="log-review"
         placeholder="What did you think? 100+ characters earn review points."
         value={review}
         onChangeText={setReview}
@@ -168,7 +170,7 @@ export function LogForm({
         ))}
       </View>
       <ErrorText>{errors.form}</ErrorText>
-      <Button label={existing || pending ? 'Save changes' : 'Save log'} onPress={() => void save()} busy={saving} />
+      <Button label={existing || pending ? 'Save changes' : 'Save log'} testID="log-save" onPress={() => void save()} busy={saving} />
       {onCancel && <Button label="Cancel" kind="secondary" onPress={onCancel} disabled={saving} />}
     </View>
   );

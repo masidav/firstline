@@ -1,0 +1,14 @@
+# Starts the app with its data cleared (signed out) and waits for the developer sign-in form. Retried: now and then
+# the emulator's app process fails to attach after `pm clear` and the splash screen never goes away (seen locally
+# once in three runs; the same launch then works).
+appId: com.firstline.fandomscore
+---
+- retry:
+    maxRetries: 2
+    commands:
+      - launchApp:
+          clearState: true
+      - extendedWaitUntil:
+          visible:
+            id: dev-sign-in-name
+          timeout: 45000

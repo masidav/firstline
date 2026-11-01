@@ -492,8 +492,15 @@ Details: [ADR 0002](docs/adr/0002-hosting-gcp-gke.md) · [Infrastructure](infras
       allocation, sign-out, and account deletion, against the real API and a seeded database. Verified: 10 passed
       locally, and a reintroduced deep-link bug fails the reload journey. Native: since 2026-10-29 the workflow
       "iOS app (simulator)" builds the iPhone app on a macOS runner and runs a Maestro launch flow in the Simulator,
-      on demand (macOS minutes are billed at 10x). First run passed 2026-10-29 (28 minutes); more flows once a build
-      has been tried on a device.*
+      on demand (macOS minutes are billed at 10x). First run passed 2026-10-29 (28 minutes).
+      *2026-11-01: native journeys as Maestro flows on Android (`apps/mobile/maestro/journeys`, README there): sign-up,
+      home and feed, logging an album, registering for an allocation (by deep link, surviving a restart), sign-out and
+      account deletion, against the API from source and a `seed.py --fake` database (`maestro/run.sh`, data from
+      `setup.mjs`). Android because it runs on a Linux runner with KVM (workflow "Android app (emulator)", on pushes to
+      main touching the app, API, database, or seed, and on demand); the build needed only configuration (cleartext for
+      an http API in `app.config.ts`, a Release APK signed with prebuild's debug key). testIDs added for the flows.
+      Verified locally: the Release APK built (4m47s), 5/5 flows passed twice in an Android 14 emulator (2m50s each);
+      `npm test` 55 suites, 348 tests; typecheck clean. CI run: pending.*
 - [x] Promoter dashboard end-to-end tests (Playwright) and accessibility checks. *Journeys done 2026-10-27
       (`apps/promoter-web/e2e`, CI). Accessibility checks done 2026-10-30: `@axe-core/playwright` scans every page the
       journeys visit (WCAG 2.2 AA + best practices, serious/critical fail) in the same CI job, and vitest-axe covers

@@ -1,0 +1,16 @@
+# Developer sign-in as ${NAME}, an account setup.mjs made (handle and hub city chosen), so it lands on home.
+appId: com.firstline.fandomscore
+---
+- extendedWaitUntil:
+    visible:
+      id: dev-sign-in-name
+    timeout: 30000
+- tapOn:
+    id: dev-sign-in-name
+- inputText: ${NAME}
+- tapOn:
+    id: dev-sign-in-submit
+- extendedWaitUntil:
+    visible:
+      id: home-title
+    timeout: 30000

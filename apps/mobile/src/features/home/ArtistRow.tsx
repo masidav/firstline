@@ -10,6 +10,7 @@ export function ArtistRow({
   note,
   children,
   onPress,
+  testID,
 }: {
   name: string;
   imageUrl?: string | null;
@@ -17,6 +18,8 @@ export function ArtistRow({
   children?: ReactNode;
   /** When set, the row itself is a button (e.g. opens the artist's albums). */
   onPress?: () => void;
+  /** For the Maestro flows; set on the pressable row. */
+  testID?: string;
 }) {
   // The action on the right stays outside the pressable area, so buttons are never nested.
   const body = (
@@ -37,7 +40,7 @@ export function ArtistRow({
   return (
     <View style={styles.row}>
       {onPress ? (
-        <Pressable style={styles.main} onPress={onPress} accessibilityRole="button" accessibilityLabel={`Open ${name}`}>
+        <Pressable style={styles.main} onPress={onPress} accessibilityRole="button" accessibilityLabel={`Open ${name}`} testID={testID}>
           {body}
         </Pressable>
       ) : (
