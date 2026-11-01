@@ -158,6 +158,9 @@ Still open:
 - [ ] Email provider.
 - [ ] Product and company name.
 - [ ] "Listening now" check-ins and a Spotify data-export upload as extra signals.
+- [ ] Bot protection at the edge (found missing 2026-11-01; WAF and rate limiting are live): Cloud Armor bot
+  management with reCAPTCHA Enterprise (the fan app has to fetch reCAPTCHA tokens; billed per assessment), or only
+  rate limiting plus the fandom-score checks. Decide before a real on-sale.
 
 ## D. Business and legal, before a real launch
 

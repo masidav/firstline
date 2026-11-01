@@ -50,7 +50,17 @@ spec:
   hostnames:
     - set-by-overlay
   rules:
-    - backendRefs:
+    # The web apps' nginx sets these itself (infrastructure/web/security-headers.conf); the API doesn't, so the load
+    # balancer adds them. Verified missing on beta 2026-11-01. Responses Cloud Armor denies don't get them.
+    - filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+              - name: Strict-Transport-Security
+                value: max-age=31536000
+              - name: X-Content-Type-Options
+                value: nosniff
+      backendRefs:
         - name: api
           port: 80
 ---

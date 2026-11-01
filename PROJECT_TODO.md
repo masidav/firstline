@@ -425,9 +425,32 @@ built, images built locally). Nothing is applied to a GCP project yet; `infrastr
 - [ ] Provision infrastructure with Terraform: GKE Autopilot, Cloud SQL for PostgreSQL 16, Cloud Storage, Artifact Registry, Secret Manager. (Written and validated; not applied.)
 - [x] Containerize the API, migrator, and workers; publish images to Artifact Registry. (`Dockerfile`; publishing is the deploy workflow's first step, not run yet.)
 - [x] Deploy with Kubernetes manifests (Kustomize overlays per environment); run migrations as a pre-deploy Job. (`infrastructure/k8s`; not run against a cluster yet.)
-- [ ] Use Workload Identity for all pod access to GCP; no service-account key files. (Configured; verify on first deploy.)
-- [ ] Restrict the quarantine bucket to the redaction workload only. (2026-10-27: among the workers only the `redaction` Deployment can reach it; the API still reads it for staff review and fans' pending photos, ADR 0002 "Files". Apply to beta and verify.)
+- [x] Use Workload Identity for all pod access to GCP; no service-account key files. (Configured; verify on first deploy.)
+      *Verified on beta 2026-11-01: cluster pool `project-ef36a8a9-d958-4163-b4c.svc.id.goog`, node metadata
+      `GKE_METADATA` (Autopilot); KSAs api, migrate, redaction, worker each annotated with their own
+      `fandomscore-beta-*` GSA, and each GSA's only `workloadIdentityUser` member is its own KSA
+      (`get-iam-policy`); no Kubernetes Secrets in the namespace, no `GOOGLE_APPLICATION_CREDENTIALS`, secrets
+      mounted by the Secret Manager CSI driver through the pod identity (pods running). `gcloud iam
+      service-accounts keys list --managed-by=user`: 0 keys on all 7 service accounts (only system-managed keys),
+      and org policy `iam.disableServiceAccountKeyCreation` is enforced. The images have no shell, so the in-pod
+      metadata-server call couldn't be run.*
+- [x] Restrict the quarantine bucket to the redaction workload only. (2026-10-27: among the workers only the `redaction` Deployment can reach it; the API still reads it for staff review and fans' pending photos, ADR 0002 "Files". Apply to beta and verify.)
+      *Verified on beta 2026-11-01 from the live IAM policies: the quarantine bucket's only non-legacy grant is
+      `roles/storage.objectUser` to the api and redaction GSAs (uniform access, public access prevention
+      enforced); the worker GSA has no bucket grant, no project roles, and none from the organization, and no
+      token-creator grant on another GSA. The redaction pod's `storage.cleanup` runs cleanly. Not run: a live
+      list as each identity (no shell in the images; impersonation and Policy Troubleshooter would need a grant
+      or an API enabled, a change).*
 - [ ] Put the API behind Gateway API with managed TLS and Cloud Armor (WAF, bot and rate limiting). (Configured; verify on first deploy. Forwarded headers done and tested.)
+      *2026-11-01 on beta, all verified except bot protection: Gateway `gke-l7-global-external-managed` Programmed
+      at 136.81.191.137; certificates for api., app., promoters. `ACTIVE` in Certificate Manager and served (issuer
+      Google Trust Services WR3, until 2027-01-29); `http://` returns 301 to `https://`; Cloud Armor
+      `fandomscore-beta-api` attached to the api, web, and promoter-web backends, and a SQL-injection and an XSS
+      query string got 403 (load balancer log: `enforcedSecurityPolicy` DENY, priorities 1000 and 1010), a plain one
+      200; rate limit 600 per minute per IP, deny 429, Adaptive Protection on (config only: 30 requests can't reach
+      it). Bot protection isn't configured (no reCAPTCHA bot management rule); that needs a decision
+      (`docs/OWNER_TODO.md`, section C). The API's responses lacked HSTS and `nosniff` (the web apps had them); the
+      api HTTPRoute now sets both. Default SSL policy (no minimum TLS version set).*
 - [ ] Plan for on-sale traffic spikes: autoscaling, pre-scaling before scheduled on-sales, and load tests. (HPA and procedure written.)
       *2026-11-01: k6 through the full HTTP path locally (`tools/load/http/run.sh`, results in `tools/load/README.md`):
       a 500m pod holds ~150 fans/s at the peak (~900 requests/s), 2 database CPUs ~400 fans/s. Pre-scaling sized from
