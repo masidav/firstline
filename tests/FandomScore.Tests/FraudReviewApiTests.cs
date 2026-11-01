@@ -6,6 +6,7 @@ using System.Text.Json;
 using Dapper;
 using FandomScore.Api.Features.Authentication;
 using FandomScore.Database;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -49,7 +50,10 @@ public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifeti
             builder.UseSetting("ConnectionStrings:Database", connectionString);
             builder.UseSetting("Auth:SigningKey", TestAuth.SigningKey);
             builder.ConfigureTestServices(services =>
-                services.Replace(ServiceDescriptor.Singleton<IIdentityTokenValidator, FakeIdentityTokenValidator>()));
+            {
+                services.Replace(ServiceDescriptor.Singleton<IIdentityTokenValidator, FakeIdentityTokenValidator>());
+                services.AddSingleton<IStartupFilter, TestClientAddress>();
+            });
         });
         _client = _factory.CreateClient();
 
@@ -544,7 +548,280 @@ public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifeti
         Assert.Equal("draw_held_out", audit[0].GetProperty("action").GetString());
     }
 
+    // ------------------------------------------------------------------ bot and shared-device rules (0054)
+
+    [Fact]
+    public async Task The_detection_job_flags_three_accounts_on_one_phone_but_not_a_couple_with_counts_only()
+    {
+        const string farmPhone = "ExponentPushToken[fraudfarmphone01]";
+        const string couplePhone = "ExponentPushToken[fraudcouplephone]";
+        foreach (var handle in new[] { "phone_one", "phone_two", "phone_three" })
+        {
+            await JsonAsync(await SendAsync(HttpMethod.Put, "/v1/me/push-devices", await FanAsync(handle, score: null), new { token = farmPhone, platform = "ios" }), HttpStatusCode.OK);
+        }
+
+        foreach (var handle in new[] { "couple_one", "couple_two" })
+        {
+            await JsonAsync(await SendAsync(HttpMethod.Put, "/v1/me/push-devices", await FanAsync(handle, score: null), new { token = couplePhone, platform = "android" }), HttpStatusCode.OK);
+        }
+
+        await DetectAsync();
+        await DetectAsync();   // idempotent
+
+        var flags = await QueueAsync();
+        Assert.Equal(["phone_one", "phone_three", "phone_two"], flags.Select(f => f.GetProperty("user").GetProperty("handle").GetString()).Order());
+        foreach (var flag in flags)
+        {
+            Assert.Equal(("rule", "shared_device"), (flag.GetProperty("source").GetString(), flag.GetProperty("reason").GetString()));
+            var rule = flag.GetProperty("evidence").GetProperty("rules").GetProperty("shared_device");
+            Assert.Equal((1, 3), (rule.GetProperty("devices").GetInt32(), rule.GetProperty("most_accounts").GetInt32()));
+            Assert.DoesNotContain("PushToken", flag.GetProperty("evidence").GetRawText(), StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task The_detection_job_flags_five_sign_ups_from_one_address_in_a_day_but_not_four()
+    {
+        for (var i = 1; i <= 5; i++)
+        {
+            await FanFromAsync($"same_net_{i}", score: null, address: "203.0.113.50");
+        }
+
+        for (var i = 1; i <= 4; i++)
+        {
+            await FanFromAsync($"small_net_{i}", score: null, address: "203.0.113.40");
+        }
+
+        await DetectAsync();
+        await DetectAsync();
+
+        var flags = await QueueAsync();
+        Assert.Equal(5, flags.Count);
+        Assert.All(flags, flag =>
+        {
+            Assert.StartsWith("same_net_", flag.GetProperty("user").GetProperty("handle").GetString(), StringComparison.Ordinal);
+            Assert.Equal("duplicate_account", flag.GetProperty("reason").GetString());
+            Assert.Equal(5, flag.GetProperty("evidence").GetProperty("rules").GetProperty("shared_address_signups").GetProperty("accounts").GetInt32());
+            Assert.DoesNotContain("203.0.113", flag.GetProperty("evidence").GetRawText(), StringComparison.Ordinal);
+        });
+        await using var connection = await _db.OpenConnectionAsync();
+        Assert.Equal(0, await connection.ExecuteScalarAsync<int>(
+            "SELECT count(*) FROM client_address_events WHERE encode(address_hash, 'escape') LIKE '%203.0.113%'"));
+    }
+
+    [Fact]
+    public async Task The_detection_job_flags_five_accounts_registering_for_one_show_from_one_address()
+    {
+        var allocationId = await AllocationAsync(tickets: 10);
+        for (var i = 1; i <= 5; i++)
+        {
+            var fan = await FanAsync($"same_wifi_{i}", score: 80, "us-il-chicago");   // signed up from wherever
+            await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/allocations/{allocationId}/eligibility", fan), HttpStatusCode.OK);
+            await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{allocationId}/registration", fan, address: "198.51.100.9"), HttpStatusCode.Created);
+        }
+
+        var alone = await FanAsync("own_wifi", score: 80, "us-il-chicago");
+        await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/allocations/{allocationId}/eligibility", alone), HttpStatusCode.OK);
+        await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{allocationId}/registration", alone, address: "198.51.100.10"), HttpStatusCode.Created);
+
+        await DetectAsync();
+        await DetectAsync();
+
+        var flags = await QueueAsync();
+        Assert.Equal(5, flags.Count);
+        Assert.All(flags, flag =>
+        {
+            Assert.StartsWith("same_wifi_", flag.GetProperty("user").GetProperty("handle").GetString(), StringComparison.Ordinal);
+            var hit = flag.GetProperty("evidence").GetProperty("rules").GetProperty("shared_address_registrations")[0];
+            Assert.Equal((allocationId.ToString(), 5), (hit.GetProperty("allocation_id").GetString(), hit.GetProperty("accounts").GetInt32()));
+        });
+    }
+
+    [Fact]
+    public async Task The_detection_job_flags_a_spotify_account_passed_through_three_fan_accounts_and_a_cleared_rule_waits()
+    {
+        foreach (var handle in new[] { "sp_first", "sp_second", "sp_third" })
+        {
+            await FanAsync(handle, score: null);
+            await using var connection = await _db.OpenConnectionAsync();
+            await connection.ExecuteAsync(
+                """
+                DELETE FROM spotify_connections WHERE spotify_user_id = 'sp-passed-around';
+                INSERT INTO spotify_connections (user_id, spotify_user_id, refresh_token_enc, scopes)
+                SELECT id, 'sp-passed-around', '\x01', '{}' FROM users WHERE handle = @handle;
+                """,
+                new { handle });
+        }
+
+        foreach (var handle in new[] { "sp_pair_a", "sp_pair_b" })
+        {
+            await FanAsync(handle, score: null);
+            await using var connection = await _db.OpenConnectionAsync();
+            await connection.ExecuteAsync(
+                """
+                DELETE FROM spotify_connections WHERE spotify_user_id = 'sp-two-owners';
+                INSERT INTO spotify_connections (user_id, spotify_user_id, refresh_token_enc, scopes)
+                SELECT id, 'sp-two-owners', '\x01', '{}' FROM users WHERE handle = @handle;
+                """,
+                new { handle });
+        }
+
+        await DetectAsync();
+        await DetectAsync();
+
+        var flags = await QueueAsync();
+        Assert.Equal(["sp_first", "sp_second", "sp_third"], flags.Select(f => f.GetProperty("user").GetProperty("handle").GetString()).Order());
+        var third = flags.Single(f => f.GetProperty("user").GetProperty("handle").GetString() == "sp_third");
+        var rule = third.GetProperty("evidence").GetProperty("rules").GetProperty("spotify_account_reuse");
+        Assert.Equal(("duplicate_account", 2, 1), (third.GetProperty("reason").GetString(), rule.GetProperty("other_accounts").GetInt32(),
+            rule.GetProperty("accounts_connected").GetInt32()));
+        Assert.DoesNotContain("sp-passed", third.GetProperty("evidence").GetRawText(), StringComparison.Ordinal);
+
+        // Staff clear it: the rule stays quiet for its cooldown, so the next sweep raises nothing.
+        await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/fraud-flags/{third.GetProperty("id").GetString()}/decision", _staff,
+            new { decision = "clear", note = "Siblings sharing a family Spotify login." }), HttpStatusCode.OK);
+        await DetectAsync();
+        Assert.Equal(2, (await QueueAsync()).Count);
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            Assert.Equal(1, await connection.ExecuteScalarAsync<int>(
+                "SELECT count(*) FROM fraud_flags f JOIN users u ON u.id = f.user_id WHERE u.handle = 'sp_third'"));
+        }
+    }
+
+    [Fact]
+    public async Task The_detection_job_flags_a_script_that_registers_without_checking_eligibility_but_not_the_app()
+    {
+        var first = await AllocationAsync(tickets: 10);
+        var second = await SecondShowAllocationAsync();
+        var script = await FanAsync("headless_script", score: 80, "us-il-chicago");
+        var app = await FanAsync("app_user", score: 80, "us-il-chicago");
+        await AgeAccountsAsync("headless_script", "app_user");   // a day old, so the instant-registration rule stays out of it
+
+        await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{first}/registration", script), HttpStatusCode.Created);
+        await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{second}/registration", script), HttpStatusCode.Created);
+        foreach (var allocation in new[] { first, second })
+        {
+            await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/allocations/{allocation}/eligibility", app), HttpStatusCode.OK);
+            await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{allocation}/registration", app), HttpStatusCode.Created);
+        }
+
+        await DetectAsync();
+        await DetectAsync();
+
+        var flag = Assert.Single(await QueueAsync());
+        Assert.Equal(("headless_script", "bot"), (flag.GetProperty("user").GetProperty("handle").GetString(), flag.GetProperty("reason").GetString()));
+        var rules = flag.GetProperty("evidence").GetProperty("rules");
+        Assert.Equal(2, rules.GetProperty("headless_registration").GetProperty("registrations").GetInt32());
+        Assert.Equal(["headless_registration"], rules.EnumerateObject().Select(p => p.Name));
+    }
+
+    [Fact]
+    public async Task The_detection_job_flags_two_registrations_minutes_after_sign_up_but_not_one()
+    {
+        var first = await AllocationAsync(tickets: 10);
+        var second = await SecondShowAllocationAsync();
+        var quick = await FanAsync("quick_draw", score: 80, "us-il-chicago");
+        var once = await FanAsync("just_one", score: 80, "us-il-chicago");
+        foreach (var allocation in new[] { first, second })
+        {
+            await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/allocations/{allocation}/eligibility", quick), HttpStatusCode.OK);
+            await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{allocation}/registration", quick), HttpStatusCode.Created);
+        }
+
+        await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/allocations/{first}/eligibility", once), HttpStatusCode.OK);
+        await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{first}/registration", once), HttpStatusCode.Created);
+
+        await DetectAsync();
+        await DetectAsync();
+
+        var flag = Assert.Single(await QueueAsync());
+        Assert.Equal(("quick_draw", "bot"), (flag.GetProperty("user").GetProperty("handle").GetString(), flag.GetProperty("reason").GetString()));
+        var rules = flag.GetProperty("evidence").GetProperty("rules");
+        Assert.Equal(2, rules.GetProperty("instant_registration").GetProperty("registrations").GetInt32());
+        Assert.True(rules.GetProperty("instant_registration").GetProperty("fastest_minutes").GetDecimal() < 10);
+        Assert.Equal(["instant_registration"], rules.EnumerateObject().Select(p => p.Name));
+    }
+
+    [Fact]
+    public async Task The_detection_job_flags_a_client_polling_eligibility_300_times_a_day_but_not_299()
+    {
+        var allocationId = await AllocationAsync(tickets: 10);
+        var poller = await FanAsync("poller", score: 80, "us-il-chicago");
+        var refresher = await FanAsync("refresher", score: 80, "us-il-chicago");
+        foreach (var fan in new[] { poller, refresher })
+        {
+            for (var i = 0; i < 5; i++)
+            {
+                await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/allocations/{allocationId}/eligibility", fan), HttpStatusCode.OK);
+            }
+        }
+
+        // The rest of the day's checks, then one more each: 300 and 299.
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            Assert.Equal(2, await connection.ExecuteAsync(
+                """
+                UPDATE eligibility_views v SET views = CASE u.handle WHEN 'poller' THEN 299 ELSE 298 END
+                  FROM users u WHERE u.id = v.user_id AND u.handle IN ('poller', 'refresher') AND v.views = 5
+                """));
+        }
+
+        await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/allocations/{allocationId}/eligibility", poller), HttpStatusCode.OK);
+        await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/allocations/{allocationId}/eligibility", refresher), HttpStatusCode.OK);
+
+        await DetectAsync();
+        await DetectAsync();
+
+        var flag = Assert.Single(await QueueAsync());
+        Assert.Equal(("poller", "bot"), (flag.GetProperty("user").GetProperty("handle").GetString(), flag.GetProperty("reason").GetString()));
+        var hit = flag.GetProperty("evidence").GetProperty("rules").GetProperty("eligibility_polling")[0];
+        Assert.Equal((allocationId.ToString(), 300), (hit.GetProperty("allocation_id").GetString(), hit.GetProperty("checks").GetInt32()));
+    }
+
     // ------------------------------------------------------------------ helpers
+
+    /// <summary>Sets the client address from a test header, as the load balancer would (TestServer has none).</summary>
+    private sealed class TestClientAddress : IStartupFilter
+    {
+        public const string Header = "X-Test-Client-Address";
+
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.Use((context, pipeline) =>
+            {
+                if (context.Request.Headers.TryGetValue(Header, out var address) && IPAddress.TryParse(address.ToString(), out var parsed))
+                {
+                    context.Connection.RemoteIpAddress = parsed;
+                }
+
+                return pipeline(context);
+            });
+            next(app);
+        };
+    }
+
+    private async Task<List<JsonElement>> QueueAsync() =>
+        [.. (await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/admin/fraud-flags?limit=100", _staff), HttpStatusCode.OK)).GetProperty("items").EnumerateArray()];
+
+    private async Task AgeAccountsAsync(params string[] handles)
+    {
+        await using var connection = await _db.OpenConnectionAsync();
+        await connection.ExecuteAsync("UPDATE users SET created_at = now() - interval '1 day' WHERE handle = ANY (@handles)", new { handles });
+    }
+
+    private async Task<Guid> SecondShowAllocationAsync()
+    {
+        await using var connection = await _db.OpenConnectionAsync();
+        return await connection.ExecuteScalarAsync<Guid>(
+            """
+            WITH ev AS (INSERT INTO events (artist_id, name, city_id, starts_at) VALUES (@_artistId, 'Thursday', 'us-il-chicago', now() + interval '21 days') RETURNING id)
+            INSERT INTO allocations (event_id, tickets, face_value_cents, min_raw_score, registration_opens_at, registration_closes_at, published_at)
+            SELECT id, 10, 4500, 0, now() - interval '1 hour', now() + interval '5 days', now() FROM ev
+            RETURNING id
+            """,
+            new { _artistId });
+    }
 
     private async Task<JsonElement> RaiseAsync(string handle, string reason, string? note = null, object? evidence = null) =>
         await JsonAsync(await SendAsync(HttpMethod.Post, "/v1/admin/fraud-flags", _staff, new { handle, reason, note, evidence }),
@@ -584,19 +861,30 @@ public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifeti
             new { _eventId, tickets });
     }
 
-    private async Task<string> TokenAsync(string handle)
+    private async Task<string> TokenAsync(string handle, string? address = null)
     {
-        var response = await _client.PostAsJsonAsync("/v1/auth/sessions",
-            new { provider = "google", nonce = TestAuth.Nonce, id_token = TestAuth.IdToken($"g-{handle}", $"{handle}@example.test"), handle });
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/auth/sessions")
+        {
+            Content = JsonContent.Create(new { provider = "google", nonce = TestAuth.Nonce, id_token = TestAuth.IdToken($"g-{handle}", $"{handle}@example.test"), handle }),
+        };
+        if (address is not null)
+        {
+            request.Headers.Add(TestClientAddress.Header, address);
+        }
+
+        var response = await _client.SendAsync(request);
         // 201 for a new account, 200 when signing in again.
         return (await JsonAsync(response, response.StatusCode == HttpStatusCode.OK ? HttpStatusCode.OK : HttpStatusCode.Created))
             .GetProperty("access_token").GetString()!;
     }
 
     /// <summary>A signed-in fan with the given hub cities and, unless null, a score for the artist.</summary>
-    private async Task<string> FanAsync(string handle, decimal? score, params string[] hubs)
+    private async Task<string> FanAsync(string handle, decimal? score, params string[] hubs) => await FanFromAsync(handle, score, address: null, hubs);
+
+    /// <summary>The same fan, signed up from the given client address.</summary>
+    private async Task<string> FanFromAsync(string handle, decimal? score, string? address, params string[] hubs)
     {
-        var token = await TokenAsync(handle);
+        var token = await TokenAsync(handle, address);
         if (hubs.Length > 0)
         {
             await JsonAsync(await SendAsync(HttpMethod.Put, "/v1/me/hub-cities", token, new { city_ids = hubs }), HttpStatusCode.OK);
@@ -616,10 +904,15 @@ public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifeti
         return token;
     }
 
-    private Task<HttpResponseMessage> SendAsync(HttpMethod method, string path, string token, object? body = null)
+    private Task<HttpResponseMessage> SendAsync(HttpMethod method, string path, string token, object? body = null, string? address = null)
     {
         var request = new HttpRequestMessage(method, path) { Content = body is null ? null : JsonContent.Create(body) };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        if (address is not null)
+        {
+            request.Headers.Add(TestClientAddress.Header, address);
+        }
+
         return _client.SendAsync(request);
     }
 

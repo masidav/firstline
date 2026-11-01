@@ -6,8 +6,9 @@ it, and how long it lives. "Fan" is the person the row is about. "Staff" is `use
 
 Account deletion (`DELETE /v1/me`) has two steps:
 - **At once** (the `users_*` triggers in 0001, 0002, 0010, 0013/0017, 0016, 0018, 0020, 0021, 0026, 0032, 0037, 0052,
-  0053): personal fields are cleared, sessions and sign-in identities end, Spotify and listening data, social links,
-  devices, and the fan's notices go, registrations are withdrawn and reservations cancelled.
+  0053, 0054): personal fields are cleared, sessions and sign-in identities end, Spotify and listening data, social links,
+  devices, the fan's notices, and the fraud signals (address hashes, device and Spotify history, eligibility checks)
+  go, registrations are withdrawn and reservations cancelled.
 - **After 30 days** (decided 2026-10-18; `storage.cleanup` then `accounts.purge_deleted`, `purge_deleted_user()`): the
   fan's stored files, then their content (logs, lists, comments, submissions, prompt answers, trivia, scores, share
   cards) are deleted. Until then content shows as "Deleted user".
@@ -43,12 +44,17 @@ listed under "Kept after the purge" below.
 | `notifications` | the fan's notices; staff notices naming a fan (`data.handle`), +1 notices naming the host (`data.host_handle`) | in-app and push notices | the recipient | the fan's own deleted at once; **the fan's handle removed from others' notices** (0053) | kept for good: open decision |
 | `push_devices`, `push_deliveries` | Expo push tokens, delivery receipts | push | the fan (devices, without tokens) | deleted at once | **disabled devices and delivery records deleted after 30 days** (`privacy.retention`, 0053) |
 | `idempotency_keys` | cached responses of the fan's requests | safe retries | nobody | **deleted at once** (0053) | **24 hours** (the API pruned only the caller's own; now also a daily sweep) |
+| `client_address_events` | `sha256(daily salt ‖ client address)` at sign-up and at each registration, with the UTC day and the allocation; never the address (`docs/security/bot-and-shared-device-detection.md`, 0054) | fraud rules: many accounts from one address in a day | nobody (not in the export: hashes mean nothing on their own) | deleted at once | **30 days** (`privacy.retention`); the daily salt (`signal_salts`) is deleted after 2 days, after which the hashes can't be matched to any address |
+| `push_device_accounts` | `sha256(push token)` per account that registered it, first/last seen | fraud rules: many accounts on one phone | nobody (not in the export) | deleted at once | **90 days** after last seen (`privacy.retention`) |
+| `spotify_account_links` | `sha256(fixed salt ‖ Spotify user id)` per account that connected it, first/last linked | fraud rules: one Spotify account across fan accounts | nobody (not in the export) | deleted at once | **180 days** after last linked (`privacy.retention`) |
+| `eligibility_views` | per fan, allocation, and UTC day: how many times they checked their standing, first and last time | fraud rules: bots that never check or poll | nobody (not in the export) | deleted at once | **90 days** (`privacy.retention`) |
 | `organization_members`, `organization_audit`, `organizations.created_by` | promoter roles | promoter dashboard | organization owners, staff | membership removed at once; audit kept | kept: open decision (staff work records) |
 | `outbound_clicks` | ticket/merch link clicks | partner reporting | staff (counts) | unlinked from the fan at purge | kept (anonymous after purge) |
 | `link_clicks` | none (no user column) | counts | staff | n/a | kept |
 | `artists.added_by`, `events.created_by`, `allocations.created_by`, `prompts.created_by`, `featured_artists.created_by`, `allocation_selections.ran_by`, `allocation_complaints.updated_by` | who did it | attribution, the daily artist add limit | staff | kept (id only, points at the anonymous row) | kept: staff work records are an open question |
 | `jobs` | user ids in payloads, error text (never secrets) | the queue | operators | not touched | succeeded 7 days, failed 30 days (`jobs.prune`) |
 | `storage_deletions` | storage keys only | file cleanup | nobody | n/a | until the file is deleted (hourly) |
+| `signal_salts` | random salts for the hashes above (no personal data) | so stored hashes can't be reversed by guessing | nobody | n/a | daily address salts 2 days; the Spotify salt kept |
 | catalog and config (`artists`, `albums`, `tracks`, `events`, `cities`, `scoring_rules`, `fraud_rules`, `prompts`, `trivia_daily_questions`, `app_settings`, `job_schedules`, ...) | none | | | | |
 
 ### Kept after the purge
@@ -111,6 +117,7 @@ configuration, and what GCP logs at the edge.
 | Notifications | kept | decide (proposal: read notices after 180 days, all after 1 year) |
 | Logs (app, load balancer with IPs, flow logs) | 30 days (Cloud Logging default) | set provisionally, confirm or change |
 | IP addresses and rate-limit counters | in memory only (limiter); in logs 30 days | no stored data; follows the log period |
+| Fraud signals (0054): address hashes 30 days (daily salt 2 days), push device history 90 days, Spotify account history 180 days, eligibility check counts 90 days | as listed | set provisionally 2026-11-01, confirm or change (`docs/security/bot-and-shared-device-detection.md`) |
 | Fraud flags, evidence, appeals, eligibility audit | kept, also after deletion | decide (proposal: 2 years after the decision, deleted accounts included) |
 | Registrations of closed allocations (standing snapshot, rank) | kept | decide (proposal: clear the score snapshot 1 year after the show; keep outcome and seats) |
 | Reservations | kept | decide (likely legal/tax once money moves) |

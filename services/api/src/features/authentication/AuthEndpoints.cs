@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Dapper;
+using FandomScore.Api.Features.Fraud;
 using FandomScore.Api.Features.Users;
 using FandomScore.Api.Infrastructure;
 using Npgsql;
@@ -25,7 +26,7 @@ public static class AuthEndpoints
     }
 
     private static async Task<IResult> SignInAsync(
-        SessionRequest request, IIdentityTokenValidator validator, SessionService sessions, NpgsqlDataSource db,
+        SessionRequest request, IIdentityTokenValidator validator, SessionService sessions, NpgsqlDataSource db, HttpContext http,
         CancellationToken cancellationToken)
     {
         if (request.Provider is not ("apple" or "google"))
@@ -76,6 +77,11 @@ public static class AuthEndpoints
         userId ??= await ClaimProvisionedAccountAsync(connection, transaction, request, identity);
         var isNewUser = userId is null;
         userId ??= await CreateAccountAsync(connection, transaction, request, identity);
+        if (isNewUser)
+        {
+            // The sign-up address, as today's salted hash only (migration 0054): many accounts from one address in a day.
+            await ClientSignals.RecordAddressAsync(connection, transaction, http, userId.Value, ClientSignals.SignUp, null);
+        }
 
         var tokens = await sessions.StartAsync(connection, transaction, userId.Value);
         var me = await UserProfiles.LoadMeAsync(connection, userId.Value, transaction)

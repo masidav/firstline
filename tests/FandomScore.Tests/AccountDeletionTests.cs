@@ -105,6 +105,11 @@ public sealed class AccountDeletionTests(PostgresFixture postgres) : IAsyncLifet
             """,
             new { _artistId, Handle });
         var allocationId = await AllocationAsync();
+        // The fraud signals (0054): her phone, her sign-up and registration address, and her eligibility checks.
+        await JsonAsync(await SendAsync(HttpMethod.Put, "/v1/me/push-devices", ana, new { token = "ExponentPushToken[privacyanaphone]", platform = "ios" }), HttpStatusCode.OK);
+        await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/allocations/{allocationId}/eligibility", ana), HttpStatusCode.OK);
+        await ExecuteAsync("SELECT record_client_address(@anaId, 'signup', NULL, '203.0.113.99'), record_client_address(@anaId, 'registration', @allocationId, '203.0.113.99')",
+            new { anaId, allocationId });
         await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{allocationId}/registration", ana, new { plus_one = true }), HttpStatusCode.Created);
         await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{allocationId}/registration/guest", ana, new { handle = "privacy_ben" }), HttpStatusCode.OK);
         await SeedAsync(anaId);
@@ -113,7 +118,8 @@ public sealed class AccountDeletionTests(PostgresFixture postgres) : IAsyncLifet
         // The scan below finds her before deletion: in her row, her listening, her words, and others' notices.
         var before = (await ColumnsContainingAsync(anaId.ToString(), uuidValue: anaId))
             .Concat(await ColumnsContainingAsync(Marker)).Concat(await ColumnsContainingAsync(Handle)).ToHashSet();
-        foreach (var column in new[] { "users.handle", "users.email", "notifications.data", "user_plays.user_id", "album_logs.review", "submissions.extracted", "idempotency_keys.response" })
+        foreach (var column in new[] { "users.handle", "users.email", "notifications.data", "user_plays.user_id", "album_logs.review", "submissions.extracted", "idempotency_keys.response",
+                                       "client_address_events.user_id", "push_device_accounts.user_id", "spotify_account_links.user_id", "eligibility_views.user_id" })
         {
             Assert.Contains(column, before);
         }
@@ -122,7 +128,8 @@ public sealed class AccountDeletionTests(PostgresFixture postgres) : IAsyncLifet
 
         // At once: listening data, scores, cached responses, +1 declines, the picture, and her handle in others' notices.
         foreach (var table in new[] { "user_plays", "user_album_saves", "user_track_likes", "user_artist_signals", "spotify_connections",
-                                      "fan_overall_scores", "idempotency_keys", "push_devices", "follows", "post_reactions", "notifications" })
+                                      "fan_overall_scores", "idempotency_keys", "push_devices", "follows", "post_reactions", "notifications",
+                                      "client_address_events", "push_device_accounts", "spotify_account_links", "eligibility_views" })
         {
             var column = table == "follows" ? "follower_id" : "user_id";
             Assert.True(await ScalarAsync<long>($"SELECT count(*) FROM {table} WHERE {column} = @anaId", new { anaId }) == 0, table);

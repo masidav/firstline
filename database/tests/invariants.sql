@@ -2927,4 +2927,245 @@ BEGIN
   ASSERT (SELECT sum(removed) FROM prune_expired_records()) = 0, 'repeating removes nothing more';
 END $$;
 
+-- ------------------------------------------------------------ bot and shared-device signals (0054)
+-- Hashes: an address matches itself today and nothing else, no raw address is kept, the salt is made once; a push
+-- token and a Spotify account each leave a history row per account; eligibility checks are counted per day.
+DO $$
+DECLARE a uuid; b uuid; h1 bytea; h2 bytea; al uuid; ev uuid; art uuid;
+BEGIN
+  INSERT INTO users (handle, email) VALUES ('sig_a', 'sig_a@example.test') RETURNING id INTO a;
+  INSERT INTO users (handle, email) VALUES ('sig_b', 'sig_b@example.test') RETURNING id INTO b;
+  h1 := client_address_hash('203.0.113.7');
+  h2 := client_address_hash('203.0.113.7');
+  ASSERT h1 = h2 AND octet_length(h1) = 32, 'same address, same day: same hash';
+  ASSERT client_address_hash('203.0.113.8') <> h1, 'another address: another hash';
+  ASSERT (SELECT count(*) FROM signal_salts WHERE key = 'address:' || (now() AT TIME ZONE 'UTC')::date) = 1, 'one salt a day';
+  ASSERT spotify_account_hash('sp-x') = spotify_account_hash('sp-x') AND spotify_account_hash('sp-x') <> spotify_account_hash('sp-y'), 'spotify hash';
+
+  PERFORM record_client_address(a, 'signup', NULL, '203.0.113.7');
+  PERFORM record_client_address(b, 'signup', NULL, NULL);
+  PERFORM record_client_address(b, 'signup', NULL, '');
+  ASSERT (SELECT count(*) FROM client_address_events WHERE user_id = a AND address_hash = h1 AND kind = 'signup') = 1, 'recorded';
+  ASSERT NOT EXISTS (SELECT 1 FROM client_address_events WHERE user_id = b), 'no address, nothing recorded';
+  ASSERT NOT EXISTS (SELECT 1 FROM client_address_events WHERE encode(address_hash, 'escape') LIKE '%203.0.113%'), 'no raw address';
+
+  -- One phone, two accounts: the history keeps both after the token moves.
+  INSERT INTO push_devices (user_id, token, platform) VALUES (a, 'ExponentPushToken[sigphone00001]', 'ios');
+  INSERT INTO push_devices (user_id, token, platform) VALUES (b, 'ExponentPushToken[sigphone00001]', 'ios')
+  ON CONFLICT ON CONSTRAINT push_devices_token_key DO UPDATE SET user_id = EXCLUDED.user_id, last_seen_at = now();
+  ASSERT (SELECT count(*) FROM push_devices WHERE token = 'ExponentPushToken[sigphone00001]') = 1, 'one device row';
+  ASSERT (SELECT array_agg(user_id ORDER BY first_seen_at) FROM push_device_accounts
+           WHERE token_hash = sha256(convert_to('ExponentPushToken[sigphone00001]', 'UTF8'))) = ARRAY[a, b], 'both accounts in the history';
+
+  -- One Spotify account, connected by a, disconnected, then connected by b.
+  INSERT INTO spotify_connections (user_id, spotify_user_id, refresh_token_enc, scopes) VALUES (a, 'sp-sig-shared', '\x01', '{}');
+  DELETE FROM spotify_connections WHERE user_id = a;
+  INSERT INTO spotify_connections (user_id, spotify_user_id, refresh_token_enc, scopes) VALUES (b, 'sp-sig-shared', '\x01', '{}');
+  ASSERT (SELECT count(DISTINCT user_id) FROM spotify_account_links WHERE account_hash = spotify_account_hash('sp-sig-shared')) = 2,
+         'both accounts in the Spotify history';
+  ASSERT NOT EXISTS (SELECT 1 FROM spotify_account_links WHERE encode(account_hash, 'escape') LIKE '%sp-sig%'), 'no raw Spotify id';
+
+  INSERT INTO artists (name, spotify_artist_id) VALUES ('Sig Artist', 'sp-sig-artist') RETURNING id INTO art;
+  INSERT INTO artist_baselines (artist_id, dist_params, curve) VALUES (art, '{}', '[]');
+  UPDATE artists SET status = 'active', catalog_loaded_at = now() WHERE id = art;
+  INSERT INTO events (artist_id, name, city_id, starts_at) VALUES (art, 'Sig Show', 'us-il-chicago', now() + interval '30 days') RETURNING id INTO ev;
+  INSERT INTO allocations (event_id, tickets, face_value_cents, min_raw_score, registration_opens_at, registration_closes_at, published_at)
+  VALUES (ev, 10, 4500, 0, now() - interval '1 hour', now() + interval '6 days', now()) RETURNING id INTO al;
+  PERFORM record_eligibility_view(a, al);
+  PERFORM record_eligibility_view(a, al);
+  PERFORM record_eligibility_view(a, al);
+  ASSERT (SELECT views FROM eligibility_views WHERE user_id = a AND allocation_id = al AND day = (now() AT TIME ZONE 'UTC')::date) = 3, 'counted per day';
+  ASSERT (SELECT last_viewed_at >= first_viewed_at FROM eligibility_views WHERE user_id = a AND allocation_id = al), 'times kept';
+
+  -- Deleting the account removes every signal at once.
+  UPDATE users SET deleted_at = now() WHERE id = a;
+  ASSERT NOT EXISTS (SELECT 1 FROM client_address_events WHERE user_id = a) AND NOT EXISTS (SELECT 1 FROM push_device_accounts WHERE user_id = a)
+     AND NOT EXISTS (SELECT 1 FROM spotify_account_links WHERE user_id = a) AND NOT EXISTS (SELECT 1 FROM eligibility_views WHERE user_id = a),
+         'deletion scrubs the signals';
+  ASSERT EXISTS (SELECT 1 FROM push_device_accounts WHERE user_id = b) AND EXISTS (SELECT 1 FROM spotify_account_links WHERE user_id = b),
+         'the other account keeps its rows';
+
+  -- Retention: rows past their period and old daily salts go; today's stay.
+  INSERT INTO client_address_events (user_id, kind, day, address_hash, at) VALUES (b, 'signup', current_date - 31, h1, now() - interval '31 days');
+  INSERT INTO signal_salts (key, salt, created_at) VALUES ('address:2020-01-01', h1, now() - interval '3 days');
+  INSERT INTO push_device_accounts (token_hash, user_id, first_seen_at, last_seen_at) VALUES (sha256('old'::bytea), b, now() - interval '91 days', now() - interval '91 days');
+  INSERT INTO spotify_account_links (account_hash, user_id, first_linked_at, last_linked_at) VALUES (sha256('old'::bytea), b, now() - interval '181 days', now() - interval '181 days');
+  INSERT INTO eligibility_views (user_id, allocation_id, day, first_viewed_at, last_viewed_at) VALUES (b, al, current_date - 91, now() - interval '91 days', now() - interval '91 days');
+  ASSERT (SELECT sum(removed) FROM prune_client_signals()) = 5, 'five old rows pruned';
+  ASSERT (SELECT sum(removed) FROM prune_client_signals()) = 0, 'repeating removes nothing more';
+  ASSERT EXISTS (SELECT 1 FROM signal_salts WHERE key = 'address:' || (now() AT TIME ZONE 'UTC')::date), 'today''s salt stays';
+  ASSERT EXISTS (SELECT 1 FROM signal_salts WHERE key = 'spotify_account'), 'the Spotify salt stays';
+  ASSERT EXISTS (SELECT 1 FROM push_device_accounts WHERE user_id = b AND token_hash <> sha256('old'::bytea)), 'recent history stays';
+END $$;
+SELECT pg_temp.expect_error($$INSERT INTO client_address_events (user_id, kind, day, address_hash)
+  VALUES ((SELECT id FROM users WHERE handle = 'sig_b'), 'login', current_date, sha256('x'::bytea))$$, 'client_address_events_kind_check');
+SELECT pg_temp.expect_error($$INSERT INTO client_address_events (user_id, kind, day, address_hash)
+  VALUES ((SELECT id FROM users WHERE handle = 'sig_b'), 'registration', current_date, sha256('x'::bytea))$$, 'client_address_events_subject_check');
+SELECT pg_temp.expect_error($$INSERT INTO client_address_events (user_id, kind, day, address_hash)
+  VALUES ((SELECT id FROM users WHERE handle = 'sig_b'), 'signup', current_date, '\x01')$$, 'client_address_events_address_hash_check');
+
+-- The seven rules: each fires at its threshold and not below it, with counts only in the evidence; the sweep reaches
+-- every account of a cluster, once; a cleared rule waits its cooldown.
+DO $$
+DECLARE staff uuid; art uuid; ev1 uuid; ev2 uuid; al1 uuid; al2 uuid; u uuid; i int; hits jsonb;
+        dev uuid[]; pair uuid[]; addr uuid[]; addr4 uuid[]; sp uuid[]; sp_pair uuid[]; hop uuid; hl uuid; hl_view uuid;
+        inst uuid; inst_one uuid; poll uuid; poll_low uuid;
+BEGIN
+  INSERT INTO users (handle, email, is_staff) VALUES ('rule_staff', 'rule_staff@example.test', true) RETURNING id INTO staff;
+  INSERT INTO artists (name, spotify_artist_id) VALUES ('Rule Artist', 'sp-rule-artist') RETURNING id INTO art;
+  INSERT INTO artist_baselines (artist_id, dist_params, curve) VALUES (art, '{}', '[]');
+  UPDATE artists SET status = 'active', catalog_loaded_at = now() WHERE id = art;
+  INSERT INTO events (artist_id, name, city_id, starts_at) VALUES (art, 'Rule Show 1', 'us-il-chicago', now() + interval '30 days') RETURNING id INTO ev1;
+  INSERT INTO events (artist_id, name, city_id, starts_at) VALUES (art, 'Rule Show 2', 'us-il-chicago', now() + interval '40 days') RETURNING id INTO ev2;
+  INSERT INTO allocations (event_id, tickets, face_value_cents, min_raw_score, registration_opens_at, registration_closes_at, published_at)
+  VALUES (ev1, 10, 4500, 0, now() - interval '1 hour', now() + interval '6 days', now()) RETURNING id INTO al1;
+  INSERT INTO allocations (event_id, tickets, face_value_cents, min_raw_score, registration_opens_at, registration_closes_at, published_at)
+  VALUES (ev2, 10, 4500, 0, now() - interval '1 hour', now() + interval '6 days', now()) RETURNING id INTO al2;
+
+  -- shared_device: three accounts on one phone fire; two don't.
+  FOR i IN 1..3 LOOP
+    INSERT INTO users (handle, email) VALUES ('rule_dev' || i, 'rule_dev' || i || '@example.test') RETURNING id INTO u;
+    dev := dev || u;
+    INSERT INTO push_devices (user_id, token, platform) VALUES (u, 'ExponentPushToken[rulephone0001]', 'ios')
+    ON CONFLICT ON CONSTRAINT push_devices_token_key DO UPDATE SET user_id = EXCLUDED.user_id, last_seen_at = now();
+  END LOOP;
+  FOR i IN 1..2 LOOP
+    INSERT INTO users (handle, email) VALUES ('rule_pair' || i, 'rule_pair' || i || '@example.test') RETURNING id INTO u;
+    pair := pair || u;
+    INSERT INTO push_devices (user_id, token, platform) VALUES (u, 'ExponentPushToken[rulephone0002]', 'ios')
+    ON CONFLICT ON CONSTRAINT push_devices_token_key DO UPDATE SET user_id = EXCLUDED.user_id, last_seen_at = now();
+  END LOOP;
+  hits := fraud_rule_hits(dev[1]);
+  ASSERT hits -> 'shared_device' = jsonb_build_object('devices', 1, 'most_accounts', 3, 'days', 90), hits::text;
+  ASSERT (SELECT array_agg(k) FROM jsonb_object_keys(hits) k) = ARRAY['shared_device'], hits::text;
+  ASSERT fraud_rule_hits(pair[1]) = '{}', 'two accounts on a phone: ' || fraud_rule_hits(pair[1])::text;
+
+  -- shared_address_signups: five sign-ups from one address in a day fire; four from another don't.
+  FOR i IN 1..5 LOOP
+    INSERT INTO users (handle, email) VALUES ('rule_addr' || i, 'rule_addr' || i || '@example.test') RETURNING id INTO u;
+    addr := addr || u;
+    PERFORM record_client_address(u, 'signup', NULL, '198.51.100.5');
+  END LOOP;
+  FOR i IN 1..4 LOOP
+    INSERT INTO users (handle, email) VALUES ('rule_four' || i, 'rule_four' || i || '@example.test') RETURNING id INTO u;
+    addr4 := addr4 || u;
+    PERFORM record_client_address(u, 'signup', NULL, '198.51.100.4');
+  END LOOP;
+  hits := fraud_rule_hits(addr[5]);
+  ASSERT (hits -> 'shared_address_signups' ->> 'accounts')::int = 5 AND (SELECT array_agg(k) FROM jsonb_object_keys(hits) k) = ARRAY['shared_address_signups'], hits::text;
+  ASSERT fraud_rule_hits(addr4[1]) = '{}', 'four sign-ups: ' || fraud_rule_hits(addr4[1])::text;
+
+  -- shared_address_registrations: five accounts registering for one show from one address fire (each registered once,
+  -- so neither bot rule does); the four from the other address registering don't.
+  FOREACH u IN ARRAY addr4 || dev[1] LOOP
+    INSERT INTO allocation_registrations (allocation_id, event_id, user_id, hub_city_ids, percentile, raw_score, is_estimated, baseline_weight, score_computed_at)
+    VALUES (al1, ev1, u, '{us-il-chicago}', 50, 50, false, 0.5, now());
+    PERFORM record_client_address(u, 'registration', al1, '198.51.100.4');
+  END LOOP;
+  hits := fraud_rule_hits(addr4[1]);
+  ASSERT (hits -> 'shared_address_registrations' -> 0 ->> 'accounts')::int = 5 AND hits -> 'shared_address_registrations' -> 0 ->> 'allocation_id' = al1::text
+     AND (SELECT array_agg(k) FROM jsonb_object_keys(hits) k) = ARRAY['shared_address_registrations'], hits::text;
+  FOREACH u IN ARRAY addr[1:4] LOOP
+    INSERT INTO allocation_registrations (allocation_id, event_id, user_id, hub_city_ids, percentile, raw_score, is_estimated, baseline_weight, score_computed_at)
+    VALUES (al1, ev1, u, '{us-il-chicago}', 50, 50, false, 0.5, now());
+    PERFORM record_client_address(u, 'registration', al1, '198.51.100.5');
+  END LOOP;
+  ASSERT NOT (fraud_rule_hits(addr[1]) ? 'shared_address_registrations'), 'four registrations from one address: ' || fraud_rule_hits(addr[1])::text;
+
+  -- spotify_account_reuse: one Spotify account through three fan accounts fires for each; through two doesn't; one
+  -- fan hopping through three Spotify accounts fires.
+  FOR i IN 1..3 LOOP
+    INSERT INTO users (handle, email) VALUES ('rule_sp' || i, 'rule_sp' || i || '@example.test') RETURNING id INTO u;
+    sp := sp || u;
+    DELETE FROM spotify_connections WHERE spotify_user_id = 'sp-rule-shared';
+    INSERT INTO spotify_connections (user_id, spotify_user_id, refresh_token_enc, scopes) VALUES (u, 'sp-rule-shared', '\x01', '{}');
+  END LOOP;
+  FOR i IN 1..2 LOOP
+    INSERT INTO users (handle, email) VALUES ('rule_sppair' || i, 'rule_sppair' || i || '@example.test') RETURNING id INTO u;
+    sp_pair := sp_pair || u;
+    DELETE FROM spotify_connections WHERE spotify_user_id = 'sp-rule-pair';
+    INSERT INTO spotify_connections (user_id, spotify_user_id, refresh_token_enc, scopes) VALUES (u, 'sp-rule-pair', '\x01', '{}');
+  END LOOP;
+  INSERT INTO users (handle, email) VALUES ('rule_hop', 'rule_hop@example.test') RETURNING id INTO hop;
+  FOR i IN 1..3 LOOP
+    DELETE FROM spotify_connections WHERE user_id = hop;
+    INSERT INTO spotify_connections (user_id, spotify_user_id, refresh_token_enc, scopes) VALUES (hop, 'sp-rule-hop' || i, '\x01', '{}');
+  END LOOP;
+  hits := fraud_rule_hits(sp[3]);
+  ASSERT hits -> 'spotify_account_reuse' = jsonb_build_object('other_accounts', 2, 'accounts_connected', 1, 'days', 180), hits::text;
+  ASSERT fraud_rule_hits(sp[1]) ? 'spotify_account_reuse', 'the first account of the three too';
+  ASSERT fraud_rule_hits(sp_pair[2]) = '{}', 'two accounts, one Spotify account: ' || fraud_rule_hits(sp_pair[2])::text;
+  hits := fraud_rule_hits(hop);
+  ASSERT hits -> 'spotify_account_reuse' = jsonb_build_object('other_accounts', 0, 'accounts_connected', 3, 'days', 180), hits::text;
+
+  -- headless_registration: two registrations with no eligibility check before them fire; with checks they don't.
+  -- (Both accounts are a day old, so instant_registration stays out of it.)
+  INSERT INTO users (handle, email, created_at) VALUES ('rule_hl', 'rule_hl@example.test', now() - interval '1 day') RETURNING id INTO hl;
+  INSERT INTO users (handle, email, created_at) VALUES ('rule_hlview', 'rule_hlview@example.test', now() - interval '1 day') RETURNING id INTO hl_view;
+  PERFORM record_eligibility_view(hl_view, al1);
+  PERFORM record_eligibility_view(hl_view, al2);
+  PERFORM pg_sleep(0.01);
+  FOREACH u IN ARRAY ARRAY[hl, hl_view] LOOP
+    INSERT INTO allocation_registrations (allocation_id, event_id, user_id, hub_city_ids, percentile, raw_score, is_estimated, baseline_weight, score_computed_at)
+    VALUES (al1, ev1, u, '{us-il-chicago}', 50, 50, false, 0.5, now()), (al2, ev2, u, '{us-il-chicago}', 50, 50, false, 0.5, now());
+  END LOOP;
+  hits := fraud_rule_hits(hl);
+  ASSERT hits -> 'headless_registration' = jsonb_build_object('registrations', 2, 'days', 30)
+     AND (SELECT array_agg(k) FROM jsonb_object_keys(hits) k) = ARRAY['headless_registration'], hits::text;
+  ASSERT fraud_rule_hits(hl_view) = '{}', 'checked first: ' || fraud_rule_hits(hl_view)::text;
+
+  -- instant_registration: two registrations minutes after sign-up fire (eligibility checked, so headless doesn't); one doesn't.
+  INSERT INTO users (handle, email) VALUES ('rule_inst', 'rule_inst@example.test') RETURNING id INTO inst;
+  INSERT INTO users (handle, email) VALUES ('rule_instone', 'rule_instone@example.test') RETURNING id INTO inst_one;
+  PERFORM record_eligibility_view(inst, al1); PERFORM record_eligibility_view(inst, al2); PERFORM record_eligibility_view(inst_one, al1);
+  PERFORM pg_sleep(0.01);
+  INSERT INTO allocation_registrations (allocation_id, event_id, user_id, hub_city_ids, percentile, raw_score, is_estimated, baseline_weight, score_computed_at)
+  VALUES (al1, ev1, inst, '{us-il-chicago}', 50, 50, false, 0.5, now()), (al2, ev2, inst, '{us-il-chicago}', 50, 50, false, 0.5, now()),
+         (al1, ev1, inst_one, '{us-il-chicago}', 50, 50, false, 0.5, now());
+  hits := fraud_rule_hits(inst);
+  ASSERT (hits -> 'instant_registration' ->> 'registrations')::int = 2 AND (hits -> 'instant_registration' ->> 'fastest_minutes')::numeric < 1
+     AND (SELECT array_agg(k) FROM jsonb_object_keys(hits) k) = ARRAY['instant_registration'], hits::text;
+  ASSERT fraud_rule_hits(inst_one) = '{}', 'one quick registration: ' || fraud_rule_hits(inst_one)::text;
+
+  -- eligibility_polling: 300 checks of one show in a day fire; 299 don't.
+  INSERT INTO users (handle, email, created_at) VALUES ('rule_poll', 'rule_poll@example.test', now() - interval '1 day') RETURNING id INTO poll;
+  INSERT INTO users (handle, email, created_at) VALUES ('rule_polllow', 'rule_polllow@example.test', now() - interval '1 day') RETURNING id INTO poll_low;
+  INSERT INTO eligibility_views (user_id, allocation_id, day, views) VALUES (poll, al1, (now() AT TIME ZONE 'UTC')::date, 300), (poll_low, al1, (now() AT TIME ZONE 'UTC')::date, 299);
+  hits := fraud_rule_hits(poll);
+  ASSERT hits -> 'eligibility_polling' -> 0 ->> 'checks' = '300' AND hits -> 'eligibility_polling' -> 0 ->> 'allocation_id' = al1::text
+     AND (SELECT array_agg(k) FROM jsonb_object_keys(hits) k) = ARRAY['eligibility_polling'], hits::text;
+  ASSERT fraud_rule_hits(poll_low) = '{}', '299 checks: ' || fraud_rule_hits(poll_low)::text;
+
+  -- Staff are never flagged, whatever they share.
+  INSERT INTO push_devices (user_id, token, platform) VALUES (staff, 'ExponentPushToken[rulephone0001]', 'ios')
+  ON CONFLICT ON CONSTRAINT push_devices_token_key DO UPDATE SET user_id = EXCLUDED.user_id, last_seen_at = now();
+  ASSERT detect_fraud(staff) IS NULL, 'staff are not flagged';
+
+  -- The sweep: every account of each cluster is flagged once, named by its reason; the controls aren't; re-running flags nobody.
+  PERFORM run_fraud_detection(interval '1 day');
+  ASSERT (SELECT count(*) FROM fraud_flags WHERE user_id = ANY (dev) AND status = 'open' AND source = 'rule') = 3, 'the three on the phone';
+  ASSERT (SELECT count(*) FROM fraud_flags WHERE user_id IN (dev[2], dev[3]) AND reason = 'shared_device') = 2, 'named shared_device';
+  -- dev1 also registered with the four: both rules in one flag, named by the first rule key (neither is a bot rule).
+  ASSERT (SELECT reason = 'duplicate_account' AND evidence -> 'rules' ? 'shared_device' AND evidence -> 'rules' ? 'shared_address_registrations'
+            FROM fraud_flags WHERE user_id = dev[1]), 'one flag with both rules';
+  ASSERT (SELECT count(*) FROM fraud_flags WHERE user_id = ANY (addr) AND reason = 'duplicate_account') = 5, 'the five sign-ups';
+  ASSERT (SELECT count(*) FROM fraud_flags WHERE user_id = ANY (addr4) AND reason = 'duplicate_account') = 4, 'the four registering with dev1';
+  ASSERT (SELECT count(*) FROM fraud_flags WHERE user_id = ANY (sp) AND reason = 'duplicate_account') = 3, 'the three on one Spotify account';
+  ASSERT (SELECT reason FROM fraud_flags WHERE user_id = hop) = 'duplicate_account', 'the hopper';
+  ASSERT (SELECT reason FROM fraud_flags WHERE user_id = hl) = 'bot' AND (SELECT reason FROM fraud_flags WHERE user_id = inst) = 'bot'
+     AND (SELECT reason FROM fraud_flags WHERE user_id = poll) = 'bot', 'bots';
+  -- Four by now: the staff member's sign-in on the phone counts (what staff share is a signal too; they just aren't flagged).
+  ASSERT (SELECT evidence -> 'rules' -> 'shared_device' ->> 'most_accounts' FROM fraud_flags WHERE user_id = dev[1]) = '4', 'counts in the evidence';
+  ASSERT NOT EXISTS (SELECT 1 FROM fraud_flags WHERE user_id IN (pair[1], pair[2], sp_pair[1], sp_pair[2], hl_view, inst_one, poll_low, staff)), 'controls untouched';
+  ASSERT (SELECT evidence::text FROM fraud_flags WHERE user_id = dev[1]) NOT LIKE '%rulephone%', 'no identifiers in the evidence';
+  ASSERT run_fraud_detection(interval '1 day') = 0, 'held fans are not flagged again';
+
+  -- Cleared: the rule waits its cooldown; a flag cleared long ago doesn't hold it back.
+  UPDATE fraud_flags SET status = 'cleared', decided_by = staff WHERE user_id = poll;
+  ASSERT detect_fraud(poll) IS NULL, 'a cleared rule waits out its cooldown';
+  -- (decided_at is the clock time, after this transaction's now(), so a 0-day cooldown would still be running.)
+  UPDATE fraud_rules SET params = params || '{"cooldown_days": -1}' WHERE rule_key = 'eligibility_polling';
+  ASSERT detect_fraud(poll) IS NOT NULL, 'after the cooldown it fires again';
+END $$;
+
 \echo ALL INVARIANT TESTS PASSED

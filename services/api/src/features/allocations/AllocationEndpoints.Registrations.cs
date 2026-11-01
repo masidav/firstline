@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Dapper;
 using FandomScore.Api.Features.Authentication;
+using FandomScore.Api.Features.Fraud;
 using FandomScore.Api.Infrastructure;
 using Npgsql;
 
@@ -95,6 +96,8 @@ public static partial class AllocationEndpoints
         var userId = user.UserId();
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
         var allocation = await LoadPublishedAllocationAsync(connection, allocationId);
+        // The app checks here before registering; a count per day is what the bot rules read (migration 0054).
+        await ClientSignals.RecordEligibilityViewAsync(connection, userId, allocationId);
         var registration = await LoadRegistrationAsync(connection, userId, allocationId);
         var reason = registration is null
             ? await connection.ExecuteScalarAsync<string?>("SELECT registration_blocker(@userId, @allocationId)", new { userId, allocationId })
@@ -157,7 +160,8 @@ public static partial class AllocationEndpoints
     // Registers (201), or updates the +1 on an existing registration (200): while registration is open the +1 can be
     // turned on or off; after being selected it can be added if a seat is free.
     private static async Task<IResult> RegisterAsync(
-        ClaimsPrincipal user, Guid allocationId, RegistrationRequest? request, NpgsqlDataSource db, CancellationToken cancellationToken)
+        ClaimsPrincipal user, Guid allocationId, RegistrationRequest? request, NpgsqlDataSource db, HttpContext http,
+        CancellationToken cancellationToken)
     {
         var userId = user.UserId();
         var plusOne = request?.PlusOne;
@@ -183,6 +187,8 @@ public static partial class AllocationEndpoints
             try
             {
                 await connection.ExecuteAsync("SELECT register_for_allocation(@userId, @allocationId)", new { userId, allocationId }, transaction);
+                // The client address, as today's salted hash only (migration 0054): many accounts for one show from one address.
+                await ClientSignals.RecordAddressAsync(connection, transaction, http, userId, ClientSignals.Registration, allocationId);
                 if (plusOne == true)
                 {
                     await connection.ExecuteAsync(

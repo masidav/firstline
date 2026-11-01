@@ -2448,6 +2448,9 @@ paths:
         same show), or `named_as_guest` (someone named the fan as their +1 for it; `POST /events/{eventId}/guest-invite/decline`
         frees them). `raw_score`, `percentile`, and `hub_match` are the fan's
         current standing; a registration keeps the values from when it was made.
+        Clients call this before offering to register (the app does): a registration with no eligibility check of
+        the allocation before it is a bot signal for staff review, as is checking hundreds of times a day. Only a daily
+        count per allocation is kept (see `docs/security/bot-and-shared-device-detection.md`).
         `standing` (while registration is upcoming or open, for a fan who can register or has) says where they would
         place if the draw ran now, counting equal scores against them. `likely` is true only when the seats of
         everyone ahead plus the fan's own fit within `tickets - margin_seats` (25 to start), a buffer for fans who

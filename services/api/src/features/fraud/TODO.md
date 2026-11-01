@@ -9,8 +9,12 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       rapid plays, spikes before fan tickets. "Click everything" done 2026-10-30 (migration 0045): `burst_engagement`
       on likes and album saves; extended the same day (migration 0048) to playlist adds (Spotify's `added_at`, now
       synced) and the follow (`followed_since`, set when the sync first sees it). Undated items a fan already had when
-      the sync first looked are baseline and never count (migration 0049, decided 2026-10-30). Devices and networks:
-      no data yet.*
+      the sync first looked are baseline and never count (migration 0049, decided 2026-10-30). Devices and networks
+      done 2026-11-01 (migration 0054, `docs/security/bot-and-shared-device-detection.md`): `shared_device` (push
+      token history), `shared_address_signups` and `shared_address_registrations` (daily-salted address hashes, 30
+      days), `spotify_account_reuse` (Spotify account history), and the bot rules `headless_registration`,
+      `instant_registration`, `eligibility_polling` (daily eligibility counts). Not detectable: clusters on separate
+      phones, networks, and Spotify accounts; request cadence (no per-request log kept); payments (none exist).*
 - [x] Keep a living document of known gaming strategies and the mitigation for each. *`docs/security/gaming-strategies.md`, 2026-10-29.*
 - [ ] Freeze each fan's eligibility snapshot when an allocation's registration closes so late gaming has no effect.
 - [ ] Verify one person per account at registration (phone or ID check) and record only the verification result, not raw documents.
@@ -28,7 +32,10 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       a playlist plus a follow, with the kinds in the evidence; a big old undated playlist on the first sync raises
       nothing, undated adds on a later sync do), SpotifySyncJobTests (playlist adds and the follow keep their dates
       across syncs; baseline on the first sync and for a newly active artist, fixed across re-syncs) and
-      `invariants.sql` (0045, 0048, 0049).*
+      `invariants.sql` (0045, 0048, 0049). 2026-11-01: one FraudReviewApiTests test per 0054 rule (fires at the
+      threshold, not below it, twice-run sweep raises one flag, counts only in the evidence; a cleared rule waits),
+      AccountDeletionTests seeds and scans the four signal tables, `invariants.sql` (0054: hashes, histories, deletion,
+      retention, constraints, every rule, the cluster sweep, the cooldown).*
 - [ ] Run the relevant tests and record actual results. *2026-10-30: `dotnet test` FraudReviewApiTests 9/9,
       SpotifySyncJobTests 15/15, DatabaseTests 2/2. After migration 0049: full suite 383/383 (FraudReviewApiTests 10,
       SpotifySyncJobTests 16).*

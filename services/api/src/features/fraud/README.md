@@ -14,6 +14,20 @@ Migration `0042_fraud_review.sql`, endpoints in `FraudEndpoints.cs`. Tests: `Fra
   `kinds`: liked, playlist, album, follow). The flag is named by the strongest reason: bot, then streaming_farm.
   A fan already held isn't flagged again; a rule whose flag staff cleared waits `cooldown_days` (30). Thresholds are
   data (`fraud_rules.params`), provisional. Strategies and rules: `docs/security/gaming-strategies.md`.
+- **Linked accounts and clients that aren't the app** (migration 0054, 2026-11-01; design and privacy trade-off in
+  `docs/security/bot-and-shared-device-detection.md`). Four short-lived signals, all counts or salted hashes, none in
+  the fan's data download, all deleted at once with the account: the client address at sign-up and at each
+  registration as `sha256(daily salt ‖ address)` (`client_address_events`, 30 days; the daily salt goes after 2, so old
+  hashes match nothing; `ClientSignals.cs` passes the address as a bound parameter and never stores it), which
+  accounts registered the same push token (`push_device_accounts`, 90 days, trigger on `push_devices`), which accounts
+  connected the same Spotify account (`spotify_account_links`, 180 days, trigger on `spotify_connections`), and a daily
+  count of the fan's eligibility checks per allocation (`eligibility_views`, 90 days, written by `GET
+  /allocations/{id}/eligibility`). Rules: `shared_device` (shared_device), `shared_address_signups`,
+  `shared_address_registrations`, `spotify_account_reuse` (duplicate_account), `headless_registration`,
+  `instant_registration`, `eligibility_polling` (bot). The sweep also checks fans who signed up, registered, checked
+  eligibility, registered a phone, or connected Spotify in the last day, and every account sharing a device,
+  address-day, or Spotify account with one of them. Evidence holds counts, days, and allocation ids only; the staff
+  screen shows it as is. `privacy.retention` prunes the tables (`prune_client_signals()`).
 - **Hidden until reviewed** (migration 0044, decided 2026-10-30): a rule flag isn't shown to the fan until staff uphold
   it (`shown_to_fan_at`). Until then: no notice, nothing at `/me/fraud-review` or in the data download, no appeal, and
   registering is refused with the neutral `registration_unavailable` ("Registration isn't available for your account
@@ -49,8 +63,12 @@ Fan: `/account-review` (linked from the show page and the notices). Staff: `/fra
 audit lookup), linked from the profile.
 
 ## Known limitations
-- Detection reads only the play ledger and the synced library: no device, network, or payment signals, so linked
-  accounts aren't detected (see `docs/security/gaming-strategies.md`). A "click everything" burst is seen once the daily
+- Linked accounts are seen only through a shared phone (push token), a shared address on the same day, or a shared
+  Spotify account; a cluster on different phones, networks, and Spotify accounts, or one that spreads sign-ups across
+  days, isn't. Request cadence (a script on exact intervals) isn't measured: the API keeps no per-request log, only
+  the daily eligibility count. No payment signals (there are no payments); no minimum account age applies to
+  registering (part of the open eligibility-model decision). See `docs/security/bot-and-shared-device-detection.md`.
+- Play-pattern detection reads only the play ledger and the synced library. A "click everything" burst is seen once the daily
   sync has run; a save undone before then never is. Undated items (very old playlists, every follow) that were already
   there at the fan's first sync, or when the artist became active, are baseline and never seen as a burst, even if
   they were added just before (decided 2026-10-30, migration 0049). An artist paused and made active again keeps its

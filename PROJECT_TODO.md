@@ -346,7 +346,19 @@ Details: [Notifications](services/api/src/features/notifications/TODO.md) · [Mo
       first time the sync could see it (the fan's first sync, or the first after the artist became active; everything
       stamped before 0049) as baseline: date unknown, never part of a burst, fixed for the life of the row. Only
       undated items that appear between two syncs, and items Spotify dates, count. Verified: `dotnet test`
-      (FraudReviewApiTests 10, SpotifySyncJobTests 16, DataExportApiTests, invariants 0049).*
+      (FraudReviewApiTests 10, SpotifySyncJobTests 16, DataExportApiTests, invariants 0049).
+      Devices, networks, and bots done 2026-11-01 (migration 0054; design and privacy trade-off in
+      `docs/security/bot-and-shared-device-detection.md`): four short-lived signals, all hashed or counted, none in
+      the data download, deleted at once with the account (sign-up and registration address as a daily-salted hash,
+      30 days; push token history, 90; Spotify account history, 180; daily eligibility-check counts, 90), and seven
+      rules in the same sweep: `shared_device`, `shared_address_signups`, `shared_address_registrations`,
+      `spotify_account_reuse`, `headless_registration`, `instant_registration`, `eligibility_polling`. Evidence is
+      counts only; the staff `/fraud` screen shows it unchanged. No auto-ban; the rate limiter is untouched. Verified:
+      `dotnet build`, `dotnet test` (FraudReviewApiTests 17, AccountDeletionTests 2, invariants 0054, full suite),
+      `npm test` and `npm run typecheck` in apps/mobile (API types regenerated, comments only). Still missing: request
+      cadence (no per-request log, by choice; Cloud Armor is the owner's call), clusters on separate phones, networks,
+      and Spotify accounts, payment signals (no payments), and a minimum account age (part of the open eligibility
+      model, not invented here).*
 - [ ] Fraud detection thresholds set provisionally (2026-10-29), confirm or change: 24/7 = plays in 20+ hours of a day
       on 3 of 14 days; rapid = 70 % of 100+ plays under 40 s apart in a week; looping = 300+ plays of an artist in a
       week, 90 % on 3 tracks (artists with 10+ tracks); spike = 300+ plays in a week and 10x the usual week while the
@@ -355,7 +367,14 @@ Details: [Notifications](services/api/src/features/notifications/TODO.md) · [Mo
       80 % of the fan's saves of that artist, within 7 days of sign-up or while fan tickets are open or within 14 days
       (playlist adds and the follow count since migration 0048, dated by Spotify's `added_at` or the sync's first
       sighting; undated items already there at the first sync don't count, migration 0049). *Burst confirmed 2026-10-30: a genuine new fan saving a whole discography on joining goes to staff
-      review, accepted. The four play-pattern thresholds are still provisional.*
+      review, accepted. The four play-pattern thresholds are still provisional.* Devices, networks, and bots
+      (2026-11-01, migration 0054): shared device = 3+ accounts on one phone in 90 days; shared address = 5+ sign-ups
+      from one address on one UTC day, or 5+ accounts registering for one show from one address on one day, in the
+      last 30 days; Spotify reuse = one Spotify account through 3+ fan accounts in 180 days, or one fan through 3+
+      Spotify accounts; headless = 2+ registrations in 30 days without the app's eligibility check first; instant =
+      2+ registrations within 10 minutes of sign-up; polling = 300+ eligibility checks of one show in a day. Signal
+      retention (address hashes 30 days with a 2-day salt, device history 90, Spotify history 180, eligibility counts
+      90) is provisional too.
 - [x] Automatic flags stay hidden from the fan until a person reviews them (decided 2026-10-30): registering is refused
       with a neutral "Registration isn't available for your account right now"; no notice, review screen, appeal, or
       data-download trace until staff uphold; an unreviewed flag leaves the fan in the draw, and staff are told when a
