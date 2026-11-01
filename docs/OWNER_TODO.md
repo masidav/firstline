@@ -107,6 +107,16 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   SQL
   ```
 
+- [ ] **9. Apply Terraform for the archive bucket's old versions** (added 2026-11-01, commit 32ce75f). The archive
+  bucket is versioned, so redacted proof photos deleted by fans or staff lived on as old versions forever; the new
+  lifecycle rule deletes them 30 days after they are replaced or deleted. From `infrastructure/terraform/envs/beta`:
+  `terraform plan` should show only an in-place change to the archive bucket (plus the dashboard's usual cosmetic
+  diff), then `terraform apply`.
+
+- [ ] **10. Run the beta on-sale load test** (`tools/load/README.md`, "Running it on beta"). Claude may not run
+  `db-shell.sh` on beta, so either run the steps yourself and paste the k6 summaries back, or allow
+  `infrastructure/k8s/db-shell.sh beta` and the `load-onsale` Job commands for a session.
+
 ## B. Features that need a provider account
 
 - [x] **Spotify** (listening score, artist search, album catalog, Spotify connect). On beta since 2026-10-31: app
