@@ -554,7 +554,18 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
       filtering, so probes and health checks still pass); `nonce` is required on sign-in (every client already sent
       one; dev sign-in now does too). Verified: `dotnet build` (0 warnings), `dotnet test` (366 passed, 0 failed), `npm test` (mobile 300, promoter-web 10) and
       `npm run typecheck` in apps/mobile and apps/promoter-web.*
-- [ ] Add tests for failure cases, concurrency, and duplicate requests.
+- [x] Add tests for failure cases, concurrency, and duplicate requests. *Done 2026-11-01: real parallel requests
+      (`Task.WhenAll`) for first sign-ins, one refresh token, journal logs (same `Idempotency-Key`; one album twelve
+      times at once against the relisten cap; review edits racing a delete), proof submissions (same key; three staff
+      approving; approve vs reject; withdraw vs approve; double withdraw), reservation returns (one return sent six
+      times; three holders at once), grab-bag slots, and artist adds (same artist; three adds at the daily limit); a
+      Spotify outage partway through a sync then the retry; and writes to missing or deleted things (404 `not_found`).
+      Points are checked in `score_events` throughout. Bugs fixed: a first sign-in sent twice answered `409
+      handle_taken` although the account was made (sign-ins per provider account now take turns); the same song put in
+      two grab-bag slots at once was a 500 (bag writes per fan take turns); a double-tapped withdrawal answered "already
+      verified" (now 404). No schema change. Not separately raced (constraints or locks already cover them): org
+      members, hub cities, +1 naming, fraud appeals, upload finishing; a push job that dies between sending and
+      recording can resend (at-least-once, by design). Verified: `dotnet build` 0 warnings, `dotnet test` 406/406.*
 - [ ] Document decisions that remain proposed or open in the source README.
 
 ## Open decisions

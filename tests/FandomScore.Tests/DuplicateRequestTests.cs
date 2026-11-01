@@ -127,6 +127,54 @@ public sealed class DuplicateRequestTests(PostgresFixture postgres) : IAsyncLife
         Assert.Equal(1, await ScalarAsync<int>("SELECT count(*) FROM score_events WHERE source_type = 'trivia' AND reversed_at IS NULL"));
     }
 
+    [Fact]
+    public async Task Writes_to_missing_or_deleted_things_are_a_documented_404_not_a_server_error()
+    {
+        var ana = await SignInAsync("ana");
+        var ben = await SignInAsync("ben");
+        await SignInAsync("gone");
+        Guid logId;
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            logId = await connection.ExecuteScalarAsync<Guid>(
+                """
+                INSERT INTO album_logs (user_id, album_id, visibility, deleted_at)
+                SELECT u.id, al.id, 'public', now() FROM users u, albums al WHERE u.handle = 'ana' AND al.artist_id = @_artistId LIMIT 1
+                RETURNING id
+                """,
+                new { _artistId });
+            await connection.ExecuteAsync("UPDATE users SET deleted_at = now() WHERE handle = 'gone'");
+        }
+
+        var missing = Guid.NewGuid();
+        (HttpMethod Method, string Path, object? Body)[] writes =
+        [
+            (HttpMethod.Put, $"/v1/reactions/log/{logId}/fire", null),
+            (HttpMethod.Put, $"/v1/reactions/log/{missing}/fire", null),
+            (HttpMethod.Put, "/v1/users/gone/follow", null),
+            (HttpMethod.Put, "/v1/users/nobody_here/follow", null),
+            (HttpMethod.Patch, $"/v1/logs/{logId}", new { rating = 5 }),
+            (HttpMethod.Delete, $"/v1/logs/{missing}", null),
+            (HttpMethod.Put, $"/v1/prompts/{missing}/answer", new { body = "An answer" }),
+            (HttpMethod.Post, $"/v1/me/trivia/{missing}/answer", new { choice = 0 }),
+            (HttpMethod.Post, $"/v1/reservations/{missing}/return", null),
+            (HttpMethod.Put, $"/v1/allocations/{missing}/registration", null),
+            (HttpMethod.Delete, $"/v1/submissions/{missing}", null),
+            (HttpMethod.Put, $"/v1/submissions/{missing}/share", new { shared = true }),
+        ];
+        foreach (var (method, path, body) in writes)
+        {
+            var problem = await JsonAsync(await SendAsync(method, path, ben, body), HttpStatusCode.NotFound);
+            Assert.True(problem.GetProperty("code").GetString() is "not_found", $"{method} {path}: {problem.GetProperty("code").GetString()}");
+        }
+
+        // A report on something that doesn't exist is refused the same way, and nothing was written for any of them.
+        await JsonAsync(await SendAsync(HttpMethod.Post, "/v1/reports", ana, new { target_type = "log", target_id = missing, reason = "spam" }),
+            HttpStatusCode.NotFound);
+        Assert.Equal((0, 0, 0), (await ScalarAsync<int>("SELECT count(*)::int FROM post_reactions"),
+            await ScalarAsync<int>("SELECT count(*)::int FROM follows"), await ScalarAsync<int>("SELECT count(*)::int FROM reports")));
+    }
+
     /// <summary>Sends <see cref="Copies"/> copies at once; every answer must have the expected status.</summary>
     private static async Task<List<JsonElement>> AllAtOnceAsync(Func<Task<HttpResponseMessage>> send, HttpStatusCode expected)
     {

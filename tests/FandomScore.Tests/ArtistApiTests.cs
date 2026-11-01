@@ -284,6 +284,41 @@ public sealed class ArtistApiTests(PostgresFixture postgres) : IAsyncLifetime, I
     }
 
     [Fact]
+    public async Task Adds_sent_at_once_track_an_artist_once_and_cannot_race_past_the_daily_limit()
+    {
+        // Several fans (and a double tap) add the same new artist at once: one artist, one onboarding job.
+        var tokens = new[] { await SignInAsync("fan_one"), await SignInAsync("fan_two"), await SignInAsync("fan_three") };
+        var responses = await Task.WhenAll(tokens.Concat(tokens).Select(t => AddAsync(t, GeeseId)));
+        Assert.Single(responses, r => r.StatusCode == HttpStatusCode.Created);
+        Assert.All(responses, r => Assert.True(r.StatusCode is HttpStatusCode.Created or HttpStatusCode.OK, r.StatusCode.ToString()));
+        await using var connection = await _db.OpenConnectionAsync();
+        Assert.Equal(1, await connection.ExecuteScalarAsync<int>("SELECT count(*)::int FROM artists WHERE spotify_artist_id = @GeeseId", new { GeeseId }));
+        Assert.Equal(1, await connection.ExecuteScalarAsync<int>("SELECT count(*)::int FROM jobs WHERE kind = 'artist.onboard'"));
+
+        // A fan one add short of the limit sends three different adds at once: one gets in, two are told the limit.
+        var limited = await SignInAsync("fan_four");
+        var me = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me", limited), HttpStatusCode.OK);
+        await connection.ExecuteAsync(
+            "INSERT INTO artists (name, spotify_artist_id, added_by) SELECT 'Artist ' || n, 'sp-' || n, @userId FROM generate_series(1, 49) n",
+            new { userId = Guid.Parse(me.GetProperty("id").GetString()!) });
+        string[] newIds = ["1bbbbbbbbbbbbbbbbbbbbb", "2bbbbbbbbbbbbbbbbbbbbb", "3bbbbbbbbbbbbbbbbbbbbb"];
+        foreach (var id in newIds)
+        {
+            _spotify.Artists.Add(new FakeSpotify.Artist(id, $"New {id[0]}"));
+        }
+
+        var raced = await Task.WhenAll(newIds.Select(id => AddAsync(limited, id)));
+        Assert.Single(raced, r => r.StatusCode == HttpStatusCode.Created);
+        foreach (var refused in raced.Where(r => r.StatusCode != HttpStatusCode.Created))
+        {
+            Assert.Equal("artist_add_limit", (await JsonAsync(refused, HttpStatusCode.TooManyRequests)).GetProperty("code").GetString());
+        }
+
+        Assert.Equal(1, await connection.ExecuteScalarAsync<int>(
+            "SELECT count(*)::int FROM artists WHERE spotify_artist_id = ANY(@newIds)", new { newIds }));
+    }
+
+    [Fact]
     public async Task The_daily_add_limit_returns_artist_add_limit()
     {
         var token = await SignInAsync("fan_one");

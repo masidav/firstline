@@ -349,6 +349,13 @@ public static class SubmissionEndpoints
         if (await connection.ExecuteAsync(
                 "DELETE FROM submissions WHERE id = @submissionId AND status <> 'verified'", new { submissionId }) == 0)
         {
+            // Nothing deleted: either an approval landed first, or a copy of this request (a double tap) withdrew it.
+            if (!await connection.ExecuteScalarAsync<bool>(
+                    "SELECT EXISTS (SELECT 1 FROM submissions WHERE id = @submissionId)", new { submissionId }))
+            {
+                throw NotFound();
+            }
+
             throw new ApiProblemException(StatusCodes.Status409Conflict, "conflict", "Already verified",
                 "Verified submissions can't be withdrawn.");
         }

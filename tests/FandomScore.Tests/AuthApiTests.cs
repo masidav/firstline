@@ -189,6 +189,51 @@ public sealed class AuthApiTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_first_sign_in_sent_several_times_at_once_makes_one_account_and_signs_every_copy_in()
+    {
+        // A double tap on "Create account": the copies race to create the same account. One creates it; the others
+        // must sign in to it, not report the handle or email as taken.
+        var idToken = TestAuth.IdToken("g-race", "race@example.test");
+        var responses = await Task.WhenAll(Enumerable.Range(0, 6).Select(_ => PostSignInAsync(idToken, "racer")));
+
+        var bodies = new List<JsonElement>();
+        foreach (var response in responses)
+        {
+            Assert.True(response.StatusCode is HttpStatusCode.Created or HttpStatusCode.OK,
+                $"{response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
+            bodies.Add(await JsonAsync(response, response.StatusCode));
+        }
+
+        Assert.Single(responses, r => r.StatusCode == HttpStatusCode.Created);
+        Assert.Single(bodies.Select(b => b.GetProperty("user").GetProperty("id").GetGuid()).Distinct());
+        await using var connection = new NpgsqlConnection(_connectionString);
+        Assert.Equal(1, await connection.ExecuteScalarAsync<int>("SELECT count(*)::int FROM users"));
+        Assert.Equal(1, await connection.ExecuteScalarAsync<int>("SELECT count(*)::int FROM auth_identities"));
+        Assert.Equal(6, await connection.ExecuteScalarAsync<int>("SELECT count(*)::int FROM auth_sessions"));
+    }
+
+    [Fact]
+    public async Task One_refresh_token_sent_several_times_at_once_refreshes_once_and_the_copies_end_the_session()
+    {
+        var session = await SignInAsync(TestAuth.IdToken("g-1", "fan@example.test"), "fan_one", HttpStatusCode.Created);
+        var refresh = session.GetProperty("refresh_token").GetString()!;
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 6).Select(_ => RefreshAsync(refresh)));
+
+        // The row lock makes the copies take turns: the first rotates the token, the rest see it used (reuse ends the
+        // session, as for a replayed token). None fails with a server error.
+        Assert.Single(responses, r => r.StatusCode == HttpStatusCode.OK);
+        foreach (var refused in responses.Where(r => r.StatusCode != HttpStatusCode.OK))
+        {
+            Assert.Equal("unauthorized", (await ProblemAsync(refused, 401)).GetProperty("code").GetString());
+        }
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        Assert.Equal("token_reuse", await connection.ExecuteScalarAsync<string>("SELECT revoked_reason FROM auth_sessions"));
+        Assert.Equal(2, await connection.ExecuteScalarAsync<int>("SELECT count(*)::int FROM refresh_tokens"));
+    }
+
+    [Fact]
     public async Task Expired_refresh_token_is_rejected()
     {
         var session = await SignInAsync(TestAuth.IdToken("g-1", "fan@example.test"), "fan_one", HttpStatusCode.Created);

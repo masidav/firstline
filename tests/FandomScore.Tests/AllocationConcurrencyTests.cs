@@ -187,6 +187,80 @@ public sealed class AllocationConcurrencyTests(PostgresFixture postgres) : IAsyn
     }
 
     [Fact]
+    public async Task Returns_sent_at_once_hand_each_freed_seat_to_one_next_fan_and_never_oversell()
+    {
+        var allocationId = await AllocationAsync(_eventId, tickets: 3);
+        var fans = new Dictionary<string, string>();
+        for (var i = 0; i < 7; i++)
+        {
+            var handle = $"ret_{i}";
+            fans[handle] = await FanAsync(handle, score: 90 - i);   // distinct scores: ranks follow i
+            await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{allocationId}/registration", fans[handle]), HttpStatusCode.Created);
+        }
+
+        await CloseRegistrationAsync(allocationId);
+        await ScalarAsync<string>("SELECT seed FROM run_allocation_selection(@allocationId, NULL)", new { allocationId });
+        Assert.Equal(["ret_0", "ret_1", "ret_2"], await LiveHoldersAsync(allocationId));
+
+        // The same return sent six times at once: returned once, and its seat goes to one fan (the next in the ranking).
+        var first = await ReservationIdAsync(allocationId, "ret_0");
+        var copies = await Task.WhenAll(Enumerable.Range(0, 6).Select(_ =>
+            SendAsync(HttpMethod.Post, $"/v1/reservations/{first}/return", fans["ret_0"])));
+        foreach (var copy in copies)
+        {
+            Assert.Equal("returned", (await JsonAsync(copy, HttpStatusCode.OK)).GetProperty("status").GetString());
+        }
+
+        Assert.Equal(["ret_1", "ret_2", "ret_3"], await LiveHoldersAsync(allocationId));
+
+        // Three different holders return at once: three different next fans get the seats, each once.
+        var returning = new[] { "ret_1", "ret_2", "ret_3" };
+        var ids = new List<Guid>();
+        foreach (var handle in returning)
+        {
+            ids.Add(await ReservationIdAsync(allocationId, handle));
+        }
+
+        var raced = await Task.WhenAll(returning.Select((handle, i) =>
+            SendAsync(HttpMethod.Post, $"/v1/reservations/{ids[i]}/return", fans[handle])));
+        Assert.All(raced, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
+        Assert.Equal(["ret_4", "ret_5", "ret_6"], await LiveHoldersAsync(allocationId));
+
+        Assert.Equal(3, await ScalarAsync<int>("SELECT seats_assigned FROM allocation_selections WHERE allocation_id = @allocationId", new { allocationId }));
+        Assert.Equal(3, await ScalarAsync<int>(
+            "SELECT coalesce(sum(seats), 0)::int FROM reservations WHERE allocation_id = @allocationId AND returned_at IS NULL AND cancelled_at IS NULL",
+            new { allocationId }));
+        Assert.Equal(7, await ScalarAsync<int>(
+            "SELECT count(DISTINCT registration_id)::int FROM reservations WHERE allocation_id = @allocationId", new { allocationId }));
+        Assert.Equal(7, await ScalarAsync<int>("SELECT count(*)::int FROM reservations WHERE allocation_id = @allocationId", new { allocationId }));
+
+        // A return of a seat nobody can take now (the ranking is used up) still works and frees the seat.
+        var last = await ReservationIdAsync(allocationId, "ret_6");
+        await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/reservations/{last}/return", fans["ret_6"]), HttpStatusCode.OK);
+        Assert.Equal(["ret_4", "ret_5"], await LiveHoldersAsync(allocationId));
+        Assert.Equal(2, await ScalarAsync<int>("SELECT seats_assigned FROM allocation_selections WHERE allocation_id = @allocationId", new { allocationId }));
+    }
+
+    private async Task<List<string>> LiveHoldersAsync(Guid allocationId)
+    {
+        await using var connection = await _db.OpenConnectionAsync();
+        return [.. await connection.QueryAsync<string>(
+            """
+            SELECT u.handle::text FROM reservations r JOIN users u ON u.id = r.user_id
+            WHERE r.allocation_id = @allocationId AND r.returned_at IS NULL AND r.cancelled_at IS NULL
+            ORDER BY u.handle
+            """,
+            new { allocationId })];
+    }
+
+    private Task<Guid> ReservationIdAsync(Guid allocationId, string handle) => ScalarAsync<Guid>(
+        """
+        SELECT r.id FROM reservations r JOIN users u ON u.id = r.user_id
+        WHERE r.allocation_id = @allocationId AND u.handle = @handle AND r.returned_at IS NULL AND r.cancelled_at IS NULL
+        """,
+        new { allocationId, handle });
+
+    [Fact]
     public async Task Standing_comes_from_a_snapshot_refreshed_after_a_few_seconds()
     {
         var allocationId = await AllocationAsync(_eventId, tickets: 100);

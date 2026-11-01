@@ -130,6 +130,29 @@ public sealed class GrabBagApiTests(PostgresFixture postgres) : IAsyncLifetime, 
     }
 
     [Fact]
+    public async Task One_song_put_in_two_slots_at_once_ends_in_one_slot_without_an_error()
+    {
+        for (var round = 0; round < 8; round++)
+        {
+            var ana = await SignInAsync($"ana_{round}");   // a fan per round keeps under the grab-bag add limit
+            var track = $"{round}race{new string('r', 17)}";
+            _spotify.Tracks.Add(new FakeSpotify.TrackDetail(track, $"Race {round}", "al-1", "3D Country", (GeeseId, "Geese")));
+
+            // A double tap on each of two slots: the song moves, it is never in two slots, and nobody gets a 500.
+            var responses = await Task.WhenAll(Enumerable.Range(0, 4).Select(i => 1 + (i % 2)).Select(slot =>
+                SendAsync(HttpMethod.Put, $"/v1/me/grab-bag/{slot}", ana, new { spotify_track_id = track })));
+            foreach (var response in responses)
+            {
+                await JsonAsync(response, HttpStatusCode.OK);
+            }
+
+            await using var connection = await _db.OpenConnectionAsync();
+            Assert.Equal(1, await connection.ExecuteScalarAsync<int>(
+                "SELECT count(*)::int FROM grab_bag_songs WHERE spotify_track_id = @track", new { track }));
+        }
+    }
+
+    [Fact]
     public async Task Songs_can_be_reordered_across_the_five_slots()
     {
         var ana = await SignInAsync("ana");

@@ -266,6 +266,122 @@ public sealed class ProofApiTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_submission_sent_several_times_at_once_with_one_key_or_without_one_is_made_once()
+    {
+        var fan = await SignInAsync("fan_one");
+        var uploadId = await UploadAsync(fan, Jpeg("tap"));
+        var body = new { artist_id = _artistId, kind = "merch", upload_ids = new[] { uploadId } };
+
+        var keyed = await Task.WhenAll(Enumerable.Range(0, 6).Select(_ => SendAsync(HttpMethod.Post, "/v1/submissions", fan, body, "tap-1")));
+        var ids = new List<string?>();
+        foreach (var response in keyed)
+        {
+            ids.Add((await JsonAsync(response, HttpStatusCode.Created)).GetProperty("id").GetString());
+        }
+
+        Assert.Single(ids.Distinct());
+
+        // Without a key, copies of one photo race: one is made, the others are told why not (the upload is used).
+        var second = await UploadAsync(fan, Jpeg("tap-two"));
+        var unkeyed = await Task.WhenAll(Enumerable.Range(0, 6).Select(_ => SendAsync(HttpMethod.Post, "/v1/submissions", fan,
+            new { artist_id = _artistId, kind = "merch", upload_ids = new[] { second } })));
+        Assert.Single(unkeyed, r => r.StatusCode == HttpStatusCode.Created);
+        foreach (var refused in unkeyed.Where(r => r.StatusCode != HttpStatusCode.Created))
+        {
+            Assert.Equal("validation_failed", (await JsonAsync(refused, HttpStatusCode.UnprocessableEntity)).GetProperty("code").GetString());
+        }
+
+        await using var connection = await _db.OpenConnectionAsync();
+        Assert.Equal(2, await connection.ExecuteScalarAsync<int>("SELECT count(*)::int FROM submissions"));
+        Assert.Equal(2, await connection.ExecuteScalarAsync<int>("SELECT count(*)::int FROM submission_files"));
+    }
+
+    [Fact]
+    public async Task Two_staff_approving_at_once_award_the_points_once_and_one_is_told_it_is_decided()
+    {
+        var fan = await SignInAsync("fan_one");
+        var staff = new[] { await StaffAsync("staffer"), await StaffAsync("staffer_two"), await StaffAsync("staffer_three") };
+        var id = await SubmitAsync(fan, "merch", Jpeg("tee"));
+
+        var decisions = await Task.WhenAll(staff.Select(s => SendAsync(HttpMethod.Post, $"/v1/admin/submissions/{id}/decision", s,
+            new { decision = "approve" })));
+
+        Assert.Single(decisions, r => r.StatusCode == HttpStatusCode.OK);
+        foreach (var refused in decisions.Where(r => r.StatusCode != HttpStatusCode.OK))
+        {
+            Assert.Equal("conflict", (await JsonAsync(refused, HttpStatusCode.Conflict)).GetProperty("code").GetString());
+        }
+
+        await using var connection = await _db.OpenConnectionAsync();
+        Assert.Equal(1, await connection.ExecuteScalarAsync<int>(
+            "SELECT count(*)::int FROM score_events WHERE source_id = @id::uuid AND reversed_at IS NULL", new { id }));
+        Assert.Equal(1, await connection.ExecuteScalarAsync<int>(
+            "SELECT count(*)::int FROM verification_checks WHERE submission_id = @id::uuid", new { id }));
+
+        // Approve and reject at once: the ledger ends matching the final status, never with points on a rejection.
+        var raced = await SubmitAsync(fan, "merch", Jpeg("cap"));
+        await Task.WhenAll(
+            SendAsync(HttpMethod.Post, $"/v1/admin/submissions/{raced}/decision", staff[0], new { decision = "approve" }),
+            SendAsync(HttpMethod.Post, $"/v1/admin/submissions/{raced}/decision", staff[1], new { decision = "reject", reason = "Blurry" }));
+        var (status, live) = await connection.QuerySingleAsync<(string Status, int Live)>(
+            """
+            SELECT s.status::text, (SELECT count(*)::int FROM score_events e WHERE e.source_id = s.id AND e.reversed_at IS NULL)
+            FROM submissions s WHERE s.id = @raced::uuid
+            """,
+            new { raced });
+        Assert.Equal(status == "verified" ? 1 : 0, live);
+    }
+
+    [Fact]
+    public async Task Withdrawing_twice_at_once_withdraws_once_and_a_withdrawal_racing_an_approval_never_loses_points()
+    {
+        var fan = await SignInAsync("fan_one");
+        var staff = await StaffAsync("staffer");
+        var id = await SubmitAsync(fan, "merch", Jpeg("tee"));
+
+        // The copy that loses finds the submission gone (404), as it would a moment later, not "already verified".
+        // A row lock held here makes every copy read the submission, then queue on its delete.
+        HttpResponseMessage[] withdrawals;
+        await using (var holding = await _db.OpenConnectionAsync())
+        await using (var transaction = await holding.BeginTransactionAsync())
+        {
+            await holding.ExecuteAsync("SELECT 1 FROM submissions WHERE id = @id::uuid FOR UPDATE", new { id }, transaction);
+            var pending = Enumerable.Range(0, 4).Select(_ => SendAsync(HttpMethod.Delete, $"/v1/submissions/{id}", fan)).ToList();
+            await Task.Delay(750);
+            await transaction.CommitAsync();
+            withdrawals = await Task.WhenAll(pending);
+        }
+
+        Assert.Single(withdrawals, r => r.StatusCode == HttpStatusCode.NoContent);
+        foreach (var other in withdrawals.Where(r => r.StatusCode != HttpStatusCode.NoContent))
+        {
+            Assert.Equal("not_found", (await JsonAsync(other, HttpStatusCode.NotFound)).GetProperty("code").GetString());
+        }
+
+        // Withdraw and approve at once: either the approval wins (verified, points kept, withdrawal refused) or the
+        // withdrawal does (gone, no points, approval not found).
+        for (var round = 0; round < 5; round++)
+        {
+            var raced = await SubmitAsync(fan, "merch", Jpeg($"race-{round}"));
+            var responses = await Task.WhenAll(
+                SendAsync(HttpMethod.Delete, $"/v1/submissions/{raced}", fan),
+                SendAsync(HttpMethod.Post, $"/v1/admin/submissions/{raced}/decision", staff, new { decision = "approve" }));
+            await using var connection = await _db.OpenConnectionAsync();
+            var exists = await connection.ExecuteScalarAsync<bool>("SELECT EXISTS (SELECT 1 FROM submissions WHERE id = @raced::uuid)", new { raced });
+            var points = await connection.ExecuteScalarAsync<int>(
+                "SELECT count(*)::int FROM score_events WHERE source_id = @raced::uuid AND reversed_at IS NULL", new { raced });
+            if (exists)
+            {
+                Assert.Equal((HttpStatusCode.Conflict, HttpStatusCode.OK, 1), (responses[0].StatusCode, responses[1].StatusCode, points));
+            }
+            else
+            {
+                Assert.Equal((HttpStatusCode.NoContent, HttpStatusCode.NotFound, 0), (responses[0].StatusCode, responses[1].StatusCode, points));
+            }
+        }
+    }
+
+    [Fact]
     public async Task Uploads_are_checked_and_duplicates_are_refused()
     {
         var fan = await SignInAsync("fan_one");
@@ -421,10 +537,15 @@ public sealed class ProofApiTests(PostgresFixture postgres) : IAsyncLifetime
         return (await JsonAsync(response, HttpStatusCode.Created)).GetProperty("access_token").GetString()!;
     }
 
-    private Task<HttpResponseMessage> SendAsync(HttpMethod method, string path, string token, object? body = null)
+    private Task<HttpResponseMessage> SendAsync(HttpMethod method, string path, string token, object? body = null, string? idempotencyKey = null)
     {
         var request = new HttpRequestMessage(method, path) { Content = body is null ? null : JsonContent.Create(body) };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        if (idempotencyKey is not null)
+        {
+            request.Headers.Add("Idempotency-Key", idempotencyKey);
+        }
+
         return _client.SendAsync(request);
     }
 

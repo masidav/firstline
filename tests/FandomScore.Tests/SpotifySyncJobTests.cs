@@ -374,6 +374,31 @@ public sealed class SpotifySyncJobTests(PostgresFixture postgres) : IAsyncLifeti
     }
 
     [Fact]
+    public async Task An_outage_partway_through_a_sync_keeps_the_last_good_signals_and_the_retry_replaces_them()
+    {
+        _spotify.SavedTracks.Add(FakeSpotify.Saved(FakeSpotify.Track("tr-a1", "al-a1", ArtistA)));
+        _spotify.SavedTracks.Add(FakeSpotify.Saved(FakeSpotify.Track("tr-a2", "al-a1", ArtistA)));
+        await RunAsync();
+        Assert.Equal(2, Assert.Single(await SignalsAsync()).LikedTracks);
+        var likes = await TrackLikesAsync();
+
+        // The next sync reads saved tracks (now three), then Spotify goes down before it finishes: nothing it read so
+        // far is written, so the fan's score inputs stay those of the last complete sync.
+        _spotify.SavedTracks.Add(FakeSpotify.Saved(FakeSpotify.Track("tr-a3", "al-a1", ArtistA)));
+        _spotify.Interruptions.Enqueue(("me/playlists", () => FakeSpotify.Status(HttpStatusCode.TooManyRequests, TimeSpan.FromMinutes(5))));
+        await Assert.ThrowsAsync<SpotifyUnavailableException>(() => RunAsync(attempt: 1));
+        Assert.Equal(2, Assert.Single(await SignalsAsync()).LikedTracks);
+        Assert.Equal(likes, await TrackLikesAsync());
+        Assert.Equal("queued", (await StateAsync()).SyncState);
+
+        // The queue's retry runs the whole sync again and replaces the signals once, not adding to them.
+        await RunAsync(attempt: 2);
+        Assert.Equal(3, Assert.Single(await SignalsAsync()).LikedTracks);
+        await RunAsync(attempt: 1);
+        Assert.Equal(3, Assert.Single(await SignalsAsync()).LikedTracks);
+    }
+
+    [Fact]
     public async Task A_rotated_refresh_token_is_stored()
     {
         _spotify.TokenResponse = FakeSpotify.Tokens("refresh-2");

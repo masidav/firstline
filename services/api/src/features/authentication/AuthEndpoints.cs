@@ -57,6 +57,11 @@ public static class AuthEndpoints
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
+        // Sign-ins for one provider account take turns, so a first sign-in sent twice (a double tap, a retry) creates
+        // the account once and the copy signs in to it instead of finding its handle or email taken.
+        await connection.ExecuteAsync(
+            "SELECT pg_advisory_xact_lock(hashtextextended('sign_in:' || @Provider || ':' || @Subject, 0))",
+            new { request.Provider, identity.Subject }, transaction);
         var userId = await connection.QuerySingleOrDefaultAsync<Guid?>(
             """
             UPDATE auth_identities SET last_used_at = now()

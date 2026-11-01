@@ -257,6 +257,72 @@ public sealed class JournalApiTests(PostgresFixture postgres) : IAsyncLifetime, 
     }
 
     [Fact]
+    public async Task One_idempotency_key_sent_several_times_at_once_makes_one_log_and_one_award()
+    {
+        var token = await SignInAsync("fan_one");
+        var body = new { album_id = _theBends, rating = 7, review = LongReview };
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => PostAsync("/v1/logs", token, body, idempotencyKey: "tap")));
+
+        var ids = new List<string?>();
+        foreach (var response in responses)
+        {
+            ids.Add((await JsonAsync(response, HttpStatusCode.Created)).GetProperty("log").GetProperty("id").GetString());
+        }
+
+        Assert.Single(ids.Distinct());
+        await using var connection = await _db.OpenConnectionAsync();
+        Assert.Equal(1, await connection.ExecuteScalarAsync<int>("SELECT count(*) FROM album_logs"));
+        Assert.Equal(["album_logged", "review_written"], await connection.QueryAsync<string>(
+            "SELECT rule_key FROM score_events WHERE reversed_at IS NULL ORDER BY rule_key"));
+    }
+
+    [Fact]
+    public async Task Logs_of_one_album_sent_at_once_award_one_first_log_and_relistens_up_to_the_daily_cap()
+    {
+        var token = await SignInAsync("fan_one");
+
+        // Twelve different logs at once (no key): one is the first log, the rest are relistens, and album_relisten
+        // stops at its daily cap of 10 even though the awards race.
+        var responses = await Task.WhenAll(Enumerable.Range(0, 12).Select(i => PostAsync("/v1/logs", token, new { album_id = _inRainbows, rating = 1 + (i % 10) })));
+        Assert.All(responses, r => Assert.Equal(HttpStatusCode.Created, r.StatusCode));
+
+        await using var connection = await _db.OpenConnectionAsync();
+        Assert.Equal(1, await connection.ExecuteScalarAsync<int>("SELECT count(*) FROM album_logs WHERE NOT is_relisten"));
+        Assert.Equal(11, await connection.ExecuteScalarAsync<int>("SELECT count(*) FROM album_logs WHERE is_relisten"));
+        var awards = (await connection.QueryAsync<(string Rule, int Count)>(
+            "SELECT rule_key, count(*)::int FROM score_events WHERE reversed_at IS NULL GROUP BY rule_key ORDER BY rule_key")).ToList();
+        Assert.Equal([("album_logged", 1), ("album_relisten", 10)], awards);
+    }
+
+    [Fact]
+    public async Task Review_edits_at_once_award_review_written_once_and_a_delete_racing_an_edit_leaves_no_award()
+    {
+        var token = await SignInAsync("fan_one");
+        var logId = (await JsonAsync(await PostAsync("/v1/logs", token, new { album_id = _inRainbows }), HttpStatusCode.Created))
+            .GetProperty("log").GetProperty("id").GetString();
+
+        var edits = await Task.WhenAll(Enumerable.Range(0, 6).Select(_ => SendAsync(HttpMethod.Patch, $"/v1/logs/{logId}", token,
+            JsonContent.Create(new { review = LongReview }))));
+        Assert.All(edits, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
+        await using var connection = await _db.OpenConnectionAsync();
+        Assert.Equal(1, await connection.ExecuteScalarAsync<int>(
+            "SELECT count(*) FROM score_events WHERE source_id = @logId::uuid AND rule_key = 'review_written' AND reversed_at IS NULL", new { logId }));
+
+        // A second log: its review edit and its deletion race. Whatever order they land in, the deleted log keeps no points.
+        var other = (await JsonAsync(await PostAsync("/v1/logs", token, new { album_id = _theBends }), HttpStatusCode.Created))
+            .GetProperty("log").GetProperty("id").GetString();
+        var raced = await Task.WhenAll(
+            SendAsync(HttpMethod.Patch, $"/v1/logs/{other}", token, JsonContent.Create(new { review = LongReview })),
+            SendAsync(HttpMethod.Delete, $"/v1/logs/{other}", token),
+            SendAsync(HttpMethod.Patch, $"/v1/logs/{other}", token, JsonContent.Create(new { review = LongReview + " Again." })));
+        Assert.Equal(HttpStatusCode.NoContent, raced[1].StatusCode);
+        Assert.All([raced[0], raced[2]], r => Assert.True(r.StatusCode is HttpStatusCode.OK or HttpStatusCode.NotFound, r.StatusCode.ToString()));
+        Assert.Equal(0, await connection.ExecuteScalarAsync<int>(
+            "SELECT count(*) FROM score_events WHERE source_id = @other::uuid AND reversed_at IS NULL", new { other }));
+    }
+
+    [Fact]
     public async Task Private_logs_are_invisible_to_others_and_only_owners_can_edit()
     {
         var owner = await SignInAsync("fan_one");

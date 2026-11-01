@@ -148,6 +148,7 @@ public static partial class GrabBagEndpoints
         var me = user.UserId();
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await LockBagAsync(connection, transaction, me);
         var artistId = await connection.ExecuteScalarAsync<Guid>(
             "SELECT o_artist_id FROM track_artist(@me, @spotifyArtistId, @name, 50, 'grab_bag')",
             new { me, spotifyArtistId = primary.Id, name = primary.Name }, transaction);
@@ -175,6 +176,7 @@ public static partial class GrabBagEndpoints
         var me = user.UserId();
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await LockBagAsync(connection, transaction, me);
         var current = (await connection.QueryAsync<Guid>(
             "SELECT id FROM grab_bag_songs WHERE user_id = @me FOR UPDATE", new { me }, transaction)).ToHashSet();
         var slots = request?.Slots;
@@ -202,6 +204,11 @@ public static partial class GrabBagEndpoints
         await transaction.CommitAsync(cancellationToken);
         return Results.Ok(bag);
     }
+
+    // One change to a fan's bag at a time: the same song put in two slots at once (or a put racing a reorder) would
+    // otherwise both pass their checks and break a unique slot or song, a 500 instead of the song simply moving.
+    private static Task<int> LockBagAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid me) =>
+        connection.ExecuteAsync("SELECT pg_advisory_xact_lock(hashtextextended('grab_bag:' || @me::text, 0))", new { me }, transaction);
 
     private static async Task<IResult> DeleteAsync(ClaimsPrincipal user, int position, NpgsqlDataSource db, CancellationToken cancellationToken)
     {
