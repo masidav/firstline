@@ -480,7 +480,7 @@ built, images built locally). Nothing is applied to a GCP project yet; `infrastr
 Details: [ADR 0002](docs/adr/0002-hosting-gcp-gke.md) · [Infrastructure](infrastructure/TODO.md)
 
 ## Phase 13 — UI testing and launch
-- [ ] Mobile component tests (Jest + React Native Testing Library) and end-to-end flows (Maestro) in CI.
+- [x] Mobile component tests (Jest + React Native Testing Library) and end-to-end flows (Maestro) in CI.
       *Component and screen tests done 2026-10-30: `@testing-library/react-native` 13.3.3 on the `jest-expo` preset, one
       `*.test.tsx` beside each screen, the API mocked at the generated client, no network or real timers; CI job "Fan
       app" runs `npm test -- --ci`. Loading, empty, error-and-retry, and populated states for home (HomeScreen 17, Feed
@@ -500,7 +500,8 @@ Details: [ADR 0002](docs/adr/0002-hosting-gcp-gke.md) · [Infrastructure](infras
       main touching the app, API, database, or seed, and on demand); the build needed only configuration (cleartext for
       an http API in `app.config.ts`, a Release APK signed with prebuild's debug key). testIDs added for the flows.
       Verified locally: the Release APK built (4m47s), 5/5 flows passed twice in an Android 14 emulator (2m50s each);
-      `npm test` 55 suites, 348 tests; typecheck clean. CI run: pending.*
+      `npm test` 55 suites, 348 tests; typecheck clean. CI: the workflow's first run passed 5/5 (run 41355397703,
+      20 minutes: 12 building with a cold Gradle cache, 7 for the emulator and flows).*
 - [x] Promoter dashboard end-to-end tests (Playwright) and accessibility checks. *Journeys done 2026-10-27
       (`apps/promoter-web/e2e`, CI). Accessibility checks done 2026-10-30: `@axe-core/playwright` scans every page the
       journeys visit (WCAG 2.2 AA + best practices, serious/critical fail) in the same CI job, and vitest-axe covers

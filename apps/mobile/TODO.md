@@ -19,7 +19,7 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       "Fan app". Plus browser end-to-end journeys since 2026-10-27 (`e2e/`, run in CI).*
       *2026-11-01: native journeys in Maestro (`maestro/journeys`: sign-up, home and feed, log an album, register for
       an allocation, sign-out and account deletion) on an Android emulator against the API and a seeded database,
-      workflow `mobile-android.yml`. Verified locally: 5/5 passed twice (2m50s); CI run: pending.*
+      workflow `mobile-android.yml`. Verified locally: 5/5 passed twice (2m50s); in CI 5/5 passed on the first run (20 minutes).*
 - [ ] Verify iOS and Android builds and document required configuration. *Web build verified (CI and a Playwright
       WebKit run at iPhone size, 2026-10-18). iOS configured 2026-10-29: bundle ID `com.firstline.fandomscore`,
       icon and splash (`assets/`, drawn by `tools/dev/app-icons.mjs`), `app.config.ts` (Google scheme, EAS project id,
