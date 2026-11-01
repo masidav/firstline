@@ -72,7 +72,7 @@ overlays, Docker builds of the three images, `dotnet test`). Not yet applied to 
       HTTP redirects 301 to HTTPS; Cloud Armor is attached to all three backends and returned 403 for a SQL-injection
       and an XSS query (DENY in the load balancer log), rate limit 600/min/IP configured. Open: bot protection (not configured, needs
       a decision, `docs/OWNER_TODO.md` section C). The api HTTPRoute now adds HSTS and `nosniff`, which the API's
-      responses lacked.*
+      responses lacked (deployed in cb1b524, seen live).*
 - [x] Configure forwarded headers in the API to trust only the load balancer, so per-IP rate limits (sign-in) see the real client IP. (`ForwardedHeadersSetup`; `ForwardedHeadersTests` pass.)
 - [ ] HorizontalPodAutoscalers, PodDisruptionBudgets, resource requests, and a pre-scale procedure for scheduled on-sales. (Manifests and `README.md` procedure exist; untested against a cluster.)
 - [x] CI/CD with Workload Identity Federation (no long-lived keys); beta deploys automatically, prod needs approval. (First successful beta deploy 2026-10-26 through the Deploy workflow: WIF auth, image build and push, Cloud SQL backup, migrate Job, rollout of api and worker. Earlier attempts the same day fixed: pods must run as the numeric user 1654 (`runAsNonRoot` cannot verify the image's named user), and whitespace-only secret placeholders must count as unset. Prod is gated behind `PROD_DEPLOY_ENABLED` until the prod project exists.)
