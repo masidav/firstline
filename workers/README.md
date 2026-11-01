@@ -13,7 +13,7 @@ dotnet run --project workers        # needs ConnectionStrings__Database, like th
 | `Program.cs` | Host setup and the list of registered job handlers. |
 | `jobs/` | Queue runtime: `JobQueue` (claim, finish, retry, schedules), `JobRunner` (polling loops), `IJobHandler`, `PruneJobsJob`. |
 | `hosting/` | Secrets mounted as files (`SecretsDirectory`), and the liveness endpoint (`WorkerHeartbeat`, `WorkerHealthServer`). |
-| `account-retention/` | `PurgeDeletedAccountsJob`: hourly, purges content of accounts deleted 30+ days ago. |
+| `account-retention/` | `PurgeDeletedAccountsJob`: hourly, purges content of accounts deleted 30+ days ago. `PruneExpiredRecordsJob` (`privacy.retention`): daily, deletes sessions expired or revoked 30+ days ago, idempotency keys after 24 hours, and push delivery records and disabled push devices after 30 days (migration 0053). |
 | `storage-cleanup/` | `StorageCleanupJob` (`storage.cleanup`, hourly): deletes stored files nothing needs (expired upload slots, deleted accounts' files before their purge, files queued in `storage_deletions`). See the folder's README. |
 | `concerts/` | `ConcertSyncJob` (`concerts.sync_artist`) and hourly `ScheduleConcertSyncsJob` (`concerts.schedule`): load tracked artists' upcoming shows, sales, and presales from Ticketmaster. See the folder's README. |
 | `fans/` | `FanScoresJob` (`fans.overall_scores`, hourly): refreshes every fan's trust and fan level (migration 0039; `services/api/src/features/fan-levels/README.md`). |

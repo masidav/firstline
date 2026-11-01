@@ -29,6 +29,8 @@ public static class NotificationText
                                     && value.ValueKind == JsonValueKind.String ? value.GetString()! : "";
         int Number(string name) => data.ValueKind == JsonValueKind.Object && data.TryGetProperty(name, out var value)
                                    && value.ValueKind == JsonValueKind.Number ? value.GetInt32() : 0;
+        // Account deletion removes the fan's handle from notices to others (migration 0053).
+        string Fan(string name, string deleted) => Text(name) is { Length: > 0 } handle ? $"@{handle}" : deleted;
         var show = Text("event_name") is { Length: > 0 } name ? name : "the show";
         var when = Time(data, "starts_at") is { } start ? start.ToString("MMM d", CultureInfo.InvariantCulture) : null;
         var on = when is null ? "" : $" on {when}";
@@ -40,7 +42,7 @@ public static class NotificationText
             "seat_backfilled" => ("A seat opened up for you", $"A fan returned their seat for {show}{on}, and it's yours: {seats} at face value.", "/tickets"),
             "ticket_delivered" => ("Your ticket is here", $"Your ticket for {show}{on} has been delivered. Open Tickets to show it at the door.", "/tickets"),
             "guest_named" => ("You're someone's +1",
-                $"@{Text("host_handle")} named you as their +1 for {show}{on}. If you didn't agree, decline it on the show page: it keeps you from registering yourself.",
+                $"{Fan("host_handle", "A fan who has since deleted their account")} named you as their +1 for {show}{on}. If you didn't agree, decline it on the show page: it keeps you from registering yourself.",
                 $"/show/{Text("event_id")}"),
             "fraud_hold" => ("Your account is under review",
                 "We're checking some activity on your account, so fan ticket registration is paused for now. You can tell us your side.",
@@ -53,13 +55,13 @@ public static class NotificationText
                 $"{Text("presale_name")} for {show}{(Text("city") is { Length: > 0 } city ? $" in {city}" : "")} {PresaleWhen(data, now)}.",
                 $"/show/{Text("event_id")}"),
             "staff_report" => ("A post was reported", $"A {(Text("target_type") == "photo" ? "photo" : "album log")} was reported ({Text("reason")}).", "/moderation"),
-            "staff_review" => ("Proof to review", $"@{Text("handle")} sent {Text("kind").Replace('_', ' ')} for {Text("artist_name")}.", "/review"),
+            "staff_review" => ("Proof to review", $"{Fan("handle", "A deleted account")} sent {Text("kind").Replace('_', ' ')} for {Text("artist_name")}.", "/review"),
             "staff_redaction" => ("A photo needs a redaction check", Text("note") is { Length: > 0 } note ? note : "The redaction worker couldn't finish a file.", "/redactions"),
             "staff_show_changed" => ("A show with fan tickets changed", ShowChanged(show, Text("status"), data), $"/show/{Text("event_id")}"),
             "staff_flag_before_draw" => ("Review a flag before a draw",
-                $"The fraud rules flagged @{Text("handle")}, who is registered for {show}. Uphold or clear it before registration closes.",
+                $"The fraud rules flagged {Fan("handle", "a deleted account")}, who is registered for {show}. Uphold or clear it before registration closes.",
                 "/fraud"),
-            "staff_appeal" => ("A fan appealed a fraud review", $"@{Text("handle")} appealed their account review.", "/fraud"),
+            "staff_appeal" => ("A fan appealed a fraud review", $"{Fan("handle", "A deleted account")} appealed their account review.", "/fraud"),
             "staff_draw" => ("A fan draw ran", $"{show}: {Number("selected_fans")} of {Number("registrations")} fans selected, {Number("seats_assigned")} of {Number("tickets")} seats assigned.", $"/show/{Text("event_id")}"),
             _ => ("Update", "Something changed.", "/home"),
         };

@@ -184,7 +184,7 @@ public sealed class SpotifyApiTests(PostgresFixture postgres) : IAsyncLifetime, 
         var userId = await SeedSignalsAsync();
 
         await JsonAsync(await ConnectAsync(token), HttpStatusCode.OK);
-        Assert.Equal(1, await CountSignalsAsync(userId));
+        Assert.Equal(3, await CountSignalsAsync(userId));
 
         _spotify.UserId = "sp-user-2";
         await JsonAsync(await ConnectAsync(token), HttpStatusCode.OK);
@@ -291,6 +291,10 @@ public sealed class SpotifyApiTests(PostgresFixture postgres) : IAsyncLifetime, 
             INSERT INTO artists (name, spotify_artist_id) VALUES ('Artist', 'sp-artist');
             INSERT INTO user_artist_signals (user_id, artist_id, liked_tracks)
             SELECT c.user_id, a.id, 3 FROM spotify_connections c, artists a;
+            INSERT INTO albums (artist_id, title) SELECT id, 'Album' FROM artists;
+            INSERT INTO user_album_saves (user_id, album_id, saved_at) SELECT c.user_id, al.id, now() FROM spotify_connections c, albums al;
+            INSERT INTO user_plays (user_id, artist_id, spotify_track_id, played_at)
+            SELECT c.user_id, a.id, '0000000000000000000001', now() FROM spotify_connections c, artists a;
             SELECT user_id FROM spotify_connections;
             """);
     }
@@ -298,7 +302,14 @@ public sealed class SpotifyApiTests(PostgresFixture postgres) : IAsyncLifetime, 
     private async Task<int> CountSignalsAsync(Guid userId)
     {
         await using var connection = await _db.OpenConnectionAsync();
-        return await connection.ExecuteScalarAsync<int>("SELECT count(*) FROM user_artist_signals WHERE user_id = @userId", new { userId });
+        // Signals, saved albums, and plays: everything synced from the Spotify account.
+        return await connection.ExecuteScalarAsync<int>(
+            """
+            SELECT (SELECT count(*) FROM user_artist_signals WHERE user_id = @userId)
+                 + (SELECT count(*) FROM user_album_saves WHERE user_id = @userId)
+                 + (SELECT count(*) FROM user_plays WHERE user_id = @userId)
+            """,
+            new { userId });
     }
 
     private async Task<int> CountJobsAsync()

@@ -58,6 +58,7 @@ builder.Services.AddHttpClient<ExpoPushClient>(http => http.Timeout = ExpoPushCl
 // One line per job kind. Feature folders under workers/ hold the handlers.
 builder.Services.AddSingleton<IJobHandler, PruneJobsJob>();
 builder.Services.AddSingleton<IJobHandler, PurgeDeletedAccountsJob>();
+builder.Services.AddSingleton<IJobHandler, PruneExpiredRecordsJob>();
 builder.Services.AddSingleton<IJobHandler, StorageCleanupJob>();
 builder.Services.AddSingleton<IJobHandler, RedactSubmissionJob>();
 builder.Services.AddSingleton<IJobHandler, RedactionSweepJob>();

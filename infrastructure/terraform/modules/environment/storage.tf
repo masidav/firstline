@@ -41,6 +41,19 @@ resource "google_storage_bucket" "archive" {
   versioning {
     enabled = true
   }
+
+  # Versions guard against a bad overwrite or delete, but a deleted file (a purged account, a withdrawn or rejected
+  # submission) must not live on as an old version: they go 30 days after being replaced or deleted (privacy review
+  # 2026-11-01).
+  lifecycle_rule {
+    action {
+      type = "Delete"
+    }
+    condition {
+      days_since_noncurrent_time = 30
+      with_state                 = "ARCHIVED"
+    }
+  }
 }
 
 resource "google_storage_bucket" "media" {

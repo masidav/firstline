@@ -120,6 +120,8 @@ public static partial class SpotifyEndpoints
                 DELETE FROM spotify_connections WHERE user_id = @userId;
                 DELETE FROM user_track_likes WHERE user_id = @userId;
                 DELETE FROM user_artist_signals WHERE user_id = @userId;
+                DELETE FROM user_album_saves WHERE user_id = @userId;
+                DELETE FROM user_plays WHERE user_id = @userId;
                 """,
                 new { userId }, transaction);
         }
@@ -167,6 +169,8 @@ public static partial class SpotifyEndpoints
             DELETE FROM spotify_connections WHERE user_id = @userId;
             DELETE FROM user_track_likes WHERE user_id = @userId;
             DELETE FROM user_artist_signals WHERE user_id = @userId;
+            DELETE FROM user_album_saves WHERE user_id = @userId;
+            DELETE FROM user_plays WHERE user_id = @userId;
             """,
             new { userId = user.UserId() }, transaction);
         await transaction.CommitAsync(cancellationToken);

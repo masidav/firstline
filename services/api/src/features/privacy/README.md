@@ -4,6 +4,11 @@ What a fan can see, take, and delete of their own data. Account deletion lives w
 (`DELETE /v1/me`, `../users/MeEndpoints.cs`, the `users_delete` triggers, and the worker's `accounts.purge_deleted` job);
 this folder holds "Download my data".
 
+**[DATA_INVENTORY.md](DATA_INVENTORY.md)** (privacy review, 2026-11-01): every table and stored file type with what
+personal data it holds, why, who sees it, what deletion does to it, and how long it lives; the log review; and the
+retention periods (implemented, provisional, and open). Housekeeping retention runs daily in the worker
+(`privacy.retention`, `workers/account-retention/PruneExpiredRecordsJob.cs`, migration 0053).
+
 ## Download my data (`GET /v1/me/export`)
 
 `DataExportEndpoints.cs`. A signed-in fan gets one JSON file (`Content-Disposition: attachment;
@@ -77,6 +82,9 @@ share sheet.
 | Deleted-account fields (`deleted_at`, `content_purged_at`) | Always empty for an account that can sign in. |
 
 ## Tests
+- Deletion: `tests/FandomScore.Tests/AccountDeletionTests.cs` (a fan with data in every area is deleted and purged;
+  every column of every table is scanned for their id, handle, email, and words, allowing only the documented
+  exceptions; the housekeeping retention job), and the "privacy review" section of `database/tests/invariants.sql`.
 - API: `tests/FandomScore.Tests/DataExportApiTests.cs` (seeds a fan with data in every area plus other fans; checks
   their own data, no other fan's private data, no tokens/hashes/storage keys in the raw text, the open trivia answer,
   the download headers, the hourly limit, and that a deleted account can't export). Set `DATA_EXPORT_PREVIEW=<path>`

@@ -2854,4 +2854,77 @@ BEGIN
   END;
 END $$;
 
+-- ------------------------------------------------------------ privacy review: deletion and retention (0053)
+DO $$
+DECLARE ana uuid := '00000000-0000-0000-0053-000000000001'; ben uuid := '00000000-0000-0000-0053-000000000002';
+        staff uuid := '00000000-0000-0000-0053-000000000003'; artist uuid; album uuid; ev uuid; sub uuid;
+BEGIN
+  INSERT INTO users (id, handle, email, is_staff) VALUES (ana, 'priv_ana', 'priv_ana@example.test', false),
+    (ben, 'priv_ben', 'priv_ben@example.test', false), (staff, 'priv_staff', 'priv_staff@example.test', true);
+  SELECT id INTO artist FROM artists WHERE spotify_artist_id = 'sp-active';
+  INSERT INTO albums (artist_id, title) VALUES (artist, 'Privacy Album') RETURNING id INTO album;
+  INSERT INTO events (artist_id, name, starts_at) VALUES (artist, 'Privacy Show', now() + interval '10 days') RETURNING id INTO ev;
+  INSERT INTO user_album_saves (user_id, album_id) VALUES (ana, album);
+  INSERT INTO user_plays (user_id, artist_id, spotify_track_id, played_at) VALUES (ana, artist, 't1', now());
+  INSERT INTO fan_overall_scores (user_id, trust, trust_parts, activity, activity_parts, level)
+  VALUES (ana, 0.5, '{}', 0, '{}', fan_level_for(0));
+  INSERT INTO plus_one_declines (event_id, guest_user_id, host_user_id) VALUES (ev, ana, ben), (ev, ben, ana);
+  INSERT INTO idempotency_keys (user_id, key, request_sha256, status_code, response) VALUES (ana, 'k', sha256('k'), 201, '{}');
+  INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes, storage_key, sha256, bytes, uploaded_at)
+  VALUES (ana, 'avatar', 'image/jpeg', 10, 'media/avatars/priv-ana', sha256('a'), 10, now());
+  INSERT INTO submissions (user_id, artist_id, kind, status) VALUES (ana, artist, 'ticket', 'needs_review') RETURNING id INTO sub;
+  ASSERT (SELECT data->>'handle' FROM notifications WHERE user_id = staff AND kind = 'staff_review' AND subject_id = sub) = 'priv_ana',
+         'the staff notice names the fan';
+  INSERT INTO trivia_questions (user_id, day, artist_id, kind, prompt, options, answer_index)
+  VALUES (ana, current_date, artist, 'release_year', 'When?', '{2019,2020}', 0);
+
+  UPDATE users SET deleted_at = now() - interval '31 days' WHERE id = ana;
+  ASSERT NOT EXISTS (SELECT 1 FROM user_album_saves WHERE user_id = ana), 'deletion drops saved albums';
+  ASSERT NOT EXISTS (SELECT 1 FROM user_plays WHERE user_id = ana), 'deletion drops the play ledger';
+  ASSERT NOT EXISTS (SELECT 1 FROM fan_overall_scores WHERE user_id = ana), 'deletion drops the overall score';
+  ASSERT NOT EXISTS (SELECT 1 FROM plus_one_declines WHERE ana IN (guest_user_id, host_user_id)), 'deletion drops +1 declines';
+  ASSERT NOT EXISTS (SELECT 1 FROM idempotency_keys WHERE user_id = ana), 'deletion drops cached responses';
+  ASSERT NOT EXISTS (SELECT 1 FROM uploads WHERE user_id = ana AND purpose = 'avatar'), 'deletion drops the picture''s upload';
+  ASSERT EXISTS (SELECT 1 FROM storage_deletions WHERE storage_key = 'media/avatars/priv-ana'), 'and queues its file';
+  ASSERT (SELECT NOT data ? 'handle' FROM notifications WHERE user_id = staff AND kind = 'staff_review' AND subject_id = sub),
+         'deletion removes the handle from notices to others';
+  ASSERT EXISTS (SELECT 1 FROM trivia_questions WHERE user_id = ana), 'trivia stays until the purge';
+
+  -- A poll that started before the deletion wrote after it: the purge removes it too.
+  INSERT INTO user_plays (user_id, artist_id, spotify_track_id, played_at) VALUES (ana, artist, 't2', now());
+  DELETE FROM submissions WHERE id = sub;
+  ASSERT purge_deleted_user(ana), 'purge runs';
+  ASSERT NOT EXISTS (SELECT 1 FROM trivia_questions WHERE user_id = ana), 'the purge deletes trivia';
+  ASSERT NOT EXISTS (SELECT 1 FROM user_plays WHERE user_id = ana), 'the purge repeats the listening-data deletes';
+END $$;
+
+-- Housekeeping retention: only what is past its period goes.
+DO $$
+DECLARE fan uuid := '00000000-0000-0000-0053-000000000004'; dev_old uuid; dev_live uuid; n uuid; r record;
+BEGIN
+  INSERT INTO users (id, handle, email) VALUES (fan, 'priv_keep', 'priv_keep@example.test');
+  INSERT INTO auth_sessions (user_id, created_at, last_refreshed_at, expires_at, revoked_at, revoked_reason) VALUES
+    (fan, now() - interval '100 days', now() - interval '100 days', now() - interval '31 days', NULL, NULL),
+    (fan, now() - interval '100 days', now() - interval '100 days', now() + interval '1 day', now() - interval '31 days', 'sign_out'),
+    (fan, now() - interval '100 days', now() - interval '100 days', now() - interval '29 days', NULL, NULL),
+    (fan, now() - interval '1 day', now() - interval '1 day', now() + interval '1 day', NULL, NULL);
+  INSERT INTO idempotency_keys (user_id, key, request_sha256, created_at) VALUES
+    (fan, 'old', sha256('old'), now() - interval '25 hours'), (fan, 'new', sha256('new'), now() - interval '23 hours');
+  INSERT INTO push_devices (user_id, token, platform, disabled_at, disabled_reason)
+  VALUES (fan, 'ExponentPushToken[privoldtoken1]', 'ios', now() - interval '31 days', 'device_not_registered') RETURNING id INTO dev_old;
+  INSERT INTO push_devices (user_id, token, platform) VALUES (fan, 'ExponentPushToken[privlivetoken1]', 'ios') RETURNING id INTO dev_live;
+  INSERT INTO notifications (user_id, kind, subject_id, data) VALUES (fan, 'presale', gen_random_uuid(), '{}') RETURNING id INTO n;
+  INSERT INTO push_deliveries (notification_id, device_id, sent_at, status) VALUES (n, dev_live, now() - interval '31 days', 'sent');
+
+  FOR r IN SELECT * FROM prune_expired_records() LOOP
+    ASSERT r.removed >= CASE r.record WHEN 'auth_sessions' THEN 2 ELSE 1 END, r.record || ' pruned';
+  END LOOP;
+  ASSERT (SELECT count(*) FROM auth_sessions WHERE user_id = fan) = 2, 'recent and live sessions stay';
+  ASSERT (SELECT array_agg(key) FROM idempotency_keys WHERE user_id = fan) = '{new}', 'keys younger than 24 hours stay';
+  ASSERT NOT EXISTS (SELECT 1 FROM push_devices WHERE id = dev_old) AND EXISTS (SELECT 1 FROM push_devices WHERE id = dev_live),
+         'only long-disabled devices go';
+  ASSERT NOT EXISTS (SELECT 1 FROM push_deliveries WHERE notification_id = n), 'old delivery records go';
+  ASSERT (SELECT sum(removed) FROM prune_expired_records()) = 0, 'repeating removes nothing more';
+END $$;
+
 \echo ALL INVARIANT TESTS PASSED

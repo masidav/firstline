@@ -154,8 +154,11 @@ public sealed class AvatarApiTests(PostgresFixture postgres) : IAsyncLifetime
 
         Assert.Equal(HttpStatusCode.NotFound, (await _client.GetAsync(url)).StatusCode);
         Assert.True(await ScalarAsync<bool>(
-            "SELECT avatar_upload_id IS NULL AND avatar_url IS NULL FROM users WHERE id = (SELECT user_id FROM uploads WHERE id = @id)",
-            new { id = Guid.Parse(upload) }));
+            "SELECT avatar_upload_id IS NULL AND avatar_url IS NULL FROM users WHERE id = @id",
+            new { id = Guid.Parse(me.GetProperty("id").GetString()!) }));
+        // The upload goes at once (migration 0053), which queues the stored picture for storage.cleanup.
+        Assert.False(await ScalarAsync<bool>("SELECT EXISTS (SELECT 1 FROM uploads WHERE id = @id)", new { id = Guid.Parse(upload) }));
+        Assert.True(await ScalarAsync<bool>("SELECT EXISTS (SELECT 1 FROM storage_deletions WHERE storage_key LIKE '%' || @id)", new { id = upload }));
     }
 
     /// <summary>A real JPEG of the given size (a photo, as the app sends it).</summary>

@@ -305,6 +305,18 @@ Details: [Sharing API](services/api/src/features/sharing/TODO.md) · [Sharing UI
       `services/api/src/features/privacy/README.md`), 3 per hour; Profile has the button (web download, phone share
       sheet). Verified: `dotnet test` (DataExportApiTests), app Jest. Still open: retention rules, log review, and the
       open questions in that README (provider subject ids, OCR text, staff work records).*
+      *2026-11-01 (migration 0053): privacy review in `services/api/src/features/privacy/DATA_INVENTORY.md` (every
+      table and file type: data, purpose, who sees it, deletion, retention; log review; retention table). Deletion
+      fixes: the play ledger and saved albums, the overall score, +1 declines, cached responses, and the profile
+      picture's file now go at once (they survived deletion for good or until the purge); the fan's handle is removed
+      from others' notices; the purge also deletes trivia. Spotify disconnect and account switch now delete saved
+      albums and plays too. Logs: outgoing HTTP request lines (fans' Spotify playlist ids) off; nothing else personal
+      found; logs live 30 days in Cloud Logging `_Default` (no sinks). Retention: daily `privacy.retention` deletes
+      sessions 30 days after expiry/revocation, idempotency keys after 24 hours, push delivery records and disabled
+      devices after 30 days; Terraform deletes archive old versions 30 days after replacement or deletion (deleted
+      proof lived on as versions). Verified: `dotnet build` 0 warnings; `dotnet test` 409/409 (AccountDeletionTests 2:
+      whole-database scan after delete and purge; invariants). Not [x]: `terraform apply` for the archive rule, and
+      the retention periods under Open decisions are owner decisions.*
 - [ ] Complete integration, end-to-end, security, and performance testing.
 - [ ] Document deployment, backups, monitoring, and recovery.
 - [ ] Verify current external API terms and app-store requirements before release.
@@ -713,3 +725,29 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
 - [x] Grab-bag sharing **can't be turned off**, and artists tracked through a grab bag **don't count** toward the
       50-artists-per-day limit (decided 2026-10-20). `track_artist()` counts rows by `added_by`, so grab-bag adds
       need to be recorded separately.
+- [ ] Retention periods set provisionally (privacy review, 2026-11-01), confirm or change: the Spotify play ledger is
+      kept **400 days** (`Spotify__PlayHistoryRetention`); logs (app, load balancer with client IPs, VPC flow logs) are
+      kept **30 days** (Cloud Logging's `_Default` bucket, no sinks); database backups **14 days on beta, 30 on prod**
+      plus 7 days of point-in-time recovery (so deleted data leaves backups up to 30 days after it leaves the database).
+      Details: `services/api/src/features/privacy/DATA_INVENTORY.md`.
+- [ ] Decide retention for fraud records (flags, evidence, staff notes, appeals, the eligibility audit): kept for good
+      today, also after the account is deleted (by anonymous id). Proposal: 2 years after the decision.
+- [ ] Decide retention for closed allocations: registrations keep the standing snapshot used for the draw (score,
+      percentile, rank) and reservations keep seats, face value, and the ticket token, for good. Proposal: clear the
+      score snapshot 1 year after the show and keep outcome and seats; reservations may be a legal/tax record once
+      money moves.
+- [ ] Decide retention for notifications (kept for good today). Proposal: delete read notices after 180 days and all
+      after 1 year.
+- [ ] Decide what happens to reports a deleted fan filed: kept today with their free-text details (the reporter id
+      points at the anonymous account row). Proposal: clear `details` at the purge once the report is resolved.
+- [ ] Decide retention for staff work records (`moderation_actions`, `organization_audit`, `created_by`/`ran_by`
+      columns) and whether a staff member's export includes them. Proposal: 2 years, not exported.
+- [ ] Decide retention for OCR text (`submissions.extracted`), kept with the submission today, and whether the
+      (redacted) text belongs in "Download my data". Proposal: clear it 30 days after the submission is decided (the
+      order-reference hash still catches duplicates); not exported.
+- [ ] Decide what to keep when a fan's Spotify connection stops working (`reauth_required`): today the synced data
+      stays and keeps counting until they reconnect or disconnect. Proposal: delete it after 180 days without a working
+      connection.
+- [ ] Decide whether "Download my data" includes the Apple/Google sign-in subject id (left out today).
+- [ ] Decide retention for outbound ticket/merch link clicks of live fans (kept for good; unlinked at purge).
+      Proposal: unlink after 1 year.
