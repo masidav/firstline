@@ -240,11 +240,14 @@ The HPA scales the API on CPU but reacts in minutes; registration windows open i
 on-sale:
 
 1. Raise the floor an hour ahead: `kubectl patch hpa api -n fandomscore -p '{"spec":{"minReplicas":10}}'`
-   (Autopilot provisions capacity for the new pods). Put it back afterwards.
-2. Check Cloud SQL headroom (CPU, connections: each API pod holds up to 20). Changing the tier restarts the
-   instance, so do it the day before, in the maintenance window if possible.
-3. Load-test first: k6 against a local stack seeded with `tools/dev/seed.py --fans 20000`, or against beta
-   outside testers' hours with a throwaway artist (see `docs/plans/ui-testing-and-launch.md`).
+   (Autopilot provisions capacity for the new pods). Put it back afterwards. Size it as ceil(expected peak fans
+   arriving per second x 3 / 75): a pod held ~150 fans/s in the load test, planned at half (`tools/load/README.md`).
+2. Check Cloud SQL headroom (CPU, connections: each API pod holds up to 24, 20 plus 4 for the standing snapshot).
+   2 vCPUs reached their limit at ~400 fans/s in the load test. Changing the tier restarts the instance, so do it
+   the day before, in the maintenance window if possible.
+3. Load-test first: `tools/load/http/run.sh` (k6 against a local stack), or on beta outside testers' hours with a
+   throwaway artist: `tools/load/README.md`, "Running it on beta", which also has the measured capacity per pod and
+   per database CPU to size step 1 from.
 
 ## Backups and restore
 

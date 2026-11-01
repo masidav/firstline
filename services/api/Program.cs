@@ -28,6 +28,7 @@ using FandomScore.Api.Features.Trivia;
 using FandomScore.Api.Features.Users;
 using FandomScore.Api.Infrastructure;
 using FandomScore.Spotify;
+using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -40,9 +41,33 @@ if (string.IsNullOrWhiteSpace(connectionString))
     throw new InvalidOperationException("ConnectionStrings:Database is not configured. See .env.example.");
 }
 
-builder.Services.AddNpgsqlDataSource(connectionString);
+// Two settings from the on-sale load test (tools/load/README.md, "Full HTTP path"), where parsing and planning, not
+// running, was most of the database's CPU:
+// - Automatic preparation: a statement run often on a connection is prepared there, so it is planned once instead of
+//   on every request. At 200 fans a second it took the database from 1.2 cores to 0.4. Every API query names its
+//   columns, so a migration can't change a prepared statement's result type under a running pod.
+// - No reset on close: otherwise every connection returned to the pool runs DISCARD ALL, which also throws away the
+//   plans PL/pgSQL caches per connection, so registration_blocker() and register_for_allocation() were planned again
+//   on every request (3x their cost). The API keeps no session state on a connection: SET LOCAL and
+//   set_config(..., true) end with the transaction, and the one session advisory lock (SpotifyPlayerAccess) is
+//   released in a finally block.
+builder.Services.AddNpgsqlDataSource(connectionString, source =>
+{
+    source.ConnectionStringBuilder.NoResetOnClose = true;
+    if (source.ConnectionStringBuilder.MaxAutoPrepare == 0)
+    {
+        source.ConnectionStringBuilder.MaxAutoPrepare = 100;
+    }
+});
+// The standing snapshot has its own small pool. Requests that show a standing hold a connection from the main pool
+// while they wait for the snapshot, so loading it from the same pool deadlocked under load: every connection held by
+// a request waiting for a load that was itself waiting for a connection, until the pool timeout failed them all.
+builder.Services.AddNpgsqlDataSource(connectionString, source => source.ConnectionStringBuilder.MaxPoolSize = 4,
+    serviceKey: StandingSnapshots.DataSourceKey);
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton<StandingSnapshots>();
+builder.Services.AddSingleton(sp => new StandingSnapshots(
+    sp.GetRequiredKeyedService<NpgsqlDataSource>(StandingSnapshots.DataSourceKey), sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<IConfiguration>()));
 builder.Services.AddAuth(builder.Configuration);
 builder.Services.AddSpotify(builder.Configuration);
 // Spotify access tokens for the player, held in memory only (ADR 0005).

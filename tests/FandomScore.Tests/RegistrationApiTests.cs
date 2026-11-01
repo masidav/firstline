@@ -25,13 +25,14 @@ public sealed class RegistrationApiTests(PostgresFixture postgres) : IAsyncLifet
     private WebApplicationFactory<Program> _factory = null!;
     private HttpClient _client = null!;
     private NpgsqlDataSource _db = null!;
+    private string _connectionString = null!;
     private Guid _artistId;
     private Guid _eventId;
     private Guid _allocationId;
 
     public async Task InitializeAsync()
     {
-        var connectionString = await postgres.CreateDatabaseAsync($"registrations_{Guid.NewGuid():N}");
+        var connectionString = _connectionString = await postgres.CreateDatabaseAsync($"registrations_{Guid.NewGuid():N}");
         var migration = Migrator.Upgrade(connectionString);
         Assert.True(migration.Successful, migration.Error?.ToString());
         _db = NpgsqlDataSource.Create(connectionString);
@@ -83,6 +84,25 @@ public sealed class RegistrationApiTests(PostgresFixture postgres) : IAsyncLifet
         var item = Assert.Single(mine.GetProperty("items").EnumerateArray());
         Assert.Equal(_allocationId.ToString(), item.GetProperty("allocation").GetProperty("id").GetString());
         Assert.Equal("Chicago", item.GetProperty("event").GetProperty("city").GetString());
+    }
+
+    [Fact]
+    public async Task The_standing_loads_even_when_every_connection_in_the_pool_is_taken()
+    {
+        // The eligibility request holds a connection while it waits for the standing snapshot. With the snapshot
+        // loading from the same pool, a pool of one deadlocked until the pool timeout (the on-sale load test found it
+        // with 20 connections, tools/load/README.md); the snapshot now has its own pool.
+        var fan = await FanAsync("pool_fan", score: 80, "us-il-chicago");
+        await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{_allocationId}/registration", fan), HttpStatusCode.Created);
+        await using var tight = _factory.WithWebHostBuilder(builder =>
+            builder.UseSetting("ConnectionStrings:Database", $"{_connectionString};Maximum Pool Size=1;Timeout=3"));
+        using var client = tight.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/v1/allocations/{_allocationId}/eligibility");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", fan);
+
+        var eligibility = await JsonAsync(await client.SendAsync(request), HttpStatusCode.OK);
+
+        Assert.Equal(1, eligibility.GetProperty("standing").GetProperty("rank").GetInt32());
     }
 
     [Fact]

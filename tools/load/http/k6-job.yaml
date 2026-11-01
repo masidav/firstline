@@ -1,0 +1,78 @@
+# The on-sale k6 run inside a cloud cluster (tools/load/README.md, "Running it on beta"). Not part of any overlay:
+# applied by hand for one run, then deleted. It runs as the api identity so it can mount Auth__SigningKey from Secret
+# Manager exactly as the API pods do: the key stays inside the cluster and never passes through the operator's machine.
+#
+#   kubectl -n fandomscore create configmap load-onsale --from-file=tools/load/http/onsale.js
+#   kubectl -n fandomscore apply -f tools/load/http/k6-job.yaml     # after editing the env values below
+#   kubectl -n fandomscore logs -f job/load-onsale
+#   kubectl -n fandomscore delete job/load-onsale configmap/load-onsale
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: load-onsale
+  labels:
+    app.kubernetes.io/component: load-test
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: load-test
+    spec:
+      restartPolicy: Never
+      serviceAccountName: api
+      securityContext:
+        runAsUser: 1654   # the API image's user, which can read the mounted secrets
+        runAsGroup: 1654
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: k6
+          image: grafana/k6:2.3.0
+          args: ["run", "--summary-trend-stats", "avg,med,p(95),p(99),max", "/scripts/onsale.js"]
+          env:
+            # In-cluster Service: the API and database without the load balancer and Cloud Armor. For the edge pass,
+            # https://api.beta.firstline-5730kl.com (all requests then come from the cluster's one egress address).
+            - name: BASE_URL
+              value: http://api.fandomscore.svc.cluster.local
+            - name: RUN
+              value: beta1        # the run tag given to setup.sql
+            - name: FANS
+              value: "5000"       # the fan count given to setup.sql
+            - name: PEAK
+              value: "25"
+            - name: HOLD
+              value: "60"
+            - name: SIGNING_KEY_FILE
+              value: /secrets/Auth__SigningKey
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: secrets
+              mountPath: /secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: "2"
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      volumes:
+        - name: scripts
+          configMap:
+            name: load-onsale
+        - name: secrets
+          csi:
+            driver: secrets-store-gke.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: api-secrets

@@ -428,7 +428,11 @@ built, images built locally). Nothing is applied to a GCP project yet; `infrastr
 - [ ] Use Workload Identity for all pod access to GCP; no service-account key files. (Configured; verify on first deploy.)
 - [ ] Restrict the quarantine bucket to the redaction workload only. (2026-10-27: among the workers only the `redaction` Deployment can reach it; the API still reads it for staff review and fans' pending photos, ADR 0002 "Files". Apply to beta and verify.)
 - [ ] Put the API behind Gateway API with managed TLS and Cloud Armor (WAF, bot and rate limiting). (Configured; verify on first deploy. Forwarded headers done and tested.)
-- [ ] Plan for on-sale traffic spikes: autoscaling, pre-scaling before scheduled on-sales, and load tests. (HPA and procedure written; no load test yet.)
+- [ ] Plan for on-sale traffic spikes: autoscaling, pre-scaling before scheduled on-sales, and load tests. (HPA and procedure written.)
+      *2026-11-01: k6 through the full HTTP path locally (`tools/load/http/run.sh`, results in `tools/load/README.md`):
+      a 500m pod holds ~150 fans/s at the peak (~900 requests/s), 2 database CPUs ~400 fans/s. Pre-scaling sized from
+      it (75 fans/s per pod with a 3x margin, 24 connections per pod) in `infrastructure/README.md`; HPA unchanged. Open
+      until the beta run in that README is done.*
 - [ ] Set up CI/CD, logging, monitoring, alerting, backups with point-in-time recovery, and a tested restore. (Workflow, uptime alert, and PITR configured; restore not rehearsed. 2026-10-25: dashboard, alerts for the API, pods, worker, and database, a worker liveness endpoint, and `infrastructure/RUNBOOK.md`; CI now validates the Terraform and manifests and builds the images.)
 
 - [ ] Host the fan web app and the promoter dashboard. (2026-10-28: nginx images with settings from `/config.js` at
@@ -465,8 +469,12 @@ Details: [ADR 0002](docs/adr/0002-hosting-gcp-gke.md) · [Infrastructure](infras
       snapshot. Contract tests done 2026-10-26 (`tests/FandomScore.Tests/Contract`): every response in the API tests is
       checked against `openapi.yaml`, and the API's routes are compared with it both ways. They found `GET /artists/{id}`
       documented and used by the app's score screen but never built (now built), rate-limit problems without `type`,
-      undocumented redirects, and 22 documented operations not built (now marked `x-planned`). Still to do: k6 through
-      the full HTTP path on beta.*
+      undocumented redirects, and 22 documented operations not built (now marked `x-planned`). k6 through the full HTTP
+      path done locally 2026-11-01 (`tools/load/http/run.sh`: signed-in fans open the show, poll eligibility, register;
+      API image at one pod's 0.5 CPU and at 2 CPUs, PostgreSQL 16 at 2 CPUs): no errors and every fan registered exactly
+      once at peaks of 25 to 400 fans/s, p95 under 100 ms up to 150 fans/s per pod. It found the standing snapshot
+      deadlocking the connection pool (500s after 15 s under load) and statements planned on every request; both fixed.
+      Still to do: the beta run (procedure in `tools/load/README.md`, "Running it on beta").*
 - [x] Dev environment with synthetic data: `tools/dev/seed.py` (fans, artists, shows, allocations, registrations),
       verified 2026-10-24 against a scratch database and run by CI. The cloud proving ground is **beta** with real
       testers, not a synthetic staging (ADR 0002, amended 2026-10-24); see `infrastructure/README.md`.

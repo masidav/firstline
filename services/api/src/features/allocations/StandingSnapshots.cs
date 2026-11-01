@@ -17,6 +17,12 @@ namespace FandomScore.Api.Features.Allocations;
 /// </summary>
 public sealed class StandingSnapshots(NpgsqlDataSource db, TimeProvider time, IConfiguration configuration)
 {
+    /// <summary>
+    /// The service key of this class's own connection pool (Program.cs): callers hold a connection from the main pool
+    /// while they wait for a snapshot, so loading it from that pool can starve.
+    /// </summary>
+    public const string DataSourceKey = "standing-snapshots";
+
     private static readonly TimeSpan Unused = TimeSpan.FromMinutes(10);
 
     private readonly ConcurrentDictionary<Guid, Slot> _slots = new();
