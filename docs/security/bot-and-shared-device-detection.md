@@ -45,10 +45,10 @@ on their own, and the counts are about the service's behaviour towards abuse rat
 (the same reasoning as `auth_identities`; listed as such in DATA_INVENTORY.md). The evidence a rule writes into
 `fraud_flags.evidence` holds counts, days, and allocation ids only.
 
-## Rules (`fraud_rules`, thresholds provisional)
+## Rules (`fraud_rules`; `shared_device` decided 2026-11-02, the other six provisional)
 | Rule | Flags as | Fires when (starting values) | What it catches | Known false positives |
 |---|---|---|---|---|
-| `shared_device` | shared_device | A push device the fan used in the last 90 days was registered by **3 or more** accounts in that time | one phone, several accounts (a streaming farm or ticket reseller cycling accounts) | a shared family phone; a demo phone at a venue |
+| `shared_device` | shared_device | A push device the fan used in the last 90 days was registered by **2 or more** accounts in that time (decided 2026-11-02: 2; migration 0055; was 3) | one phone, several accounts (a couple's second account, a streaming farm, or a ticket reseller cycling accounts) | a shared family phone; a demo phone at a venue; a couple who really are two fans on one phone |
 | `shared_address_signups` | duplicate_account | **5 or more** accounts created from the fan's sign-up address on the **same UTC day**, in the last 30 days | bulk sign-ups from one machine or network | a dorm, office, or carrier-grade NAT the day a show is announced |
 | `shared_address_registrations` | duplicate_account | **5 or more** accounts registered for the **same allocation** from the same address on the same day, in the last 30 days | a cluster going for one show | friends registering together on one Wi-Fi (the rule is per show, so this needs five of them) |
 | `spotify_account_reuse` | duplicate_account | The fan's Spotify account was linked to **2 or more other** fan accounts in the last 180 days, or the fan connected **3 or more** different Spotify accounts | one Spotify account passed around to qualify several fan accounts; one person trying accounts | a fan who deleted and re-created their account (2 accounts, under the threshold) |
@@ -81,8 +81,11 @@ then the rest), a held fan isn't flagged again, and a cleared rule waits its `co
 
 ## Owner decisions this raises
 1. Confirm the seven thresholds above (listed under "Fraud detection thresholds set provisionally" in `PROJECT_TODO.md`).
+   *Decided 2026-11-02: `shared_device` = 2 accounts (migration 0055). The other six stay provisional.*
 2. Retention of the signal tables (30 / 90 / 180 days, DATA_INVENTORY.md "Retention"), and that they are not in the
-   fan's data download.
+   fan's data download. *Confirmed 2026-11-02: address hashes 30 days, daily salt 2 days, device history 90, Spotify
+   history 180, eligibility counts 90; the signal tables stay out of the fan's data download.*
 3. Whether to add Cloud Armor (or a log-based alert) for request cadence at the edge.
 4. `shared_device` at 3 accounts will flag families who share a phone; 2 would catch couples' second accounts but
-   doubles the reviews. Keep 3 until the first pilot's review log says otherwise.
+   doubles the reviews. *Decided 2026-11-02: 2.* The owner accepts the extra staff reviews to catch couples' second
+   accounts (migration 0055).

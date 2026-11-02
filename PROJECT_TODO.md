@@ -368,13 +368,15 @@ Details: [Notifications](services/api/src/features/notifications/TODO.md) · [Mo
       (playlist adds and the follow count since migration 0048, dated by Spotify's `added_at` or the sync's first
       sighting; undated items already there at the first sync don't count, migration 0049). *Burst confirmed 2026-10-30: a genuine new fan saving a whole discography on joining goes to staff
       review, accepted. The four play-pattern thresholds are still provisional.* Devices, networks, and bots
-      (2026-11-01, migration 0054): shared device = 3+ accounts on one phone in 90 days; shared address = 5+ sign-ups
+      (2026-11-01, migration 0054): shared device = 2+ accounts on one phone in 90 days (decided 2026-11-02; was 3;
+      migration 0055); shared address = 5+ sign-ups
       from one address on one UTC day, or 5+ accounts registering for one show from one address on one day, in the
       last 30 days; Spotify reuse = one Spotify account through 3+ fan accounts in 180 days, or one fan through 3+
       Spotify accounts; headless = 2+ registrations in 30 days without the app's eligibility check first; instant =
       2+ registrations within 10 minutes of sign-up; polling = 300+ eligibility checks of one show in a day. Signal
       retention (address hashes 30 days with a 2-day salt, device history 90, Spotify history 180, eligibility counts
-      90) is provisional too.
+      90) confirmed 2026-11-02, and the signal tables stay out of the fan's data download; the other six device,
+      network, and bot thresholds are still provisional.
 - [x] Automatic flags stay hidden from the fan until a person reviews them (decided 2026-10-30): registering is refused
       with a neutral "Registration isn't available for your account right now"; no notice, review screen, appeal, or
       data-download trace until staff uphold; an unreviewed flag leaves the fan in the draw, and staff are told when a

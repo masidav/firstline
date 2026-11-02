@@ -117,7 +117,7 @@ configuration, and what GCP logs at the edge.
 | Notifications | kept | decide (proposal: read notices after 180 days, all after 1 year) |
 | Logs (app, load balancer with IPs, flow logs) | 30 days (Cloud Logging default) | set provisionally, confirm or change |
 | IP addresses and rate-limit counters | in memory only (limiter); in logs 30 days | no stored data; follows the log period |
-| Fraud signals (0054): address hashes 30 days (daily salt 2 days), push device history 90 days, Spotify account history 180 days, eligibility check counts 90 days | as listed | set provisionally 2026-11-01, confirm or change (`docs/security/bot-and-shared-device-detection.md`) |
+| Fraud signals (0054): address hashes 30 days (daily salt 2 days), push device history 90 days, Spotify account history 180 days, eligibility check counts 90 days | as listed | confirmed 2026-11-02 (`docs/security/bot-and-shared-device-detection.md`); the tables stay out of the fan's data download |
 | Fraud flags, evidence, appeals, eligibility audit | kept, also after deletion | decide (proposal: 2 years after the decision, deleted accounts included) |
 | Registrations of closed allocations (standing snapshot, rank) | kept | decide (proposal: clear the score snapshot 1 year after the show; keep outcome and seats) |
 | Reservations | kept | decide (likely legal/tax once money moves) |

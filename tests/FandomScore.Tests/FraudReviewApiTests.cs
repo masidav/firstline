@@ -551,10 +551,12 @@ public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifeti
     // ------------------------------------------------------------------ bot and shared-device rules (0054)
 
     [Fact]
-    public async Task The_detection_job_flags_three_accounts_on_one_phone_but_not_a_couple_with_counts_only()
+    public async Task The_detection_job_flags_three_accounts_on_one_phone_and_a_couple_but_not_a_lone_phone_with_counts_only()
     {
+        // Two accounts on one phone is the threshold (migration 0055, decided 2026-11-02; was 3).
         const string farmPhone = "ExponentPushToken[fraudfarmphone01]";
         const string couplePhone = "ExponentPushToken[fraudcouplephone]";
+        const string ownPhone = "ExponentPushToken[fraudlonephone01]";
         foreach (var handle in new[] { "phone_one", "phone_two", "phone_three" })
         {
             await JsonAsync(await SendAsync(HttpMethod.Put, "/v1/me/push-devices", await FanAsync(handle, score: null), new { token = farmPhone, platform = "ios" }), HttpStatusCode.OK);
@@ -565,16 +567,19 @@ public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifeti
             await JsonAsync(await SendAsync(HttpMethod.Put, "/v1/me/push-devices", await FanAsync(handle, score: null), new { token = couplePhone, platform = "android" }), HttpStatusCode.OK);
         }
 
+        await JsonAsync(await SendAsync(HttpMethod.Put, "/v1/me/push-devices", await FanAsync("own_phone", score: null), new { token = ownPhone, platform = "android" }), HttpStatusCode.OK);
+
         await DetectAsync();
         await DetectAsync();   // idempotent
 
         var flags = await QueueAsync();
-        Assert.Equal(["phone_one", "phone_three", "phone_two"], flags.Select(f => f.GetProperty("user").GetProperty("handle").GetString()).Order());
+        Assert.Equal(["couple_one", "couple_two", "phone_one", "phone_three", "phone_two"], flags.Select(f => f.GetProperty("user").GetProperty("handle").GetString()).Order());
         foreach (var flag in flags)
         {
             Assert.Equal(("rule", "shared_device"), (flag.GetProperty("source").GetString(), flag.GetProperty("reason").GetString()));
             var rule = flag.GetProperty("evidence").GetProperty("rules").GetProperty("shared_device");
-            Assert.Equal((1, 3), (rule.GetProperty("devices").GetInt32(), rule.GetProperty("most_accounts").GetInt32()));
+            var onPhone = flag.GetProperty("user").GetProperty("handle").GetString()!.StartsWith("couple", StringComparison.Ordinal) ? 2 : 3;
+            Assert.Equal((1, onPhone), (rule.GetProperty("devices").GetInt32(), rule.GetProperty("most_accounts").GetInt32()));
             Assert.DoesNotContain("PushToken", flag.GetProperty("evidence").GetRawText(), StringComparison.Ordinal);
         }
     }

@@ -3008,7 +3008,7 @@ SELECT pg_temp.expect_error($$INSERT INTO client_address_events (user_id, kind, 
 -- every account of a cluster, once; a cleared rule waits its cooldown.
 DO $$
 DECLARE staff uuid; art uuid; ev1 uuid; ev2 uuid; al1 uuid; al2 uuid; u uuid; i int; hits jsonb;
-        dev uuid[]; pair uuid[]; addr uuid[]; addr4 uuid[]; sp uuid[]; sp_pair uuid[]; hop uuid; hl uuid; hl_view uuid;
+        dev uuid[]; pair uuid[]; solo uuid; addr uuid[]; addr4 uuid[]; sp uuid[]; sp_pair uuid[]; hop uuid; hl uuid; hl_view uuid;
         inst uuid; inst_one uuid; poll uuid; poll_low uuid;
 BEGIN
   INSERT INTO users (handle, email, is_staff) VALUES ('rule_staff', 'rule_staff@example.test', true) RETURNING id INTO staff;
@@ -3022,7 +3022,7 @@ BEGIN
   INSERT INTO allocations (event_id, tickets, face_value_cents, min_raw_score, registration_opens_at, registration_closes_at, published_at)
   VALUES (ev2, 10, 4500, 0, now() - interval '1 hour', now() + interval '6 days', now()) RETURNING id INTO al2;
 
-  -- shared_device: three accounts on one phone fire; two don't.
+  -- shared_device: three accounts on one phone fire, and so do two (the threshold, 0055); a lone phone doesn't.
   FOR i IN 1..3 LOOP
     INSERT INTO users (handle, email) VALUES ('rule_dev' || i, 'rule_dev' || i || '@example.test') RETURNING id INTO u;
     dev := dev || u;
@@ -3035,10 +3035,15 @@ BEGIN
     INSERT INTO push_devices (user_id, token, platform) VALUES (u, 'ExponentPushToken[rulephone0002]', 'ios')
     ON CONFLICT ON CONSTRAINT push_devices_token_key DO UPDATE SET user_id = EXCLUDED.user_id, last_seen_at = now();
   END LOOP;
+  INSERT INTO users (handle, email) VALUES ('rule_solo', 'rule_solo@example.test') RETURNING id INTO solo;
+  INSERT INTO push_devices (user_id, token, platform) VALUES (solo, 'ExponentPushToken[rulephone0003]', 'ios');
   hits := fraud_rule_hits(dev[1]);
   ASSERT hits -> 'shared_device' = jsonb_build_object('devices', 1, 'most_accounts', 3, 'days', 90), hits::text;
   ASSERT (SELECT array_agg(k) FROM jsonb_object_keys(hits) k) = ARRAY['shared_device'], hits::text;
-  ASSERT fraud_rule_hits(pair[1]) = '{}', 'two accounts on a phone: ' || fraud_rule_hits(pair[1])::text;
+  hits := fraud_rule_hits(pair[1]);
+  ASSERT hits -> 'shared_device' = jsonb_build_object('devices', 1, 'most_accounts', 2, 'days', 90), 'two accounts on a phone: ' || hits::text;
+  ASSERT (SELECT array_agg(k) FROM jsonb_object_keys(hits) k) = ARRAY['shared_device'], hits::text;
+  ASSERT fraud_rule_hits(solo) = '{}', 'one account on a phone: ' || fraud_rule_hits(solo)::text;
 
   -- shared_address_signups: five sign-ups from one address in a day fire; four from another don't.
   FOR i IN 1..5 LOOP
@@ -3145,6 +3150,7 @@ BEGIN
   PERFORM run_fraud_detection(interval '1 day');
   ASSERT (SELECT count(*) FROM fraud_flags WHERE user_id = ANY (dev) AND status = 'open' AND source = 'rule') = 3, 'the three on the phone';
   ASSERT (SELECT count(*) FROM fraud_flags WHERE user_id IN (dev[2], dev[3]) AND reason = 'shared_device') = 2, 'named shared_device';
+  ASSERT (SELECT count(*) FROM fraud_flags WHERE user_id = ANY (pair) AND status = 'open' AND source = 'rule' AND reason = 'shared_device') = 2, 'the two on the other phone';
   -- dev1 also registered with the four: both rules in one flag, named by the first rule key (neither is a bot rule).
   ASSERT (SELECT reason = 'duplicate_account' AND evidence -> 'rules' ? 'shared_device' AND evidence -> 'rules' ? 'shared_address_registrations'
             FROM fraud_flags WHERE user_id = dev[1]), 'one flag with both rules';
@@ -3156,7 +3162,7 @@ BEGIN
      AND (SELECT reason FROM fraud_flags WHERE user_id = poll) = 'bot', 'bots';
   -- Four by now: the staff member's sign-in on the phone counts (what staff share is a signal too; they just aren't flagged).
   ASSERT (SELECT evidence -> 'rules' -> 'shared_device' ->> 'most_accounts' FROM fraud_flags WHERE user_id = dev[1]) = '4', 'counts in the evidence';
-  ASSERT NOT EXISTS (SELECT 1 FROM fraud_flags WHERE user_id IN (pair[1], pair[2], sp_pair[1], sp_pair[2], hl_view, inst_one, poll_low, staff)), 'controls untouched';
+  ASSERT NOT EXISTS (SELECT 1 FROM fraud_flags WHERE user_id IN (solo, sp_pair[1], sp_pair[2], hl_view, inst_one, poll_low, staff)), 'controls untouched';
   ASSERT (SELECT evidence::text FROM fraud_flags WHERE user_id = dev[1]) NOT LIKE '%rulephone%', 'no identifiers in the evidence';
   ASSERT run_fraud_detection(interval '1 day') = 0, 'held fans are not flagged again';
 
