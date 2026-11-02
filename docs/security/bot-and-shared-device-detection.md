@@ -85,7 +85,10 @@ then the rest), a held fan isn't flagged again, and a cleared rule waits its `co
 2. Retention of the signal tables (30 / 90 / 180 days, DATA_INVENTORY.md "Retention"), and that they are not in the
    fan's data download. *Confirmed 2026-11-02: address hashes 30 days, daily salt 2 days, device history 90, Spotify
    history 180, eligibility counts 90; the signal tables stay out of the fan's data download.*
-3. Whether to add Cloud Armor (or a log-based alert) for request cadence at the edge.
+3. Whether to add Cloud Armor (or a log-based alert) for request cadence at the edge. *Decided 2026-11-02: nothing
+   more now; Cloud Armor bot management with reCAPTCHA Enterprise before the first real on-sale (owner to-do,
+   section D). A log-based alert would only duplicate `eligibility_polling`; tighter per-address limits would hit
+   shared networks (campuses, carrier NAT) hardest during an on-sale.*
 4. `shared_device` at 3 accounts will flag families who share a phone; 2 would catch couples' second accounts but
    doubles the reviews. *Decided 2026-11-02: 2.* The owner accepts the extra staff reviews to catch couples' second
    accounts (migration 0055).

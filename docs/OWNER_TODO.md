@@ -174,13 +174,20 @@ Still open:
 - [ ] Email provider.
 - [ ] Product and company name.
 - [ ] "Listening now" check-ins and a Spotify data-export upload as extra signals.
-- [ ] Bot protection at the edge (found missing 2026-11-01; WAF and rate limiting are live): Cloud Armor bot
-  management with reCAPTCHA Enterprise (the fan app has to fetch reCAPTCHA tokens; billed per assessment), or only
-  rate limiting plus the fandom-score checks. Decide before a real on-sale.
+- [x] Bot protection at the edge (found missing 2026-11-01; WAF and rate limiting are live). *Decided 2026-11-02:
+  nothing more at the edge for now; the API-side rules (migration 0054) and staff review cover beta. Before the first
+  real on-sale, add Cloud Armor bot management with reCAPTCHA Enterprise (section D). A log-based cadence alert was
+  rejected (the API's daily polling rule already covers it) and tighter per-address rate limits were rejected (they
+  punish campuses and carrier NATs). Options compared in `docs/security/bot-and-shared-device-detection.md`.*
 
 ## D. Business and legal, before a real launch
 
 - [ ] Choose the pilot artist(s) and promoter.
+- [ ] Edge bot management before the first real on-sale (decided 2026-11-02): Cloud Armor bot management with
+  reCAPTCHA Enterprise. Needs a reCAPTCHA Enterprise key in the beta and prod projects, the web app loading the
+  reCAPTCHA script and the phone app embedding the SDK, a privacy-notice line for reCAPTCHA, the Cloud Armor rule in
+  Terraform, and a rehearsal with the on-sale load test (`tools/load/README.md`) before it goes live. Billed per
+  assessment above the free monthly tier. Size it against pilot timing; Claude can build it when you say so.
 - [ ] Ticketing partner and model (checkout through the ticketer, or direct allocation links), and which ticketers
   will give API access to reserved inventory.
 - [ ] Spotify's developer terms: confirm listening data may decide ticket eligibility, and how to get past

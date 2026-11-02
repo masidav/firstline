@@ -484,7 +484,9 @@ built, images built locally). Nothing is applied to a GCP project yet; `infrastr
       it). Bot protection isn't configured (no reCAPTCHA bot management rule); that needs a decision
       (`docs/OWNER_TODO.md`, section C). The API's responses lacked HSTS and `nosniff` (the web apps had them); the
       api HTTPRoute now sets both (deployed in cb1b524;
-      `curl -D -` on `/v1/health` shows both). Default SSL policy (no minimum TLS version set).*
+      `curl -D -` on `/v1/health` shows both). Default SSL policy (no minimum TLS version set).* Edge bot management decided 2026-11-02: deferred to before the first real on-sale
+      (reCAPTCHA Enterprise through Cloud Armor; `docs/OWNER_TODO.md` section D); beta relies on the API-side rules
+      of migration 0054.
 - [ ] Plan for on-sale traffic spikes: autoscaling, pre-scaling before scheduled on-sales, and load tests. (HPA and procedure written.)
       *2026-11-01: k6 through the full HTTP path locally (`tools/load/http/run.sh`, results in `tools/load/README.md`):
       a 500m pod holds ~150 fans/s at the peak (~900 requests/s), 2 database CPUs ~400 fans/s. Pre-scaling sized from
