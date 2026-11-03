@@ -65,8 +65,9 @@ then the rest), a held fan isn't flagged again, and a cleared rule waits its `co
 ## What still isn't detectable, and why
 - **Request cadence that's too regular** (a script hitting endpoints at exact intervals): needs per-request
   timestamps, which the API doesn't keep and this note chose not to add (that's a request log with a user id).
-  The load balancer logs have it for 30 days; Cloud Armor or a log-based alert is the owner's call
-  (`PROJECT_TODO.md`). The daily eligibility count is the proportionate stand-in.
+  The load balancer logs have it for 30 days. Decided 2026-11-02: no log-based alert; Cloud Armor bot management
+  with reCAPTCHA Enterprise before the first real on-sale (owner decision 3 below). The daily eligibility count is
+  the proportionate stand-in.
 - **A bot that behaves like the app**: checks eligibility, waits, registers once per show, one account per phone
   and address. Nothing here sees it; the play-pattern rules and one-person-per-account verification are the
   answer to that.

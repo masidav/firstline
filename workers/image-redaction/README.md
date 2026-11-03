@@ -46,8 +46,8 @@ status and points). Merch and concert photos with no code are archived without s
 - A scan that finds nothing is not proof of a clean image; that is why tickets and screenshots without a code go to
   staff.
 - `submission_files.sha256` stays the original's (duplicate detection compares new uploads with what fans sent).
-- Hosting: redaction runs in the shared worker for now. Once the Cloud Storage file store exists, it moves to its own
-  `redaction` deployment (the only workload that can read quarantine; `infrastructure/TODO.md`).
+- Hosting: since 2026-10-27 redaction runs in its own `redaction` Deployment (same worker image, `Jobs__OnlyKinds`),
+  the only worker that can reach the quarantine bucket (ADR 0002 "Files"; `infrastructure/k8s/base/redaction-deployment.yaml`).
 
 Tests: `tests/FandomScore.Tests/RedactionJobTests.cs` (synthetic tickets with QR, tilted Code 128, Aztec, Data Matrix
 and PDF417; missed-code, unreadable, failed-write, and sweep cases), `RedactionApiTests.cs` (staff decisions).

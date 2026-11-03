@@ -641,9 +641,13 @@ Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps
       verified" (now 404). No schema change. Not separately raced (constraints or locks already cover them): org
       members, hub cities, +1 naming, fraud appeals, upload finishing; a push job that dies between sending and
       recording can resend (at-least-once, by design). Verified: `dotnet build` 0 warnings, `dotnet test` 406/406.*
-- [ ] Document decisions that remain proposed or open in the source README.
+- [x] Document decisions that remain proposed or open in the source README.
+      *Done 2026-11-03: [`docs/DECISIONS.md`](docs/DECISIONS.md) indexes provisional (21), open (31), and recently
+      decided (37) items by area, each with its value, date, and source of truth, checked against the latest
+      migration or code; linked from `README.md`. Items are still ticked here.*
 
 ## Open decisions
+Index of every provisional, open, and recently decided item: [`docs/DECISIONS.md`](docs/DECISIONS.md).
 - [x] Confirm backend framework and job-queue choice. ASP.NET Core ([ADR 0001](docs/adr/0001-backend-csharp-dotnet.md)); small Postgres queue ([ADR 0004](docs/adr/0004-postgres-job-queue.md)).
 - [x] Confirm album catalog provider and its caching/artwork terms. Spotify (app token), minimal metadata cache refreshed weekly,
       removed releases delisted not deleted, cover art hotlinked and unaltered, Spotify logo and link on catalog screens

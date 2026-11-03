@@ -4,6 +4,8 @@ This folder contains a starter set of feature-specific `TODO.md` checklists deri
 
 Useful links (local addresses, beta consoles, CI, provider dashboards, key docs): open `docs/links.html` in a browser.
 
+Decisions that are provisional (in code, to confirm or change), still open, or recently made: [`docs/DECISIONS.md`](docs/DECISIONS.md).
+
 ## How to use
 1. Review the actual repository before moving or creating files.
 2. Merge these checklists into matching feature folders; do not overwrite existing implementation.
@@ -19,4 +21,4 @@ Useful links (local addresses, beta consoles, CI, provider dashboards, key docs)
 - Do not mark tests passed unless they were run and passed.
 
 ## Important notes
-The source specification proposes React Native/Expo, a Node.js or Python API, Redis, an S3-compatible store, and BullMQ or Celery. Do not introduce a second stack if the existing project has already selected one. Verification thresholds, baseline blending parameters, and some integration choices are provisional. Verify external provider requirements before implementation.
+The source specification proposes React Native/Expo, a Node.js or Python API, Redis, an S3-compatible store, and BullMQ or Celery. Do not introduce a second stack if the existing project has already selected one. Verification thresholds, baseline blending parameters, and some integration choices are provisional; the full list, with current values and where each lives, is in [`docs/DECISIONS.md`](docs/DECISIONS.md). Verify external provider requirements before implementation.

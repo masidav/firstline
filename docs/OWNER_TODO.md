@@ -167,7 +167,7 @@ Rules already in code provisionally; confirm or change each (details in `PROJECT
 
 Still open:
 - [ ] Receipts in the feed: a separate never-shared "receipt" proof kind, a staff "not shareable" flag, or both.
-- [ ] Blind album rankings: Tuesday or Thursday.
+- [ ] Blind album rankings: which day and how often (not Tuesday or Thursday, decided 2026-10-27; those are trivia and prompt days).
 - [ ] How much journal and proof points weigh against the 0 to 100 Spotify score.
 - [ ] Verification thresholds and baseline parameters (provisional defaults in code).
 - [ ] How co-credited tracks and albums count.
