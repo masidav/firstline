@@ -1,6 +1,6 @@
 # Plan: split the monorepo so each piece ships on its own
 
-Status: proposal, nothing done yet. Date: 2026-10-31.
+Status: step 1 done (2026-11-03); steps 2–6 are proposals. Date: 2026-10-31.
 
 ## Why, and what has to change
 
@@ -101,6 +101,23 @@ are tested where rollback is trivial.
 
 1. **Per-component deploy, still in one repo.** Add `versions.env`, teach `deploy.sh` to deploy only changed
    components (and skip backup/migrate when the backend didn't change). Verify with a web-only deploy to beta.
+   **Done 2026-11-03** (56707f5). Differs from the sketch above in one way: `versions.env` (per overlay) says
+   `auto` or a pinned commit per component, and `auto` resolves to the last commit that changed the paths the
+   component's images are built from (`infrastructure/k8s/versions.sh`, the one component → images → paths map).
+   CI doesn't commit version bumps back to `main` (that would race the agents pushing there, and pushes made with
+   the workflow token don't trigger workflows); the version follows from git history, so every run computes the
+   whole set as of its commit, and a newer push replacing a queued run can't leave a component behind. A run whose
+   commit is no longer `main`'s head skips. Images are tagged with their component's version; CI builds only tags
+   the registry lacks. `deploy.sh <env>` compares with what's running: new backend version → backup, migrate Job,
+   settings, seed, rollout; web or manifest change only → rollout without the Job; nothing differs (`kubectl diff`,
+   `settings`/`seed` recorded in ConfigMap `deploy-inputs`) → nothing. A manual run (`deploy: all`) or
+   `DEPLOY_ALL=1` does every step. Rollback of one component = pin its line (`infrastructure/README.md`,
+   "Deploying"). Verified on beta: Deploy run 41708163437 (first run, at 4e96c90) re-pinned everything (backend
+   288e4d6 with backup and migrate Job, web/promoter-web 6a43873, all images already in the registry, nothing
+   rebuilt); run 41709111106 (64c7bb2, a comment in `apps/mobile/src/config.ts`) built only `web:64c7bb2`, showed
+   only the web image in the diff, took no backup and left the migrate Job (20:01:54Z), and replaced only the web
+   pods; api, worker, redaction, and promoter-web kept their ReplicaSets and pods from 20:02Z. A docs-only push
+   (this note) deploys nothing.
 2. **Contract releases + vendored contract.** Add the release tagging and `oasdiff` check; switch both apps to
    `contract/openapi.yaml` + `sync:api`. Ends the `../../openapi.yaml` reach-around.
 3. **Testkit image.** Publish it; switch `apps/*/e2e/run.sh` and the CI `e2e` job to use it. Move
