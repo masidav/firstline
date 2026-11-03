@@ -19,7 +19,8 @@ manifests describe the workloads; GitHub Actions builds images and deploys.
 | `terraform/bootstrap.sh` | One-time project setup: billing link, base APIs, Terraform state bucket. |
 | `k8s/base` | Namespace, service accounts, migrate Job, API, worker, and redaction Deployments, HPA, PDB, Gateway. |
 | `k8s/overlays/{beta,prod}` | Project, images, hostnames, secrets list, replica counts. |
-| `k8s/deploy.sh` | Backup, migrations, rollout, health check. Used by CI and by hand. |
+| `k8s/deploy.sh` | Deploys what changed: backup and migrations only for a new backend version, rollout, health check. Used by CI and by hand. |
+| `k8s/versions.sh` | Each component's version (backend, web, promoter-web) from `overlays/<env>/versions.env` and git history. |
 | `k8s/db-shell.sh` | psql on an environment's database from a temporary pod (`db-shell.sh beta`); the password stays in the cluster. |
 | `RUNBOOK.md` | On-call: what each alert means and what to do; first-five-minutes checklist; common actions. |
 | `OPERATIONS.md` | Backups and their retention, RPO/RTO, recovery procedures, alerts, metrics, logs, incidents. |
@@ -141,10 +142,13 @@ steps with `prod` in place of `beta`.
    ```bash
    gcloud container clusters get-credentials fandomscore-beta --region us-central1 --project project-ef36a8a9-d958-4163-b4c
    gcloud auth configure-docker us-central1-docker.pkg.dev
-   for t in api worker migrate web promoter-web; do
-     docker build --target $t -t us-central1-docker.pkg.dev/project-ef36a8a9-d958-4163-b4c/fandomscore/$t:$(git rev-parse HEAD) . && docker push "$_"
+   # Each image is tagged with its component's version (versions.sh prints "component commit auto|pinned images...").
+   infrastructure/k8s/versions.sh beta | while read -r _ commit _ images; do
+     for t in $images; do
+       docker build --target $t -t us-central1-docker.pkg.dev/project-ef36a8a9-d958-4163-b4c/fandomscore/$t:$commit . && docker push "$_"
+     done
    done
-   SKIP_BACKUP=1 SKIP_HEALTH_CHECK=1 infrastructure/k8s/deploy.sh beta $(git rev-parse HEAD)
+   DEPLOY_ALL=1 SKIP_BACKUP=1 SKIP_HEALTH_CHECK=1 infrastructure/k8s/deploy.sh beta
    ```
    Then `curl https://api.beta.example.com/v1/health`.
 
@@ -174,24 +178,57 @@ with its own certificate in the same certificate map (Terraform `web_domains`) a
 
 ## Deploying
 
-`deploy.sh <beta|prod> <tag>` sets the three image tags in the overlay, takes the Cloud SQL backup, applies
-everything except the Deployments, deletes the previous `migrate` Job and creates a new one, waits for it to
-complete (prints its log, fails the deploy if it fails), applies the Deployments, waits for the api, worker, and
-redaction rollouts, and
-polls the public health endpoint. Migrations run once per commit before any new API pod receives traffic; the
-Job's image is the same commit as the API.
+Three components deploy separately, each at its own version (a git commit, which is also its images' tag):
 
-- **Promotion.** Push to `main` builds the images once (tagged with the commit SHA), deploys beta, and after
-  approval copies the same digests into the prod registry and deploys prod. Running the workflow by hand with
-  `beta` stops after beta; with `prod` it does both.
-- **Roll back.** Migrations are forward-only (see above), so a rollback is the previous application version
-  against the current schema. Redeploy the previous commit: `deploy.sh prod <previous-sha>` (the images are still
-  in the registry; the migrate Job finds nothing to do; `SKIP_BACKUP=1` is fine, nothing migrates), or for an
-  immediate stop-gap `kubectl rollout undo deployment/api -n fandomscore`.
+| Component | Images (Deployments) | Built from (`k8s/versions.sh`) |
+| --- | --- | --- |
+| `backend` | `api`, `worker` (`worker`, `redaction`), `migrate` (Job) | `services/api`, `workers`, `database`, `packages/{spotify,storage,notifications}`, `global.json`, `Directory.Build.props` |
+| `web` | `web` (fan web app) | `apps/mobile`, `infrastructure/web` |
+| `promoter-web` | `promoter-web` | `apps/promoter-web`, `infrastructure/web` |
+
+The `Dockerfile` and `.dockerignore` count for all three. `k8s/overlays/<env>/versions.env` says per component
+`auto` (normal) or a commit (held there, a rollback). `auto` resolves to the last commit that changed the
+component's paths, so a commit that doesn't touch them leaves its version, images, and pods alone.
+`infrastructure/k8s/versions.sh beta` prints what each resolves to.
+
+`deploy.sh <beta|prod>` (no tag argument) sets each image to its component's version, checks every image is in the
+registry, and compares with what's running:
+- **Backend version changed:** Cloud SQL backup (`pre-deploy <sha>`), applies everything except the Deployments,
+  replaces the `migrate` Job and waits for it (prints its log, fails the deploy if it fails), writes settings and
+  demo data, then the rollout. Migrations run before any new API pod receives traffic; the Job's image is the
+  same build as the API.
+- **Only a web app (or a manifest) changed:** the rollout alone (`kubectl apply` without the migrate Job). No
+  backup, no migrations; Deployments whose spec is unchanged keep their pods.
+- **Nothing changed** (`kubectl diff` empty, versions equal to the running images, `settings`/`seed` as last
+  written, recorded in the ConfigMap `deploy-inputs`): prints "Nothing to deploy" and stops. Docs, Terraform, and
+  CI-only pushes end here.
+- Otherwise it waits for every rollout and polls the public health endpoint, as before. `DEPLOY_ALL=1` runs every
+  step regardless (after `db-wipe.sh`, or to redo a deploy).
+
+- **The workflow.** Each push to `main` runs Deploy: `versions.sh`, then builds only the images the registry
+  doesn't have (an unchanged component's image is already there under its version), then `deploy.sh`. Runs are
+  serialized (concurrency group `deploy`); a newer push replaces a waiting run, and a run whose commit is no longer
+  `main`'s head skips, because every run deploys all components' versions as of its commit, not only its own push's
+  changes. So two quick pushes can't leave a component behind, and a re-run of an old run can't put one back.
+  Running the workflow by hand deploys everything (`deploy: all`, the default) or only what changed
+  (`deploy: changed`).
+- **Promotion.** After beta, and approval, the prod job copies the same digests into the prod registry (only the
+  tags it doesn't have) and runs `deploy.sh prod`. Running the workflow by hand with `beta` stops after beta;
+  with `prod` it does both.
+- **Roll back one component.** Migrations are forward-only (see above), so a rollback is a previous application
+  version against the current schema. Find the version it ran before (the previous Deploy run's "Versions" step,
+  or `kubectl get deploy -n fandomscore -o wide` before the bad deploy; images under `gcloud artifacts docker tags
+  list us-central1-docker.pkg.dev/<project>/fandomscore/web`), set that line in `k8s/overlays/<env>/versions.env`
+  (`web=<sha>`), commit, and push: Deploy rolls back that component only. A `web` or `promoter-web` rollback is a
+  plain rollout; a `backend` one takes a backup and runs the migrate Job, which finds nothing to apply (old
+  migrator, newer journal). Set the line back to `auto` with the fix. Any commit whose images were pushed works,
+  including every commit deployed before per-component versions (all five images were tagged with it).
+  Immediate stop-gap without git: `kubectl rollout undo deployment/<name> -n fandomscore` (the next deploy
+  puts the pinned version back).
 - **A migration broke data.** Restore the `pre-deploy <sha>` backup. A restore replaces the instance's data, so
   stop the API and workers first (`kubectl scale deployment/api deployment/worker deployment/redaction --replicas=0 -n fandomscore`),
   then `gcloud sql backups list --instance fandomscore-beta` and `gcloud sql backups restore <id> --restore-instance
-  fandomscore-beta`, redeploy the previous commit, and scale back up. Writes made after the backup are lost;
+  fandomscore-beta`, pin `backend` to the previous version (Roll back one component), and scale back up. Writes made after the backup are lost;
   for a narrower window, clone to a point in time instead (Backups and restore). On prod, prefer the clone.
 - **Environment settings.** An overlay with a `settings` file (`key=value` lines) gets those rows written to
   `app_settings` after the migrations on every deploy, so the file is the source of truth. Beta sets
@@ -212,8 +249,8 @@ Job's image is the same commit as the API.
   seeded fans), so more can be added to a seeded environment. To start over (for example to switch from made-up to
   real artists), run `infrastructure/k8s/db-wipe.sh beta` (drops everything the app user owns, accounts included)
   and deploy again; to stop seeding, delete the file. prod must never have a `seed` file.
-- **Config change without a code change.** Edit the overlay and run `deploy.sh` with the current SHA. The
-  ConfigMap name carries a content hash, so pods restart with the new values.
+- **Config change without a code change.** Edit the overlay and push (or run `deploy.sh`): `kubectl diff` sees it, so it
+  is applied without a backup or migrations. The ConfigMap name carries a content hash, so pods restart with the new values.
 - **Secret rotation.** Add a new secret version; restart the Deployment (`kubectl rollout restart deployment/api
   -n fandomscore`) because the mount is read at start. For `Spotify__TokenKey`, follow `.env.example`: add
   `Spotify__PreviousTokenKeys` as a secret (`gcloud secrets create`), grant the api and worker identities access,

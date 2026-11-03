@@ -19,4 +19,4 @@ SET client_min_messages = warning;
 DROP OWNED BY CURRENT_USER CASCADE;
 SELECT count(*) AS tables_left FROM pg_tables WHERE schemaname = 'public';
 SQL
-echo "${env} is empty. Deploy to rebuild it: gh workflow run Deploy --repo masidav/firstline -f environment=${env}"
+echo "${env} is empty. Deploy to rebuild it: gh workflow run Deploy --repo masidav/firstline -f environment=${env} -f deploy=all"

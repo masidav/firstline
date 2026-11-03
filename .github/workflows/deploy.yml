@@ -1,4 +1,8 @@
-# Builds the images once, deploys beta automatically, and promotes the same images to prod after approval.
+# Deploys beta on every push to main, and promotes the same images to prod after approval. Only what changed is built
+# and rolled out: each component (backend = api/worker/migrate, web, promoter-web) has a version, the last commit that
+# changed its sources (infrastructure/k8s/versions.sh, overlays/<env>/versions.env), and its images are tagged with
+# it. A web-only push rolls out that web app alone (no backup, no migrate Job); a docs- or Terraform-only push deploys
+# nothing. A manual run does every step (backup, migrate Job, settings, seed) unless told `changed`.
 # Beta has real users, so a push to main must not break it: CI blocks migrations the running version can't live with
 # (tools/ci/check_migration_safety.py), deploy.sh takes a Cloud SQL backup before the migrate Job, migrations run
 # before any new pod takes traffic, and the deploy fails (leaving the previous images available for a rollback) if
@@ -19,6 +23,11 @@ on:
         type: choice
         options: [beta, prod]
         default: beta
+      deploy:
+        description: all = every step (backup, migrate Job, settings, seed, rollout) even if nothing changed, e.g. after db-wipe.sh; changed = only what differs, like a push
+        type: choice
+        options: [all, changed]
+        default: all
       skip_health_check:
         description: Don't poll the public health endpoint afterwards (only before DNS and the certificate exist)
         type: boolean
@@ -28,7 +37,8 @@ permissions:
   contents: read
   id-token: write
 
-# One deploy at a time: beta then prod, in commit order.
+# One deploy at a time: beta then prod, in commit order. A newer push replaces a waiting run; that is safe because a
+# run deploys every component's version as of its commit, not just the changes in its own push.
 concurrency:
   group: deploy
   cancel-in-progress: false
@@ -39,6 +49,7 @@ jobs:
     uses: ./.github/workflows/deploy-environment.yml
     with:
       environment: beta
+      deploy_all: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'all' }}
       skip_health_check: ${{ github.event.inputs.skip_health_check == 'true' }}
 
   # Also gated on PROD_DEPLOY_ENABLED: until the prod project and GitHub environment exist, a push only deploys beta.
@@ -48,5 +59,6 @@ jobs:
     uses: ./.github/workflows/deploy-environment.yml
     with:
       environment: prod
+      deploy_all: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'all' }}
       # Same image digests as beta, copied into the prod registry.
       promote_from: ${{ needs.beta.outputs.image_repository }}

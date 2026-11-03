@@ -1,7 +1,8 @@
-# Reusable deploy of one environment (called by deploy.yml). Builds and pushes the images at the commit SHA,
-# or copies them from another environment's registry, then runs infrastructure/k8s/deploy.sh. When the file
-# infrastructure/k8s/overlays/<environment>/state says "off" it runs infrastructure/k8s/shutdown.sh instead
-# (set-state.sh writes and pushes that file).
+# Reusable deploy of one environment (called by deploy.yml). Works out each component's version
+# (infrastructure/k8s/versions.sh: backend, web, promoter-web), builds and pushes only the images the registry doesn't
+# have yet (or copies them from another environment's registry), then runs infrastructure/k8s/deploy.sh, which rolls
+# out only what differs from what's running. When the file infrastructure/k8s/overlays/<environment>/state says "off"
+# it runs infrastructure/k8s/shutdown.sh instead (set-state.sh writes and pushes that file).
 name: Deploy environment
 
 on:
@@ -15,6 +16,10 @@ on:
         description: Image repository to copy the images from instead of building them
         type: string
         default: ''
+      deploy_all:
+        description: Run every step (backup, migrate Job, settings, seed, rollout) even if no version changed
+        type: boolean
+        default: false
       skip_health_check:
         description: Skip the public health check after the rollout (first deploy, before DNS and the certificate)
         type: boolean
@@ -35,71 +40,120 @@ jobs:
     environment: ${{ inputs.environment }}
     env:
       IMAGE_REPOSITORY: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/fandomscore
-      TAG: ${{ github.sha }}
+      ENVIRONMENT: ${{ inputs.environment }}
     outputs:
       image_repository: ${{ steps.repository.outputs.image_repository }}
     steps:
+      # Full history: a component's version is the last commit that changed its sources (versions.sh).
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
+      # "deploy", "shutdown", or "skip". A push whose commit is no longer main's head skips: the run for the newer
+      # commit is queued behind this one (concurrency group "deploy") and deploys everything up to it, so an older
+      # run (or a re-run of one) never puts an older version back.
       - id: state
         name: Desired state
+        env:
+          EVENT: ${{ github.event_name }}
         run: |
-          file="infrastructure/k8s/overlays/${{ inputs.environment }}/state"
+          file="infrastructure/k8s/overlays/${ENVIRONMENT}/state"
           state="$(tr -d '[:space:]' < "$file")"
           case "$state" in
-            on|off) ;;
+            on) action=deploy ;;
+            off) action=shutdown ;;
             *) echo "::error::${file} must say 'on' or 'off', not '${state}'"; exit 1 ;;
           esac
-          echo "state=${state}" >> "$GITHUB_OUTPUT"
-          echo "${{ inputs.environment }} is '${state}' (${file})"
+          echo "${ENVIRONMENT} is '${state}' (${file})"
+          if [ "$EVENT" = push ]; then
+            git fetch --quiet origin main
+            latest="$(git rev-parse FETCH_HEAD)"
+            if [ "$latest" != "$GITHUB_SHA" ]; then
+              echo "::notice::main has moved on to ${latest}; the Deploy run for that commit deploys ${ENVIRONMENT}."
+              action=skip
+            fi
+          fi
+          echo "action=${action}" >> "$GITHUB_OUTPUT"
 
       - id: repository
         run: echo "image_repository=${IMAGE_REPOSITORY}" >> "$GITHUB_OUTPUT"
 
+      - name: Versions (overlays/${{ inputs.environment }}/versions.env)
+        if: steps.state.outputs.action == 'deploy'
+        run: infrastructure/k8s/versions.sh "$ENVIRONMENT" | tee "${RUNNER_TEMP}/versions"
+
       - name: Authenticate to Google Cloud
+        if: steps.state.outputs.action != 'skip'
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
 
       - uses: google-github-actions/setup-gcloud@v2
+        if: steps.state.outputs.action != 'skip'
         with:
           install_components: gke-gcloud-auth-plugin
 
       - name: Sign in to Artifact Registry
+        if: steps.state.outputs.action == 'deploy'
         run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
 
-      - name: Build and push images
-        if: steps.state.outputs.state == 'on' && inputs.promote_from == ''
+      - name: Set up Docker Buildx
+        if: steps.state.outputs.action == 'deploy' && inputs.promote_from == ''
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push api, worker, migrate, web, promoter-web
-        if: steps.state.outputs.state == 'on' && inputs.promote_from == ''
+      # Images are tagged with their component's version, so an unchanged component is already in the registry and
+      # isn't rebuilt. An `auto` version's sources are identical at HEAD, so HEAD builds it; a pinned one must exist.
+      - name: Build and push the missing images
+        if: steps.state.outputs.action == 'deploy' && inputs.promote_from == ''
         run: |
-          for target in api worker migrate web promoter-web; do
-            docker buildx build --target "$target" --push \
-              --cache-from type=gha --cache-to type=gha,mode=max \
-              -t "${IMAGE_REPOSITORY}/${target}:${TAG}" .
-          done
+          while read -r component commit source images; do
+            for image in $images; do
+              ref="${IMAGE_REPOSITORY}/${image}:${commit}"
+              if gcloud artifacts docker images describe "$ref" >/dev/null 2>&1; then
+                echo "${component}: ${ref} is in the registry"
+                continue
+              fi
+              if [ "$source" != auto ]; then
+                echo "::error::${component} is pinned to ${commit} (versions.env), but ${ref} is not in the registry."
+                exit 1
+              fi
+              echo "== ${component}: building ${ref}"
+              docker buildx build --target "$image" --push \
+                --cache-from type=gha --cache-to type=gha,mode=max \
+                -t "$ref" .
+            done
+          done < "${RUNNER_TEMP}/versions"
 
-      - name: Copy images from ${{ inputs.promote_from }}
-        if: steps.state.outputs.state == 'on' && inputs.promote_from != ''
+      - name: Install crane
+        if: steps.state.outputs.action == 'deploy' && inputs.promote_from != ''
         uses: imjasonh/setup-crane@v0.4
 
-      - name: Copy images by digest
-        if: steps.state.outputs.state == 'on' && inputs.promote_from != ''
+      - name: Copy the missing images by digest from ${{ inputs.promote_from }}
+        if: steps.state.outputs.action == 'deploy' && inputs.promote_from != ''
+        env:
+          PROMOTE_FROM: ${{ inputs.promote_from }}
         run: |
-          for target in api worker migrate web promoter-web; do
-            crane copy "${{ inputs.promote_from }}/${target}:${TAG}" "${IMAGE_REPOSITORY}/${target}:${TAG}"
-          done
+          while read -r component commit _ images; do
+            for image in $images; do
+              ref="${IMAGE_REPOSITORY}/${image}:${commit}"
+              if crane digest "$ref" >/dev/null 2>&1; then
+                echo "${component}: ${ref} is in the registry"
+                continue
+              fi
+              crane copy "${PROMOTE_FROM}/${image}:${commit}" "$ref"
+            done
+          done < "${RUNNER_TEMP}/versions"
 
       - uses: google-github-actions/get-gke-credentials@v2
+        if: steps.state.outputs.action != 'skip'
         with:
           cluster_name: fandomscore-${{ inputs.environment }}
           location: ${{ vars.GCP_REGION }}
           project_id: ${{ vars.GCP_PROJECT_ID }}
 
       - name: Install kustomize
+        if: steps.state.outputs.action == 'deploy'
         run: |
           curl -fsSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.6.0/kustomize_v5.6.0_linux_amd64.tar.gz" \
             | sudo tar -xz -C /usr/local/bin kustomize
@@ -108,7 +162,7 @@ jobs:
       # deploy identity to have secretAccessor on Spotify__ClientSecret (Terraform); until then, or while the secret
       # is the one-space placeholder, the seed uses made-up artists.
       - name: Spotify client secret for the demo seed
-        if: steps.state.outputs.state == 'on' && hashFiles(format('infrastructure/k8s/overlays/{0}/seed', inputs.environment)) != ''
+        if: steps.state.outputs.action == 'deploy' && hashFiles(format('infrastructure/k8s/overlays/{0}/seed', inputs.environment)) != ''
         run: |
           secret="$(gcloud secrets versions access latest --secret Spotify__ClientSecret --project "${{ vars.GCP_PROJECT_ID }}" 2>/dev/null | tr -d '[:space:]' || true)"
           if [ -n "$secret" ]; then
@@ -119,12 +173,13 @@ jobs:
             echo "Not readable or not set: the seed will use made-up artists."
           fi
 
-      - name: Migrate and roll out
-        if: steps.state.outputs.state == 'on'
+      - name: Deploy what changed
+        if: steps.state.outputs.action == 'deploy'
         env:
+          DEPLOY_ALL: ${{ inputs.deploy_all && '1' || '0' }}
           SKIP_HEALTH_CHECK: ${{ inputs.skip_health_check && '1' || '0' }}
-        run: infrastructure/k8s/deploy.sh "${{ inputs.environment }}" "$TAG"
+        run: infrastructure/k8s/deploy.sh "$ENVIRONMENT"
 
       - name: Shut down (state is off)
-        if: steps.state.outputs.state == 'off'
-        run: infrastructure/k8s/shutdown.sh "${{ inputs.environment }}"
+        if: steps.state.outputs.action == 'shutdown'
+        run: infrastructure/k8s/shutdown.sh "$ENVIRONMENT"

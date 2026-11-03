@@ -142,10 +142,14 @@ automatically.
 
 ## Common actions
 
-- **Roll back a deploy.** `infrastructure/k8s/deploy.sh $ENV <previous-sha>` from a machine with the tools (images
-  are still in the registry; the migrate Job finds nothing to do; `SKIP_BACKUP=1` is fine). Immediate stop-gap:
-  `kubectl rollout undo deployment/api` (and `deployment/worker`, `deployment/redaction`). Migrations are never rolled back; the previous
-  version runs against the current schema (README, "Changing beta (and prod) without breaking them").
+- **Roll back a deploy.** Roll back only the component that broke (`backend` = api, worker, redaction, migrate;
+  `web`; `promoter-web`): in `infrastructure/k8s/overlays/$ENV/versions.env` set its line to the commit it ran
+  before (the previous Deploy run's "Versions" step lists each component's commit; so do the image tags in
+  `kubectl get deploy -o wide`), commit, push. Deploy rolls out that component alone; a backend rollback also takes a
+  backup and runs the migrate Job, which finds nothing to apply. Put the line back to `auto` with the fix.
+  Immediate stop-gap: `kubectl rollout undo deployment/api` (and `deployment/worker`, `deployment/redaction`, or
+  `deployment/web`); the next deploy restores the pinned version. Migrations are never rolled back; the previous
+  version runs against the current schema (README, "Changing beta (and prod) without breaking them", and "Deploying").
 - **Restart pods** (after adding a secret version): `kubectl rollout restart deployment/api deployment/worker deployment/redaction`.
 - **More API capacity now:** `kubectl patch hpa api -p '{"spec":{"minReplicas":6}}'`; put it back afterwards.
   Before a scheduled on-sale, README "On-sale traffic".
