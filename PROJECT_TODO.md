@@ -360,7 +360,16 @@ Details: [Sharing API](services/api/src/features/sharing/TODO.md) · [Sharing UI
       `docs/OWNER_TODO.md`); (2) security review of the worker job handlers beyond the redaction gate (listed open in
       the 2026-10-28 review); (3) iOS journeys beyond the launch flow, and the device matrix and manual VoiceOver /
       TalkBack pass before release (`tests/TODO.md`).*
-- [ ] Document deployment, backups, monitoring, and recovery.
+- [x] Document deployment, backups, monitoring, and recovery.
+      *2026-11-03: `infrastructure/OPERATIONS.md`: what is and isn't backed up with each retention (from Terraform,
+      checked read-only against beta), RPO/RTO as configured, six recovery procedures with exact commands (bad
+      deploy, bad migration, point-in-time clone then copy back into the original, deleted files from versions or soft
+      delete, lost cluster, leaked secrets per secret), every alert, log-based metric, the uptime check, the
+      dashboard, and Cloud Logging filters, plus incidents and a list of gaps (backups die with the instance,
+      pre-deploy backups never pruned, missing alerts). `RUNBOOK.md` gained the redaction alert and links; deploys
+      stay in README "Deploying". Verified: every gcloud command's flags against `--help` (gcloud 590), every log
+      filter run on beta. No procedure is rehearsed; the Cloud SQL restore rehearsal is still the owner's step
+      (`docs/OWNER_TODO.md` section E).*
 - [ ] Verify current external API terms and app-store requirements before release.
 
 Details: [Notifications](services/api/src/features/notifications/TODO.md) · [Moderation](services/api/src/features/moderation/TODO.md) · [Release tests](tests/TODO.md) · [Infrastructure](infrastructure/TODO.md)

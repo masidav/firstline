@@ -22,6 +22,7 @@ manifests describe the workloads; GitHub Actions builds images and deploys.
 | `k8s/deploy.sh` | Backup, migrations, rollout, health check. Used by CI and by hand. |
 | `k8s/db-shell.sh` | psql on an environment's database from a temporary pod (`db-shell.sh beta`); the password stays in the cluster. |
 | `RUNBOOK.md` | On-call: what each alert means and what to do; first-five-minutes checklist; common actions. |
+| `OPERATIONS.md` | Backups and their retention, RPO/RTO, recovery procedures, alerts, metrics, logs, incidents. |
 | `../.github/workflows/deploy.yml` | Push to `main`: build, deploy beta, promote to prod after approval. |
 | `../tools/ci/check_migration_safety.py` | CI: a new migration must keep the previous release working during the rollout. |
 | `../tools/dev/seed.py` | dev only: fills the local database with fake data. |
@@ -251,21 +252,16 @@ on-sale:
 
 ## Backups and restore
 
-Cloud SQL takes a daily backup at 02:00 UTC, `deploy.sh` takes one before each migration, and transaction logs
-are kept for seven days, so any point in that window can be restored. The safest restore is a new instance:
-
-```bash
-gcloud sql instances clone fandomscore-prod fandomscore-prod-restore \
-  --point-in-time 2026-10-21T08:30:00Z --project fandomscore-prod
-```
-
-Then verify the data, write a new `ConnectionStrings__Database` version pointing at the clone's private address,
-restart the API and worker, and later delete the old instance (it has deletion protection; Terraform will see the
-drift, so update `sql.tf` or import the clone). Rehearse this on beta and record the result in `TODO.md`.
+Cloud SQL takes a daily backup at 02:00 UTC (14 kept on beta, 30 on prod), `deploy.sh` takes one before each
+migration, and point-in-time recovery covers the last seven days. The archive bucket keeps old versions for 30 days
+(not yet applied on beta); every bucket soft-deletes for 7. What is and isn't backed up, RPO/RTO, and the restore
+procedures (point-in-time clone and copy back, deleted files, a lost cluster, leaked secrets) are in
+[OPERATIONS.md](OPERATIONS.md). The database restore has not been rehearsed yet (`docs/OWNER_TODO.md`, section E).
 
 ## Looking at it
 
-`RUNBOOK.md` is the page to open when something is wrong. What exists:
+`RUNBOOK.md` is the page to open when something is wrong; [OPERATIONS.md](OPERATIONS.md) "Monitoring" lists every
+alert, metric, and log query in detail. What exists:
 
 - Dashboard (Terraform output `dashboard_url`, `dashboard.tf`): requests per second by response class and latency
   percentiles at the load balancer, running containers and CPU/memory per workload, the worker's failed and
@@ -273,8 +269,8 @@ drift, so update `sql.tf` or import the clone). Rehearse this on beta and record
   and a panel of recent errors.
 - Alerts (`monitoring.tf`), all emailed to `alert_email`: API down (uptime check failing from more than one region
   for five minutes), API returning errors (more than 5 % 5xx over five minutes), pods restarting, worker gave up on
-  a job, worker cannot reach the queue, Cloud SQL under pressure, and the budget at 50 %, 90 %, 100 % and
-  forecast.
+  a job, worker cannot reach the queue, Cloud SQL under pressure, proof photos about to be lost (verified proof
+  still unredacted 25 days after upload), and the budget at 50 %, 90 %, 100 % and forecast.
 - Worker liveness: the worker serves no traffic, so each job loop reports to a heartbeat and `GET /healthz` on port
   8081 returns 503 once a loop has been silent for ten minutes; the pod then restarts (`workers/README.md`).
   Job failures are log lines (`failed on attempt`, `failed permanently`) turned into log-based metrics.

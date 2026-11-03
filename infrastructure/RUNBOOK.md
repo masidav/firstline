@@ -1,8 +1,9 @@
 # On-call runbook
 
-What to do when an alert arrives or a user reports a problem on **beta** or **prod**. Procedures with more detail
-(deploys, rollbacks, restores, secret rotation, on-sale pre-scaling) are in [README.md](README.md); this page is the
-short path from a symptom to an action. Every alert below emails `alert_email` (Terraform `monitoring.tf`).
+What to do when an alert arrives or a user reports a problem on **beta** or **prod**. Deploys, rollbacks, and
+on-sale pre-scaling are in [README.md](README.md); backups, restores, secret rotation, losing the cluster, every
+alert and log query, and RPO/RTO are in [OPERATIONS.md](OPERATIONS.md). This page is the short path from a symptom to
+an action. Every alert below emails `alert_email` (Terraform `monitoring.tf`).
 
 ## Where things are
 
@@ -16,8 +17,9 @@ short path from a symptom to an action. Every alert below emails `alert_email` (
 
 ```bash
 ENV=beta   # or prod
-gcloud config set project fandomscore-$ENV
-gcloud container clusters get-credentials fandomscore-$ENV --region us-central1
+PROJECT=project-ef36a8a9-d958-4163-b4c   # beta; prod: fandomscore-prod
+gcloud config set project $PROJECT
+gcloud container clusters get-credentials fandomscore-$ENV --region us-central1 --project $PROJECT
 kubectl config set-context --current --namespace fandomscore
 ```
 
@@ -32,7 +34,10 @@ resource.type="k8s_container" resource.labels.namespace_name="fandomscore" (seve
 resource.type="k8s_container" resource.labels.container_name="api" jsonPayload.Message:"<text>"
 # Load balancer 5xx (502/503 mean no healthy backend)
 resource.type="http_load_balancer" httpRequest.status>=500
+# Cloud Armor denials (WAF 403, rate limit 429)
+resource.type="http_load_balancer" jsonPayload.enforcedSecurityPolicy.outcome="DENY"
 ```
+More (worker, migrations, Kubernetes events, Cloud SQL, audit log): [OPERATIONS.md](OPERATIONS.md), "Logs".
 
 ## First five minutes
 
@@ -118,6 +123,18 @@ CPU above 80 % or memory above 90 % for fifteen minutes.
 - A bigger tier (`sql_tier` in `terraform/envs/<env>/main.tf`) restarts the instance (a minute or so, less with HA
   on prod). Do it in the maintenance window unless users are affected now.
 
+### Proof photos about to be lost
+The hourly `redaction.sweep` found verified proof still in quarantine 25 days after upload; the quarantine bucket
+deletes everything at 30 days, and an unredacted file must never be archived by hand. Emails at most every 6 hours.
+
+- `kubectl get pods -l app.kubernetes.io/component=redaction` and `kubectl logs deployment/redaction`: is the
+  `redaction` Deployment running and are its `submissions.redact` jobs succeeding?
+- Failed redaction jobs: `SELECT id, attempts, last_error FROM jobs WHERE kind = 'submissions.redact' AND status = 'failed';`
+  A Cloud Storage 403 is the identity (`storage.tf`, the `redaction` service account annotation); fix and retry.
+- Files that need a person: the staff Photo redaction screen (`GET /v1/admin/redactions`).
+- Missed the window: a file deleted by the lifecycle rule is soft-deleted for 7 days and can be restored
+  (OPERATIONS.md, procedure 4), then redacted.
+
 ### Budget
 50 %, 90 %, 100 % of the monthly budget, or a forecast above 100 %. Billing → Reports, group by service. The usual
 suspects are the cluster (pods requesting more than they use), Cloud SQL (tier, HA), and egress. Nothing is deleted
@@ -133,15 +150,18 @@ automatically.
 - **More API capacity now:** `kubectl patch hpa api -p '{"spec":{"minReplicas":6}}'`; put it back afterwards.
   Before a scheduled on-sale, README "On-sale traffic".
 - **Stop everything that writes** (before a restore): `kubectl scale deployment/api deployment/worker deployment/redaction --replicas=0`.
-- **Restore the database:** README "Backups and restore". Prefer a point-in-time clone on prod.
-- **A secret is wrong:** add a new version (`gcloud secrets versions add <name> --data-file=-`), restart the
-  Deployment. The database connection string and server CA are written by Terraform; `terraform apply` rewrites
-  them.
+- **Restore the database:** OPERATIONS.md, procedure 3 (point-in-time clone, verify, copy back). Never rehearsed.
+- **Restore a deleted file:** OPERATIONS.md, procedure 4 (archive versions 30 days; soft delete 7 days everywhere).
+- **A secret is wrong or leaked:** add a new version (`gcloud secrets versions add <name> --data-file=-`), restart
+  the Deployment, disable the old version; per-secret notes in OPERATIONS.md, procedure 6. The database connection
+  string and server CA are written by Terraform; `terraform apply` rewrites them.
+- **The cluster is gone:** OPERATIONS.md, procedure 5 (`terraform apply`, then deploy).
 - **Block an abusive client:** add a Cloud Armor rule above priority 2000 in `edge.tf` and apply, or for a quick
   manual block, Network Security → Cloud Armor → policy → Add rule (Terraform will want to remove it later; copy it
   into `edge.tf`).
 
 ## Afterwards
 
-Write down what happened and what was done (time, alert, cause, fix) in `docs/incidents/<date>-<slug>.md`, and turn
+Write down what happened and what was done (time, alert, cause, fix, data lost) in
+`docs/incidents/<date>-<slug>.md` (OPERATIONS.md, "Incidents"), and turn
 anything that would have shortened the outage into a TODO item (an alert, a dashboard line, a runbook entry).
