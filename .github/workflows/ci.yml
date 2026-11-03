@@ -112,6 +112,19 @@ jobs:
           pip install openapi-spec-validator==0.7.1
           openapi-spec-validator openapi.yaml
 
+  secrets:
+    name: No secrets in the tree
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false   # keeps the token out of .git/config, which the scan reads
+
+      # Gitleaks' default rules over every file in the checkout; false positives are allowlisted in .gitleaks.toml.
+      - name: Gitleaks
+        run: docker run --rm -v "$PWD:/repo:ro" zricethezav/gitleaks:v8.24.3 dir /repo --no-banner --redact
+
   mobile:
     name: Fan app (typecheck, tests, API types)
     runs-on: ubuntu-latest

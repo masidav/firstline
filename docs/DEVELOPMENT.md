@@ -70,6 +70,7 @@ The suite starts its own PostgreSQL 16 container, so it needs Docker but not the
 | Backend | build with analyzers as errors; migration, invariant, and API tests | `dotnet build` / `dotnet test` |
 | Applied migrations unchanged | only new migration files; new ones keep the running release working | `python3 tools/ci/check_migration_safety.py <file>` |
 | OpenAPI contract is valid | `openapi.yaml` parses and validates | `openapi-spec-validator openapi.yaml` |
+| No secrets in the tree | gitleaks' default rules over every checked-out file; reviewed false positives are allowlisted in `.gitleaks.toml` | `docker run --rm -v "$PWD:/repo:ro" zricethezav/gitleaks:v8.24.3 dir /repo --redact` |
 | Fan app, Promoter dashboard | generated API types current, typecheck, unit tests, builds | `npm run generate:api`, `npm run typecheck`, `npm test` |
 | Dev seed script | `tools/dev/seed.py` against the current schema | see the script's header |
 | End-to-end journeys | both web apps in a browser against the API and a seeded database | `apps/mobile/e2e/run.sh`, `apps/promoter-web/e2e/run.sh` |

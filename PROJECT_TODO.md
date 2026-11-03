@@ -15,18 +15,51 @@ Because scores now decide who gets tickets, every scoring signal must be treated
 ## Phase 0 — Inspect and preserve existing work
 - [x] Inspect the repository, README, database schema, migrations, tests, and current entry points.
 - [x] Record existing functionality and known gaps before changing files. See [inventory](docs/REPOSITORY_INVENTORY.md).
-- [ ] Confirm the actual backend language/framework and mobile-app setup. Backend: C#/.NET 10, see [ADR 0001](docs/adr/0001-backend-csharp-dotnet.md). Mobile app not started.
+- [x] Confirm the actual backend language/framework and mobile-app setup. Backend: C#/.NET 10, see [ADR 0001](docs/adr/0001-backend-csharp-dotnet.md).
+      *Confirmed 2026-11-03 ("Mobile app not started" was stale): API and worker are ASP.NET Core / .NET 10 (`global.json`
+      SDK 10.0.100, every project `net10.0`), PostgreSQL 16, Postgres job queue (ADR 0004). Fan app: one Expo SDK 57 /
+      React Native 0.86 / expo-router codebase in `apps/mobile`: the web build is live on beta, the iOS project is
+      generated and bundled on every push (`npm run check:ios`) and built in the Simulator on demand ("iOS app
+      (simulator)"), and an Android Release APK runs the Maestro journeys in an emulator ("Android app (emulator)").
+      Store distribution is still open (Phase 13). Promoter dashboard: Vite + React 19 (`apps/promoter-web`).
+      Verified: `dotnet build FandomScore.slnx` 0 warnings; versions read from `package.json` and the project files.*
 - [x] Identify any conflicting, duplicated, or undocumented architecture.
-- [ ] Confirm the current schema matches the product requirements; document differences rather than silently changing decisions.
+- [x] Confirm the current schema matches the product requirements; document differences rather than silently changing decisions.
+      *Done 2026-11-03: migrations 0001–0055 checked against `executive_summary.txt` and the confirmed direction;
+      results in [inventory](docs/REPOSITORY_INVENTORY.md#schema-compared-with-the-product-requirements-2026-11-03).
+      Matches: face-value allocations, score-snapshot registrations, draws recorded once, non-transferable reservations
+      with delayed delivery, returns to the pool, promoter organizations, redacted-only archive, fraud review. Differences
+      (no schema; each already an open item here): no Apple Music / store-purchase / attendance sources, no primary
+      ticketer seat holds or purchase confirmation, no billing, no data-sharing consent, no person-to-account binding,
+      no fan-to-fan face-value exchange; `comments`, `lists`, `share_cards`, `outbound_clicks` have no API (`x-planned`).
+      Also found stale in `openapi.yaml`, not changed: `/me/devices/{deviceId}` still tagged
+      `x-requires-schema: [push_devices]` (built as `/me/push-devices`), and the intro's "until follows ship" note.
+      No code or schema changed.*
 
 Details: [Project setup](docs/TODO.md)
 
 ## Phase 1 — Foundation
-- [ ] Establish repository structure without duplicating existing code.
+- [x] Establish repository structure without duplicating existing code.
+      *Verified 2026-11-03: layout as in `CLAUDE.md` (API features in `services/api/src/features`, job handlers in
+      `workers/<feature>`, shared .NET code in `packages/spotify`, `storage`, `notifications` used by both processes,
+      one `openapi.yaml` generating both apps' types, migrations in `database/migrations`). Duplication check: the
+      only file name shared by the API and the worker is `SecretsDirectory.cs` (21 lines, namespace differs), noted
+      in the inventory. Template-only folders with no code remain (comments, lists, ticketing, verification,
+      `packages/{shared-config,shared-types,validation}`), listed in the inventory. `dotnet build` 0 warnings.*
 - [x] Document environment variables and provide a safe `.env.example`. See [Development](docs/DEVELOPMENT.md#configuration).
 - [x] Establish local development and test commands. See [Development](docs/DEVELOPMENT.md).
-- [ ] Verify PostgreSQL connectivity and existing schema.
-- [ ] Establish API error handling, request validation, logging, and configuration.
+- [x] Verify PostgreSQL connectivity and existing schema.
+      *Verified 2026-11-03: `DatabaseTests` apply all 55 migrations to a fresh PostgreSQL 16 (Testcontainers), rerun them
+      as a no-op, and run `database/tests/invariants.sql`; CI's "Server images start" job runs the migrate, api, and
+      worker images against PostgreSQL 16; beta runs on Cloud SQL for PostgreSQL 16. `dotnet build` 0 warnings, `dotnet test` 416/416 (2026-11-03).*
+- [x] Establish API error handling, request validation, logging, and configuration.
+      *Verified 2026-11-03: RFC 9457 problem+json with stable codes (`ApiProblemException`, `Infrastructure/Problems.cs`;
+      `ApiTests`: unknown route 404 `not_found`, exception status and code kept, unhandled 500 `internal_error` without
+      details); request validation answers 422 `validation_failed` (asserted in 15 places across the API tests) and
+      `ContractCheckedFactory` checks every response against `openapi.yaml`; JSON console logs in production
+      (`appsettings.json`), credentials kept out of logs (`AuthApiTests.Credentials_are_never_logged`,
+      `SpotifyApiTests`); configuration from environment variables and mounted secret files, refusing to start without
+      required settings (`PublicOriginTests`, `DevSignInTests` via `StartupFailureFactory`). `dotnet build` 0 warnings, `dotnet test` 416/416 (2026-11-03).*
 - [x] Establish automated checks and baseline tests. (Backend only: CI build with analyzers + migration, invariant, and API tests.)
 
 Details: [API](services/api/TODO.md) · [Database](database/TODO.md) · [Tests](tests/TODO.md) · [Infrastructure](infrastructure/TODO.md)
@@ -318,6 +351,15 @@ Details: [Sharing API](services/api/src/features/sharing/TODO.md) · [Sharing UI
       whole-database scan after delete and purge; invariants). Not [x]: `terraform apply` for the archive rule, and
       the retention periods under Open decisions are owner decisions.*
 - [ ] Complete integration, end-to-end, security, and performance testing.
+      *Audited 2026-11-03, not complete. Done: integration (`dotnet test`: API, worker, migration, and invariant tests
+      against PostgreSQL 16; contract tests both ways against `openapi.yaml`; races and duplicate requests), end-to-end
+      (web Playwright journeys for both apps with axe scans in CI; Android Maestro journeys in CI; iOS Simulator launch
+      flow on demand), security (route guards in `SecurityRouteTests`, `docs/security/2026-10-28-api-review.md`, fixes
+      and tests; secret scan in CI since 2026-11-03), performance (database load test and local k6 through the HTTP path,
+      `tools/load`). Remaining: (1) the beta load run, `tools/load/README.md` "Running it on beta" (owner step 10 in
+      `docs/OWNER_TODO.md`); (2) security review of the worker job handlers beyond the redaction gate (listed open in
+      the 2026-10-28 review); (3) iOS journeys beyond the launch flow, and the device matrix and manual VoiceOver /
+      TalkBack pass before release (`tests/TODO.md`).*
 - [ ] Document deployment, backups, monitoring, and recovery.
 - [ ] Verify current external API terms and app-store requirements before release.
 
@@ -608,13 +650,46 @@ at request time.
 Details: [Stats API](services/api/src/features/stats/TODO.md) · [Stats UI](apps/mobile/src/features/stats/TODO.md)
 
 ## Cross-cutting requirements
-- [ ] Keep all score awards idempotent and ledger-based.
-- [ ] Do not store untracked-artist listening data.
-- [ ] Do not archive unredacted submission files.
-- [ ] Keep secrets out of source control and logs.
-- [ ] Enforce authorization and visibility at the API boundary. *Security pass 2026-10-28
+- [x] Keep all score awards idempotent and ledger-based.
+      *Enforced and tested (checked 2026-11-03): every award goes through `award_points()` (the only `INSERT INTO
+      score_events`, migration 0001) and every reversal through `reverse_points()`; the `score_events_guard` trigger
+      refuses UPDATE (except setting `reversed_at` once), DELETE, and TRUNCATE; the partial unique index
+      `score_events_source_uidx` allows one live award per source and rule. Tests: `invariants.sql` ("ledger is
+      append-only": all four refusals and the duplicate insert; caps, reversals, re-award after re-verify),
+      `DuplicateRequestTests`, `ProofApiTests` and `JournalApiTests` races (points checked in `score_events`),
+      `ScoringJobTests` (reruns idempotent). The 0–100 Spotify score is computed from stored signals, not awarded.*
+- [x] Do not store untracked-artist listening data.
+      *Enforced and tested (checked 2026-11-03): every listening table (`user_track_likes`, `user_album_saves`,
+      `user_plays`, `user_artist_signals`) has a foreign key to `tracks`, `albums`, or `artists`, so only catalog items
+      of tracked artists can be stored; the sync drops the rest in memory. Tests: `SpotifySyncJobTests`
+      (`Sync_stores_signals_for_tracked_active_artists_only`: nothing about an untracked or onboarding artist is kept;
+      polling drops untracked plays). Top artists nobody tracks are added to the tracked list (capped) and onboarded
+      first, by design (`Top_artists_nobody_tracks_are_added_for_the_fan_and_start_onboarding`).*
+- [x] Do not archive unredacted submission files.
+      *Enforced and tested (checked 2026-11-03): `submission_files_check` (`tier <> 'archive' OR redacted`, 0001) and
+      `submission_files_archive_consistent` (archived state = archive tier = `archive/` key, with a time; 0029); only
+      the redaction job writes archive objects, and the API only reads the archive bucket (Terraform
+      `api_archive_read`). Tests: `invariants.sql` (archive rows refused when unredacted or inconsistent),
+      `RedactionJobTests` (codes blacked out before the move; a ticket with no code found goes to staff; a failed archive
+      write keeps the original quarantined), `RedactionApiTests`.*
+- [x] Keep secrets out of source control and logs.
+      *Enforced and tested (checked 2026-11-03): `.env` is ignored and the agent hook (`tools/agent-hooks/guard_paths.py`)
+      blocks reading or editing it; `appsettings*.json` hold only logging settings; deployed secrets come from Secret
+      Manager as mounted files (`SecretsDirectory`; `infrastructure/k8s/overlays/*/secrets.yaml` name them, no values).
+      New 2026-11-03: CI job "No secrets in the tree" runs gitleaks 8.24.3 (default rules) over the checkout;
+      `.gitleaks.toml` allowlists one reviewed false positive (a Spotify API path). Run locally on this tree: no leaks;
+      a planted AWS key and GitHub token were caught; actionlint clean. Logs: `AuthApiTests.Credentials_are_never_logged`
+      and `SpotifyApiTests` assert no tokens or codes reach the logs; outgoing HTTP request lines are off (privacy review
+      2026-11-01). Not covered: commits before 2026-11-03 were not scanned (the job checks the current tree).*
+- [x] Enforce authorization and visibility at the API boundary. *Security pass 2026-10-28
       (`docs/security/2026-10-28-api-review.md`): standing route tests (sign-in, staff, contract), simultaneous-request
       tests, fixes for the +1 guest lockout, rate limits, request size, and count leaks. Open items below.*
+      *Ticked 2026-11-03: `SecurityRouteTests` fail any new anonymous `/v1` route not on the reviewed list and any
+      `/admin` route without the staff policy, and check 401/403 on the running API; `StaffAuthorizationTests` (only
+      live staff); visibility tests for private, followers-only, and public content (`JournalApiTests`,
+      `FollowApiTests`, `FeedApiTests`, `ProfileApiTests`, `StatsApiTests`, `GrabBagApiTests`, `FanLevelApiTests`,
+      `ReportApiTests`, `SecurityFixTests`) and organization scoping (`OrganizationApiTests`, `ShowReportApiTests`).
+      The remaining review item (push tokens) is tracked on its own line below.*
 - [x] Security decisions (decided 2026-10-28): a named +1 does **not** have to accept (they can decline before the
       draw); follows need **no approval**, so followers-only means anyone who follows; others' prompt answers may be
       seen before answering.

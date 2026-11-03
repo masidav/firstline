@@ -1,0 +1,8 @@
+# Secret scan configuration (CI job "No secrets in the tree"): gitleaks' default rules plus allowlisted false
+# positives. Keep each entry narrow and say why the match is not a secret.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Spotify Web API paths passed next to an access token (e.g. \"me/albums/contains\"), not keys"
+regexes = ['''^me/[a-z/]+$''']

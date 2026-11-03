@@ -2,7 +2,58 @@
 
 Recorded 2026-10-18 before any implementation work. Update this file when the facts below change.
 
-## What exists
+## Current state (checked 2026-11-03)
+
+The sections after this one are the **2026-10-18 snapshot**, kept as history. Most of their "does not exist" list has
+since been built; this section says what changed so the snapshot isn't read as current.
+
+| 2026-10-18 statement | Now |
+| --- | --- |
+| No application code; no stack selected | ASP.NET Core minimal API on .NET 10 (`services/api`, ADR 0001), a worker process (`workers`, Postgres job queue, ADR 0004), shared packages (`packages/spotify`, `storage`, `notifications`). Fan app: Expo SDK 57 / React Native (`apps/mobile`): web build, iOS project built in CI, Android APK run in an emulator by CI. Promoter dashboard: Vite + React (`apps/promoter-web`). |
+| No migrations | DbUp applies `database/migrations/0001`–`0055` in name order (`database/`); `schema.sql` became `0001_initial_schema.sql`. Applied migrations are protected by CI and an agent hook. |
+| No tests, CI, `.env.example`, Docker, or deployment config | xUnit suite with Testcontainers PostgreSQL 16 (`tests/FandomScore.Tests`), Jest/Vitest, Playwright and Maestro journeys, CI (`.github/workflows/ci.yml` and the mobile workflows), `.env.example` files, a root `Dockerfile` for five images, Terraform and Kustomize (`infrastructure/`). Beta runs on GKE (`infrastructure/README.md`). |
+| No git repository | Git, remote on GitHub, commits to `main` deploy to beta. |
+| `openapi.yaml`: 67 operations, `x-requires-schema` tags | 187 operations; the contract tests compare served routes with it both ways. 22 designed-but-unbuilt operations are `x-planned`. |
+| Feature READMEs are identical templates | Most features now have real READMEs. Still templates: the root `README.md` (describes the TODO pack), `database/README.md`, `tests/README.md`, and `packages/{shared-config,shared-types,validation}`. Doc-only placeholder folders with no code: `services/api/src/features/{comments,lists,ticketing,verification}`, `apps/mobile/src/features/{artist-profile,comments,lists}`, `workers/submission-verification`. |
+| Source product README missing | Still missing. The product direction is `executive_summary.txt` (confirmed 2026-10-18, `PROJECT_TODO.md`). |
+| "API-contract gaps listed above are not addressed yet" | Addressed: `artists.image_url` (0006), `events.ticket_url` (0030), idempotency keys (0009), follows, reports and moderation actions (0014), push devices (0032), uploads. Not built and marked `x-planned`: comments (replaced by reactions), lists, share cards, outbound clicks, the ticketing webhook, the admin artist endpoints. Blocking is not wanted for now (decided 2026-10-24). |
+
+Known small duplication: `SecretsDirectory` (21 lines, reads mounted secret files) exists in both
+`services/api/src/Infrastructure` and `workers/hosting`, differing only in namespace.
+
+### Schema compared with the product requirements (2026-11-03)
+
+Checked the 55 migrations against `executive_summary.txt` and the confirmed direction in `PROJECT_TODO.md`. Nothing
+was changed; each difference below is already an open item in `PROJECT_TODO.md`.
+
+**Matches:** allocations with a ticket count, `face_value_cents`, a score threshold, and a registration window (0013);
+registrations snapshot the fan's standing for the draw; a draw is recorded once and never edited
+(`allocation_selections` guard, 0017); reservations are **non-transferable** (the holder never changes, guarded) with
+**delayed delivery** (`deliver_at`, 0020) and returned seats going back to the pool; promoter organizations with roles
+and an append-only audit (0037); proof of fandom (tickets, merch, concert photos) with quarantine, redaction, and a
+redacted-only archive; fraud flags, appeals, and an eligibility audit (0042); hashed client signals for bot and
+shared-device detection (0054).
+
+**Differences (not in the schema):**
+1. **Verification sources beyond Spotify.** No tables for Apple Music (MusicKit), direct-to-consumer store purchases,
+   or attendance history. Verified ticket and merch photos are the only stand-in. (Phase 10, open.)
+2. **Primary ticketing integration.** No partner, seat-hold, or purchase-confirmation tables; the reservation token is
+   our own. `POST /webhooks/ticketing/{partner}` is `x-planned`; the original `outbound_clicks` table is unused
+   (`link_clicks` records outbound clicks instead). (Phase 11 and Open decisions: ticketing partner and model.)
+3. **Revenue model.** No billing, licence-fee, or fan-fee tables. (Phase 11 billing; fan-side fee is an open decision.)
+4. **First-party data sharing with consent.** No consent records. (Phase 11, open.)
+5. **One person per account.** One email and one sign-in identity per account; no phone or ID binding. (Phase 10, open.)
+6. **Face-value exchange.** Returned seats go back to the draw; there is no fan-to-fan face-value exchange (the summary
+   lists it as one of three options).
+7. **Tables from the original schema with no API:** `comments` (the app uses reactions), `lists` and `list_items`,
+   `share_cards`, `outbound_clicks`; their operations are `x-planned` in `openapi.yaml`.
+
+**Stale in `openapi.yaml` (not changed here):** `PUT`/`DELETE /me/devices/{deviceId}` still carry
+`x-requires-schema: [push_devices]`, though `push_devices` exists (0032) and the built endpoints are
+`/me/push-devices`; and the intro still says followers-only content is visible to its owner only "until follows ship"
+(follows shipped 2026-10-25).
+
+## What exists (2026-10-18 snapshot)
 
 | Path | Contents | Status |
 | --- | --- | --- |
