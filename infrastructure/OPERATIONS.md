@@ -26,9 +26,12 @@ and gitignored). `kubectl` and `terraform` on the owner's machine live in `~/.lo
 
 ## Deployment, in one paragraph
 
-A push to `main` runs CI and, independently, the Deploy workflow (`.github/workflows/deploy.yml`): it builds the
-images once, tagged with the commit SHA, and `infrastructure/k8s/deploy.sh` takes a Cloud SQL backup, runs the
-migrations as a Kubernetes Job, rolls the Deployments, and polls the public health endpoint. Prod gets the same image
+A push to `main` runs CI and, independently, the Deploy workflow (`.github/workflows/deploy.yml`). Three
+components (backend, web, promoter-web) deploy separately, each at the last commit that changed it (or a commit
+pinned in `k8s/overlays/<env>/versions.env`, which is how a rollback is done). The workflow builds only missing
+images, and `infrastructure/k8s/deploy.sh <env>` deploys what differs from what's running: for a new backend
+version it takes a Cloud SQL backup and runs the migrations as a Kubernetes Job first; then it rolls the
+Deployments and polls the public health endpoint. `DEPLOY_ALL=1` runs every step regardless. Prod gets the same image
 digests after a manual approval. The details, the rollback commands, and turning an environment off and on are in
 `README.md` ("Changing beta (and prod) without breaking them", "Deploying") and `RUNBOOK.md` ("Common actions");
 those sections are the source of truth for deploys and are not repeated here. Two properties the recovery
@@ -49,7 +52,7 @@ procedures below rely on:
 | --- | --- | --- | --- |
 | Database, daily | Cloud SQL automated backup, window starting 02:00 UTC (`sql.tf`) | Last **14** automated backups on beta, **30** on prod (`sql_backup_retention_days`, retention unit COUNT: one per day, so 14 / 30 days) | Multi-region `us` (default backup location) |
 | Database, any point | Point-in-time recovery: transaction logs (`transaction_log_retention_days = 7`) | **7 days** on both. On beta 2026-11-03: earliest recovery time 2026-10-27T03:56Z, latest trailing the clock by about a minute (`gcloud sql instances get-latest-recovery-time $INSTANCE`) | Cloud Storage, managed by Cloud SQL |
-| Database, before every deploy | `deploy.sh` runs `gcloud sql backups create --description "pre-deploy <sha>"` before the migrate Job (skipped with `SKIP_BACKUP=1`) | **Kept until someone deletes them**: on-demand backups don't count toward the 14/30 and are never pruned (37 of them on beta after 8 days) | Multi-region `us` |
+| Database, before every backend deploy | `deploy.sh` runs `gcloud sql backups create --description "pre-deploy <sha>"` before the migrate Job, whenever the backend version changes or with `DEPLOY_ALL=1` (skipped with `SKIP_BACKUP=1`; a web-only deploy takes none) | **Kept until someone deletes them**: on-demand backups don't count toward the 14/30 and are never pruned (37 of them on beta after 8 days) | Multi-region `us` |
 | Archive bucket (`<project>-archive`: redacted proof) | Object versioning. A replaced or deleted file becomes a noncurrent version; the lifecycle rule deletes noncurrent versions **30 days** after they became noncurrent (`storage.tf`, commit 32ce75f) | 30 days, then 7 more days of soft delete. **Beta: the 30-day rule is not applied yet** (`docs/OWNER_TODO.md` item 9), so old versions are kept forever there until `terraform apply` | `us-central1` |
 | All buckets (archive, quarantine, media, tfstate) | Cloud Storage soft delete, the bucket default (not set in Terraform) | **7 days** after deletion (`retentionDurationSeconds: 604800` on all four beta buckets) | Same bucket |
 | Terraform state (`<project>-tfstate`) | Versioning (bootstrap.sh) plus soft delete | Old versions kept indefinitely | `us-central1` |
@@ -92,7 +95,7 @@ configuration allows, not targets anyone has committed to. Times marked *estimat
 
 | Failure | RPO | RTO |
 | --- | --- | --- |
-| Bad deploy (code) | 0 | ~2 min (`kubectl rollout undo`) to ~5 min (redeploy the previous SHA); detection: the deploy's own health check, or an alert after 5 minutes |
+| Bad deploy (code) | 0 | ~2 min (`kubectl rollout undo`) to ~5 min (pin the previous version in `versions.env` and push); detection: the deploy's own health check, or an alert after 5 minutes |
 | Bad data (a bug, a bad migration, an operator mistake) noticed within 7 days | Minutes before the bad event (PITR to just before it) | *Estimated* 30 to 60 min for today's database size (clone, back up, restore into the original, redeploy); writes during the outage window are lost |
 | Bad data noticed after 7 days | Up to 24 h (newest daily backup before the event) and only within 14 days (beta) / 30 days (prod); or the matching `pre-deploy` backup | Same as above |
 | Cloud SQL zone outage | Beta (ZONAL): 0 if you wait for the zone, otherwise minutes (PITR clone into another zone). Prod (REGIONAL, HA): 0 | Beta: until Google restores the zone, or *estimated* 30 to 60 min via a PITR clone with `--preferred-zone`. Prod: automatic failover, about a minute |
@@ -109,12 +112,13 @@ configuration allows, not targets anyone has committed to. Times marked *estimat
 
 Follow `README.md` "Deploying" ("Roll back") and `RUNBOOK.md` "Common actions" ("Roll back a deploy"); they own the
 exact commands as deploys change. The shape: the fastest stop-gap is `kubectl rollout undo deployment/<name>` (one
-revision back; the cluster keeps the earlier ReplicaSets), then a proper redeploy of the previous SHA so git, the
-cluster, and the next deploy agree. Migrations stay as they are (see "Deployment, in one paragraph"); never roll a
+revision back; the cluster keeps the earlier ReplicaSets), then pin the component's previous version in
+`versions.env` and push, so the repository, the cluster, and the next deploy agree (the next deploy undoes a bare
+`rollout undo`). Migrations stay as they are (see "Deployment, in one paragraph"); never roll a
 schema back by hand.
 
-Status: the deploy path itself runs on every push, but neither `rollout undo` nor a redeploy of an older SHA has
-been done on beta: **not rehearsed**.
+Status: the deploy path itself runs on every push, but neither `rollout undo` nor a pinned older version has
+been deployed on beta: **not rehearsed**.
 
 ### 2. A bad migration — not rehearsed
 
@@ -139,8 +143,8 @@ How it can go wrong, and what to do in each case. DbUp runs each script in its o
      with `reverse_points()`; `score_events` is never updated or deleted.
    - Otherwise restore the database to just before the migrate Job: procedure 3 with the target time just before the
      `pre-deploy <sha>` backup's end time (`gcloud sql backups list --instance $INSTANCE --filter="description:'pre-deploy <sha>'"`,
-     then `gcloud sql backups describe <id> --instance $INSTANCE` for `endTime`), and redeploy the commit *before*
-     the bad one. Restoring the `pre-deploy` backup in place (`gcloud sql backups restore <id> --restore-instance
+     then `gcloud sql backups describe <id> --instance $INSTANCE` for `endTime`), and pin the backend to the commit *before*
+     the bad one in `versions.env`. Restoring the `pre-deploy` backup in place (`gcloud sql backups restore <id> --restore-instance
      $INSTANCE`) is the quicker variant; it skips the verification step.
 
 ### 3. Restore the database to a point in time — not rehearsed
@@ -195,9 +199,10 @@ for when the original instance is unusable.
    ```
    The database users come from the backup; if the app password was changed after the restore point, run
    `terraform apply` once to set it again.
-7. **Redeploy and reopen.** Redeploy the commit that should run (the current one, or the one before a bad
-   migration; README "Deploying" has the command). The deploy re-runs any migrations newer than the restore point
-   and puts the replica counts back. Then `gh variable set DEPLOY_ENABLED --body true`.
+7. **Redeploy and reopen.** Pin the backend in `versions.env` first if it should not run the current version
+   (the commit before a bad migration), then deploy with every step, since the backend version may look unchanged:
+   `DEPLOY_ALL=1 infrastructure/k8s/deploy.sh $ENV` (README "Deploying"). That re-runs any migrations newer than
+   the restore point and puts the replica counts back. Then `gh variable set DEPLOY_ENABLED --body true`.
 8. **Reconcile files.** The database is now older than the buckets. Files written after the restore point have no
    row (harmless; `storage.cleanup` won't know about them). Files the app deleted after the restore point but that
    rows now reference again: restore them with procedure 4 (archive within 30 days, quarantine and media within 7).
@@ -249,8 +254,8 @@ Workload Identity pool belongs to the project, so the service account bindings s
    what depends on it; stop and look if it wants to replace the database, buckets, or secrets), then
    `terraform apply`. About 20 minutes for the Autopilot cluster (the first apply took that, 2026-10-26).
 2. `gcloud container clusters get-credentials fandomscore-$ENV --region us-central1 --project $PROJECT`.
-3. Deploy the current commit (Deploy workflow by hand: `gh workflow run deploy.yml -f environment=beta`, or
-   `deploy.sh` per README "Deploying"). The deploy recreates the namespace, service accounts, secrets mounts, and the
+3. Deploy everything (the Deploy workflow by hand deploys all components by default:
+   `gh workflow run deploy.yml -f environment=beta`; or `DEPLOY_ALL=1 infrastructure/k8s/deploy.sh $ENV`). The deploy recreates the namespace, service accounts, secrets mounts, and the
    Gateway on the same static address; HTTPS answers about 5 minutes after the Gateway exists, the web apps about 15.
 4. Check: `curl https://<api_domain>/v1/health`, the dashboard, and that the worker and redaction pods run.
 
