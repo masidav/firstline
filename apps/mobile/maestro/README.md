@@ -45,6 +45,8 @@ Android, the local-networking exception on iOS); builds for https APIs get neith
 - `setup.mjs` makes what the flows need through the API, as staff do, and writes what only a background job would
   (a fandom score) to the database. Every run uses new accounts, so the flows can run again on the same database.
   Its `KEY=value` output is passed to Maestro with `-e` (`${HOME_FAN}`, `${SHOW_ID}`, ...).
+- `run.sh` hides Android's "isn't responding" and "has stopped" dialogs (`hide_error_dialogs`): the emulator's own
+  Pixel Launcher hung during the flows twice in CI and its dialog covered the app, failing every flow.
 - Each flow starts from a cleared app (`common/launch-signed-out.yaml`), retried because the emulator now and then
   fails to start the app process right after its data is cleared.
 

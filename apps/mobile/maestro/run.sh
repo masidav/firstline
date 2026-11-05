@@ -70,6 +70,10 @@ echo "API up."
 
 adb wait-for-device
 adb reverse "tcp:$API_PORT" "tcp:$API_PORT"
+# No "isn't responding" or "has stopped" dialogs: on the CI emulator the Pixel Launcher hangs now and then while the
+# flows run, and its dialog covered the app (every flow failed on 2026-11-03 and 2026-11-05 with the sign-in form
+# rendered behind it). The app itself is not affected; a real crash still shows in the device log.
+adb shell settings put global hide_error_dialogs 1
 if [ -n "${MAESTRO_APK:-}" ]; then
   adb install -r "$MAESTRO_APK" >/dev/null
   echo "Installed $MAESTRO_APK."
