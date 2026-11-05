@@ -122,7 +122,8 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   `db-shell.sh` on beta, so either run the steps yourself and paste the k6 summaries back, or allow
   `infrastructure/k8s/db-shell.sh beta` and the `load-onsale` Job commands for a session.
 
-- [ ] **11. Add the `ANTHROPIC_API_KEY` repository secret** (or delete the workflow). `.github/workflows/weekly-docs.yml`
+- [ ] **11. Add the `ANTHROPIC_API_KEY` repository secret** (or delete the workflow). Deferred 2026-11-05: keep the
+  workflow, add the secret later; until then it fails each Monday. `.github/workflows/weekly-docs.yml`
   ("Weekly product docs", Mondays 09:00 UTC) rewrites the product docs with Claude and commits the result; it has
   failed every week since 2026-10-26 because the secret is missing (run 41507776960: "Either ANTHROPIC_API_KEY ...
   is required"). GitHub → Settings → Secrets and variables → Actions → New repository secret. Billed to your
