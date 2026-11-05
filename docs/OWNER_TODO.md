@@ -85,11 +85,13 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   curl https://app.beta.firstline-5730kl.com/config.js
   ```
 
-- [ ] **7. Sign up, then make yourself staff.** Open https://app.beta.firstline-5730kl.com, choose Continue with Google,
+- [x] **7. Sign up, then make yourself staff.** Done 2026-11-05: `db-shell.sh beta` set `is_staff` on
+  d57590971@gmail.com (the `secondfan` demo account, now the owner's account; `UPDATE 1`), first real run of
+  `db-shell.sh` against the cluster. Open https://app.beta.firstline-5730kl.com, choose Continue with Google,
   and pick a handle. Then:
   ```bash
   infrastructure/k8s/db-shell.sh beta <<'SQL'
-  UPDATE users SET is_staff = true WHERE email = 'YOUR_EMAIL';
+  UPDATE users SET is_staff = true WHERE email = 'd57590971@gmail.com';
   SQL
   ```
   Staff see the review, moderation, featured, prompts, and concert-source screens in the fan app.
@@ -100,7 +102,7 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   https://promoters.beta.firstline-5730kl.com.
   ```bash
   infrastructure/k8s/db-shell.sh beta <<'SQL'
-  WITH me AS (SELECT id FROM users WHERE email = 'YOUR_EMAIL'),
+  WITH me AS (SELECT id FROM users WHERE email = 'd57590971@gmail.com'),
        org AS (INSERT INTO organizations (name, created_by) SELECT 'Test Promoter', id FROM me RETURNING id)
   INSERT INTO organization_members (organization_id, user_id, role, added_by)
   SELECT org.id, me.id, 'owner', me.id FROM org, me;
