@@ -1,0 +1,4 @@
+# Output of tools/load/beta.sh: the pasted-back summary and the k6 logs of each run. Not committed: results worth
+# keeping go into tools/load/README.md's tables, in the same format as the runs recorded there.
+*
+!.gitignore

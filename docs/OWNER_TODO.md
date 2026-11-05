@@ -118,9 +118,20 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
 - [x] **10. Run the beta on-sale load test** Done 2026-11-05 by Claude (results in `tools/load/README.md`,
   "Results on beta"): 25 fans/s passed (p95 30 ms), 50 fans/s failed with the `db-g1-small` database at 100 % CPU
   (connection timeouts, no double registrations), the Cloud Armor pass passed; test data cleaned up, HPA back to 2.
-  Original step: (`tools/load/README.md`, "Running it on beta"). Claude may not run
-  `db-shell.sh` on beta, so either run the steps yourself and paste the k6 summaries back, or allow
-  `infrastructure/k8s/db-shell.sh beta` and the `load-onsale` Job commands for a session.
+  To run it again (after a database tier change, before a real on-sale, or whenever Claude asks for a re-measure),
+  outside testers' hours and announced, one command from the repo root:
+  ```bash
+  tools/load/beta.sh --dry-run   # prints every command it would run, runs none
+  tools/load/beta.sh             # the real thing, about 25 minutes
+  ```
+  It checks gcloud, kubectl (the beta cluster), gh, and jq, reads the HPA and the database (nobody's hub is a test
+  city, `max_connections`), then asks once, `Run this on beta now? [y/N]`. Answer `y` and it pre-scales the API to
+  6 pods, runs the 25 and 50 fans/s passes in the cluster and the 1 fan/s pass through Cloud Armor, checks the
+  registrations, cleans up every tag, and puts the HPA back. Paste back everything between
+  `----- paste from here -----` and `----- to here -----` (also in `tools/load/results/beta-<date>.txt`), with each
+  pass's `DB CPU peak: ____` filled in from the dashboard's Cloud SQL CPU tile for the window the pass names;
+  Claude records it in `tools/load/README.md`. If it stops partway it cleans up itself and prints the manual
+  commands if that fails. The steps it runs are the numbered list in `tools/load/README.md`, "Running it on beta".
 
 - [ ] **11. Add the `ANTHROPIC_API_KEY` repository secret** (or delete the workflow). Deferred 2026-11-05: keep the
   workflow, add the secret later; until then it fails each Monday. `.github/workflows/weekly-docs.yml`

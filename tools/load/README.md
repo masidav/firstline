@@ -144,6 +144,20 @@ artist nobody follows, and with someone watching the dashboard (Terraform output
 the beta cluster (`gcloud container clusters get-credentials fandomscore-beta ...`, as for
 `infrastructure/k8s/db-shell.sh`).
 
+**One command runs it all: `tools/load/beta.sh`** (steps 1 to 6 below, in order; they stay here as the reference for
+what it does). `--dry-run` prints every command it would run and runs none; `--yes` skips its one question;
+`LEVELS="25 50"` (in-cluster peaks), `EDGE_PEAK=1`, `HOLD=60`, `CITY`/`OTHER_CITY`, and `TAG` are environment
+variables as for `http/run.sh`. It checks gcloud, the kubectl context, gh, and jq up front, refuses to start while a
+Deploy run is in progress or a `load-onsale` Job or configmap is left over, asks once before changing beta, raises the
+HPA floor again if a deploy reset it between passes, and ends with one block to paste back: per pass, k6's thresholds
+and totals, the registrations check, the peak app connections (sampled every 10 s from `pg_stat_activity` through
+one `db-shell.sh` session), the HPA's CPU reading (`kubectl get hpa api`, every 10 s), and the API error log lines
+in the pass window (`gcloud logging read`, OPERATIONS.md "Logs"). It writes the block to
+`tools/load/results/beta-<date>.txt` with the k6 logs beside it (not committed; results worth keeping go in the table
+below). If it stops partway it runs step 6 itself, and prints the commands to finish by hand if that fails. Left to
+you: the database CPU, read from Cloud Monitoring (the dashboard's Cloud SQL CPU tile) for the window each pass
+prints, and recording the results here.
+
 **Every deploy resets the HPA floor.** A push to `main` deploys beta, and the deploy reapplies the overlay, which puts
 `minReplicas` back to 2 (and a mid-pass deploy also rolls the API pods). Before each pass check that no Deploy run is in
 progress (`gh run list --workflow Deploy --limit 1`) and that `kubectl -n fandomscore get hpa api` still shows 6.
