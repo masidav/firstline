@@ -261,7 +261,10 @@ Details: [Album journal API](services/api/src/features/album-journal/TODO.md) ·
       `submission_files.staff_boxes`; the worker paints them black before scanning and archiving; the app's Photo
       redaction screen has a "Draw boxes" mode (drag with mouse or finger, web first). Verified: `dotnet build` 0
       warnings, `dotnet test` (RedactionJobTests 9, RedactionApiTests 2, invariants for 0056), fan app Jest 354/354
-      and typecheck, promoter typecheck, migration safety check, `openapi-spec-validator`.*
+      and typecheck, promoter typecheck, migration safety check, `openapi-spec-validator`. Drawing verified in a browser
+      (Playwright `apps/mobile/e2e/redaction.spec.ts`, Chrome, against the API and a seeded database): a real mouse drag
+      over the photo drew the box where the mouse went, the archive decision carried one box inside 0..1, the row left
+      the list; new spec 1/1 and the whole web suite 11/11, Jest 360/360, typecheck.*
 - [ ] Hide printed order numbers on tickets (OCR) if staff find them often. *2026-11-05: not started. There is no OCR
       in the codebase (nothing writes `submissions.extracted` or `order_ref_hash`), and choosing one (Tesseract in the
       chiseled worker image, or a paid cloud vision API that sees every ticket) is the open decision in

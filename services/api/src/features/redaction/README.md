@@ -24,4 +24,5 @@ enough to be worth OCR (the open half of the Phase 7 item in `PROJECT_TODO.md`):
 Staff only (`AuthSetup.StaffPolicy`). Staff hear about new files through the `staff_redaction` notification.
 App: `apps/mobile/src/features/redaction/RedactionScreen.tsx` (route `/redactions`, Profile → Photo redaction):
 "Draw boxes" turns the photo into a canvas (mouse or finger drag; `boxes.ts` holds the geometry, tested on its own).
-Tests: `tests/FandomScore.Tests/RedactionApiTests.cs`.
+Tests: `tests/FandomScore.Tests/RedactionApiTests.cs`. The drawing itself in a real browser (mouse drag, box overlay,
+the decision's normalized box): `apps/mobile/e2e/redaction.spec.ts` (Playwright, CI job "End-to-end journeys").

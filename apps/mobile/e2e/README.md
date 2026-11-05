@@ -10,6 +10,7 @@ from `main`, so these run in CI on every push (`.github/workflows/ci.yml`, job "
 | `journal.spec.ts` | Log an album with a rating and review and earn points; log it offline, then see it sync once (one log on the server). |
 | `allocation.spec.ts` | Staff open a fan allocation (admin API); an eligible fan registers, stays registered after a reload, withdraws. |
 | `account.spec.ts` | Sign out and back in to the same account; delete the account and get a new one on the next sign-in. |
+| `redaction.spec.ts` | Staff (Photo redaction): a fan's ticket photo uploaded through the API and sent to staff; "Draw boxes", a real mouse drag over the photo draws a box where the mouse went, "Remove last box", draw again, archive; the decision carries one normalized box (0..1) and the row leaves the list. |
 
 ## Run it
 ```bash
@@ -35,4 +36,4 @@ dev-server run and put them in the build.
   `npx playwright show-trace e2e/test-results/<test>/trace.zip`.
 
 Not covered here: the native app (its journeys are Maestro flows on Android, `maestro/README.md`), real Google and
-Spotify sign-in, and staff screens.
+Spotify sign-in, and staff screens other than Photo redaction.

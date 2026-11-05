@@ -80,7 +80,7 @@ export function RedactionScreen() {
         const fan = item.user.deleted ? 'Deleted user' : `@${item.user.handle}`;
         const drawn = boxes[item.file_id] ?? [];
         return (
-          <View key={item.file_id} style={styles.card}>
+          <View key={item.file_id} style={styles.card} testID={`redaction-${item.file_id}`}>
             <View style={styles.who}>
               <Avatar user={item.user} size={24} />
               <Text style={[styles.title, styles.whoText]}>
