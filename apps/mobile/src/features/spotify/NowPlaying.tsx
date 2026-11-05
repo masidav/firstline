@@ -4,7 +4,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { unwrap } from '../../api/client';
 import { useSession } from '../../auth/SessionProvider';
+import { decorative } from '../../ui/decorative';
 import { colors, space } from '../../ui/theme';
+import { useReducedMotion } from '../../ui/useReducedMotion';
 import { ActionButton } from './ActionButton';
 import { AFTER_COMMAND_MS, IDLE_POLL_MS, isActive, opensInSpotify, playerMessage, POLL_MS, progressAt, queueMessage, type SpotifyPlayer } from './player';
 
@@ -182,18 +184,21 @@ export function NowPlayingProvider({ children }: { children: ReactNode }) {
 export function NowPlayingBar({ insetBottom = true }: { insetBottom?: boolean } = {}) {
   const { player, fetchedAt, message, toggle, skip, dismiss } = usePlayer();
   const insets = useSafeAreaInsets();
+  const reducedMotion = useReducedMotion();
   const [now, setNow] = useState(Date.now());
 
+  // The progress line creeps along once a second while playing. With Reduce Motion on it holds still and moves
+  // only when the player state is fetched again (each poll, and after a command).
   useEffect(() => {
-    if (player?.status !== 'playing') return;
+    if (player?.status !== 'playing' || reducedMotion) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [player?.status]);
+  }, [player?.status, reducedMotion]);
 
   const track = isActive(player) ? player?.track : null;
   if (!track && !message) return null;
 
-  const progress = progressAt(player, Math.max(0, now - fetchedAt));
+  const progress = progressAt(player, reducedMotion ? 0 : Math.max(0, now - fetchedAt));
   const share = track?.duration_ms && progress != null ? Math.min(1, progress / track.duration_ms) : 0;
   const playing = player?.status === 'playing';
   const artists = track?.artists.map((a) => a.name).join(', ') ?? '';
@@ -202,8 +207,8 @@ export function NowPlayingBar({ insetBottom = true }: { insetBottom?: boolean } 
     <View style={[styles.bar, { paddingBottom: space.sm + (insetBottom ? insets.bottom : 0) }]} accessibilityLabel="Now playing on Spotify">
       {track && (
         <>
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${Math.round(share * 100)}%` }]} />
+          <View style={styles.progressTrack} {...decorative}>
+            <View style={[styles.progressFill, { width: `${Math.round(share * 100)}%` }]} testID="now-playing-progress" />
           </View>
           <View style={styles.row}>
             <Pressable
@@ -213,7 +218,7 @@ export function NowPlayingBar({ insetBottom = true }: { insetBottom?: boolean } 
               style={styles.song}
             >
               {track.cover_url ? (
-                <Image source={{ uri: track.cover_url }} style={styles.cover} accessibilityIgnoresInvertColors />
+                <Image source={{ uri: track.cover_url }} style={styles.cover} accessibilityIgnoresInvertColors {...decorative} />
               ) : (
                 <View style={styles.cover} />
               )}

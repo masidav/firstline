@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
-import { Linking } from 'react-native';
+import { Image, Linking } from 'react-native';
 
 import { BouncerDoorScreen } from './BouncerDoorScreen';
 
@@ -27,7 +27,7 @@ const owner = { handle: 'ana', deleted: false, display_name: 'Ana', avatar_url: 
 beforeEach(() => jest.clearAllMocks());
 
 test('shows the drawn song with whose it is, opens it on Spotify, and draws another', async () => {
-  mockApi.GET.mockResolvedValueOnce(ok({ song, owner, following: 3, songs: 7 })).mockResolvedValueOnce(
+  mockApi.GET.mockResolvedValueOnce(ok({ song: { ...song, cover_url: 'https://x/cover.jpg' }, owner, following: 3, songs: 7 })).mockResolvedValueOnce(
     ok({ song: { ...song, id: 'g2', title: '2122' }, owner: { ...owner, display_name: null }, following: 3, songs: 7 }),
   );
   const openUrl = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
@@ -35,6 +35,8 @@ test('shows the drawn song with whose it is, opens it on Spotify, and draws anot
 
   expect(await screen.findByText('Cowboy Nudes')).toBeTruthy();
   expect(screen.getByText("From Ana's grab bag")).toBeTruthy();
+  // The cover is decorative (the title and artist are read); screen readers skip it.
+  expect(screen.UNSAFE_getByType(Image).props.accessibilityElementsHidden).toBe(true);
   fireEvent.press(screen.getByRole('link', { name: 'Open Cowboy Nudes on Spotify' }));
   expect(openUrl).toHaveBeenCalledWith(song.spotify_url);
 

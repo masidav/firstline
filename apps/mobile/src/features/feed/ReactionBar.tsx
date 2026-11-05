@@ -59,6 +59,7 @@ export function ReactionBar({ targetType, targetId, initial }: { targetType: Rea
             key={count.reaction}
             accessibilityRole="button"
             accessibilityLabel={`${r.name}, ${count.count}${count.mine ? ', yours: tap to take it back' : ': tap to add yours'}`}
+            accessibilityState={{ selected: count.mine }}
             onPress={() => void toggle(count.reaction)}
             style={[styles.chip, count.mine && styles.mine]}
           >

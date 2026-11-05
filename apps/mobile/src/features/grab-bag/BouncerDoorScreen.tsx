@@ -6,6 +6,7 @@ import { type components, unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Loading, Screen, Title } from '../../ui/components';
+import { decorative } from '../../ui/decorative';
 import { colors, space } from '../../ui/theme';
 import { fanName } from '../follows/follows';
 import { SongControls } from '../spotify/SongControls';
@@ -53,7 +54,7 @@ export function BouncerDoorScreen() {
         <View style={styles.card}>
           <Text style={styles.kicker}>From {fanName(draw.owner)}'s grab bag</Text>
           <View style={styles.row}>
-            {song.cover_url ? <Image source={{ uri: song.cover_url }} style={styles.cover} accessibilityIgnoresInvertColors /> : <View style={styles.cover} />}
+            {song.cover_url ? <Image source={{ uri: song.cover_url }} style={styles.cover} accessibilityIgnoresInvertColors {...decorative} /> : <View style={styles.cover} />}
             <View style={styles.rowText}>
               <Text style={styles.title}>{song.title}</Text>
               <Text style={styles.muted}>

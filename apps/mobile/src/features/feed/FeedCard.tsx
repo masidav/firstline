@@ -4,6 +4,7 @@ import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 
 import { Avatar } from '../../ui/Avatar';
 import { Body } from '../../ui/components';
+import { decorative } from '../../ui/decorative';
 import { colors, space } from '../../ui/theme';
 import { fanName } from '../follows/follows';
 import { FollowButton } from '../follows/FollowButton';
@@ -46,15 +47,23 @@ export function FeedCard(props: FeedCardProps) {
   }
 }
 
-/** Who posted it (their picture and name) and, for other fans, a Follow toggle. */
-function Byline({ item, mine, following, onFollow, children }: FeedCardProps & { children: ReactNode }) {
+/**
+ * Who posted it (their picture and name) and, for other fans, a Follow toggle. `text` is the sentence as a screen
+ * reader should say it (the children are the same sentence with styling); the name opens the fan's page.
+ */
+function Byline({ item, mine, following, onFollow, text, children }: FeedCardProps & { text: string; children: ReactNode }) {
   const handle = item.user?.handle;
+  const level = item.user_level_name ? `, ${item.user_level_name}` : '';
   return (
     <View style={styles.byline}>
-      {item.user ? <Avatar user={item.user} size={32} /> : null}
+      {item.user ? (
+        <View {...decorative}>
+          <Avatar user={item.user} size={32} />
+        </View>
+      ) : null}
       {handle ? (
-        <Pressable accessibilityRole="link" accessibilityLabel={`Open ${fanName(item.user)}'s page`} onPress={() => router.push(`/fans/${handle}`)}
-          style={styles.grow}>
+        <Pressable accessibilityRole="link" accessibilityLabel={`${text}${level}`} accessibilityHint={`Opens ${fanName(item.user)}'s page`}
+          onPress={() => router.push(`/fans/${handle}`)} style={styles.grow}>
           <Text style={styles.line}>
             {children}
             {item.user_level_name ? <Text style={styles.level}>{` · ${item.user_level_name}`}</Text> : null}
@@ -93,7 +102,7 @@ function PhotoCard(props: FeedCardProps) {
   const what = photo.kind === 'merch' ? 'merch' : 'a concert photo';
   return (
     <View style={styles.card}>
-      <Byline {...props}>
+      <Byline {...props} text={`${who} posted ${what}, ${item.artist?.name}`}>
         <Text style={styles.strong}>{who}</Text> posted {what} · {item.artist?.name}
       </Byline>
       {photo.files[0] && (
@@ -101,6 +110,8 @@ function PhotoCard(props: FeedCardProps) {
           source={{ uri: photo.files[0].url }}
           style={styles.photo}
           resizeMode="cover"
+          accessible
+          accessibilityRole="image"
           accessibilityLabel={`${who}'s ${what} for ${item.artist?.name}`}
         />
       )}
@@ -116,19 +127,22 @@ function LogCard(props: FeedCardProps) {
   const { item, mine } = props;
   const log = item.log!;
   const who = fanName(item.user);
+  const verb = log.is_relisten ? 'relistened to' : 'logged';
+  const onlyFollowers = log.visibility === 'followers';
   return (
     <View style={styles.card}>
-      <Byline {...props}>
-        <Text style={styles.strong}>{who}</Text> {log.is_relisten ? 'relistened to' : 'logged'}
-        {log.visibility === 'followers' ? ' · followers only' : ''}
+      <Byline {...props} text={`${who} ${verb}${onlyFollowers ? ', followers only' : ''}`}>
+        <Text style={styles.strong}>{who}</Text> {verb}
+        {onlyFollowers ? ' · followers only' : ''}
       </Byline>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${who} logged ${log.album.title} by ${item.artist?.name}`}
+        accessibilityLabel={`${log.album.title} by ${item.artist?.name}${log.rating != null ? `, rated ${stars(log.rating).replace('★ ', '')} stars` : ''}`}
+        accessibilityHint="Opens the album"
         onPress={() => router.push(`/album/${log.album.id}`)}
         style={styles.row}
       >
-        {log.album.cover_url ? <Image source={{ uri: log.album.cover_url }} style={styles.cover} /> : <View style={styles.cover} />}
+        {log.album.cover_url ? <Image source={{ uri: log.album.cover_url }} style={styles.cover} {...decorative} /> : <View style={styles.cover} />}
         <View style={styles.rowText}>
           <Text style={styles.strong} numberOfLines={1}>
             {log.album.title}
@@ -152,11 +166,11 @@ function GrabBagCard(props: FeedCardProps) {
   const who = fanName(item.user);
   return (
     <View style={[styles.card, styles.grabBag]}>
-      <Byline {...props}>
+      <Byline {...props} text={`${who}'s grab bag, song ${song.position}`}>
         <Text style={styles.strong}>{who}</Text>'s grab bag · song {song.position}
       </Byline>
       <View style={styles.row}>
-        {song.cover_url ? <Image source={{ uri: song.cover_url }} style={styles.cover} accessibilityIgnoresInvertColors /> : <View style={styles.cover} />}
+        {song.cover_url ? <Image source={{ uri: song.cover_url }} style={styles.cover} accessibilityIgnoresInvertColors {...decorative} /> : <View style={styles.cover} />}
         <View style={styles.rowText}>
           <Text style={styles.strong} numberOfLines={2}>
             {song.title}
@@ -182,66 +196,69 @@ function GrabBagCard(props: FeedCardProps) {
   );
 }
 
+/** "Geese · Nov 19, 2026, 8:00 PM · Metro, Chicago": the line under a show's name (commas instead of dots when read aloud). */
+function showLine(artistName: string | null | undefined, event: { starts_at: string; venue?: string | null; city?: string | null }, separator: string): string {
+  const where = [event.venue, event.city].filter(Boolean).join(', ');
+  return [artistName, formatWhen(event.starts_at), where].filter(Boolean).join(separator);
+}
+
 function ConcertCard({ item }: FeedCardProps) {
   const show = item.concert!;
-  const where = [show.event.venue, show.event.city].filter(Boolean).join(', ');
+  const sale = !show.allocation ? saleLines(show.event)[0] : undefined;
+  const tickets = ticketsLine(show);
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Open ${show.event.name}`}
+      accessibilityLabel={`Concert: ${show.event.name}. ${showLine(item.artist?.name, show.event, ', ')}. ${tickets}${sale ? `. ${sale}` : ''}`}
+      accessibilityHint="Opens the show"
       onPress={() => router.push(`/show/${show.event.id}`)}
       style={[styles.card, styles.concert]}
     >
       <Text style={styles.kicker}>Concert</Text>
       <Text style={styles.title}>{show.event.name}</Text>
-      <Text style={styles.muted}>
-        {item.artist?.name} · {formatWhen(show.event.starts_at)}
-        {where ? ` · ${where}` : ''}
-      </Text>
-      <Text style={[styles.strong, (show.registered || show.allocation?.status === 'open') && styles.accent]}>{ticketsLine(show)}</Text>
-      {!show.allocation && saleLines(show.event)[0] ? <Text style={styles.muted}>{saleLines(show.event)[0]}</Text> : null}
+      <Text style={styles.muted}>{showLine(item.artist?.name, show.event, ' · ')}</Text>
+      <Text style={[styles.strong, (show.registered || show.allocation?.status === 'open') && styles.accent]}>{tickets}</Text>
+      {sale ? <Text style={styles.muted}>{sale}</Text> : null}
     </Pressable>
   );
 }
 
+/** What the registration's status means for the fan, once there's no live standing to show. */
+function registrationOutcome(registration: NonNullable<FeedItem['registration']>['registration']): string {
+  switch (registration.status) {
+    case 'selected':
+      return registration.reservation_status === 'delivered'
+        ? 'Your ticket is ready. Open Tickets to show it at the door.'
+        : registration.seats === 2
+          ? 'You got tickets for you and your +1! They arrive shortly before the show.'
+          : 'You got a ticket! It arrives shortly before the show.';
+    case 'returned':
+      return 'You returned your seat.';
+    case 'not_selected':
+      return "You weren't selected this time.";
+    default:
+      return 'Registration has closed. The draw is next.';
+  }
+}
+
 function RegistrationCard({ item }: FeedCardProps) {
   const card = item.registration!;
-  const where = [card.event.venue, card.event.city].filter(Boolean).join(', ');
   const message = card.standing ? standingMessage(card.standing) : null;
-  const status = card.registration.status;
+  const headline = message ? message.headline : registrationOutcome(card.registration);
+  const good = message ? card.standing?.likely : card.registration.status === 'selected';
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Open your registration for ${card.event.name}`}
+      accessibilityLabel={`Your fan-ticket registration: ${card.event.name}. ${showLine(item.artist?.name, card.event, ', ')}. ${headline}${message ? ` ${message.detail}` : ''}`}
+      accessibilityHint="Opens the show"
       onPress={() => router.push(`/show/${card.event.id}`)}
       style={[styles.card, styles.registration]}
     >
       <Text style={styles.kicker}>Your fan-ticket registration</Text>
       <Text style={styles.title}>{card.event.name}</Text>
-      <Text style={styles.muted}>
-        {item.artist?.name} · {formatWhen(card.event.starts_at)}
-        {where ? ` · ${where}` : ''}
-      </Text>
-      {message ? (
-        <>
-          <Text style={[styles.strong, card.standing?.likely && styles.accent]}>{message.headline}</Text>
-          <Body muted>{message.detail}</Body>
-        </>
-      ) : (
-        <Text style={[styles.strong, status === 'selected' && styles.accent]}>
-          {status === 'selected'
-            ? card.registration.reservation_status === 'delivered'
-              ? 'Your ticket is ready. Open Tickets to show it at the door.'
-              : card.registration.seats === 2
-                ? 'You got tickets for you and your +1! They arrive shortly before the show.'
-                : 'You got a ticket! It arrives shortly before the show.'
-            : status === 'returned'
-              ? 'You returned your seat.'
-              : status === 'not_selected'
-                ? "You weren't selected this time."
-                : 'Registration has closed. The draw is next.'}
-        </Text>
-      )}
+      <Text style={styles.muted}>{showLine(item.artist?.name, card.event, ' · ')}</Text>
+      <Text style={[styles.strong, good && styles.accent]}>{headline}</Text>
+      {message ? <Body muted>{message.detail}</Body> : null}
     </Pressable>
   );
 }
@@ -249,11 +266,12 @@ function RegistrationCard({ item }: FeedCardProps) {
 function PromptAnswerCard(props: FeedCardProps) {
   const { item, mine } = props;
   const answer = item.prompt_answer!;
+  const onlyFollowers = answer.visibility === 'followers';
   return (
     <View style={[styles.card, styles.promptCard]}>
-      <Byline {...props}>
+      <Byline {...props} text={`${fanName(item.user)} answered the prompt${onlyFollowers ? ', followers only' : ''}`}>
         <Text style={styles.strong}>{fanName(item.user)}</Text> answered the prompt
-        {answer.visibility === 'followers' ? ' · followers only' : ''}
+        {onlyFollowers ? ' · followers only' : ''}
       </Byline>
       <Text style={styles.muted}>{answer.prompt_text}</Text>
       <Text style={styles.answer}>“{answer.body}”</Text>
@@ -269,10 +287,12 @@ function PromptAnswerCard(props: FeedCardProps) {
 
 function StatCard(props: FeedCardProps) {
   const { item } = props;
-  const who = fanName(item.user);
+  const sentence = statSentence(fanName(item.user), item.stat!, item.artist?.name);
   return (
     <View style={[styles.card, styles.stat]}>
-      <Byline {...props}>{statSentence(who, item.stat!, item.artist?.name)}</Byline>
+      <Byline {...props} text={sentence.replace(' · ', ', ')}>
+        {sentence}
+      </Byline>
     </View>
   );
 }

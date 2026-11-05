@@ -96,8 +96,18 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       followers, recent logs and prompt answers. Verified: FanProfileScreen tests, Chrome.
 - [ ] Profile: followers and following lists, remove a follower, block someone. *Lists and remove built 2026-10-25
       (`/people`); blocking not wanted for now (decided 2026-10-24).*
-- [ ] Respect reduced-motion settings: the bounce and horizontal scroll need a calmer fallback, and the feed
-      must work with VoiceOver and TalkBack.
+- [x] Respect reduced-motion settings: the bounce and horizontal scroll need a calmer fallback, and the feed
+      must work with VoiceOver and TalkBack. *Done 2026-11-05: `ui/useReducedMotion.ts` reads Reduce Motion (iOS),
+      "Remove animations" (Android) and `prefers-reduced-motion` (web), false until known, and follows changes. With
+      it on, screens cross-fade instead of sliding (`app/_layout.tsx`) and the now-playing progress line holds still
+      between polls instead of creeping every second. Nothing else in the app moves by code yet: the music-sheet
+      scroll and the vertical bounce-in above are not built, and take their motion from this hook when they are.
+      Feed for screen readers: bylines and the concert, registration and album rows read their whole sentence with a
+      hint for where the tap goes; the avatar beside a name, album covers, the door and the progress line are hidden
+      (`ui/decorative.ts`); photos are described; reaction chips report their count and "selected". Verified:
+      useReducedMotion, rootLayout, Feed, HomeScreen, NowPlaying, BouncerDoorScreen tests; `npm test -- --ci` (57
+      suites, 354 tests) and `npm run typecheck` clean. Not yet tried with VoiceOver or TalkBack on a device (needs an
+      iOS or Android build); the web build was not checked with a screen reader either.*
 
 ## Ticket allocations (Phase 11)
 - [ ] Show upcoming allocations for followed artists and the fan's eligibility, with what to do to qualify.

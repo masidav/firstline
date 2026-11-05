@@ -309,7 +309,8 @@ test("other fans' activity reaches home only through the feed, which the server 
   );
   render(<HomeScreen />);
 
-  expect(await screen.findByRole('button', { name: 'Ben logged 3D Country by Geese' })).toBeTruthy();
+  expect(await screen.findByRole('link', { name: 'Ben logged, followers only' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '3D Country by Geese, rated 4.5 stars' })).toBeTruthy();
   expect(screen.getByText(/followers only/)).toBeTruthy();
   expect(screen.getByRole('button', { name: "Report Ben's post" })).toBeTruthy();
 

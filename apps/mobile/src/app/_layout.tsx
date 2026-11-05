@@ -9,10 +9,13 @@ import { PushSetup } from '../features/notifications/PushSetup';
 import { SpotifyLibraryProvider } from '../features/spotify/Library';
 import { NowPlayingBar, NowPlayingProvider } from '../features/spotify/NowPlaying';
 import { colors } from '../ui/theme';
+import { useReducedMotion } from '../ui/useReducedMotion';
 
 export default function RootLayout() {
   // On the tabs the now-playing bar sits above the tab bar (see (tabs)/_layout.tsx), not under it.
   const inTabs = useSegments()[0] === '(tabs)';
+  // With Reduce Motion on, screens cross-fade instead of sliding in (the web build never animates them).
+  const reducedMotion = useReducedMotion();
   return (
     <SafeAreaProvider>
       <SessionProvider>
@@ -23,7 +26,9 @@ export default function RootLayout() {
           <SpotifyLibraryProvider>
             {/* The now-playing bar sits under every other screen while the fan's Spotify is playing or paused. */}
             <View style={{ flex: 1, backgroundColor: colors.background }}>
-              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }} />
+              <Stack
+                screenOptions={{ headerShown: false, animation: reducedMotion ? 'fade' : 'default', contentStyle: { backgroundColor: colors.background } }}
+              />
               {!inTabs && <NowPlayingBar />}
             </View>
           </SpotifyLibraryProvider>

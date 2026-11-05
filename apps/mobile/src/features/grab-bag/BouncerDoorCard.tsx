@@ -6,6 +6,7 @@ import { unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText } from '../../ui/components';
+import { decorative } from '../../ui/decorative';
 import { colors, space } from '../../ui/theme';
 import { fanName } from '../follows/follows';
 import type { BouncerDoor } from './BouncerDoorScreen';
@@ -37,7 +38,7 @@ export function BouncerDoorCard() {
   return (
     <View style={styles.card}>
       <View style={styles.doorRow}>
-        <View style={[styles.door, song && styles.doorOpen]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+        <View style={[styles.door, song && styles.doorOpen]} {...decorative}>
           <View style={styles.knob} />
         </View>
         <View style={styles.doorText}>
@@ -49,7 +50,7 @@ export function BouncerDoorCard() {
       {song && (
         <>
           <View style={styles.songRow}>
-            {song.cover_url ? <Image source={{ uri: song.cover_url }} style={styles.cover} accessibilityIgnoresInvertColors /> : <View style={styles.cover} />}
+            {song.cover_url ? <Image source={{ uri: song.cover_url }} style={styles.cover} accessibilityIgnoresInvertColors {...decorative} /> : <View style={styles.cover} />}
             <View style={styles.songText}>
               <Text style={styles.song} numberOfLines={2}>{song.title}</Text>
               <Text style={styles.muted} numberOfLines={1}>

@@ -10,6 +10,8 @@ profile ("Your grab bag").
 
 `/bouncer-door` (`BouncerDoorScreen.tsx`): one song drawn from the grab bags of the fans you follow
 (`GET /me/bouncer-door`), with whose it is, a Spotify link, and "Draw another"; points to People when you follow
-nobody. Reached from the home header and the profile.
+nobody. Reached from the home header and the profile. In the feed the door is a card (`BouncerDoorCard.tsx`); the
+drawn door and the album covers are decorative (hidden from screen readers, `ui/decorative.ts`), the song's title and
+artist are read. The door opens without animation, so there is nothing to calm for Reduce Motion.
 
 Tests: `GrabBagScreen.test.tsx`, `BouncerDoorScreen.test.tsx`.

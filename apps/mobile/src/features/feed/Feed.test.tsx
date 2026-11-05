@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { Linking } from 'react-native';
+import { Image, Linking } from 'react-native';
 
 import type { components } from '../../api/client';
 import { DOOR_AFTER, Feed, stars, withDoor } from './Feed';
@@ -98,11 +98,11 @@ test('shows every kind of card, keeps the seed while paging, and shuffles with a
 
   // Concert: opens the show.
   expect(screen.getByText(/Fan tickets: register by/)).toBeTruthy();
-  fireEvent.press(screen.getByRole('button', { name: 'Open Geese at Metro' }));
+  fireEvent.press(screen.getByRole('button', { name: /^Concert: Geese at Metro\. Geese, .*, Metro, Chicago\. Fan tickets: register by/ }));
   expect(jest.requireMock('expo-router').router.push).toHaveBeenCalledWith('/show/e1');
 
   fireEvent.press(screen.getByRole('button', { name: 'Show more' }));
-  const logged = await screen.findByRole('button', { name: 'Ana logged 3D Country by Geese' });
+  const logged = await screen.findByRole('button', { name: '3D Country by Geese, rated 4.5 stars' });
   expect(screen.getByText('Geese · ★ 4.5')).toBeTruthy();
   expect(screen.getByText(/followers only/)).toBeTruthy();
   expect(mockApi.GET).toHaveBeenLastCalledWith('/feed', { params: { query: { limit: 20, cursor: 'c2', seed: firstSeed } } });
@@ -111,7 +111,7 @@ test('shows every kind of card, keeps the seed while paging, and shuffles with a
 
   // Registration: the standing headline; stat: a sentence.
   expect(screen.getByText("You'll most likely get a ticket!")).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Open your registration for Geese at Metro' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: /^Your fan-ticket registration: Geese at Metro\. Geese, .*\. You'll most likely get a ticket! / })).toBeTruthy();
   expect(screen.getByText('Ben is in the top 3% of Geese fans (#2 of 40 here)')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
 
@@ -262,6 +262,37 @@ test('when the server cannot be reached, the feed says so', async () => {
 test("tapping a fan's name opens their page", async () => {
   mockApi.GET.mockResolvedValue(ok({ items: [photo], next_cursor: null, seed: 'abc' }));
   render(<Feed />);
-  fireEvent.press(await screen.findByRole('link', { name: "Open @fan_two's page" }));
+  fireEvent.press(await screen.findByRole('link', { name: '@fan_two posted a concert photo, Geese' }));
   expect(jest.requireMock('expo-router').router.push).toHaveBeenCalledWith('/fans/fan_two');
+});
+
+test('the feed reads sensibly with a screen reader', async () => {
+  const withCover = { ...log, log: { ...log.log, album: { ...log.log.album, cover_url: 'https://x/cover.jpg' } }, reactions: [{ reaction: 'fire', count: 3, mine: true }] };
+  mockApi.GET.mockResolvedValue(ok({ items: [photo, withCover, song, concert, registration, stat], next_cursor: null, seed: 'abc' }));
+  render(<Feed />);
+
+  // Bylines are links that say the whole sentence (not just "Open X's page"), with the page as the hint; the picture
+  // next to the name is decorative, so VoiceOver and TalkBack skip it.
+  const byline = await screen.findByRole('link', { name: '@fan_two posted a concert photo, Geese' });
+  expect(screen.getByHintText("Opens @fan_two's page")).toBe(byline);
+  expect(screen.queryByLabelText("@fan_two's picture")).toBeNull();
+  expect(screen.getByLabelText("@fan_two's picture", { includeHiddenElements: true })).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Ana relistened to, followers only' })).toBeTruthy();
+  expect(screen.getByRole('link', { name: "Ben's grab bag, song 2" })).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Ben is in the top 3% of Geese fans (#2 of 40 here)' })).toBeTruthy();
+
+  // The photo is content (described); the album cover beside its title is not.
+  expect(screen.getByRole('image', { name: "@fan_two's a concert photo for Geese" })).toBeTruthy();
+  const album = screen.getByRole('button', { name: '3D Country by Geese, rated 4.5 stars' });
+  expect(screen.getByHintText('Opens the album')).toBe(album);
+  expect(screen.UNSAFE_getAllByType(Image).filter((image) => image.props.source.uri === 'https://x/cover.jpg')[0]!.props.accessibilityElementsHidden).toBe(true);
+
+  // Cards that open a show say everything on them, then where the tap goes.
+  const show = screen.getByRole('button', { name: /^Concert: Geese at Metro\. Geese, .*, Metro, Chicago\. Fan tickets: register by .*/ });
+  const mine = screen.getByRole('button', { name: /^Your fan-ticket registration: Geese at Metro\. Geese, .*, Metro, Chicago\. You'll most likely get a ticket! .+/ });
+  expect(screen.getAllByHintText('Opens the show')).toEqual([show, mine]);
+
+  // Reaction chips carry their count and whether this one is yours.
+  expect(screen.getByRole('button', { name: 'fire, 3, yours: tap to take it back', selected: true })).toBeTruthy();
+  expect(screen.getAllByRole('button', { name: 'Add a reaction' })).toHaveLength(2); // the photo and the log
 });

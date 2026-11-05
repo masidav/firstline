@@ -15,6 +15,8 @@ const mockState = { status: 'signedIn', me: { handle: 'fan_one' } };
 
 jest.mock('../../auth/SessionProvider', () => ({ useSession: () => ({ session: mockSession, state: mockState }) }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
+const mockMotion = { reduced: false };
+jest.mock('../../ui/useReducedMotion', () => ({ useReducedMotion: () => mockMotion.reduced }));
 
 const SONG = '4uLU6hMCjMI75M1A2tKUQC';
 const URL = `https://open.spotify.com/track/${SONG}`;
@@ -115,6 +117,29 @@ test('outside the app shell a Play button opens the song, as before', async () =
   render(<PlayButton spotifyTrackId={SONG} spotifyUrl={URL} title="Hard Times" />);
   fireEvent.press(screen.getByRole('button', { name: 'Play Hard Times' }));
   await waitFor(() => expect(Linking.openURL).toHaveBeenCalledWith(URL));
+});
+
+test('with Reduce Motion on, the progress line holds still between polls instead of creeping every second', async () => {
+  const intervals = jest.spyOn(global, 'setInterval');
+  mockApi.GET.mockResolvedValue(ok(playing));
+  try {
+    const { unmount } = render(<App />);
+    expect(await screen.findByText('Hard Times')).toBeTruthy();
+    expect(intervals.mock.calls.map(([, ms]) => ms)).toContain(1000);
+    unmount();
+    intervals.mockClear();
+
+    mockMotion.reduced = true;
+    render(<App />);
+    expect(await screen.findByText('Hard Times')).toBeTruthy();
+    expect(intervals.mock.calls.map(([, ms]) => ms)).not.toContain(1000);
+    // 30 s into a 3-minute song, as of the last fetch; the line is decorative, so screen readers skip it.
+    expect(screen.queryByTestId('now-playing-progress')).toBeNull();
+    expect(screen.getByTestId('now-playing-progress', { includeHiddenElements: true }).props.style).toEqual(expect.arrayContaining([{ width: '17%' }]));
+  } finally {
+    mockMotion.reduced = false;
+    intervals.mockRestore();
+  }
 });
 
 test('progress counts on while playing and stops at the end of the song', () => {
