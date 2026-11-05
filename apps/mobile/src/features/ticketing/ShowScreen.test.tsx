@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 
 import { ShowScreen } from './ShowScreen';
 import { type Standing, standingMessage } from './standing';
@@ -93,6 +93,28 @@ test('a selected fan sees their ticket and can name their +1', async () => {
       body: { handle: 'friend' },
     }),
   );
+});
+
+test('a named +1 is shown with their picture; a deleted +1 reads "Deleted user"', async () => {
+  const guest = { id: 'u-2', handle: 'friend', deleted: false, display_name: null, avatar_url: 'https://api.test/v1/avatars/2' };
+  const registration = { id: 'r-1', allocation_id: 'al-1', event_id: 'ev-1', hub_city_ids: ['us-il-chicago'], hub_match: 1, local: true,
+                         percentile: 90, raw_score: 40, is_estimated: false, registered_at: '2026-10-21T00:00:00Z', withdrawn_at: null,
+                         status: 'registered', plus_one: true, guest, selection_rank: null, seats: null };
+  mockApi.GET.mockImplementation((path: string) =>
+    Promise.resolve(ok(path === '/events/{eventId}' ? detail : eligibility({ eligible: true, registration, standing: standing(true) }))),
+  );
+  render(<ShowScreen eventId="ev-1" />);
+
+  expect(await screen.findByText('Your +1: @friend')).toBeTruthy();
+  expect(screen.getByLabelText("@friend's picture").props.source).toEqual({ uri: 'https://api.test/v1/avatars/2' });
+
+  const gone = { ...registration, guest: { id: 'u-2', handle: null, deleted: true, display_name: null, avatar_url: null } };
+  mockApi.GET.mockImplementation((path: string) =>
+    Promise.resolve(ok(path === '/events/{eventId}' ? detail : eligibility({ eligible: true, registration: gone, standing: standing(true) }))),
+  );
+  render(<ShowScreen eventId="ev-1" />);
+  expect(await screen.findByText('Your +1: Deleted user')).toBeTruthy();
+  expect(within(screen.getByLabelText("Deleted user's picture")).getByText('?')).toBeTruthy();
 });
 
 test('a fan below the minimum is told why and has no Register button', async () => {

@@ -77,11 +77,21 @@ public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifeti
     {
         var allocationId = await AllocationAsync(tickets: 5);
         var fan = await FanAsync("farm_fan", score: 95, "us-il-chicago");
+        var fanPicture = await PictureAsync("farm_fan");
+        var staffPicture = await PictureAsync("fraud_staff");
 
         var flag = await RaiseAsync("farm_fan", "streaming_farm", note: "Same 3 tracks on loop, 22 hours a day",
             evidence: new { looped_tracks = 3, hours_a_day = 22 });
         Assert.Equal(("open", "streaming_farm", "fraud_staff"), (flag.GetProperty("status").GetString(),
             flag.GetProperty("reason").GetString(), flag.GetProperty("raised_by").GetString()));
+        // The fan and the staff member who raised it come with their pictures; nobody has decided yet.
+        Assert.Equal(("farm_fan", fanPicture), (flag.GetProperty("user").GetProperty("handle").GetString(),
+            flag.GetProperty("user").GetProperty("avatar_url").GetString()));
+        var raisedBy = flag.GetProperty("raised_by_user");
+        Assert.Equal(("fraud_staff", false, staffPicture), (raisedBy.GetProperty("handle").GetString(),
+            raisedBy.GetProperty("deleted").GetBoolean(), raisedBy.GetProperty("avatar_url").GetString()));
+        Assert.Equal((JsonValueKind.Null, JsonValueKind.Null),
+            (flag.GetProperty("decided_by_user").ValueKind, flag.GetProperty("appeal_decided_by_user").ValueKind));
         Assert.Equal(22, flag.GetProperty("evidence").GetProperty("hours_a_day").GetInt32());
         Assert.True(flag.GetProperty("context").GetProperty("trust_parts").TryGetProperty("account_age", out _));
 
@@ -110,9 +120,13 @@ public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifeti
         Assert.Equal(["registration_blocked", "flag_raised"], audit.Select(e => e.GetProperty("action").GetString()));
         var blocked = audit[0];
         Assert.Equal(("under_review", "farm_fan"), (blocked.GetProperty("reason").GetString(), blocked.GetProperty("actor").GetString()));
+        Assert.Equal(("farm_fan", fanPicture), (blocked.GetProperty("actor_user").GetProperty("handle").GetString(),
+            blocked.GetProperty("actor_user").GetProperty("avatar_url").GetString()));
         Assert.Equal(95m, blocked.GetProperty("inputs").GetProperty("raw_score").GetDecimal());
         Assert.Equal(flag.GetProperty("id").GetString(), blocked.GetProperty("flag_id").GetString());
         Assert.Equal("fraud_staff", audit[1].GetProperty("actor").GetString());
+        Assert.Equal(("fraud_staff", staffPicture), (audit[1].GetProperty("actor_user").GetProperty("handle").GetString(),
+            audit[1].GetProperty("actor_user").GetProperty("avatar_url").GetString()));
 
         // Only staff use the queue and the log.
         Assert.Equal(HttpStatusCode.Forbidden, (await SendAsync(HttpMethod.Get, "/v1/admin/fraud-flags", fan)).StatusCode);
@@ -147,6 +161,7 @@ public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifeti
         Assert.Equal(["draw_held_out", "registered", "registered"], audit.Select(e => e.GetProperty("action").GetString()));
         Assert.Equal(("top_cheat", "bot"), (audit[0].GetProperty("handle").GetString(), audit[0].GetProperty("reason").GetString()));
         Assert.Equal(JsonValueKind.Null, audit[0].GetProperty("actor").ValueKind);   // the system
+        Assert.Equal(JsonValueKind.Null, audit[0].GetProperty("actor_user").ValueKind);
         var registered = audit.Single(e => e.GetProperty("handle").GetString() == "honest_fan");
         Assert.Equal((80m, 0m, 1), (registered.GetProperty("inputs").GetProperty("raw_score").GetDecimal(),
             registered.GetProperty("inputs").GetProperty("min_raw_score").GetDecimal(), registered.GetProperty("inputs").GetProperty("hub_match").GetInt32()));
@@ -211,6 +226,8 @@ public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifeti
             new { decision = "grant", response = "Thanks, that checks out." }), HttpStatusCode.OK);
         Assert.Equal(("cleared", "granted", "fraud_staff"), (decided.GetProperty("status").GetString(),
             decided.GetProperty("appeal").GetProperty("status").GetString(), decided.GetProperty("appeal_decided_by").GetString()));
+        Assert.Equal(("fraud_staff", false), (decided.GetProperty("appeal_decided_by_user").GetProperty("handle").GetString(),
+            decided.GetProperty("appeal_decided_by_user").GetProperty("deleted").GetBoolean()));
         Assert.Equal("appeal_unavailable", (await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/fraud-appeals/{appealId}/decision",
             _staff, new { decision = "deny" }), HttpStatusCode.Conflict)).GetProperty("code").GetString());
 
@@ -265,6 +282,7 @@ public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifeti
         var cleared = await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/fraud-flags/{flagId}/decision", _staff,
             new { decision = "clear", note = "Second look: real fan." }), HttpStatusCode.OK);
         Assert.Equal(("cleared", "fraud_staff"), (cleared.GetProperty("status").GetString(), cleared.GetProperty("decided_by").GetString()));
+        Assert.Equal("fraud_staff", cleared.GetProperty("decided_by_user").GetProperty("handle").GetString());
         Assert.Equal(HttpStatusCode.Conflict, (await SendAsync(HttpMethod.Post, $"/v1/admin/fraud-flags/{flagId}/decision", _staff,
             new { decision = "uphold" })).StatusCode);
 
@@ -316,6 +334,7 @@ public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifeti
         var flag = Assert.Single(queue.GetProperty("items").EnumerateArray());
         Assert.Equal(("rapid_bot", "rule", "bot", JsonValueKind.Null), (flag.GetProperty("user").GetProperty("handle").GetString(),
             flag.GetProperty("source").GetString(), flag.GetProperty("reason").GetString(), flag.GetProperty("raised_by").ValueKind));
+        Assert.Equal(JsonValueKind.Null, flag.GetProperty("raised_by_user").ValueKind);
         Assert.Equal(150, flag.GetProperty("evidence").GetProperty("rules").GetProperty("rapid_plays").GetProperty("plays").GetInt32());
 
         // Staff hear about it before the draw; the fan learns nothing until a person reviews it.
@@ -808,6 +827,22 @@ public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifeti
 
     private async Task<List<JsonElement>> QueueAsync() =>
         [.. (await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/admin/fraud-flags?limit=100", _staff), HttpStatusCode.OK)).GetProperty("items").EnumerateArray()];
+
+    /// <summary>Gives the fan a profile picture as PATCH /me does: a finished avatar upload of theirs (users_avatar_link).</summary>
+    private async Task<string> PictureAsync(string handle)
+    {
+        await using var connection = await _db.OpenConnectionAsync();
+        return (await connection.ExecuteScalarAsync<string>(
+            """
+            WITH pic AS (
+              INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes, storage_key, sha256, bytes, uploaded_at)
+              SELECT id, 'avatar', 'image/jpeg', 1, 'media/avatars/' || @handle, sha256(convert_to(@handle, 'UTF8')), 1, now()
+                FROM users WHERE handle = @handle RETURNING id, user_id)
+            UPDATE users SET avatar_upload_id = pic.id, avatar_url = 'https://api.test/v1/avatars/' || pic.id FROM pic
+             WHERE users.id = pic.user_id RETURNING users.avatar_url
+            """,
+            new { handle }))!;
+    }
 
     private async Task AgeAccountsAsync(params string[] handles)
     {

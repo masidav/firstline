@@ -4309,8 +4309,9 @@ components:
     FraudFlag:
       type: object
       description: A flag as staff see it, with the evidence and context for deciding.
-      required: [id, user_id, user, reason, evidence, note, source, raised_by, raised_at, status, decided_by, decided_at,
-                 decision_note, appeal, appeal_decided_by, context, shown_to_fan_at]
+      required: [id, user_id, user, reason, evidence, note, source, raised_by, raised_by_user, raised_at, status, decided_by,
+                 decided_by_user, decided_at, decision_note, appeal, appeal_decided_by, appeal_decided_by_user, context,
+                 shown_to_fan_at]
       properties:
         id: {type: string, format: uuid}
         user_id: {type: string, format: uuid}
@@ -4319,15 +4320,24 @@ components:
         evidence: {type: object, additionalProperties: true}
         note: {type: [string, 'null']}
         source: {type: string, enum: [staff, rule], description: '`rule`: raised by automatic detection (open, it only blocks registering)'}
-        raised_by: {type: [string, 'null'], description: Staff handle; null for a rule.}
+        raised_by: {type: [string, 'null'], description: Staff handle; null for a rule or a deleted staff account.}
+        raised_by_user:
+          description: The staff member who raised it, with their picture; null for a rule. `deleted` when their account is gone.
+          oneOf: [{$ref: '#/components/schemas/UserRef'}, {type: 'null'}]
         raised_at: {type: string, format: date-time}
         status: {type: string, enum: [open, upheld, cleared]}
-        decided_by: {type: [string, 'null'], description: Staff handle}
+        decided_by: {type: [string, 'null'], description: Staff handle; null until decided or when their account is gone.}
+        decided_by_user:
+          description: The staff member who decided it, with their picture; null until decided.
+          oneOf: [{$ref: '#/components/schemas/UserRef'}, {type: 'null'}]
         decided_at: {type: [string, 'null'], format: date-time}
         decision_note: {type: [string, 'null']}
         appeal:
           oneOf: [{$ref: '#/components/schemas/FraudAppeal'}, {type: 'null'}]
-        appeal_decided_by: {type: [string, 'null'], description: Staff handle}
+        appeal_decided_by: {type: [string, 'null'], description: Staff handle; null until the appeal is decided or when their account is gone.}
+        appeal_decided_by_user:
+          description: The staff member who decided the appeal, with their picture; null until then.
+          oneOf: [{$ref: '#/components/schemas/UserRef'}, {type: 'null'}]
         shown_to_fan_at:
           type: [string, 'null']
           format: date-time
@@ -4351,7 +4361,7 @@ components:
         next_cursor: {type: [string, 'null']}
     EligibilityAuditEntry:
       type: object
-      required: [id, at, action, reason, user_id, handle, allocation_id, registration_id, flag_id, appeal_id, actor, inputs]
+      required: [id, at, action, reason, user_id, handle, allocation_id, registration_id, flag_id, appeal_id, actor, actor_user, inputs]
       properties:
         id: {type: integer}
         at: {type: string, format: date-time}
@@ -4366,7 +4376,10 @@ components:
         registration_id: {type: [string, 'null'], format: uuid}
         flag_id: {type: [string, 'null'], format: uuid}
         appeal_id: {type: [string, 'null'], format: uuid}
-        actor: {type: [string, 'null'], description: 'Handle of who decided (the fan or staff); null for the system'}
+        actor: {type: [string, 'null'], description: 'Handle of who decided (the fan or staff); null for the system or a deleted account'}
+        actor_user:
+          description: Who decided (the fan or staff), with their picture; null for the system. `deleted` when their account is gone.
+          oneOf: [{$ref: '#/components/schemas/UserRef'}, {type: 'null'}]
         inputs: {type: object, additionalProperties: true, description: 'What the decision was based on: score snapshot, threshold, hub match, flag.'}
     EligibilityAuditPage:
       type: object
@@ -5203,19 +5216,21 @@ components:
         plus_one: {type: boolean, description: The fan asked for a +1}
         guest:
           description: The +1's account, once named
-          oneOf:
-            - type: object
-              required: [id, handle]
-              properties:
-                id: {type: string, format: uuid}
-                handle: {type: string}
-            - {type: 'null'}
+          oneOf: [{$ref: '#/components/schemas/GuestRef'}, {type: 'null'}]
         selection_rank: {type: [integer, 'null'], minimum: 1, description: Place in the draw's ranking}
         seats: {type: [integer, 'null'], enum: [1, 2, null], description: 'Seats the draw gave: 1, or 2 with the +1'}
         reservation_id: {type: [string, 'null'], format: uuid, description: Set once selected (see Reservation).}
         reservation_status:
           type: [string, 'null']
           enum: [held, delivered, returned, cancelled, null]
+    GuestRef:
+      description: The named +1, as a `UserRef` (deleted accounts keep the id and read "Deleted user") with the account id.
+      allOf:
+        - $ref: '#/components/schemas/UserRef'
+        - type: object
+          required: [id]
+          properties:
+            id: {type: string, format: uuid}
     Eligibility:
       type: object
       required: [allocation_id, eligible, min_raw_score]

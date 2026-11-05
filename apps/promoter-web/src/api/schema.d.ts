@@ -3639,20 +3639,26 @@ export interface components {
              * @enum {string}
              */
             source: "staff" | "rule";
-            /** @description Staff handle; null for a rule. */
+            /** @description Staff handle; null for a rule or a deleted staff account. */
             raised_by: string | null;
+            /** @description The staff member who raised it, with their picture; null for a rule. `deleted` when their account is gone. */
+            raised_by_user: components["schemas"]["UserRef"] | null;
             /** Format: date-time */
             raised_at: string;
             /** @enum {string} */
             status: "open" | "upheld" | "cleared";
-            /** @description Staff handle */
+            /** @description Staff handle; null until decided or when their account is gone. */
             decided_by: string | null;
+            /** @description The staff member who decided it, with their picture; null until decided. */
+            decided_by_user: components["schemas"]["UserRef"] | null;
             /** Format: date-time */
             decided_at: string | null;
             decision_note: string | null;
             appeal: components["schemas"]["FraudAppeal"] | null;
-            /** @description Staff handle */
+            /** @description Staff handle; null until the appeal is decided or when their account is gone. */
             appeal_decided_by: string | null;
+            /** @description The staff member who decided the appeal, with their picture; null until then. */
+            appeal_decided_by_user: components["schemas"]["UserRef"] | null;
             /**
              * Format: date-time
              * @description When the fan could first see the flag; null for a rule flag staff haven't upheld (the fan doesn't know).
@@ -3699,8 +3705,10 @@ export interface components {
             flag_id: string | null;
             /** Format: uuid */
             appeal_id: string | null;
-            /** @description Handle of who decided (the fan or staff); null for the system */
+            /** @description Handle of who decided (the fan or staff); null for the system or a deleted account */
             actor: string | null;
+            /** @description Who decided (the fan or staff), with their picture; null for the system. `deleted` when their account is gone. */
+            actor_user: components["schemas"]["UserRef"] | null;
             /** @description What the decision was based on: score snapshot, threshold, hub match, flag. */
             inputs: {
                 [key: string]: unknown;
@@ -4485,11 +4493,7 @@ export interface components {
             /** @description The fan asked for a +1 */
             plus_one: boolean;
             /** @description The +1's account, once named */
-            guest?: {
-                /** Format: uuid */
-                id: string;
-                handle: string;
-            } | null;
+            guest?: components["schemas"]["GuestRef"] | null;
             /** @description Place in the draw's ranking */
             selection_rank?: number | null;
             /**
@@ -4504,6 +4508,11 @@ export interface components {
             reservation_id: string | null;
             /** @enum {string|null} */
             reservation_status: "held" | "delivered" | "returned" | "cancelled" | null;
+        };
+        /** @description The named +1, as a `UserRef` (deleted accounts keep the id and read "Deleted user") with the account id. */
+        GuestRef: components["schemas"]["UserRef"] & {
+            /** Format: uuid */
+            id: string;
         };
         Eligibility: {
             /** Format: uuid */

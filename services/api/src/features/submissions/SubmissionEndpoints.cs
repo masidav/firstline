@@ -585,10 +585,11 @@ public static class SubmissionEndpoints
             return null;
         }
 
-        var extra = await connection.QuerySingleAsync<(string? Handle, bool Deleted, string? DisplayName, decimal? TrustScore, string Extracted)>(
+        var extra = await connection.QuerySingleAsync<(string? Handle, bool Deleted, string? DisplayName, string? AvatarUrl, decimal? TrustScore, string Extracted)>(
             """
             SELECT CASE WHEN u.deleted_at IS NULL THEN u.handle::text END, u.deleted_at IS NOT NULL,
-                   CASE WHEN u.deleted_at IS NULL THEN u.display_name END, s.trust_score, s.extracted::text
+                   CASE WHEN u.deleted_at IS NULL THEN u.display_name END, CASE WHEN u.deleted_at IS NULL THEN u.avatar_url END,
+                   s.trust_score, s.extracted::text
             FROM submissions s JOIN users u ON u.id = s.user_id WHERE s.id = @submissionId
             """,
             new { submissionId }, transaction);
@@ -603,7 +604,7 @@ public static class SubmissionEndpoints
             .ToList();
         return new AdminSubmission(s.Id, s.ArtistId, s.Artist, s.Kind, s.Status, s.Event, s.Concert, s.RejectionReason, s.SubmittedAt,
             s.VerifiedAt, s.Archived, s.Caption, s.SharedAt, s.CanShare, s.Removed, s.Files, s.PointsAwarded,
-            new UserRef(extra.Handle, extra.Deleted, extra.DisplayName, null), extra.TrustScore, Parse(extra.Extracted), checks);
+            new UserRef(extra.Handle, extra.Deleted, extra.DisplayName, extra.AvatarUrl), extra.TrustScore, Parse(extra.Extracted), checks);
     }
 
     private static JsonElement Parse(string json)

@@ -217,7 +217,8 @@ public sealed class RegistrationApiTests(PostgresFixture postgres) : IAsyncLifet
     public async Task A_guest_needs_an_account_and_is_named_once()
     {
         var fan = await FanAsync("host_fan", score: 80, "us-il-chicago");
-        await FanAsync("friend", score: null);
+        var friend = await FanAsync("friend", score: null);
+        var picture = await PictureAsync("friend");
         await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{_allocationId}/registration", fan), HttpStatusCode.Created);
 
         var noPlusOne = await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{_allocationId}/registration/guest", fan,
@@ -231,7 +232,12 @@ public sealed class RegistrationApiTests(PostgresFixture postgres) : IAsyncLifet
 
         var named = await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{_allocationId}/registration/guest", fan,
             new { handle = "@friend" }), HttpStatusCode.OK);
-        Assert.Equal("friend", named.GetProperty("guest").GetProperty("handle").GetString());
+        // The guest is a UserRef with their id, so the show page can show their picture.
+        var guest = named.GetProperty("guest");
+        Assert.Equal(("friend", false, picture), (guest.GetProperty("handle").GetString(), guest.GetProperty("deleted").GetBoolean(),
+            guest.GetProperty("avatar_url").GetString()));
+        Assert.Equal(JsonValueKind.Null, guest.GetProperty("display_name").ValueKind);
+        Assert.Equal(await IdAsync("friend"), guest.GetProperty("id").GetGuid());
 
         await FanAsync("other_friend", score: null);
         var twice = await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{_allocationId}/registration/guest", fan,
@@ -240,6 +246,15 @@ public sealed class RegistrationApiTests(PostgresFixture postgres) : IAsyncLifet
         var dropping = await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/allocations/{_allocationId}/registration", fan,
             new { plus_one = false }), HttpStatusCode.Conflict);
         Assert.Equal("plus_one_unavailable", dropping.GetProperty("code").GetString());
+
+        // A guest who deletes their account stays named, as "Deleted user" with nothing personal.
+        Assert.Equal(HttpStatusCode.Accepted, (await SendAsync(HttpMethod.Delete, "/v1/me", friend)).StatusCode);
+        var after = await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/allocations/{_allocationId}/eligibility", fan), HttpStatusCode.OK);
+        var gone = after.GetProperty("registration").GetProperty("guest");
+        Assert.Equal(guest.GetProperty("id").GetGuid(), gone.GetProperty("id").GetGuid());
+        Assert.True(gone.GetProperty("deleted").GetBoolean());
+        Assert.Equal((JsonValueKind.Null, JsonValueKind.Null, JsonValueKind.Null),
+            (gone.GetProperty("handle").ValueKind, gone.GetProperty("display_name").ValueKind, gone.GetProperty("avatar_url").ValueKind));
     }
 
     [Fact]
@@ -435,6 +450,28 @@ public sealed class RegistrationApiTests(PostgresFixture postgres) : IAsyncLifet
             RETURNING id
             """,
             new { eventId, minRawScore, opens = opensInHours, publish, tickets });
+    }
+
+    private async Task<Guid> IdAsync(string handle)
+    {
+        await using var connection = await _db.OpenConnectionAsync();
+        return await connection.ExecuteScalarAsync<Guid>("SELECT id FROM users WHERE handle = @handle", new { handle });
+    }
+
+    /// <summary>Gives the fan a profile picture as PATCH /me does: a finished avatar upload of theirs (users_avatar_link).</summary>
+    private async Task<string> PictureAsync(string handle)
+    {
+        await using var connection = await _db.OpenConnectionAsync();
+        return (await connection.ExecuteScalarAsync<string>(
+            """
+            WITH pic AS (
+              INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes, storage_key, sha256, bytes, uploaded_at)
+              SELECT id, 'avatar', 'image/jpeg', 1, 'media/avatars/' || @handle, sha256(convert_to(@handle, 'UTF8')), 1, now()
+                FROM users WHERE handle = @handle RETURNING id, user_id)
+            UPDATE users SET avatar_upload_id = pic.id, avatar_url = 'https://api.test/v1/avatars/' || pic.id FROM pic
+             WHERE users.id = pic.user_id RETURNING users.avatar_url
+            """,
+            new { handle }))!;
     }
 
     /// <summary>A signed-in fan with the given hub cities and, unless null, a score for the artist (raw score and

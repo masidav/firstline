@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, type TextStyle, View } from 'react-native';
 
 import { type components, unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
@@ -12,6 +12,7 @@ import { dateLabel, dateTimeLabel, FLAG_REASONS, type FlagReason, prettyJson, re
 
 type FraudFlag = components['schemas']['FraudFlag'];
 type AuditEntry = components['schemas']['EligibilityAuditEntry'];
+type Person = components['schemas']['UserRef'];
 type Filter = 'needs_action' | 'open' | 'upheld' | 'cleared';
 
 const FILTERS: { value: Filter; label: string }[] = [
@@ -39,7 +40,26 @@ function matches(flag: FraudFlag, filter: Filter) {
   return filter === 'needs_action' ? flag.status === 'open' || flag.appeal?.status === 'pending' : flag.status === filter;
 }
 
-const who = (user: FraudFlag['user']) => (user.deleted || !user.handle ? 'Deleted user' : `@${user.handle}`);
+const who = (user: Person) => (user.deleted || !user.handle ? 'Deleted user' : `@${user.handle}`);
+
+/**
+ * A line that names who did something: `lead`, then `sep` ("by") and the person's picture (20 px) and handle when an
+ * account did it, else `nobody` (a rule, staff, the system) when given; `tail` (a note) follows the handle.
+ */
+function Byline({ style, lead, sep = 'by', user, nobody, tail }: {
+  style: TextStyle; lead: string; sep?: string; user: Person | null | undefined; nobody?: string; tail?: string;
+}) {
+  if (!user) {
+    return <Text style={style}>{`${lead}${nobody ? ` ${sep} ${nobody}` : ''}${tail ?? ''}`}</Text>;
+  }
+  return (
+    <View style={styles.line}>
+      <Text style={style}>{`${lead} ${sep}`}</Text>
+      <Avatar user={user} size={20} />
+      <Text style={[style, styles.lineTail]}>{`${who(user)}${tail ?? ''}`}</Text>
+    </View>
+  );
+}
 
 /** Staff only (route /fraud): fraud flags to decide, appeals to answer, a form to flag a fan, and the eligibility audit. */
 export function FraudReviewScreen() {
@@ -127,9 +147,12 @@ export function FraudReviewScreen() {
                 {who(flag.user)} · {reasonLabel(flag.reason)} · {STATUS_LABELS[flag.status]}
               </Text>
             </View>
-            <Text style={styles.meta}>
-              Raised {dateTimeLabel(flag.raised_at)} by {flag.source === 'rule' ? 'a rule' : flag.raised_by ? `@${flag.raised_by}` : 'staff'}
-            </Text>
+            <Byline
+              style={styles.meta}
+              lead={`Raised ${dateTimeLabel(flag.raised_at)}`}
+              user={flag.raised_by_user}
+              nobody={flag.source === 'rule' ? 'a rule' : 'staff'}
+            />
             {flag.shown_to_fan_at === null && flag.status !== 'cleared' && (
               <Text style={styles.text}>The fan doesn't know about this flag. Upholding it tells them.</Text>
             )}
@@ -138,11 +161,12 @@ export function FraudReviewScreen() {
             )}
             {flag.note ? <Text style={styles.text}>Note: {flag.note}</Text> : null}
             {flag.decided_at && (
-              <Text style={styles.text}>
-                {STATUS_LABELS[flag.status]} {dateTimeLabel(flag.decided_at)}
-                {flag.decided_by ? ` by @${flag.decided_by}` : ''}
-                {flag.decision_note ? `: ${flag.decision_note}` : ''}
-              </Text>
+              <Byline
+                style={styles.text}
+                lead={`${STATUS_LABELS[flag.status]} ${dateTimeLabel(flag.decided_at)}`}
+                user={flag.decided_by_user}
+                tail={flag.decision_note ? `: ${flag.decision_note}` : undefined}
+              />
             )}
             <Text style={styles.label}>Evidence</Text>
             <Text style={styles.code}>{prettyJson(flag.evidence)}</Text>
@@ -164,10 +188,7 @@ export function FraudReviewScreen() {
                 </Text>
                 <Text style={styles.text}>“{flag.appeal.message}”</Text>
                 {flag.appeal.decided_at && (
-                  <Text style={styles.meta}>
-                    Decided {dateTimeLabel(flag.appeal.decided_at)}
-                    {flag.appeal_decided_by ? ` by @${flag.appeal_decided_by}` : ''}
-                  </Text>
+                  <Byline style={styles.meta} lead={`Decided ${dateTimeLabel(flag.appeal.decided_at)}`} user={flag.appeal_decided_by_user} />
                 )}
                 {flag.appeal.response ? <Text style={styles.text}>Response: {flag.appeal.response}</Text> : null}
               </View>
@@ -328,10 +349,14 @@ function AuditLookup() {
             {AUDIT_ACTIONS[entry.action] ?? entry.action}
             {entry.reason ? ` · ${entry.reason}` : ''}
           </Text>
-          <Text style={styles.meta}>
-            {dateTimeLabel(entry.at)} · {entry.actor ? `@${entry.actor}` : 'system'}
-            {entry.allocation_id ? ` · allocation ${entry.allocation_id}` : ''}
-          </Text>
+          <Byline
+            style={styles.meta}
+            lead={dateTimeLabel(entry.at)}
+            sep="·"
+            user={entry.actor_user}
+            nobody="system"
+            tail={entry.allocation_id ? ` · allocation ${entry.allocation_id}` : undefined}
+          />
           {Object.keys(entry.inputs).length > 0 && <Text style={styles.code}>{prettyJson(entry.inputs)}</Text>}
         </View>
       ))}
@@ -346,6 +371,8 @@ const styles = StyleSheet.create({
   title: { color: colors.text, fontSize: 16, fontWeight: '600' },
   who: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   whoText: { flex: 1 },
+  line: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space.xs },
+  lineTail: { flexShrink: 1 },
   label: { color: colors.text, fontSize: 14, fontWeight: '600' },
   meta: { color: colors.muted, fontSize: 14 },
   text: { color: colors.text, fontSize: 15, lineHeight: 21 },

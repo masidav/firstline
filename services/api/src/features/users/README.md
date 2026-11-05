@@ -27,7 +27,7 @@ same fan, the link is cleared whenever the upload is (`users_avatar`, `users_ava
 | Field | Who sees it |
 | --- | --- |
 | `id`, `email`, `is_staff`, `created_at` | Owner only (`/me`). |
-| `handle`, `display_name`, `avatar_url` | Public (`UserRef`); null for deleted accounts. |
+| `handle`, `display_name`, `avatar_url` | Public (`UserRef`); null for deleted accounts. The staff review responses and the named +1 (`GuestRef`) carry a `UserRef` so the apps can show the picture; the fraud flag's `raised_by_user`, `decided_by_user`, `appeal_decided_by_user` and the audit's `actor_user` sit beside the bare staff handles. `Reservation.holder_handle`/`guest_handle` and the staff registration lists are still bare handles. |
 | `is_artist`, `band_url`, `instagram_handle`, `x_handle` | Shown on the fan's own page today; meant to be public with the artist's profile once `/users/{handle}` exists. Cleared on deletion. |
 
 Rules shared with the database: handle `^[A-Za-z0-9_]{3,30}$`, unique ignoring case (`users_handle_format`,

@@ -30,8 +30,8 @@ public static partial class AllocationEndpoints
 
     public sealed record GuestRequest(string? Handle);
 
-    /// <summary>The +1's account.</summary>
-    public sealed record Guest(Guid Id, string Handle);
+    /// <summary>The +1's account: a <c>UserRef</c> (handle, display name, and picture null once deleted) with its id.</summary>
+    public sealed record Guest(Guid Id, string? Handle, bool Deleted, string? DisplayName, string? AvatarUrl);
 
     /// <summary>
     /// <c>HubMatch</c>: where the show's city is in the fan's hub cities (1 primary, 2-3 backup), or null.
@@ -427,7 +427,8 @@ public static partial class AllocationEndpoints
         r.id AS Id, r.allocation_id AS AllocationId, r.event_id AS EventId, r.hub_city_ids AS HubCityIds,
         r.hub_match AS HubMatch, r.percentile AS Percentile, r.raw_score AS RawScore, r.is_estimated AS IsEstimated,
         r.registered_at AS RegisteredAt, r.withdrawn_at AS WithdrawnAt, r.plus_one AS PlusOne, r.outcome AS Outcome,
-        r.selection_rank AS SelectionRank, r.seats AS Seats, g.id AS GuestId, g.handle AS GuestHandle,
+        r.selection_rank AS SelectionRank, r.seats AS Seats, g.id AS GuestId, g.handle::text AS GuestHandle,
+        g.deleted_at IS NOT NULL AS GuestDeleted, g.display_name AS GuestDisplayName, g.avatar_url AS GuestAvatarUrl,
         res.id AS ReservationId, CASE WHEN res.id IS NULL THEN NULL ELSE {ReservationStatusSql} END AS ReservationStatus
         """;
 
@@ -435,7 +436,7 @@ public static partial class AllocationEndpoints
         new(row.Id, row.AllocationId, row.EventId, row.HubCityIds, row.HubMatch, row.HubMatch is not null, row.Percentile,
             row.RawScore, row.IsEstimated, row.RegisteredAt, row.WithdrawnAt,
             row.WithdrawnAt is not null ? "withdrawn" : row.ReservationStatus == "returned" ? "returned" : row.Outcome ?? "registered",
-            row.PlusOne, row.GuestId is { } guestId ? new Guest(guestId, row.GuestHandle!) : null, row.SelectionRank, row.Seats,
+            row.PlusOne, row.ToGuest(), row.SelectionRank, row.Seats,
             row.ReservationId, row.ReservationStatus);
 
     // A class with setters, not a positional record: Dapper reports text[] as System.Array to constructors.
@@ -457,8 +458,17 @@ public static partial class AllocationEndpoints
         public short? Seats { get; set; }
         public Guid? GuestId { get; set; }
         public string? GuestHandle { get; set; }
+        public bool? GuestDeleted { get; set; }
+        public string? GuestDisplayName { get; set; }
+        public string? GuestAvatarUrl { get; set; }
         public Guid? ReservationId { get; set; }
         public string? ReservationStatus { get; set; }
+
+        // Deletion scrubs the personal fields (trg_user_delete), so a deleted guest is their id and "Deleted user".
+        public Guest? ToGuest() => GuestId is { } id
+            ? new Guest(id, GuestDeleted is true ? null : GuestHandle, GuestDeleted is true, GuestDeleted is true ? null : GuestDisplayName,
+                GuestDeleted is true ? null : GuestAvatarUrl)
+            : null;
     }
 
     private sealed record CurrentStanding(decimal? RawScore, decimal? Percentile, bool? IsEstimated, short? HubMatch);

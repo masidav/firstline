@@ -32,7 +32,8 @@ A fan asks for a +1 when registering (`PUT .../registration` with `{"plus_one": 
 while registration is open; a selected fan can add one after the draw while seats are left (`add_plus_one()`). The
 guest needs an account, which can come later: the fan names it by handle (`PUT .../registration/guest`), once
 (`name_plus_one_guest()`). A guest can't be the fan, registered for the same show, or another fan's guest for it, and a
-named guest can't register for that show.
+named guest can't register for that show. `Registration.guest` is a `GuestRef`: a `UserRef` (handle, display name,
+`avatar_url`; `deleted: true` with nothing personal once the guest deletes their account) plus the account `id`.
 
 ## The draw (migration 0017; a worker job since 0036)
 Staff queue it after registration closes (`POST /v1/admin/allocations/{id}/selection`, `202`) and poll

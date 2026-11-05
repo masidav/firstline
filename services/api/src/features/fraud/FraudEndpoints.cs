@@ -43,16 +43,23 @@ public static class FraudEndpoints
     public sealed record FlagContext(
         DateTime AccountCreatedAt, JsonElement TrustParts, int LiveRegistrations, int HeldReservations, DateTime? NextDrawClosesAt);
 
+    /// <summary>
+    /// <c>RaisedBy</c>, <c>DecidedBy</c>, <c>AppealDecidedBy</c>: the staff handle (null for a rule, before a decision, or once the
+    /// account is deleted). <c>RaisedByUser</c>, <c>DecidedByUser</c>, <c>AppealDecidedByUser</c>: the same person as a
+    /// <c>UserRef</c> with their picture; null only when nobody did it (a deleted staff account is <c>deleted</c>).
+    /// </summary>
     public sealed record Flag(
         Guid Id, Guid UserId, SubmissionEndpoints.UserRef User, string Reason, JsonElement Evidence, string? Note, string Source,
-        string? RaisedBy, DateTime RaisedAt, string Status, string? DecidedBy, DateTime? DecidedAt, string? DecisionNote,
-        Appeal? Appeal, string? AppealDecidedBy, FlagContext Context, DateTime? ShownToFanAt);
+        string? RaisedBy, SubmissionEndpoints.UserRef? RaisedByUser, DateTime RaisedAt, string Status,
+        string? DecidedBy, SubmissionEndpoints.UserRef? DecidedByUser, DateTime? DecidedAt, string? DecisionNote,
+        Appeal? Appeal, string? AppealDecidedBy, SubmissionEndpoints.UserRef? AppealDecidedByUser, FlagContext Context, DateTime? ShownToFanAt);
 
     public sealed record FlagPage(IReadOnlyList<Flag> Items, string? NextCursor);
 
+    /// <summary><c>Actor</c>: who decided (the fan or staff) by handle; <c>ActorUser</c>: the same as a <c>UserRef</c>. Both null for the system.</summary>
     public sealed record AuditEntry(
         long Id, DateTime At, string Action, string? Reason, Guid UserId, string? Handle, Guid? AllocationId, Guid? RegistrationId,
-        Guid? FlagId, Guid? AppealId, string? Actor, JsonElement Inputs);
+        Guid? FlagId, Guid? AppealId, string? Actor, SubmissionEndpoints.UserRef? ActorUser, JsonElement Inputs);
 
     public sealed record AuditPage(IReadOnlyList<AuditEntry> Items, string? NextCursor);
 
@@ -308,7 +315,8 @@ public static class FraudEndpoints
             SELECT x.id AS Id, x.at AS At, x.action AS Action, x.reason AS Reason, x.user_id AS UserId,
                    CASE WHEN u.deleted_at IS NULL THEN u.handle::text END AS Handle, x.allocation_id AS AllocationId,
                    x.registration_id AS RegistrationId, x.flag_id AS FlagId, x.appeal_id AS AppealId,
-                   a.handle::text AS Actor, x.inputs::text AS Inputs
+                   a.handle::text AS Actor, a.id AS ActorId, a.deleted_at IS NOT NULL AS ActorDeleted,
+                   a.display_name AS ActorDisplayName, a.avatar_url AS ActorAvatarUrl, x.inputs::text AS Inputs
               FROM eligibility_audit x JOIN users u ON u.id = x.user_id LEFT JOIN users a ON a.id = x.actor_id
              WHERE (@userId::uuid IS NULL OR x.user_id = @userId) AND (@allocationId::uuid IS NULL OR x.allocation_id = @allocationId)
              ORDER BY x.id DESC
@@ -316,7 +324,8 @@ public static class FraudEndpoints
             """,
             new { userId, allocationId, take = pageSize + 1, offset })).ToList();
         var items = rows.Take(pageSize).Select(r => new AuditEntry(r.Id, r.At, r.Action, r.Reason, r.UserId, r.Handle, r.AllocationId,
-            r.RegistrationId, r.FlagId, r.AppealId, r.Actor, Parse(r.Inputs))).ToList();
+            r.RegistrationId, r.FlagId, r.AppealId, r.Actor, Person(r.ActorId, r.Actor, r.ActorDeleted, r.ActorDisplayName, r.ActorAvatarUrl),
+            Parse(r.Inputs))).ToList();
         return Results.Ok(new AuditPage(items, rows.Count > pageSize ? PageCursor.Write(offset + pageSize) : null));
     }
 
@@ -341,12 +350,18 @@ public static class FraudEndpoints
     {
         var r = await connection.QuerySingleAsync<FlagRow>(
             $"""
-             SELECT f.id AS Id, f.user_id AS UserId, u.handle::text AS Handle, u.display_name AS DisplayName,
+             SELECT f.id AS Id, f.user_id AS UserId, u.handle::text AS Handle, u.display_name AS DisplayName, u.avatar_url AS AvatarUrl,
                     u.deleted_at IS NOT NULL AS Deleted, u.created_at AS AccountCreatedAt,
                     f.reason AS Reason, f.evidence::text AS Evidence, f.note AS Note, f.source AS Source,
-                    rb.handle::text AS RaisedBy, f.raised_at AS RaisedAt, f.status AS Status, db.handle::text AS DecidedBy,
+                    rb.handle::text AS RaisedBy, rb.id AS RaisedById, rb.deleted_at IS NOT NULL AS RaisedByDeleted,
+                    rb.display_name AS RaisedByDisplayName, rb.avatar_url AS RaisedByAvatarUrl,
+                    f.raised_at AS RaisedAt, f.status AS Status,
+                    db.handle::text AS DecidedBy, db.id AS DecidedById, db.deleted_at IS NOT NULL AS DecidedByDeleted,
+                    db.display_name AS DecidedByDisplayName, db.avatar_url AS DecidedByAvatarUrl,
                     f.decided_at AS DecidedAt, f.decision_note AS DecisionNote,
-                    {AppealColumns}, adb.handle::text AS AppealDecidedBy,
+                    {AppealColumns}, adb.handle::text AS AppealDecidedBy, adb.id AS AppealDecidedById,
+                    adb.deleted_at IS NOT NULL AS AppealDecidedByDeleted, adb.display_name AS AppealDecidedByDisplayName,
+                    adb.avatar_url AS AppealDecidedByAvatarUrl,
                     COALESCE(fan_trust_parts(f.user_id), jsonb_build_object())::text AS TrustParts,
                     (SELECT count(*)::int FROM allocation_registrations x WHERE x.user_id = f.user_id AND x.withdrawn_at IS NULL
                         AND x.outcome IS NULL) AS LiveRegistrations,
@@ -361,9 +376,13 @@ public static class FraudEndpoints
               WHERE f.id = @flagId
              """,
             new { flagId });
-        return new Flag(r.Id, r.UserId, new SubmissionEndpoints.UserRef(r.Deleted ? null : r.Handle, r.Deleted, r.Deleted ? null : r.DisplayName, null),
-            r.Reason, Parse(r.Evidence), r.Note, r.Source, r.RaisedBy, r.RaisedAt, r.Status, r.DecidedBy, r.DecidedAt, r.DecisionNote,
-            r.ToAppeal(), r.AppealDecidedBy,
+        return new Flag(r.Id, r.UserId,
+            new SubmissionEndpoints.UserRef(r.Deleted ? null : r.Handle, r.Deleted, r.Deleted ? null : r.DisplayName, r.Deleted ? null : r.AvatarUrl),
+            r.Reason, Parse(r.Evidence), r.Note, r.Source,
+            r.RaisedBy, Person(r.RaisedById, r.RaisedBy, r.RaisedByDeleted, r.RaisedByDisplayName, r.RaisedByAvatarUrl), r.RaisedAt, r.Status,
+            r.DecidedBy, Person(r.DecidedById, r.DecidedBy, r.DecidedByDeleted, r.DecidedByDisplayName, r.DecidedByAvatarUrl),
+            r.DecidedAt, r.DecisionNote, r.ToAppeal(),
+            r.AppealDecidedBy, Person(r.AppealDecidedById, r.AppealDecidedBy, r.AppealDecidedByDeleted, r.AppealDecidedByDisplayName, r.AppealDecidedByAvatarUrl),
             new FlagContext(r.AccountCreatedAt, Parse(r.TrustParts), r.LiveRegistrations, r.HeldReservations, r.NextDrawClosesAt),
             r.ShownToFanAt);
     }
@@ -396,6 +415,7 @@ public static class FraudEndpoints
         public Guid UserId { get; init; }
         public string? Handle { get; init; }
         public string? DisplayName { get; init; }
+        public string? AvatarUrl { get; init; }
         public bool Deleted { get; init; }
         public DateTime AccountCreatedAt { get; init; }
         public string Reason { get; init; } = "";
@@ -403,12 +423,24 @@ public static class FraudEndpoints
         public string? Note { get; init; }
         public string Source { get; init; } = "";
         public string? RaisedBy { get; init; }
+        public Guid? RaisedById { get; init; }
+        public bool? RaisedByDeleted { get; init; }
+        public string? RaisedByDisplayName { get; init; }
+        public string? RaisedByAvatarUrl { get; init; }
         public DateTime RaisedAt { get; init; }
         public string Status { get; init; } = "";
         public string? DecidedBy { get; init; }
+        public Guid? DecidedById { get; init; }
+        public bool? DecidedByDeleted { get; init; }
+        public string? DecidedByDisplayName { get; init; }
+        public string? DecidedByAvatarUrl { get; init; }
         public DateTime? DecidedAt { get; init; }
         public string? DecisionNote { get; init; }
         public string? AppealDecidedBy { get; init; }
+        public Guid? AppealDecidedById { get; init; }
+        public bool? AppealDecidedByDeleted { get; init; }
+        public string? AppealDecidedByDisplayName { get; init; }
+        public string? AppealDecidedByAvatarUrl { get; init; }
         public string TrustParts { get; init; } = "{}";
         public int LiveRegistrations { get; init; }
         public int HeldReservations { get; init; }
@@ -418,9 +450,16 @@ public static class FraudEndpoints
 
     private sealed record AuditRow(
         long Id, DateTime At, string Action, string? Reason, Guid UserId, string? Handle, Guid? AllocationId, Guid? RegistrationId,
-        Guid? FlagId, Guid? AppealId, string? Actor, string Inputs);
+        Guid? FlagId, Guid? AppealId, string? Actor, Guid? ActorId, bool? ActorDeleted, string? ActorDisplayName, string? ActorAvatarUrl,
+        string Inputs);
 
     // ------------------------------------------------------------------ helpers
+
+    /// <summary>A joined user as a <c>UserRef</c>; null when the join found nobody. Deletion scrubs the personal fields (trg_user_delete).</summary>
+    private static SubmissionEndpoints.UserRef? Person(Guid? id, string? handle, bool? deleted, string? displayName, string? avatarUrl) =>
+        id is null ? null
+        : deleted is true ? new SubmissionEndpoints.UserRef(null, true, null, null)
+        : new SubmissionEndpoints.UserRef(handle, false, displayName, avatarUrl);
 
     private static (int PageSize, int Offset) Page(int? limit, string? cursor)
     {

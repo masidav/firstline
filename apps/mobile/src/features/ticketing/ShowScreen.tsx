@@ -5,6 +5,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { type components, unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
+import { Avatar } from '../../ui/Avatar';
 import { Body, Button, ErrorText, Field, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { openTracked } from '../links/openLink';
@@ -208,7 +209,12 @@ function AllocationCard({ allocation }: { allocation: Allocation }) {
         />
       )}
 
-      {registration?.guest && <Body muted>Your +1: @{registration.guest.handle}</Body>}
+      {registration?.guest && (
+        <View style={styles.guest}>
+          <Avatar user={registration.guest} size={24} />
+          <Body muted>Your +1: {registration.guest.deleted || !registration.guest.handle ? 'Deleted user' : `@${registration.guest.handle}`}</Body>
+        </View>
+      )}
       {canChangePlusOne && (eligibility?.eligible || registration) && (
         <Button
           label={wantsPlusOne ? 'Bringing a +1 (tap to remove)' : 'Bring a +1'}
@@ -283,6 +289,7 @@ const styles = StyleSheet.create({
   name: { color: colors.text, fontSize: 18, fontWeight: '700' },
   good: { color: colors.accent, fontSize: 16, fontWeight: '600' },
   standing: { gap: space.xs, padding: space.sm, borderRadius: 8, backgroundColor: colors.surface },
+  guest: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   likely: { borderWidth: 1, borderColor: colors.accent },
   headline: { color: colors.text, fontSize: 16, fontWeight: '700' },
 });

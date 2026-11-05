@@ -49,7 +49,7 @@ public static class RedactionEndpoints
             """
             SELECT f.id AS FileId, s.id AS SubmissionId, s.kind::text AS Kind, a.id AS ArtistId, a.name AS ArtistName,
                    a.image_url AS ArtistImageUrl, u.handle AS Handle, u.deleted_at IS NOT NULL AS Deleted,
-                   u.display_name AS DisplayName, f.redaction_note AS Note, COALESCE(f.codes_redacted, 0) AS CodesRedacted,
+                   u.display_name AS DisplayName, u.avatar_url AS AvatarUrl, f.redaction_note AS Note, COALESCE(f.codes_redacted, 0) AS CodesRedacted,
                    f.uploaded_at AS UploadedAt, f.mime_type AS MimeType
             FROM submission_files f
             JOIN submissions s ON s.id = f.submission_id
@@ -62,7 +62,7 @@ public static class RedactionEndpoints
             new { MaxItems });
         return Results.Ok(new RedactionList([.. rows.Select(r => new RedactionItem(
             r.FileId, r.SubmissionId, r.Kind, new ScoringEndpoints.ArtistRef(r.ArtistId, r.ArtistName, r.ArtistImageUrl),
-            new SubmissionEndpoints.UserRef(r.Deleted ? null : r.Handle, r.Deleted, r.Deleted ? null : r.DisplayName, null),
+            new SubmissionEndpoints.UserRef(r.Deleted ? null : r.Handle, r.Deleted, r.Deleted ? null : r.DisplayName, r.Deleted ? null : r.AvatarUrl),
             r.Note, r.CodesRedacted, r.UploadedAt, r.UploadedAt + QuarantineRetention,
             new SubmissionEndpoints.SubmissionFile(r.FileId, r.MimeType, UploadEndpoints.FileUrl(request, urls, r.FileId), false)))]));
     }
@@ -200,5 +200,5 @@ public static class RedactionEndpoints
 
     private sealed record Row(
         Guid FileId, Guid SubmissionId, string Kind, Guid ArtistId, string ArtistName, string? ArtistImageUrl, string? Handle,
-        bool Deleted, string? DisplayName, string? Note, int CodesRedacted, DateTime UploadedAt, string MimeType);
+        bool Deleted, string? DisplayName, string? AvatarUrl, string? Note, int CodesRedacted, DateTime UploadedAt, string MimeType);
 }

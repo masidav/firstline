@@ -55,6 +55,10 @@ Migration `0042_fraud_review.sql`, endpoints in `FraudEndpoints.cs`. Tests: `Fra
   registration with its score snapshot and threshold, each refused registration (at most once an hour per fan,
   allocation, and reason, via `log_registration_blocked()`), `draw_held_out`, `backfill_skipped`, and every flag and
   appeal change with the actor (null for the system). Staff read it at `GET /v1/admin/eligibility-audit?handle=&allocation_id=`.
+- **Who did it.** `FraudFlag.raised_by`, `decided_by`, `appeal_decided_by` and `EligibilityAuditEntry.actor` are bare
+  handles (null for a rule, the system, or a deleted account). Each has a `UserRef` sibling (`raised_by_user`,
+  `decided_by_user`, `appeal_decided_by_user`, `actor_user`) with the display name and `avatar_url`, null only when
+  nobody did it; a deleted account is `deleted: true`. `FraudFlag.user` carries the fan's picture too.
 - **Privacy.** The fan's data download (`GET /me/export`, `tickets.account_reviews` and `tickets.eligibility_decisions`)
   includes their reviews, appeals, and audit rows, but not evidence, staff notes, or which staff member decided.
 

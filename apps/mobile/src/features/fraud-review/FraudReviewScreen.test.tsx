@@ -9,11 +9,13 @@ const mockSession = { api: mockApi };
 jest.mock('../../auth/SessionProvider', () => ({ useSession: () => ({ session: mockSession }) }));
 jest.mock('expo-router', () => ({ router: { replace: jest.fn(), push: jest.fn() } }));
 
+const staffer = { handle: 'staffer', deleted: false, display_name: null, avatar_url: 'https://api.test/v1/avatars/s1' };
+
 const flag = (overrides: Record<string, unknown> = {}) => ({
   id: 'f1', user_id: 'u1', user: { handle: 'suspect', deleted: false }, reason: 'streaming_farm',
-  evidence: { plays_per_hour: 400 }, note: 'Loops one track all night', source: 'staff', raised_by: 'staffer',
-  raised_at: '2026-10-27T12:00:00Z', status: 'open', decided_by: null, decided_at: null, decision_note: null,
-  appeal: null, appeal_decided_by: null, shown_to_fan_at: '2026-10-27T12:00:00Z',
+  evidence: { plays_per_hour: 400 }, note: 'Loops one track all night', source: 'staff', raised_by: 'staffer', raised_by_user: staffer,
+  raised_at: '2026-10-27T12:00:00Z', status: 'open', decided_by: null, decided_by_user: null, decided_at: null, decision_note: null,
+  appeal: null, appeal_decided_by: null, appeal_decided_by_user: null, shown_to_fan_at: '2026-10-27T12:00:00Z',
   context: {
     account_created_at: '2026-10-01T00:00:00Z', trust_parts: { account_age: 0.25, spotify: 1 }, live_registrations: 2,
     held_reservations: 1, next_draw_closes_at: null,
@@ -37,8 +39,11 @@ test('staff see a flag with evidence and context, and uphold it with a note', as
   render(<FraudReviewScreen />);
 
   expect(await screen.findByText('@suspect · unusual listening patterns · Open')).toBeTruthy();
-  // The flagged fan's picture sits beside their handle.
+  // The flagged fan's picture sits beside their handle, and the staff member's beside "Raised … by".
   expect(screen.getByLabelText("@suspect's picture").props.source).toEqual({ uri: 'https://api.test/v1/avatars/1' });
+  expect(screen.getByText(/^Raised .* by$/)).toBeTruthy();
+  expect(screen.getByLabelText("@staffer's picture").props.source).toEqual({ uri: 'https://api.test/v1/avatars/s1' });
+  expect(screen.getByText('@staffer')).toBeTruthy();
   expect(mockApi.GET).toHaveBeenCalledWith('/admin/fraud-flags', { params: { query: { status: 'needs_action', limit: 50 } } });
   expect(screen.getByText('Note: Loops one track all night')).toBeTruthy();
   expect(screen.getByText(/"plays_per_hour": 400/)).toBeTruthy();
@@ -59,7 +64,7 @@ test('staff see a flag with evidence and context, and uphold it with a note', as
 
 test('an unreviewed rule flag says the fan does not know and when the draw closes', async () => {
   queue([flag({
-    source: 'rule', raised_by: null, note: null, shown_to_fan_at: null,
+    source: 'rule', raised_by: null, raised_by_user: null, note: null, shown_to_fan_at: null,
     context: { account_created_at: '2026-10-01T00:00:00Z', trust_parts: {}, live_registrations: 1, held_reservations: 0, next_draw_closes_at: '2026-11-02T18:00:00Z' },
   })]);
   render(<FraudReviewScreen />);
@@ -94,11 +99,14 @@ test('the status filter reloads the list; a cleared flag has no actions', async 
   render(<FraudReviewScreen />);
   expect(await screen.findByText('Nothing needs a decision.')).toBeTruthy();
 
-  queue([flag({ status: 'cleared', decided_by: 'staffer', decided_at: '2026-10-28T12:00:00Z', decision_note: 'Real fan' })]);
+  queue([flag({ status: 'cleared', decided_by: 'staffer', decided_by_user: staffer, decided_at: '2026-10-28T12:00:00Z', decision_note: 'Real fan' })]);
   fireEvent.press(within(screen.getByLabelText('Show')).getByRole('radio', { name: 'Cleared' }));
   expect(await screen.findByText('@suspect · unusual listening patterns · Cleared')).toBeTruthy();
   expect(mockApi.GET).toHaveBeenLastCalledWith('/admin/fraud-flags', { params: { query: { status: 'cleared', limit: 50 } } });
-  expect(screen.getByText(/by @staffer: Real fan/)).toBeTruthy();
+  // "Cleared <when> by [picture] @staffer: Real fan": the staff member's picture sits in the line, once for raising and once for deciding.
+  expect(screen.getByText(/^Cleared .* by$/)).toBeTruthy();
+  expect(screen.getByText('@staffer: Real fan')).toBeTruthy();
+  expect(screen.getAllByLabelText("@staffer's picture")).toHaveLength(2);
   expect(screen.queryByRole('button', { name: 'Clear' })).toBeNull();
 });
 
@@ -140,9 +148,10 @@ test('the audit lookup lists what happened to a fan and why', async () => {
     ok({
       items: [
         { id: 2, at: '2026-10-28T12:00:00Z', action: 'registration_blocked', reason: 'under_review', user_id: 'u1', handle: 'suspect',
-          allocation_id: 'al-1', registration_id: null, flag_id: 'f1', appeal_id: null, actor: 'suspect', inputs: { flag_id: 'f1' } },
+          allocation_id: 'al-1', registration_id: null, flag_id: 'f1', appeal_id: null, actor: 'suspect',
+          actor_user: { handle: 'suspect', deleted: false, display_name: null, avatar_url: 'https://api.test/v1/avatars/1' }, inputs: { flag_id: 'f1' } },
         { id: 1, at: '2026-10-27T12:00:00Z', action: 'flag_raised', reason: 'streaming_farm', user_id: 'u1', handle: 'suspect',
-          allocation_id: null, registration_id: null, flag_id: 'f1', appeal_id: null, actor: null, inputs: {} },
+          allocation_id: null, registration_id: null, flag_id: 'f1', appeal_id: null, actor: null, actor_user: null, inputs: {} },
       ],
       next_cursor: null,
     }),
@@ -152,7 +161,9 @@ test('the audit lookup lists what happened to a fan and why', async () => {
 
   expect(await screen.findByText('Registration blocked · under_review')).toBeTruthy();
   expect(mockApi.GET).toHaveBeenLastCalledWith('/admin/eligibility-audit', { params: { query: { handle: 'suspect', limit: 50 } } });
-  expect(screen.getByText(/@suspect · allocation al-1/)).toBeTruthy();
+  // "<when> · [picture] @suspect · allocation al-1"
+  expect(screen.getByText('@suspect · allocation al-1')).toBeTruthy();
+  expect(screen.getByLabelText("@suspect's picture").props.source).toEqual({ uri: 'https://api.test/v1/avatars/1' });
   expect(screen.getByText('Flag raised · streaming_farm')).toBeTruthy();
   expect(screen.getByText(/· system$/)).toBeTruthy();
   expect(screen.getByText(/"flag_id": "f1"/)).toBeTruthy();
