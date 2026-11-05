@@ -109,7 +109,7 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   SQL
   ```
 
-- [ ] **9. Apply Terraform for the archive bucket's old versions** (added 2026-11-01, commit 32ce75f). The archive
+- [x] **9. Apply Terraform for the archive bucket's old versions** (applied 2026-11-05) (added 2026-11-01, commit 32ce75f). The archive
   bucket is versioned, so redacted proof photos deleted by fans or staff lived on as old versions forever; the new
   lifecycle rule deletes them 30 days after they are replaced or deleted. From `infrastructure/terraform/envs/beta`:
   `terraform plan` should show only an in-place change to the archive bucket (plus the dashboard's usual cosmetic
