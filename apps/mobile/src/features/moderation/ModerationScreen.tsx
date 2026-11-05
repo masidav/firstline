@@ -5,6 +5,7 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 import { type components, unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
+import { Avatar } from '../../ui/Avatar';
 import { Body, Button, ErrorText, Field, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { REPORT_REASONS } from '../feed/ReportForm';
@@ -66,10 +67,13 @@ export function ModerationScreen() {
         const author = post.author.deleted ? 'Deleted user' : `@${post.author.handle}`;
         return (
           <View key={`${post.target_type}:${post.target_id}`} style={styles.card}>
-            <Text style={styles.title}>
-              {post.photo ? kindLabel(post.photo.kind) : post.prompt_answer ? 'Prompt answer' : 'Album log'}
-              {post.artist ? ` · ${post.artist.name}` : ''} · {author}
-            </Text>
+            <View style={styles.who}>
+              <Avatar user={post.author} size={24} />
+              <Text style={[styles.title, styles.whoText]}>
+                {post.photo ? kindLabel(post.photo.kind) : post.prompt_answer ? 'Prompt answer' : 'Album log'}
+                {post.artist ? ` · ${post.artist.name}` : ''} · {author}
+              </Text>
+            </View>
             {post.photo?.files[0] && (
               <Image source={{ uri: post.photo.files[0].url }} style={styles.photo} resizeMode="contain" accessibilityLabel="Reported photo" />
             )}
@@ -118,6 +122,8 @@ export function ModerationScreen() {
 const styles = StyleSheet.create({
   card: { gap: space.sm, padding: space.md, borderRadius: 12, borderWidth: 1, borderColor: colors.border },
   title: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  who: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  whoText: { flex: 1 },
   photo: { width: '100%', aspectRatio: 4 / 3, borderRadius: 8, backgroundColor: colors.surface },
   text: { color: colors.text, fontSize: 15, lineHeight: 21 },
   reports: { color: colors.danger, fontSize: 14, fontWeight: '600' },

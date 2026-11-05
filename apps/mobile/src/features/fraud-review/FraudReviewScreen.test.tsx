@@ -32,11 +32,13 @@ function queue(items: unknown[]) {
 beforeEach(() => jest.clearAllMocks());
 
 test('staff see a flag with evidence and context, and uphold it with a note', async () => {
-  queue([flag()]);
+  queue([flag({ user: { handle: 'suspect', deleted: false, avatar_url: 'https://api.test/v1/avatars/1' } })]);
   mockApi.POST.mockResolvedValue(ok(flag({ status: 'upheld', decided_by: 'staffer', decided_at: '2026-10-28T12:00:00Z' })));
   render(<FraudReviewScreen />);
 
   expect(await screen.findByText('@suspect · unusual listening patterns · Open')).toBeTruthy();
+  // The flagged fan's picture sits beside their handle.
+  expect(screen.getByLabelText("@suspect's picture").props.source).toEqual({ uri: 'https://api.test/v1/avatars/1' });
   expect(mockApi.GET).toHaveBeenCalledWith('/admin/fraud-flags', { params: { query: { status: 'needs_action', limit: 50 } } });
   expect(screen.getByText('Note: Loops one track all night')).toBeTruthy();
   expect(screen.getByText(/"plays_per_hour": 400/)).toBeTruthy();
@@ -116,6 +118,8 @@ test('staff flag a fan by handle; a fan who already has an open flag is refused'
   );
   expect(await screen.findByText(/Flagged @botty/)).toBeTruthy();
   expect(screen.getByText('@botty · automated activity · Open')).toBeTruthy();
+  // A fan with no picture gets their initial beside their handle.
+  expect(within(screen.getByLabelText("@botty's picture")).getByText('B')).toBeTruthy();
 
   mockApi.POST.mockResolvedValueOnce({
     error: { type: 'about:blank', title: 'Conflict', status: 409, code: 'flag_open', detail: 'This fan already has an open flag.' },

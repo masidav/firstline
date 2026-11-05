@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { type components, unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
+import { Avatar } from '../../ui/Avatar';
 import { Body, Button, ErrorText, Field, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { dateLabel, dateTimeLabel, FLAG_REASONS, type FlagReason, prettyJson, reasonLabel, STATUS_LABELS } from './fraudText';
@@ -120,9 +121,12 @@ export function FraudReviewScreen() {
         const pendingAppeal = flag.appeal?.status === 'pending' ? flag.appeal : null;
         return (
           <View key={flag.id} style={styles.card}>
-            <Text style={styles.title}>
-              {who(flag.user)} · {reasonLabel(flag.reason)} · {STATUS_LABELS[flag.status]}
-            </Text>
+            <View style={styles.who}>
+              <Avatar user={flag.user} size={24} />
+              <Text style={[styles.title, styles.whoText]}>
+                {who(flag.user)} · {reasonLabel(flag.reason)} · {STATUS_LABELS[flag.status]}
+              </Text>
+            </View>
             <Text style={styles.meta}>
               Raised {dateTimeLabel(flag.raised_at)} by {flag.source === 'rule' ? 'a rule' : flag.raised_by ? `@${flag.raised_by}` : 'staff'}
             </Text>
@@ -340,6 +344,8 @@ const styles = StyleSheet.create({
   card: { gap: space.sm, padding: space.md, borderRadius: 12, borderWidth: 1, borderColor: colors.border },
   section: { gap: space.xs, paddingTop: space.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   title: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  who: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  whoText: { flex: 1 },
   label: { color: colors.text, fontSize: 14, fontWeight: '600' },
   meta: { color: colors.muted, fontSize: 14 },
   text: { color: colors.text, fontSize: 15, lineHeight: 21 },

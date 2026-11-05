@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 
 import { deletesIn, RedactionScreen } from './RedactionScreen';
 
@@ -9,12 +9,18 @@ const mockSession = { api: mockApi };
 jest.mock('../../auth/SessionProvider', () => ({ useSession: () => ({ session: mockSession }) }));
 jest.mock('expo-router', () => ({ router: { replace: jest.fn(), push: jest.fn() } }));
 
-const item = (id: string, kind: string, note: string, codes = 0) => ({
+const item = (
+  id: string,
+  kind: string,
+  note: string,
+  codes = 0,
+  user: Record<string, unknown> = { handle: 'fan', deleted: false, avatar_url: 'https://api.test/v1/avatars/1' },
+) => ({
   file_id: id,
   submission_id: `s-${id}`,
   kind,
   artist: { id: 'a1', name: 'Geese', image_url: null },
-  user: { handle: 'fan', deleted: false },
+  user,
   note,
   codes_redacted: codes,
   uploaded_at: '2026-10-20T12:00:00Z',
@@ -29,7 +35,7 @@ test('staff archive a checked photo or discard it', async () => {
     ok({
       items: [
         item('f1', 'ticket', 'No barcode or QR code was found on this ticket. Check it by eye.'),
-        item('f2', 'screenshot', 'Codes were still found after 3 rounds of redacting.', 2),
+        item('f2', 'screenshot', 'Codes were still found after 3 rounds of redacting.', 2, { handle: null, deleted: true, avatar_url: null }),
       ],
     }),
   );
@@ -38,6 +44,10 @@ test('staff archive a checked photo or discard it', async () => {
 
   expect(await screen.findByText('No barcode or QR code was found on this ticket. Check it by eye.')).toBeTruthy();
   expect(screen.getByText(/2 codes already blacked out/)).toBeTruthy();
+  // The fan's picture sits beside their handle; a deleted fan gets the "?" placeholder.
+  expect(screen.getByLabelText("@fan's picture").props.source).toEqual({ uri: 'https://api.test/v1/avatars/1' });
+  expect(screen.getByText('Screenshot · Geese · Deleted user')).toBeTruthy();
+  expect(within(screen.getByLabelText("Deleted user's picture")).getByText('?')).toBeTruthy();
 
   fireEvent.press(screen.getAllByRole('button', { name: 'Archive' })[0]!);
   await waitFor(() => expect(screen.queryByText(/found on this ticket/)).toBeNull());

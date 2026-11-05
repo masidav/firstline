@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 
 import { ModerationScreen } from './ModerationScreen';
 
@@ -10,7 +10,7 @@ jest.mock('../../auth/SessionProvider', () => ({ useSession: () => ({ session: m
 jest.mock('expo-router', () => ({ router: { replace: jest.fn(), push: jest.fn() } }));
 
 const base = {
-  author: { handle: 'author', deleted: false },
+  author: { handle: 'author', deleted: false, avatar_url: 'https://api.test/v1/avatars/1' },
   artist: { id: 'a1', name: 'Geese', image_url: null },
   details: ['Insults another fan'],
   first_reported_at: '2026-10-24T12:00:00Z',
@@ -44,6 +44,10 @@ test('staff take a post down with a note, or dismiss its reports', async () => {
 
   expect(await screen.findByText('3 reports: Abuse or harassment ×2, Spam')).toBeTruthy();
   expect(screen.getByText('“Insults another fan”')).toBeTruthy();
+  // The author's picture sits beside their handle on every reported post.
+  const pictures = screen.getAllByLabelText("@author's picture");
+  expect(pictures).toHaveLength(2);
+  expect(pictures[0]!.props.source).toEqual({ uri: 'https://api.test/v1/avatars/1' });
   fireEvent.changeText(screen.getAllByLabelText('Note (staff only, optional)')[0]!, 'Abusive');
   fireEvent.press(screen.getAllByRole('button', { name: 'Take down' })[0]!);
   await waitFor(() => expect(screen.queryByText('Rude review')).toBeNull());
@@ -62,13 +66,16 @@ test('staff take a post down with a note, or dismiss its reports', async () => {
 
 test('a reported prompt answer shows the prompt and the answer, with no artist', async () => {
   const answer = {
-    ...base, artist: null, target_type: 'prompt_answer', target_id: 'pa1', photo: null, log: null,
+    ...base, author: { handle: 'author', deleted: false, avatar_url: null },
+    artist: null, target_type: 'prompt_answer', target_id: 'pa1', photo: null, log: null,
     prompt_answer: { prompt_text: "What's your best hypothetical band name?", body: 'Rude band name', visibility: 'public' },
     report_count: 1, reasons: [{ reason: 'abuse', count: 1 }], details: [],
   };
   mockApi.GET.mockResolvedValue(ok({ items: [answer], next_cursor: null }));
   render(<ModerationScreen />);
   expect(await screen.findByText('Prompt answer · @author')).toBeTruthy();
+  // No picture: the author's initial stands in.
+  expect(within(screen.getByLabelText("@author's picture")).getByText('A')).toBeTruthy();
   expect(screen.getByText('“Rude band name”')).toBeTruthy();
   expect(screen.getByText("What's your best hypothetical band name?")).toBeTruthy();
 });

@@ -5,6 +5,7 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 import { type components, unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
+import { Avatar } from '../../ui/Avatar';
 import { Body, Button, ErrorText, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { kindLabel } from '../submissions/photoUpload';
@@ -75,9 +76,12 @@ export function RedactionScreen() {
         const fan = item.user.deleted ? 'Deleted user' : `@${item.user.handle}`;
         return (
           <View key={item.file_id} style={styles.card}>
-            <Text style={styles.title}>
-              {kindLabel(item.kind)} · {item.artist.name} · {fan}
-            </Text>
+            <View style={styles.who}>
+              <Avatar user={item.user} size={24} />
+              <Text style={[styles.title, styles.whoText]}>
+                {kindLabel(item.kind)} · {item.artist.name} · {fan}
+              </Text>
+            </View>
             <Image source={{ uri: item.file.url }} style={styles.photo} resizeMode="contain" accessibilityLabel="Photo to check" />
             {item.note ? <Text style={styles.note}>{item.note}</Text> : null}
             <Text style={styles.meta}>
@@ -97,6 +101,8 @@ export function RedactionScreen() {
 const styles = StyleSheet.create({
   card: { gap: space.sm, padding: space.md, borderRadius: 12, borderWidth: 1, borderColor: colors.border },
   title: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  who: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  whoText: { flex: 1 },
   photo: { width: '100%', aspectRatio: 4 / 3, borderRadius: 8, backgroundColor: colors.surface },
   note: { color: colors.danger, fontSize: 14, fontWeight: '600' },
   meta: { color: colors.muted, fontSize: 14 },

@@ -5,6 +5,7 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 import { type components, unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
+import { Avatar } from '../../ui/Avatar';
 import { Body, Button, ErrorText, Field, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
 import { kindLabel, type Submission, submissionConcertLine } from './photoUpload';
@@ -62,9 +63,12 @@ export function ReviewScreen() {
           {item.files?.map((file) => (
             <Image key={file.id} source={{ uri: file.url }} style={styles.photo} resizeMode="contain" accessibilityLabel="Submitted photo" />
           ))}
-          <Text style={styles.title}>
-            {kindLabel(item.kind)} · {item.artist.name} · @{item.user?.handle ?? 'deleted'}
-          </Text>
+          <View style={styles.who}>
+            <Avatar user={item.user} size={24} />
+            <Text style={[styles.title, styles.whoText]}>
+              {kindLabel(item.kind)} · {item.artist.name} · @{item.user?.handle ?? 'deleted'}
+            </Text>
+          </View>
           {submissionConcertLine(item as Submission) ? (
             <Text style={styles.caption}>Concert: {submissionConcertLine(item as Submission)}</Text>
           ) : null}
@@ -95,5 +99,7 @@ const styles = StyleSheet.create({
   card: { gap: space.sm, padding: space.md, borderRadius: 12, borderWidth: 1, borderColor: colors.border },
   photo: { width: '100%', aspectRatio: 4 / 3, borderRadius: 8, backgroundColor: colors.surface },
   title: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  who: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  whoText: { flex: 1 },
   caption: { color: colors.text, fontSize: 15 },
 });
