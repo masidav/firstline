@@ -98,7 +98,7 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   `db-shell.sh` opens psql on the beta database from a temporary pod in the cluster. It is new (2026-10-28) and
   hasn't been run against the cluster yet; if it fails, send Claude the output.
 
-- [ ] **8. Create a promoter organization** with you as owner, then try the dashboard at
+- [x] **8. Create a promoter organization** (done 2026-11-05: 'Test Promoter', owner d57590971@gmail.com) with you as owner, then try the dashboard at
   https://promoters.beta.firstline-5730kl.com.
   ```bash
   infrastructure/k8s/db-shell.sh beta <<'SQL'
