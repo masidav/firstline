@@ -115,7 +115,10 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   `terraform plan` should show only an in-place change to the archive bucket (plus the dashboard's usual cosmetic
   diff), then `terraform apply`.
 
-- [ ] **10. Run the beta on-sale load test** (`tools/load/README.md`, "Running it on beta"). Claude may not run
+- [x] **10. Run the beta on-sale load test** Done 2026-11-05 by Claude (results in `tools/load/README.md`,
+  "Results on beta"): 25 fans/s passed (p95 30 ms), 50 fans/s failed with the `db-g1-small` database at 100 % CPU
+  (connection timeouts, no double registrations), the Cloud Armor pass passed; test data cleaned up, HPA back to 2.
+  Original step: (`tools/load/README.md`, "Running it on beta"). Claude may not run
   `db-shell.sh` on beta, so either run the steps yourself and paste the k6 summaries back, or allow
   `infrastructure/k8s/db-shell.sh beta` and the `load-onsale` Job commands for a session.
 

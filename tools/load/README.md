@@ -139,9 +139,14 @@ What it means for the cloud (`infrastructure/k8s/base/api-hpa.yaml`, `infrastruc
   the deployed path (Gateway, TLS, Cloud Armor, Cloud SQL over the network, real pods), not the ceiling.
 
 ### Running it on beta
-Not run yet. Beta has real testers, so only outside their hours, announced, with a test artist nobody follows, and
-with someone watching the dashboard (Terraform output `dashboard_url`). Needs `kubectl` on the beta cluster
-(`gcloud container clusters get-credentials fandomscore-beta ...`, as for `infrastructure/k8s/db-shell.sh`).
+First run 2026-11-05 (results below). Beta has real testers, so only outside their hours, announced, with a test
+artist nobody follows, and with someone watching the dashboard (Terraform output `dashboard_url`). Needs `kubectl` on
+the beta cluster (`gcloud container clusters get-credentials fandomscore-beta ...`, as for
+`infrastructure/k8s/db-shell.sh`).
+
+**Every deploy resets the HPA floor.** A push to `main` deploys beta, and the deploy reapplies the overlay, which puts
+`minReplicas` back to 2 (and a mid-pass deploy also rolls the API pods). Before each pass check that no Deploy run is in
+progress (`gh run list --workflow Deploy --limit 1`) and that `kubectl -n fandomscore get hpa api` still shows 6.
 
 1. **Pick a run tag and a city.** A new tag for each pass (`beta1`, `beta2`: it names the rows and their ids). The
    show's city and the other hub must be no real tester's hub, or the test show turns up in their feed; this should
@@ -150,7 +155,7 @@ with someone watching the dashboard (Terraform output `dashboard_url`). Needs `k
 2. **Pre-scale** as for a real on-sale (`infrastructure/README.md` "On-sale traffic"): beta's ceiling is 6 pods, so
    `kubectl -n fandomscore patch hpa api -p '{"spec":{"minReplicas":6}}'` 15 minutes ahead, and check that
    `kubectl -n fandomscore get pods -l app.kubernetes.io/component=api` shows 6 ready. Check beta's
-   `SHOW max_connections` first: 6 pods can open 144.
+   `SHOW max_connections` first: 6 pods can open 144 (beta's `db-g1-small` allows 50).
 3. **Test accounts and an isolated allocation** (`http/setup.sql` through the cluster's database shell): synthetic fans
    `lt<tag>_<n>@example.test` with sessions, an artist "Load Test <tag> (ignore)", and one show with one allocation
    that opens 3 s after the script runs, so run step 4 right after.
@@ -191,3 +196,33 @@ with someone watching the dashboard (Terraform output `dashboard_url`). Needs `k
    fans_left 0`.
 
 Record the results here in the same format, with beta's tier and pod count.
+
+#### Results on beta (2026-11-05, 6 API pods of 250m request, Cloud SQL `db-g1-small`, `max_connections` 50)
+Run by Claude for the owner; `PEAK` as in step 4, `HOLD=60`. DB CPU from Cloud Monitoring
+(`cloudsql.googleapis.com/database/cpu/utilization`, 1-minute points); connections sampled every 10 s from
+`pg_stat_activity` for the app user.
+
+| Pass | Peak fans/s (≈ requests/s) | Requests | p50 / p95 / p99 | Errors | Registered once (DB rows = distinct fans) | DB CPU peak | App connections peak |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| beta1, in cluster | 25 (≈150) | 12,588 | 14 / 30 / 96 ms | 0 | 2,064 of 2,064 attempts | 0.44 | 47 of 50 |
+| beta2, in cluster | 50 (≈300) | 17,537 | 72 ms / 15.0 s / 21.8 s | 3,220 (18 %), 928 iterations dropped | 2,235 rows, 2,235 fans; k6 saw 2,180 created, 363 got a 5xx | 1.00 (limit) | 42 of 50 |
+| beta3, Cloud Armor | 1 (≈6) | 826 | 26 / 106 / 247 ms | 0, no 429 | 135 of 135 attempts | n/a | n/a |
+
+What it found:
+- **Beta's database is the ceiling, between 25 and 50 fans a second.** At 25 the shared-core `db-g1-small` peaked at
+  44 % CPU; at 50 it sat at 100 % for two minutes. The API pods were not the limit (HPA CPU stayed low).
+- **The failure is new connections timing out, not "too many clients".** API logs in the beta2 window: ~1,250
+  `Failed to connect ... Timeout during connection attempt`, ~1,500 `The operation has timed out` (Npgsql's 15 s),
+  and 18 `The connection pool has been exhausted`; about half came from `JwtBearerHandler` (the session check runs
+  before the endpoint). With the database's CPU gone, each pool growing for the spike has to open TLS + SCRAM
+  connections that then can't finish in 15 s. Connections stayed under `max_connections`, but only just: 47 of 50
+  at PEAK=25, so 6 pods' pools (up to 144) plus the worker would hit it before long on this tier.
+- **No double registrations, even while failing.** The 55 registrations in the database that k6 didn't see as
+  created committed and then timed out on the way back; the fan's retry gets "already registered".
+- **The edge path works:** Gateway, Google-managed TLS, and Cloud Armor at 6 requests/s from one address with no 429,
+  p95 106 ms (vs 30 ms in cluster: the load balancer and TLS from the cluster's egress and back).
+
+What it means: beta is good for about 25 fans a second at the peak, roughly 3,000 fans arriving in the first two
+minutes with the launch plan's margin of 3 left out. Prod's `db-custom-2-7680` (2 dedicated vCPUs, the 400 fans/s
+measured above) is the tier to rehearse a real on-sale against; a beta on-sale larger than this needs a bigger tier
+first (changing it restarts the instance). Not changed by this run.
