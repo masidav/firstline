@@ -129,11 +129,12 @@ public sealed class PromptApiTests(PostgresFixture postgres) : IAsyncLifetime
         await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/prompts/{id}/answer", ben, new { body = "Nicer name" }), HttpStatusCode.OK);
         Assert.Empty((await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/prompts/{id}/answers", ana), HttpStatusCode.OK)).GetProperty("items").EnumerateArray());
 
-        // An older prompt is closed. Eight days back, so it's never this week's prompt day (prompts are weekly, and on a
-        // Friday "yesterday" would be this week's Thursday, already taken above).
+        // An older prompt is closed: last week's prompt day, so it's never this week's (already taken above) and it is
+        // always inside the staff list's window, which starts at last week's prompt day. (Eight days back fell outside
+        // that window on Thursdays, so this test failed one day a week.)
         await using (var connection = await _db.OpenConnectionAsync())
         {
-            await connection.ExecuteAsync("INSERT INTO prompts (day, text, source) VALUES ((now() AT TIME ZONE 'UTC')::date - 8, 'Yesterday?', 'staff')");
+            await connection.ExecuteAsync("INSERT INTO prompts (day, text, source) VALUES (prompt_week_day() - 7, 'Yesterday?', 'staff')");
         }
 
         var yesterday = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/admin/prompts", staff), HttpStatusCode.OK);
