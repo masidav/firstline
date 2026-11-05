@@ -8,7 +8,8 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Upload originals to a quarantine storage tier with private access by default.
 - [ ] Create submission and file records with explicit pending/processing states.
 - [ ] Compute SHA-256 hashes and detect duplicate files.
-- [ ] Store order-reference hashes rather than raw order references.
+- [ ] Store order-reference hashes rather than raw order references. *`order_ref_hash` exists (0001) but nothing
+      writes it: there is no OCR yet (`services/api/src/integrations/ocr/TODO.md`).*
 - [ ] Queue OCR, metadata, event-match, partner-confirmation, and other verification checks.
 - [ ] Expose submission status and manual-review outcomes to the owning user without exposing reviewer-only data.
 - [ ] Transition statuses only through validated, auditable state changes.

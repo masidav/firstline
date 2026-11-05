@@ -129,6 +129,62 @@ public sealed class RedactionJobTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public void Staff_boxes_are_painted_black_before_the_scan()
+    {
+        var boxes = new List<StaffBox> { new(0.5, 0.1, 0.25, 0.1), new(0.04, 0.9, 0.92, 0.04) };
+        Assert.Equal(new SKRect(698, 98, 1052, 202), boxes[0].ToPixels(1400, 1000));
+        Assert.Equal(new SKRect(0, 0, 1400, 1000), new StaffBox(0, 0, 1, 1).ToPixels(1400, 1000));
+
+        var result = CodeRedactor.Redact(Ticket(qr: true), "image/jpeg", boxes);
+
+        Assert.Equal((2, 0), (result.BoxesPainted, result.CodesRemaining));
+        Assert.True(result.CodesRedacted >= 1, "the QR code is still found and blacked out");
+        using var redacted = SKBitmap.Decode(result.Content);
+        Assert.True(IsBlack(redacted.GetPixel(700, 100)) && IsBlack(redacted.GetPixel(1050, 199)), "inside the first box");
+        Assert.True(IsBlack(redacted.GetPixel(700, 920)), "inside the second box");
+        Assert.False(IsBlack(redacted.GetPixel(650, 150)), "left of the first box is untouched");
+        Assert.False(IsBlack(redacted.GetPixel(700, 250)), "below the first box is untouched");
+    }
+
+    [Fact]
+    public async Task An_approved_file_is_archived_with_the_boxes_staff_drew_blacked_out()
+    {
+        var (ticket, ticketFile, _) = await SubmissionAsync("ticket", Ticket());
+        var (merch, merchFile, _) = await SubmissionAsync("merch", Ticket());
+        await RunAsync(ticket);
+        Assert.Equal("needs_review", (await FileAsync(ticketFile)).State);
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            await connection.ExecuteAsync(
+                """
+                UPDATE submission_files SET redaction_state = 'approved',
+                    staff_boxes = '[{"x": 0.5, "y": 0.1, "w": 0.25, "h": 0.1}, {"x": 0.04, "y": 0.9, "w": 0.92, "h": 0.04}]' WHERE id = @ticketFile;
+                UPDATE submission_files SET staff_boxes = '[{"x": 0, "y": 0, "w": 1, "h": 1}]' WHERE id = @merchFile;
+                """,
+                new { ticketFile, merchFile });
+        }
+
+        await RunAsync(ticket);
+        await RunAsync(merch);
+
+        var row = await FileAsync(ticketFile);
+        Assert.Equal(("archived", "Archived after staff review; 2 staff-drawn boxes blacked out."), (row.State, row.Note));
+        using var archived = SKBitmap.Decode(await File.ReadAllBytesAsync(Path.Combine(_storage, row.StorageKey)));
+        Assert.True(IsBlack(archived.GetPixel(800, 150)), "inside the first box");
+        Assert.True(IsBlack(archived.GetPixel(100, 915)), "inside the second box");
+        Assert.False(IsBlack(archived.GetPixel(300, 500)), "outside both");
+        Assert.Equal(2, await CountAsync("SELECT jsonb_array_length(staff_boxes) FROM submission_files WHERE id = @ticketFile", new { ticketFile }));
+
+        // Boxes count only on a file staff approved: a pending file is archived as scanned.
+        var plain = await FileAsync(merchFile);
+        Assert.Equal(("archived", null), (plain.State, plain.Note));
+        using var untouched = SKBitmap.Decode(await File.ReadAllBytesAsync(Path.Combine(_storage, plain.StorageKey)));
+        Assert.False(IsBlack(untouched.GetPixel(300, 500)), "a pending file's boxes are not painted");
+    }
+
+    private static bool IsBlack(SKColor pixel) => pixel.Red < 24 && pixel.Green < 24 && pixel.Blue < 24;
+
+    [Fact]
     public async Task An_unreadable_image_goes_to_staff_and_unverified_or_taken_down_submissions_are_left_alone()
     {
         var (broken, brokenFile, _) = await SubmissionAsync("merch", [0x89, 0x50, 0x4E, 0x47, 1, 2, 3]);

@@ -103,6 +103,52 @@ public sealed class RedactionApiTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal("validation_failed", invalid.GetProperty("code").GetString());
     }
 
+    [Fact]
+    public async Task Staff_can_draw_boxes_for_the_worker_to_black_out_when_archiving()
+    {
+        await SignInAsync("fan");
+        var staff = await StaffAsync("staffer");
+        var (submission, file, _) = await WaitingFileAsync("fan", "ticket", "No barcode or QR code was found on this ticket. Check it by eye.");
+        var box = new { x = 0.1, y = 0.2, w = 0.3, h = 0.05 };
+
+        // Boxes go only with archive, as a list of boxes that stay inside the image, at most 20.
+        async Task RejectedAsync(object body, string field)
+        {
+            var problem = await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/redactions/{file}/decision", staff, body),
+                HttpStatusCode.UnprocessableEntity);
+            Assert.Equal("validation_failed", problem.GetProperty("code").GetString());
+            Assert.Equal(field, problem.GetProperty("errors")[0].GetProperty("field").GetString());
+        }
+
+        await RejectedAsync(new { action = "discard", boxes = new[] { box } }, "boxes");
+        await RejectedAsync(new { action = "archive", boxes = box }, "boxes");
+        await RejectedAsync(new { action = "archive", boxes = new object[] { box, new { x = 0.9, y = 0.2, w = 0.3, h = 0.05 } } }, "boxes[1]");
+        await RejectedAsync(new { action = "archive", boxes = new object[] { new { x = 0.1, y = 0.2, w = 0.0, h = 0.05 } } }, "boxes[0]");
+        await RejectedAsync(new { action = "archive", boxes = new object[] { new { x = "0.1", y = 0.2, w = 0.3, h = 0.05 } } }, "boxes[0].x");
+        await RejectedAsync(new { action = "archive", boxes = new object[] { new { x = 0.1, y = 0.2, w = 0.3 } } }, "boxes[0].h");
+        await RejectedAsync(new { action = "archive", boxes = Enumerable.Repeat(box, 21).ToArray() }, "boxes");
+        Assert.Equal("needs_review", await ScalarAsync<string>("SELECT redaction_state FROM submission_files WHERE id = @file", new { file }));
+
+        // Archive with two boxes: stored for the worker, which is queued.
+        await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/redactions/{file}/decision", staff,
+            new { action = "archive", boxes = new object[] { box, new { x = 0, y = 0.9, w = 1, h = 0.1 } } }), HttpStatusCode.NoContent);
+        Assert.Equal("approved", await ScalarAsync<string>("SELECT redaction_state FROM submission_files WHERE id = @file", new { file }));
+        using var stored = JsonDocument.Parse(await ScalarAsync<string>("SELECT staff_boxes::text FROM submission_files WHERE id = @file", new { file }));
+        Assert.Equal(2, stored.RootElement.GetArrayLength());
+        var first = stored.RootElement[0];
+        Assert.Equal((0.1, 0.2, 0.3, 0.05), (first.GetProperty("x").GetDouble(), first.GetProperty("y").GetDouble(),
+            first.GetProperty("w").GetDouble(), first.GetProperty("h").GetDouble()));
+        Assert.Equal(1, await ScalarAsync<int>(
+            "SELECT count(*) FROM jobs WHERE kind = 'submissions.redact' AND status = 'queued' AND payload->>'submission_id' = @id",
+            new { id = submission.ToString() }));
+
+        // An empty list means no boxes: the column stays null.
+        var (_, plain, _) = await WaitingFileAsync("fan", "screenshot", "The image couldn't be read.");
+        await JsonAsync(await SendAsync(HttpMethod.Post, $"/v1/admin/redactions/{plain}/decision", staff,
+            new { action = "archive", boxes = Array.Empty<object>() }), HttpStatusCode.NoContent);
+        Assert.Null(await ScalarAsync<string?>("SELECT staff_boxes::text FROM submission_files WHERE id = @plain", new { plain }));
+    }
+
     /// <summary>A verified submission whose one file the worker sent to staff.</summary>
     private async Task<(Guid Submission, Guid File, string Key)> WaitingFileAsync(string handle, string kind, string note)
     {

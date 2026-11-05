@@ -13,7 +13,8 @@ namespace FandomScore.Api.Features.Redaction;
 /// Staff decisions on files the redaction worker couldn't settle (migration 0029, workers/image-redaction): a ticket or
 /// screenshot with no code found, codes still found after redacting, or an image that can't be read. Staff look at the
 /// file and either archive it (the worker redacts whatever it finds and archives it, trusting their look) or discard
-/// it (the file is deleted; the submission keeps its status and points).
+/// it (the file is deleted; the submission keeps its status and points). Archiving can carry boxes staff drew over
+/// what the scanner missed (a printed order number); the worker paints them black first (migration 0056).
 /// </summary>
 public static class RedactionEndpoints
 {
@@ -21,6 +22,11 @@ public static class RedactionEndpoints
     public static readonly TimeSpan QuarantineRetention = TimeSpan.FromDays(30);
 
     private const int MaxItems = 100;
+
+    /// <summary>Boxes staff may draw on one file (the database checks the same bound, migration 0056).</summary>
+    public const int MaxBoxes = 20;
+
+    private static readonly JsonSerializerOptions BoxJson = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
     public static void MapRedaction(this RouteGroupBuilder v1)
     {
@@ -71,6 +77,8 @@ public static class RedactionEndpoints
             throw ApiProblemException.Validation(new FieldError("action", "Send archive or discard."));
         }
 
+        var boxes = ParseBoxes(body, action);
+
         await using var connection = await db.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var file = await connection.QuerySingleOrDefaultAsync<(Guid SubmissionId, string StorageKey, string State)>(
@@ -89,13 +97,15 @@ public static class RedactionEndpoints
 
         if (action == "archive")
         {
-            // The worker archives an approved file after redacting whatever it finds (RedactSubmissionJob).
+            // The worker archives an approved file after painting the boxes and redacting whatever it finds
+            // (RedactSubmissionJob). The boxes replace any from an earlier decision on the same file.
             await connection.ExecuteAsync(
                 """
-                UPDATE submission_files SET redaction_state = 'approved' WHERE id = @fileId;
+                UPDATE submission_files SET redaction_state = 'approved', staff_boxes = @boxes::jsonb WHERE id = @fileId;
                 SELECT enqueue_job('submissions.redact', jsonb_build_object('submission_id', @submissionId), 'redact:' || @submissionId);
                 """,
-                new { fileId, submissionId = file.SubmissionId }, transaction);
+                new { fileId, submissionId = file.SubmissionId, boxes = boxes.Count == 0 ? null : JsonSerializer.Serialize(boxes, BoxJson) },
+                transaction);
             await transaction.CommitAsync(cancellationToken);
             return Results.NoContent();
         }
@@ -120,6 +130,72 @@ public static class RedactionEndpoints
         }
 
         return Results.NoContent();
+    }
+
+    /// <summary>A box staff drew, as fractions of the image from its top-left corner (openapi.yaml RedactionBox).</summary>
+    public sealed record Box(double X, double Y, double W, double H);
+
+    /// <summary>
+    /// The decision's <c>boxes</c>, validated: optional, only with <c>archive</c>, at most <see cref="MaxBoxes"/>,
+    /// each with finite x, y, w, h that keep it inside the image (x, y ≥ 0; w, h > 0; x + w ≤ 1; y + h ≤ 1).
+    /// </summary>
+    private static List<Box> ParseBoxes(JsonElement body, string action)
+    {
+        if (!body.TryGetProperty("boxes", out var element) || element.ValueKind == JsonValueKind.Null)
+        {
+            return [];
+        }
+
+        if (action != "archive")
+        {
+            throw ApiProblemException.Validation(new FieldError("boxes", "Boxes go with archive: a discarded file is deleted whole."));
+        }
+
+        if (element.ValueKind != JsonValueKind.Array)
+        {
+            throw ApiProblemException.Validation(new FieldError("boxes", "Send a list of boxes."));
+        }
+
+        var boxes = new List<Box>();
+        foreach (var item in element.EnumerateArray())
+        {
+            var field = $"boxes[{boxes.Count}]";
+            if (boxes.Count == MaxBoxes)
+            {
+                throw ApiProblemException.Validation(new FieldError("boxes", $"At most {MaxBoxes} boxes."));
+            }
+
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                throw ApiProblemException.Validation(new FieldError(field, "A box is an object with x, y, w, and h."));
+            }
+
+            var box = new Box(Side(item, "x", field), Side(item, "y", field), Side(item, "w", field), Side(item, "h", field));
+            if (box.W <= 0 || box.H <= 0)
+            {
+                throw ApiProblemException.Validation(new FieldError(field, "A box needs a width and a height."));
+            }
+
+            if (box.X + box.W > 1 || box.Y + box.H > 1)
+            {
+                throw ApiProblemException.Validation(new FieldError(field, "A box must stay inside the image (x + w and y + h at most 1)."));
+            }
+
+            boxes.Add(box);
+        }
+
+        return boxes;
+    }
+
+    private static double Side(JsonElement box, string name, string field)
+    {
+        if (!box.TryGetProperty(name, out var side) || side.ValueKind != JsonValueKind.Number || !side.TryGetDouble(out var n)
+            || !double.IsFinite(n) || n < 0 || n > 1)
+        {
+            throw ApiProblemException.Validation(new FieldError($"{field}.{name}", "A number from 0 to 1 (a fraction of the image)."));
+        }
+
+        return n;
     }
 
     private sealed record Row(

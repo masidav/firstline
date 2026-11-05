@@ -3174,4 +3174,47 @@ BEGIN
   ASSERT detect_fraud(poll) IS NOT NULL, 'after the cooldown it fires again';
 END $$;
 
+-- ------------------------------------------------------------ staff redaction boxes (0056)
+-- A file keeps the boxes staff drew when archiving it: an array of 1..20 {x, y, w, h} fractions of the image, each
+-- box inside it; anything else is refused. Null means staff drew none.
+DO $$
+DECLARE sub uuid := '40000000-0000-0000-0000-0000000000c6'; f uuid;
+BEGIN
+  INSERT INTO submissions (id, user_id, artist_id, kind)
+    SELECT sub, '00000000-0000-0000-0000-000000000001', id, 'ticket' FROM artists WHERE spotify_artist_id = 'sp-active';
+  INSERT INTO submission_files (submission_id, storage_key, sha256, mime_type, bytes)
+    VALUES (sub, 'quarantine/inv-boxes', sha256('b'), 'image/jpeg', 10) RETURNING id INTO f;
+  ASSERT (SELECT staff_boxes FROM submission_files WHERE id = f) IS NULL, 'new files have no staff boxes';
+
+  UPDATE submission_files SET staff_boxes = '[{"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.05}, {"x": 0, "y": 0, "w": 1, "h": 1}]' WHERE id = f;
+  ASSERT (SELECT jsonb_array_length(staff_boxes) FROM submission_files WHERE id = f) = 2, 'two boxes kept';
+  UPDATE submission_files SET staff_boxes = NULL WHERE id = f;
+
+  ASSERT NOT redaction_boxes_valid('[]'), 'an empty list is null, not a list';
+  ASSERT NOT redaction_boxes_valid('{"x": 0, "y": 0, "w": 1, "h": 1}'), 'a box is not a list';
+  ASSERT NOT redaction_boxes_valid('[{"x": 0, "y": 0, "w": 1}]'), 'every side is required';
+  ASSERT NOT redaction_boxes_valid('[{"x": "0", "y": 0, "w": 1, "h": 1}]'), 'sides are numbers';
+  ASSERT NOT redaction_boxes_valid('[{"x": 0.5, "y": 0, "w": 0.6, "h": 1}]'), 'a box stays inside the image (right)';
+  ASSERT NOT redaction_boxes_valid('[{"x": 0, "y": -0.1, "w": 1, "h": 1}]'), 'a box stays inside the image (top)';
+  ASSERT NOT redaction_boxes_valid('[{"x": 0, "y": 0, "w": 0, "h": 1}]'), 'a box has width';
+  ASSERT NOT redaction_boxes_valid('[1]'), 'a box is an object';
+  ASSERT NOT redaction_boxes_valid((SELECT jsonb_agg('{"x": 0, "y": 0, "w": 0.1, "h": 0.1}'::jsonb) FROM generate_series(1, 21))),
+         'at most 20 boxes';
+  ASSERT redaction_boxes_valid((SELECT jsonb_agg('{"x": 0, "y": 0, "w": 0.1, "h": 0.1}'::jsonb) FROM generate_series(1, 20))), '20 boxes is fine';
+
+  BEGIN
+    UPDATE submission_files SET staff_boxes = '[{"x": 0.9, "y": 0, "w": 0.2, "h": 0.1}]' WHERE id = f;
+    RAISE EXCEPTION 'a box past the image edge should fail';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%submission_files_staff_boxes_check%', SQLERRM;
+  END;
+  BEGIN
+    UPDATE submission_files SET staff_boxes = '[]' WHERE id = f;
+    RAISE EXCEPTION 'an empty list should fail (use null)';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM LIKE '%submission_files_staff_boxes_check%', SQLERRM;
+  END;
+
+  DELETE FROM submissions WHERE id = sub;
+END $$;
+DELETE FROM storage_deletions;
+
 \echo ALL INVARIANT TESTS PASSED

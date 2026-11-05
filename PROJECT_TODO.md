@@ -256,7 +256,17 @@ Details: [Album journal API](services/api/src/features/album-journal/TODO.md) ·
       25 days; Terraform alert on it. Verified: `dotnet test` 266/266, worker image run end to end.*
 - [x] Enforce archive safety and retention policies. (Database refuses unredacted or misplaced archive rows;
       originals deleted after archiving; rejected and taken-down files after 30 days; quarantine expiry 30 days.)
-- [ ] Hide printed order numbers on tickets (OCR) if staff find them often; let staff draw their own boxes.
+- [x] Let staff draw their own boxes on a file the scanner can't settle. *Done 2026-11-05 (migration 0056): the
+      archive decision on `/v1/admin/redactions` carries up to 20 boxes as fractions of the image, stored in
+      `submission_files.staff_boxes`; the worker paints them black before scanning and archiving; the app's Photo
+      redaction screen has a "Draw boxes" mode (drag with mouse or finger, web first). Verified: `dotnet build` 0
+      warnings, `dotnet test` (RedactionJobTests 9, RedactionApiTests 2, invariants for 0056), fan app Jest 354/354
+      and typecheck, promoter typecheck, migration safety check, `openapi-spec-validator`.*
+- [ ] Hide printed order numbers on tickets (OCR) if staff find them often. *2026-11-05: not started. There is no OCR
+      in the codebase (nothing writes `submissions.extracted` or `order_ref_hash`), and choosing one (Tesseract in the
+      chiseled worker image, or a paid cloud vision API that sees every ticket) is the open decision in
+      `services/api/src/integrations/ocr/TODO.md`. "Often" is now measurable: archived files with `staff_boxes`
+      (query in `services/api/src/features/redaction/README.md`). Decide after real tickets have been through review.*
 - [ ] David adds real photos to test redaction (added 2026-10-26): phone shots of real tickets, ticket screenshots,
       merch, and receipts, with glare, angles, and blur. Run them through the worker and tune the scanner on what it
       misses (`workers/image-redaction/TODO.md`). Keep them out of the repo: they hold real order details.

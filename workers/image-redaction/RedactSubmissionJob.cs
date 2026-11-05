@@ -12,10 +12,12 @@ namespace FandomScore.Worker.ImageRedaction;
 /// them to the archive (migration 0029). Queued when a submission becomes verified, by staff approving a file, and by
 /// <see cref="RedactionSweepJob"/>. For each file still <c>pending</c> or <c>approved</c>:
 /// <list type="number">
-/// <item>Black out every barcode and QR code <see cref="CodeRedactor"/> finds, and scan again.</item>
+/// <item>Paint black any boxes staff drew over the file (<c>staff_boxes</c>, migration 0056), then black out every
+/// barcode and QR code <see cref="CodeRedactor"/> finds, and scan again.</item>
 /// <item>Send it to staff (<c>needs_review</c>) when the image can't be read, codes are still found, or a ticket or
 /// screenshot shows no code at all (a ticket nearly always has one, so the scanner probably missed it). Staff
-/// approving a file means they looked: it is then archived whatever the scan says, after redacting what it finds.</item>
+/// approving a file means they looked: it is then archived whatever the scan says, after painting their boxes and
+/// redacting what it finds.</item>
 /// <item>Otherwise write the redacted copy to <c>archive/{file id}</c>, check it reads back, and point the file (and its
 /// upload slot) at it in one transaction. The old quarantine key is queued for deletion by migration 0027.</item>
 /// </list>
@@ -75,7 +77,8 @@ public sealed partial class RedactSubmissionJob(NpgsqlDataSource db, IFileStore 
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var file = await connection.QuerySingleOrDefaultAsync<FileRow>(
             """
-            SELECT storage_key AS StorageKey, mime_type AS MimeType, redaction_state = 'approved' AS Approved
+            SELECT storage_key AS StorageKey, mime_type AS MimeType, redaction_state = 'approved' AS Approved,
+                   staff_boxes::text AS StaffBoxes
             FROM submission_files WHERE id = @fileId AND redaction_state IN ('pending', 'approved')
             FOR UPDATE
             """,
@@ -92,7 +95,10 @@ public sealed partial class RedactSubmissionJob(NpgsqlDataSource db, IFileStore 
             return;
         }
 
-        var result = CodeRedactor.Redact(original, file.MimeType);
+        // Boxes are honoured only on a file staff approved: a pending file never has any, and if one somehow did,
+        // a decision staff didn't just make shouldn't shape the archive.
+        var boxes = file.Approved ? StaffBox.Parse(file.StaffBoxes) : [];
+        var result = CodeRedactor.Redact(original, file.MimeType, boxes);
         var problem = result switch
         {
             { Unreadable: true } => "The image couldn't be read.",
@@ -120,11 +126,19 @@ public sealed partial class RedactSubmissionJob(NpgsqlDataSource db, IFileStore 
                 UPDATE submission_files
                 SET storage_key = @archiveKey, tier = 'archive', redacted = true, archived_at = now(), bytes = @bytes,
                     redaction_state = 'archived', codes_redacted = @codes,
-                    redaction_note = CASE WHEN redaction_state = 'approved' THEN 'Archived after staff review.' END
+                    redaction_note = CASE
+                        WHEN redaction_state = 'approved' AND @boxes > 0
+                            THEN 'Archived after staff review; ' || @boxes || ' staff-drawn ' || CASE WHEN @boxes = 1 THEN 'box' ELSE 'boxes' END || ' blacked out.'
+                        WHEN redaction_state = 'approved' THEN 'Archived after staff review.'
+                    END
                 WHERE id = @fileId;
                 UPDATE uploads SET storage_key = @archiveKey, sha256 = @sha, bytes = @bytes WHERE storage_key = @oldKey;
                 """,
-                new { fileId, archiveKey, oldKey = file.StorageKey, bytes = content.Length, sha = SHA256.HashData(content), codes = result.CodesRedacted },
+                new
+                {
+                    fileId, archiveKey, oldKey = file.StorageKey, bytes = content.Length, sha = SHA256.HashData(content),
+                    codes = result.CodesRedacted, boxes = result.BoxesPainted,
+                },
                 transaction);
             await transaction.CommitAsync(cancellationToken);
         }
@@ -135,7 +149,7 @@ public sealed partial class RedactSubmissionJob(NpgsqlDataSource db, IFileStore 
             throw;
         }
 
-        LogArchived(logger, fileId, result.CodesRedacted, file.Approved);
+        LogArchived(logger, fileId, result.CodesRedacted, result.BoxesPainted, file.Approved);
     }
 
     private async Task NeedsReviewAsync(
@@ -154,13 +168,14 @@ public sealed partial class RedactSubmissionJob(NpgsqlDataSource db, IFileStore 
         return bitmap is not null;
     }
 
-    private sealed record FileRow(string StorageKey, string MimeType, bool Approved);
+    private sealed record FileRow(string StorageKey, string MimeType, bool Approved, string? StaffBoxes);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Job {JobId}: payload has no submission_id.")]
     private static partial void LogBadPayload(ILogger logger, long jobId);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Archived file {FileId}: {Codes} codes redacted (staff approved: {Approved}).")]
-    private static partial void LogArchived(ILogger logger, Guid fileId, int codes, bool approved);
+    [LoggerMessage(Level = LogLevel.Information,
+        Message = "Archived file {FileId}: {Codes} codes redacted, {Boxes} staff boxes painted (staff approved: {Approved}).")]
+    private static partial void LogArchived(ILogger logger, Guid fileId, int codes, int boxes, bool approved);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "File {FileId} needs staff review: {Note}")]
     private static partial void LogNeedsReview(ILogger logger, Guid fileId, string note);

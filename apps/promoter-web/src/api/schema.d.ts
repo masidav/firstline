@@ -3030,8 +3030,12 @@ export interface paths {
         put?: never;
         /**
          * Archive a file staff checked, or discard it
-         * @description `archive`: staff looked and nothing sensitive is left. The worker still blacks out any code it finds, then
-         *     archives the file. `discard`: the file is deleted now; the submission keeps its status and points.
+         * @description `archive`: staff looked and nothing sensitive is left, or they drew `boxes` over what is (a printed order
+         *     number, a seat strip). The worker paints the boxes black, still blacks out any code it finds, then archives
+         *     the file. `discard`: the file is deleted now; the submission keeps its status and points.
+         *
+         *     `boxes` go only with `archive` (`422 validation_failed`, field `boxes`, otherwise); at most 20, each inside
+         *     the image. Boxes from an earlier decision on the same file are replaced.
          */
         post: operations["decideRedaction"];
         delete?: never;
@@ -4192,6 +4196,16 @@ export interface components {
              * @description Last time the artist's shows were loaded.
              */
             synced_at: string | null;
+        };
+        /**
+         * @description A rectangle over an image as fractions of its width and height from the top-left corner, so it means the same
+         *     thing whatever size the image was shown at. `x + w` and `y + h` are at most 1.
+         */
+        RedactionBox: {
+            x: number;
+            y: number;
+            w: number;
+            h: number;
         };
         RedactionReview: {
             /** Format: uuid */
@@ -10177,6 +10191,8 @@ export interface operations {
                 "application/json": {
                     /** @enum {string} */
                     action: "archive" | "discard";
+                    /** @description Areas staff want blacked out, as fractions of the image. Only with `archive`. */
+                    boxes?: components["schemas"]["RedactionBox"][];
                 };
             };
         };

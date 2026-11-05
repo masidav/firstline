@@ -9,7 +9,8 @@ namespace FandomScore.Worker.ImageRedaction;
 /// <param name="Content">The redacted image (re-encoded in the same format), or null when it couldn't be read.</param>
 /// <param name="CodesRedacted">Distinct codes (format and content) found and blacked out, over every pass.</param>
 /// <param name="CodesRemaining">Distinct codes a final scan still found. Zero does not prove the image is clean.</param>
-public sealed record RedactionResult(byte[]? Content, int CodesRedacted, int CodesRemaining)
+/// <param name="BoxesPainted">Staff-drawn boxes painted black before the scan (migration 0056).</param>
+public sealed record RedactionResult(byte[]? Content, int CodesRedacted, int CodesRemaining, int BoxesPainted = 0)
 {
     public bool Unreadable => Content is null;
 }
@@ -24,7 +25,8 @@ public sealed record RedactionResult(byte[]? Content, int CodesRedacted, int Cod
 /// tickets and screenshots with no code found go to staff (<see cref="RedactSubmissionJob"/>).
 /// </para>
 /// Printed digits under a barcode are covered by the box's padding when they sit just below it; text elsewhere (an
-/// order number in the corner) is not detected: there is no OCR.
+/// order number in the corner) is not detected: there is no OCR. Staff can draw boxes over such text when they
+/// archive a file the scanner couldn't settle (<see cref="StaffBox"/>); those are painted first.
 /// </summary>
 public static class CodeRedactor
 {
@@ -51,7 +53,10 @@ public static class CodeRedactor
 
     private static readonly SKSamplingOptions Sampling = new(SKFilterMode.Linear);
 
-    public static RedactionResult Redact(byte[] content, string mimeType)
+    /// <param name="content">The image bytes (JPEG or PNG).</param>
+    /// <param name="mimeType">What to re-encode as: <c>image/png</c> keeps PNG, anything else is JPEG.</param>
+    /// <param name="staffBoxes">Boxes staff drew; painted black before any code is looked for.</param>
+    public static RedactionResult Redact(byte[] content, string mimeType, IReadOnlyList<StaffBox>? staffBoxes = null)
     {
         using var bitmap = TryDecode(content);
         if (bitmap is null)
@@ -60,6 +65,15 @@ public static class CodeRedactor
         }
 
         using var paint = new SKPaint { Color = SKColors.Black, Style = SKPaintStyle.Fill };
+        if (staffBoxes is { Count: > 0 })
+        {
+            using var canvas = new SKCanvas(bitmap);
+            foreach (var box in staffBoxes)
+            {
+                canvas.DrawRect(box.ToPixels(bitmap.Width, bitmap.Height), paint);
+            }
+        }
+
         var redacted = new HashSet<string>(StringComparer.Ordinal);
         var found = Find(bitmap);
         for (var pass = 0; pass < MaxPasses && found.Count > 0; pass++)
@@ -79,7 +93,8 @@ public static class CodeRedactor
         var format = mimeType == "image/png" ? SKEncodedImageFormat.Png : SKEncodedImageFormat.Jpeg;
         using var image = SKImage.FromBitmap(bitmap);
         using var data = image.Encode(format, JpegQuality);
-        return new RedactionResult(data.ToArray(), redacted.Count, found.Select(c => c.Code).Distinct(StringComparer.Ordinal).Count());
+        return new RedactionResult(
+            data.ToArray(), redacted.Count, found.Select(c => c.Code).Distinct(StringComparer.Ordinal).Count(), staffBoxes?.Count ?? 0);
     }
 
     /// <summary>The decoded image, or null when the bytes aren't an image Skia can read.</summary>

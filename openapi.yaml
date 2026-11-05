@@ -3504,8 +3504,12 @@ paths:
       operationId: decideRedaction
       summary: Archive a file staff checked, or discard it
       description: |
-        `archive`: staff looked and nothing sensitive is left. The worker still blacks out any code it finds, then
-        archives the file. `discard`: the file is deleted now; the submission keeps its status and points.
+        `archive`: staff looked and nothing sensitive is left, or they drew `boxes` over what is (a printed order
+        number, a seat strip). The worker paints the boxes black, still blacks out any code it finds, then archives
+        the file. `discard`: the file is deleted now; the submission keeps its status and points.
+
+        `boxes` go only with `archive` (`422 validation_failed`, field `boxes`, otherwise); at most 20, each inside
+        the image. Boxes from an earlier decision on the same file are replaced.
       parameters:
         - {name: fileId, in: path, required: true, schema: {type: string, format: uuid}}
       requestBody:
@@ -3517,6 +3521,11 @@ paths:
               required: [action]
               properties:
                 action: {type: string, enum: [archive, discard]}
+                boxes:
+                  type: array
+                  maxItems: 20
+                  description: Areas staff want blacked out, as fractions of the image. Only with `archive`.
+                  items: {$ref: '#/components/schemas/RedactionBox'}
       responses:
         '204': {description: Decision recorded}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -4921,6 +4930,17 @@ components:
         matched_by: {type: [string, 'null'], enum: [spotify_link, staff, null]}
         checked_at: {type: string, format: date-time}
         synced_at: {type: [string, 'null'], format: date-time, description: Last time the artist's shows were loaded.}
+    RedactionBox:
+      type: object
+      description: |
+        A rectangle over an image as fractions of its width and height from the top-left corner, so it means the same
+        thing whatever size the image was shown at. `x + w` and `y + h` are at most 1.
+      required: [x, y, w, h]
+      properties:
+        x: {type: number, minimum: 0, maximum: 1}
+        y: {type: number, minimum: 0, maximum: 1}
+        w: {type: number, exclusiveMinimum: 0, maximum: 1}
+        h: {type: number, exclusiveMinimum: 0, maximum: 1}
     RedactionReview:
       type: object
       required: [file_id, submission_id, kind, artist, user, note, codes_redacted, uploaded_at, deleted_after, file]
