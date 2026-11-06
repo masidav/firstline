@@ -127,9 +127,9 @@ public sealed class AccountDeletionTests(PostgresFixture postgres) : IAsyncLifet
         Assert.Equal(HttpStatusCode.Accepted, (await SendAsync(HttpMethod.Delete, "/v1/me", ana)).StatusCode);
 
         // At once: listening data, scores, cached responses, +1 declines, the picture, and her handle in others' notices.
-        foreach (var table in new[] { "user_plays", "user_album_saves", "user_track_likes", "user_artist_signals", "spotify_connections",
+        foreach (var table in new[] { "user_plays", "user_album_saves", "user_track_likes", "user_artist_signals", "spotify_connections", "music_connections",
                                       "fan_overall_scores", "idempotency_keys", "push_devices", "follows", "post_reactions", "notifications",
-                                      "client_address_events", "push_device_accounts", "spotify_account_links", "eligibility_views" })
+                                      "client_address_events", "push_device_accounts", "spotify_account_links", "eligibility_views", "hub_location_checks" })
         {
             var column = table == "follows" ? "follower_id" : "user_id";
             Assert.True(await ScalarAsync<long>($"SELECT count(*) FROM {table} WHERE {column} = @anaId", new { anaId }) == 0, table);
@@ -226,7 +226,9 @@ public sealed class AccountDeletionTests(PostgresFixture postgres) : IAsyncLifet
             UPDATE users SET display_name = 'Ana PRIVMARK' WHERE id = @anaId;
 
             INSERT INTO spotify_connections (user_id, spotify_user_id, refresh_token_enc, scopes) VALUES (@anaId, 'sp-privmark', '\x01', '{}');
+            INSERT INTO music_connections (user_id, provider, provider_user_id, token_enc) VALUES (@anaId, 'tidal', 'td-privmark', '\x01');
             INSERT INTO user_artist_signals (user_id, artist_id, liked_tracks) VALUES (@anaId, @_artistId, 3);
+            INSERT INTO user_artist_signals (user_id, provider, artist_id, liked_tracks) VALUES (@anaId, 'tidal', @_artistId, 1);
             INSERT INTO tracks (album_id, title, spotify_track_id) SELECT id, 'Track', '0000000000000000000ana' FROM albums WHERE artist_id = @_artistId;
             INSERT INTO user_track_likes (user_id, track_id, source, saved_at) SELECT @anaId, id, 'liked', now() FROM tracks;
             INSERT INTO user_album_saves (user_id, album_id, saved_at) SELECT @anaId, id, now() FROM albums WHERE artist_id = @_artistId;

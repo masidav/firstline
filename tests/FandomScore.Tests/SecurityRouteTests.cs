@@ -31,6 +31,7 @@ public sealed class SecurityRouteTests(PostgresFixture postgres)
         ["POST /auth/sessions"] = "sign-in itself; rate-limited",
         ["POST /auth/refresh"] = "token refresh; rate-limited; needs a valid refresh token",
         ["POST /webhooks/apple"] = "Apple's server-to-server notifications; signature-checked JWT",
+        ["POST /auth/apple/callback"] = "Sign in with Apple on the web: Apple's form post relayed to an allow-listed app origin; rate-limited; nothing stored",
         ["PUT /uploads/{}/content"] = "upload bytes to a signed, expiring, single-use slot link",
         ["GET /files/{}"] = "a stored photo through a signed, expiring link",
         ["GET /avatars/{}"] = "a fan's profile picture by its unguessable upload id; answers only while it is their current picture",

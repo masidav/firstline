@@ -9,6 +9,8 @@ const mockApi = { GET: jest.fn(), PUT: jest.fn(), DELETE: jest.fn(), POST: jest.
 const mockSession = { api: mockApi };
 jest.mock('../../auth/SessionProvider', () => ({ useSession: () => ({ session: mockSession, state: { status: 'signedIn' } }) }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn(), replace: jest.fn(), back: jest.fn(), canGoBack: () => false } }));
+jest.mock('../hub-cities/locationCheck', () => ({ hasLocationPermission: jest.fn(), recordLocationCheck: jest.fn() }));
+const location = () => jest.requireMock('../hub-cities/locationCheck') as { hasLocationPermission: jest.Mock; recordLocationCheck: jest.Mock };
 
 const standing = (likely: boolean, extra: Partial<Standing> = {}): Standing => ({
   rank: 4, registrants: 40, top_percent: 10, seats_ahead: 5, seats_needed: 1, tickets: 100, margin_seats: 25,
@@ -28,7 +30,11 @@ const eligibility = (overrides: Record<string, unknown>) => ({
   hub_match: 1, registration: null, standing: standing(true), ...overrides,
 });
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  location().hasLocationPermission.mockResolvedValue(false);
+  location().recordLocationCheck.mockResolvedValue(null);
+});
 
 test('says "most likely" only when the API says the fan is inside the margin', () => {
   expect(standingMessage(standing(true)).headline).toBe("You'll most likely get a ticket!");
@@ -159,4 +165,38 @@ test('a fan on hold is told so calmly and pointed to their account review', asyn
   expect(screen.queryByLabelText('Register')).toBeNull();
   fireEvent.press(screen.getByRole('button', { name: 'See your account review' }));
   expect(router.push).toHaveBeenCalledWith('/account-review');
+});
+
+test('a fan who already allowed location gets a quiet check when the standing loads, and another after registering', async () => {
+  location().hasLocationPermission.mockResolvedValue(true);
+  mockApi.GET.mockImplementation((path: string) =>
+    Promise.resolve(ok(path === '/events/{eventId}' ? detail : eligibility({}))),
+  );
+  mockApi.PUT.mockResolvedValue(ok({}, 201));
+  render(<ShowScreen eventId="ev-1" />);
+
+  await screen.findByText("You'll most likely get a ticket!");
+  await waitFor(() => expect(location().recordLocationCheck).toHaveBeenCalledWith(mockApi, { kind: 'eligibility', allocation_id: 'al-1' }));
+  expect(location().recordLocationCheck).toHaveBeenCalledTimes(1);
+
+  fireEvent.press(screen.getByLabelText('Register'));
+
+  await waitFor(() => expect(location().recordLocationCheck).toHaveBeenCalledWith(mockApi, { kind: 'registration', allocation_id: 'al-1' }));
+  // The standing reloads after registering; that is not a second eligibility check.
+  await waitFor(() => expect(mockApi.GET).toHaveBeenCalledTimes(3));
+  expect(location().recordLocationCheck).toHaveBeenCalledTimes(2);
+});
+
+test('without location permission the show screen records nothing and never asks for it', async () => {
+  mockApi.GET.mockImplementation((path: string) =>
+    Promise.resolve(ok(path === '/events/{eventId}' ? detail : eligibility({}))),
+  );
+  mockApi.PUT.mockResolvedValue(ok({}, 201));
+  render(<ShowScreen eventId="ev-1" />);
+
+  fireEvent.press(await screen.findByLabelText('Register'));
+
+  await waitFor(() => expect(mockApi.PUT).toHaveBeenCalled());
+  await waitFor(() => expect(location().hasLocationPermission).toHaveBeenCalledTimes(2));
+  expect(location().recordLocationCheck).not.toHaveBeenCalled();
 });

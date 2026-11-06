@@ -28,6 +28,13 @@ Migration `0042_fraud_review.sql`, endpoints in `FraudEndpoints.cs`. Tests: `Fra
   eligibility, registered a phone, or connected Spotify in the last day, and every account sharing a device,
   address-day, or Spotify account with one of them. Evidence holds counts, days, and allocation ids only; the staff
   screen shows it as is. `privacy.retention` prunes the tables (`prune_client_signals()`).
+- **Location tied to hub cities** (migration 0057, 2026-11-05; design in `docs/security/hub-location-checks.md`):
+  `POST /me/location-checks` (`LocationChecks.cs`) takes the device position at three moments the fan chooses to
+  share it (setting hubs, opening a show's standing, registering) and stores only the nearest curated city, distances
+  rounded to 10 km, and whether a hub city was within 100 km (`hub_location_checks`, 90 days, deleted with the
+  account, not in the export). A match confirms the hub for the trust score (`hub_confirmed`); rules
+  `hub_location_mismatch` (other) and `impossible_travel` (duplicate_account) run in the sweep. Sharing nothing never
+  lowers a score.
 - **Hidden until reviewed** (migration 0044, decided 2026-10-30): a rule flag isn't shown to the fan until staff uphold
   it (`shown_to_fan_at`). Until then: no notice, nothing at `/me/fraud-review` or in the data download, no appeal, and
   registering is refused with the neutral `registration_unavailable` ("Registration isn't available for your account

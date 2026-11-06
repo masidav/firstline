@@ -34,3 +34,5 @@ followers get on the home feed.
 - Rank and fan counts are computed per request with correlated subqueries over `user_artist_scores`; fine at pilot
   size, a materialised rank would be needed for large artists.
 - No per-artist breakdown of journal or proof counts; the response is one fan, all artists.
+- Listening counts sum the rows of every connected service (Spotify, Apple Music, Tidal; migration 0058), so a fan
+  on two services sees the same liked track counted twice here, while the score takes the strongest signal (ADR 0007).

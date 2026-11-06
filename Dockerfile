@@ -83,7 +83,7 @@ FROM nginxinc/nginx-unprivileged:1.29-alpine AS web-server
 COPY infrastructure/web/default.conf.template /etc/nginx/templates/default.conf.template
 COPY infrastructure/web/security-headers.conf /etc/nginx/snippets/security-headers.conf
 # Defaults for /config.js; the Kubernetes ConfigMap web-config sets the real ones.
-ENV API_URL="" DEV_SIGN_IN=false GOOGLE_WEB_CLIENT_ID="" SPOTIFY_CLIENT_ID=""
+ENV API_URL="" DEV_SIGN_IN=false GOOGLE_WEB_CLIENT_ID="" APPLE_SERVICES_ID="" SPOTIFY_CLIENT_ID="" TIDAL_CLIENT_ID="" APPLE_MUSIC_ENABLED=false
 USER 101
 EXPOSE 8080
 

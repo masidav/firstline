@@ -53,7 +53,14 @@ public sealed class SpotifyTokenProtector
         _ = new SpotifyTokenProtector(options);
     }
 
-    public byte[] Protect(Guid userId, string refreshToken)
+    /// <summary>The purpose Spotify refresh tokens are bound to; another provider's tokens name their own.</summary>
+    public const string SpotifyPurpose = "spotify-refresh-token";
+
+    /// <summary>
+    /// Encrypts a token for one user and purpose (the purpose is authenticated with the user id, so a token stored for
+    /// Spotify does not decrypt as a Tidal one, migration 0058).
+    /// </summary>
+    public byte[] Protect(Guid userId, string refreshToken, string purpose = SpotifyPurpose)
     {
         var key = _currentKey ?? throw new InvalidOperationException("Spotify:TokenKey is not configured.");
         var plaintext = Encoding.UTF8.GetBytes(refreshToken);
@@ -65,12 +72,12 @@ public sealed class SpotifyTokenProtector
 
         using var aes = new AesGcm(key, TagSize);
         aes.Encrypt(nonce, plaintext, output.AsSpan(HeaderSize + NonceSize + TagSize),
-            output.AsSpan(HeaderSize + NonceSize, TagSize), AssociatedData(userId, output.AsSpan(0, HeaderSize)));
+            output.AsSpan(HeaderSize + NonceSize, TagSize), AssociatedData(userId, purpose, output.AsSpan(0, HeaderSize)));
         return output;
     }
 
-    /// <summary>Throws <see cref="CryptographicException"/> when the data is damaged, belongs to another user, or its key is unknown.</summary>
-    public string Unprotect(Guid userId, byte[] data)
+    /// <summary>Throws <see cref="CryptographicException"/> when the data is damaged, belongs to another user or purpose, or its key is unknown.</summary>
+    public string Unprotect(Guid userId, byte[] data, string purpose = SpotifyPurpose)
     {
         if (data.Length < HeaderSize + NonceSize + TagSize || data[0] != Version)
         {
@@ -85,12 +92,12 @@ public sealed class SpotifyTokenProtector
         var plaintext = new byte[data.Length - HeaderSize - NonceSize - TagSize];
         using var aes = new AesGcm(key, TagSize);
         aes.Decrypt(data.AsSpan(HeaderSize, NonceSize), data.AsSpan(HeaderSize + NonceSize + TagSize),
-            data.AsSpan(HeaderSize + NonceSize, TagSize), plaintext, AssociatedData(userId, data.AsSpan(0, HeaderSize)));
+            data.AsSpan(HeaderSize + NonceSize, TagSize), plaintext, AssociatedData(userId, purpose, data.AsSpan(0, HeaderSize)));
         return Encoding.UTF8.GetString(plaintext);
     }
 
-    private static byte[] AssociatedData(Guid userId, ReadOnlySpan<byte> header) =>
-        [.. header, .. Encoding.UTF8.GetBytes($"spotify-refresh-token:{userId:D}")];
+    private static byte[] AssociatedData(Guid userId, string purpose, ReadOnlySpan<byte> header) =>
+        [.. header, .. Encoding.UTF8.GetBytes($"{purpose}:{userId:D}")];
 
     // Not secret: identifies which configured key encrypted a token.
     private static uint KeyId(byte[] key) => BitConverter.ToUInt32(SHA256.HashData(key), 0);

@@ -33,6 +33,13 @@ name: Sign up
       id: hub-cities-continue
 - tapOn:
     id: hub-cities-continue
+# The optional location step after saving: skip it (the system permission prompt is not part of this flow).
+- extendedWaitUntil:
+    visible:
+      id: hub-location-not-now
+    timeout: 30000
+- tapOn:
+    id: hub-location-not-now
 - extendedWaitUntil:
     visible:
       id: home-title

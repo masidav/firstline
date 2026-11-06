@@ -4,8 +4,9 @@ import type { Credential } from '../../auth/session';
 
 // Sign-in with Google or Apple, the parts that are the same on every platform. The app gets an identity token
 // from the provider and sends it to POST /auth/sessions (docs/adr/0003-authentication.md); the API checks the
-// signature, the audience (our client IDs), and the nonce. The web uses a full-page redirect to Google and back
-// (googleSignIn.ts); the native app opens an auth session (googleSignIn.native.ts) or the Apple sheet (appleSignIn.ts).
+// signature, the audience (our client IDs), and the nonce. The web uses a full-page redirect to the provider and back
+// (googleSignIn.ts, appleSignIn.ts); the native app opens an auth session (googleSignIn.native.ts) or the Apple sheet
+// (appleSignIn.native.ts).
 
 export type SignInResult = { ok: true; credential: Credential } | { ok: false; message: string };
 
@@ -53,15 +54,18 @@ export function googleAuthorizeUrl(options: {
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }
 
-export interface GoogleRedirectParams {
+export interface ProviderRedirectParams {
   id_token?: string;
   code?: string;
   state?: string;
   error?: string;
 }
 
-/** The redirect's fragment and query (#id_token=&state=, ?code=&state=, or ?error=), parsed by hand: React Native's URL support is partial. */
-export function parseGoogleRedirect(url: string): GoogleRedirectParams {
+/**
+ * The redirect's fragment and query (#id_token=&state=, ?code=&state=, or ?error=), parsed by hand: React Native's URL
+ * support is partial. The same shape for Google's redirect and for the API's redirect back from Apple.
+ */
+export function parseProviderRedirect(url: string): ProviderRedirectParams {
   const [beforeFragment, fragment = ''] = url.split('#', 2);
   const query = beforeFragment?.split('?', 2)[1] ?? '';
   const params: Record<string, string> = {};
@@ -78,7 +82,7 @@ export function parseGoogleRedirect(url: string): GoogleRedirectParams {
  * `exchange` turns a code into an ID token (native only).
  */
 export async function completeGoogleSignIn(
-  params: GoogleRedirectParams,
+  params: ProviderRedirectParams,
   pending: PendingGoogleSignIn | null,
   exchange?: (code: string, pending: PendingGoogleSignIn) => Promise<string>,
 ): Promise<SignInResult> {
@@ -101,6 +105,73 @@ export async function completeGoogleSignIn(
   } catch {
     return { ok: false, message: "Couldn't finish signing in with Google. Try again." };
   }
+}
+
+/** Kept between leaving for Apple and coming back to /apple-callback (web). */
+export interface PendingAppleSignIn {
+  state: string;
+  nonce: string;
+}
+
+/**
+ * What re-authenticating with Apple before account deletion yields: a fresh authorization code for the API to revoke
+ * the sign-in, or why there is none. `failed` lets deletion go ahead without it, as the API allows.
+ */
+export type AppleReauthentication = { code: string } | 'cancelled' | 'failed';
+
+export const APPLE_SCOPES = 'name email';
+
+/**
+ * Apple's authorization URL for the web. Apple only returns the identity token with the email through a form POST,
+ * so the redirect URI is the API's callback, which sends the browser on to `/apple-callback` with the token in the
+ * fragment. Apple puts the nonce in the token as given here, so it is the raw one (the API accepts raw or SHA-256).
+ */
+export function appleAuthorizeUrl(options: { servicesId: string; redirectUri: string; state: string; nonce: string }): string {
+  const params = new URLSearchParams({
+    client_id: options.servicesId,
+    redirect_uri: options.redirectUri,
+    response_type: 'code id_token',
+    response_mode: 'form_post',
+    scope: APPLE_SCOPES,
+    state: options.state,
+    nonce: options.nonce,
+  });
+  return `https://appleid.apple.com/auth/authorize?${params.toString()}`;
+}
+
+/**
+ * The `state` of Apple's web flow: base64url JSON (no padding) with the app's origin (`o`, where the API sends the
+ * browser back; it must be an allowed CORS origin) and a random part (`s`) only this tab knows. Compared whole on
+ * the way back.
+ */
+export function appleState(origin: string, random: string): string {
+  return base64Url(JSON.stringify({ o: origin, s: random }));
+}
+
+function base64Url(text: string): string {
+  let binary = '';
+  for (const byte of new TextEncoder().encode(text)) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/**
+ * Handles the API's redirect back from Apple: checks the state matches the attempt this tab started (so another site
+ * can't sign us in to an account of its choosing), then returns the credential for POST /auth/sessions.
+ */
+export function completeAppleSignIn(params: ProviderRedirectParams, pending: PendingAppleSignIn | null): SignInResult {
+  if (params.error) {
+    return {
+      ok: false,
+      message: params.error === 'user_cancelled_authorize' ? "You didn't continue with Apple." : `Apple said: ${params.error}.`,
+    };
+  }
+  if (!pending || !params.state || params.state !== pending.state) {
+    return { ok: false, message: "This Apple sign-in expired or didn't start here. Try again." };
+  }
+  if (!params.id_token) {
+    return { ok: false, message: "Apple didn't return a sign-in. Try again." };
+  }
+  return { ok: true, credential: { provider: 'apple', idToken: params.id_token, nonce: pending.nonce } };
 }
 
 /** A message for a failed POST /auth/sessions. */

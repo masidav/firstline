@@ -13,7 +13,8 @@ import { googleClientId, startGoogleSignIn } from './googleSignIn';
 import type { SignInOutcome } from './providerSignIn';
 
 /**
- * Sign in with Google (web and native) or Apple (iOS), plus the developer sign-in when the build enables it.
+ * Sign in with Google (web and native) or Apple (iOS, and the web with a Services ID), plus the developer sign-in
+ * when the build enables it.
  * Signing in sets the session state; the route redirects once it is `signedIn`.
  */
 export function SignInScreen({ initialCredential = null }: { initialCredential?: Credential | null }) {

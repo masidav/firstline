@@ -217,23 +217,24 @@ public sealed partial class SpotifySyncJob(
             -- Updated in place (not replaced), so followed_since, which the database sets when the follow first
             -- appears, survives the daily re-sync, and so does followed_since_baseline (the database takes it only
             -- when the follow first appears).
-            INSERT INTO user_artist_signals (user_id, artist_id, liked_tracks, playlist_tracks, distinct_albums,
+            -- Only this provider's rows (migration 0058): Apple Music and Tidal keep theirs.
+            INSERT INTO user_artist_signals (user_id, provider, artist_id, liked_tracks, playlist_tracks, distinct_albums,
                                              top_artist_rank, recent_plays, top_artist_rank_short, top_artist_rank_long,
                                              top_tracks, playlists_featuring, dedicated_playlists, followed,
                                              followed_since_baseline)
-            SELECT @userId, x.*, x.followed AND x.artist_id = ANY(@unseenArtistIds)
+            SELECT @userId, 'spotify', x.*, x.followed AND x.artist_id = ANY(@unseenArtistIds)
             FROM unnest(@artistIds, @liked, @playlist, @albums, @ranks, @recent, @ranksShort, @ranksLong,
                         @topTracks, @featuring, @dedicated, @followed)
                  AS x (artist_id, liked_tracks, playlist_tracks, distinct_albums, top_artist_rank, recent_plays,
                        top_artist_rank_short, top_artist_rank_long, top_tracks, playlists_featuring, dedicated_playlists, followed)
-            ON CONFLICT (user_id, artist_id) DO UPDATE
+            ON CONFLICT (user_id, provider, artist_id) DO UPDATE
             SET liked_tracks = EXCLUDED.liked_tracks, playlist_tracks = EXCLUDED.playlist_tracks,
                 distinct_albums = EXCLUDED.distinct_albums, top_artist_rank = EXCLUDED.top_artist_rank,
                 recent_plays = EXCLUDED.recent_plays, top_artist_rank_short = EXCLUDED.top_artist_rank_short,
                 top_artist_rank_long = EXCLUDED.top_artist_rank_long, top_tracks = EXCLUDED.top_tracks,
                 playlists_featuring = EXCLUDED.playlists_featuring, dedicated_playlists = EXCLUDED.dedicated_playlists,
                 followed = EXCLUDED.followed, followed_since_baseline = EXCLUDED.followed_since_baseline, synced_at = now();
-            DELETE FROM user_artist_signals WHERE user_id = @userId AND artist_id <> ALL (@artistIds);
+            DELETE FROM user_artist_signals WHERE user_id = @userId AND provider = 'spotify' AND artist_id <> ALL (@artistIds);
             SELECT request_artist_rescore(a) FROM unnest(@artistIds) a;
 
             -- Likes and playlist tracks: rows gone from the library are removed, rows still there take Spotify's
@@ -241,7 +242,7 @@ public sealed partial class SpotifySyncJob(
             -- added (the database dates a playlist row without added_at as first seen now; baseline when its artist is
             -- one the previous sync could not have seen).
             DELETE FROM user_track_likes l
-            WHERE l.user_id = @userId
+            WHERE l.user_id = @userId AND l.provider = 'spotify'
               AND NOT EXISTS (SELECT 1 FROM unnest(@trackIds, @sources) AS x (spotify_track_id, source)
                               JOIN tracks t ON t.spotify_track_id = x.spotify_track_id
                               WHERE t.id = l.track_id AND x.source = l.source);
@@ -249,25 +250,25 @@ public sealed partial class SpotifySyncJob(
             SET saved_at = COALESCE(x.saved_at, l.saved_at)
             FROM unnest(@trackIds, @sources, @savedAt) AS x (spotify_track_id, source, saved_at)
             JOIN tracks t ON t.spotify_track_id = x.spotify_track_id
-            WHERE l.user_id = @userId AND l.track_id = t.id AND l.source = x.source;
-            INSERT INTO user_track_likes (user_id, track_id, source, saved_at, saved_at_baseline)
-            SELECT @userId, t.id, x.source, x.saved_at,
+            WHERE l.user_id = @userId AND l.provider = 'spotify' AND l.track_id = t.id AND l.source = x.source;
+            INSERT INTO user_track_likes (user_id, provider, track_id, source, saved_at, saved_at_baseline)
+            SELECT @userId, 'spotify', t.id, x.source, x.saved_at,
                    x.source = 'playlist' AND x.saved_at IS NULL AND al.artist_id = ANY(@unseenArtistIds)
             FROM unnest(@trackIds, @sources, @savedAt) AS x (spotify_track_id, source, saved_at)
             JOIN tracks t ON t.spotify_track_id = x.spotify_track_id
             JOIN albums al ON al.id = t.album_id
             ON CONFLICT DO NOTHING;
 
-            DELETE FROM user_album_saves WHERE user_id = @userId;
-            INSERT INTO user_album_saves (user_id, album_id, saved_at)
-            SELECT @userId, al.id, x.saved_at
+            DELETE FROM user_album_saves WHERE user_id = @userId AND provider = 'spotify';
+            INSERT INTO user_album_saves (user_id, provider, album_id, saved_at)
+            SELECT @userId, 'spotify', al.id, x.saved_at
             FROM unnest(@albumIds, @albumSavedAt) AS x (spotify_album_id, saved_at)
             JOIN albums al ON al.spotify_album_id = x.spotify_album_id
             ON CONFLICT DO NOTHING;
 
             -- The last 50 plays seed the ledger; the hourly poll extends it from the cursor.
-            INSERT INTO user_plays (user_id, artist_id, spotify_track_id, played_at)
-            SELECT @userId, * FROM unnest(@playArtistIds, @playTrackIds, @playedAt)
+            INSERT INTO user_plays (user_id, provider, artist_id, spotify_track_id, played_at)
+            SELECT @userId, 'spotify', * FROM unnest(@playArtistIds, @playTrackIds, @playedAt)
             ON CONFLICT DO NOTHING;
 
             -- A sync requested while this one ran stays queued.

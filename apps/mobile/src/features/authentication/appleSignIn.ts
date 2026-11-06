@@ -1,62 +1,68 @@
-import * as AppleAuthentication from 'expo-apple-authentication';
-import Constants from 'expo-constants';
+import { config } from '../../config';
+import { randomString } from './crypto';
+import {
+  type AppleReauthentication,
+  appleAuthorizeUrl,
+  appleState,
+  type PendingAppleSignIn,
+  type SignInOutcome,
+} from './providerSignIn';
 
-import { randomString, sha256Hex } from './crypto';
-import type { SignInOutcome } from './providerSignIn';
+// Web: Sign in with Apple by a full-page redirect, like Google (googleSignIn.ts), with one difference. Apple only
+// returns the identity token with the email through a form POST, so it posts to the API (POST /v1/auth/apple/callback),
+// which sends the browser on to /apple-callback with the token in the URL fragment. The `state` carries this app's
+// origin for that redirect plus a random part only this tab knows. The native app shows Apple's sheet instead
+// (appleSignIn.native.ts). Needs a Services ID (config.appleServicesId) whose return URL is the API's callback (README).
 
-// Sign in with Apple: iOS shows Apple's sheet and hands back an identity token. On the web and Android the module
-// reports itself unavailable and the button is not shown (Apple's web flow needs a Services ID and a server-side
-// form post, neither of which exists yet; see the README).
+export type { AppleReauthentication };
 
-/**
- * True on an iPhone or iPad with Sign in with Apple; false on the web and Android, and in a build made without the
- * entitlement (a personal-team build, app.config.ts), where Apple's sheet would open and then fail.
- */
+const PENDING_KEY = 'fandom-score.apple-sign-in';
+
+/** True when a Services ID is configured; empty hides the button. */
 export function isAppleSignInAvailable(): Promise<boolean> {
-  if (appleSignInConfigured() === false) return Promise.resolve(false);
-  return AppleAuthentication.isAvailableAsync().catch(() => false);
+  return Promise.resolve(Boolean(config.appleServicesId));
 }
 
-function appleSignInConfigured(): boolean | undefined {
-  return (Constants.expoConfig?.extra as { appleSignIn?: boolean } | undefined)?.appleSignIn;
+/** Where Apple posts the result: the API, registered as the Services ID's return URL. */
+export function appleCallbackUri(): string {
+  return `${apiOrigin()}/v1/auth/apple/callback`;
 }
 
-/** Shows Apple's sheet and returns the credential for POST /auth/sessions. */
+/** config.apiUrl (`https://api.example/v1`) without its `/v1`. */
+function apiOrigin(): string {
+  return config.apiUrl.replace(/\/+$/, '').replace(/\/v1$/, '');
+}
+
+/** Leaves the app for Apple's sign-in page; /apple-callback finishes the sign-in. */
 export async function startAppleSignIn(): Promise<SignInOutcome> {
-  // Apple puts the SHA-256 of what it is given into the token; the API hashes the raw nonce to compare.
-  const nonce = randomString(32);
+  // On the web Apple puts the nonce in the token as given (the API accepts it raw or hashed), so it goes as is.
+  const pending: PendingAppleSignIn = { state: appleState(window.location.origin, randomString(32)), nonce: randomString(32) };
+  const url = appleAuthorizeUrl({
+    servicesId: config.appleServicesId,
+    redirectUri: appleCallbackUri(),
+    state: pending.state,
+    nonce: pending.nonce,
+  });
+  sessionStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+  window.location.assign(url);
+  return 'redirecting';
+}
+
+/** The attempt this tab started, removed as it is read so a token is only ever taken once. */
+export function takePendingAppleSignIn(): PendingAppleSignIn | null {
   try {
-    const credential = await AppleAuthentication.signInAsync({
-      requestedScopes: [AppleAuthentication.AppleAuthenticationScope.FULL_NAME, AppleAuthentication.AppleAuthenticationScope.EMAIL],
-      nonce: await sha256Hex(nonce),
-    });
-    if (!credential.identityToken) {
-      return { ok: false, message: "Apple didn't return a sign-in. Try again." };
-    }
-    return { ok: true, credential: { provider: 'apple', idToken: credential.identityToken, nonce } };
-  } catch (error) {
-    if (isCancelled(error)) {
-      return 'cancelled';
-    }
-    return { ok: false, message: "Couldn't sign in with Apple. Try again." };
+    const value = sessionStorage.getItem(PENDING_KEY);
+    sessionStorage.removeItem(PENDING_KEY);
+    return value ? (JSON.parse(value) as PendingAppleSignIn) : null;
+  } catch {
+    return null;
   }
 }
-
-export type AppleReauthentication = { code: string } | 'cancelled' | 'failed';
 
 /**
- * Before deleting an account that signs in with Apple: a fresh authorization code, which the API uses to revoke
- * the app's Apple sign-in (App Store requirement). `failed` lets deletion go ahead without it, as the API allows.
+ * Before deleting an account on the web: Apple's web flow can't hand back a fresh authorization code in place, so
+ * deletion goes ahead without one, which the API allows (session.deleteAccount).
  */
-export async function reauthenticateWithApple(): Promise<AppleReauthentication> {
-  try {
-    const credential = await AppleAuthentication.signInAsync();
-    return credential.authorizationCode ? { code: credential.authorizationCode } : 'failed';
-  } catch (error) {
-    return isCancelled(error) ? 'cancelled' : 'failed';
-  }
-}
-
-function isCancelled(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'ERR_REQUEST_CANCELED';
+export function reauthenticateWithApple(): Promise<AppleReauthentication> {
+  return Promise.resolve('failed');
 }

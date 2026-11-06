@@ -48,7 +48,7 @@ export async function codeChallenge(verifier: string): Promise<string> {
 }
 
 /** The redirect's query (?code=&state= or ?error=), parsed by hand: React Native's URL support is partial. */
-function queryParams(url: string): { code?: string; state?: string; error?: string } {
+export function queryParams(url: string): { code?: string; state?: string; error?: string } {
   const query = url.split('#')[0]?.split('?')[1] ?? '';
   const params: Record<string, string> = {};
   for (const pair of query.split('&')) {

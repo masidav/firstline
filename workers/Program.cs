@@ -7,8 +7,10 @@ using FandomScore.Worker.Fans;
 using FandomScore.Worker.Fraud;
 using FandomScore.Worker.GrabBag;
 using FandomScore.Worker.ImageRedaction;
+using FandomScore.MusicProviders;
 using FandomScore.Spotify;
 using FandomScore.Storage;
+using FandomScore.Worker.MusicSync;
 using FandomScore.Worker.Jobs;
 using FandomScore.Worker.Notifications;
 using FandomScore.Worker.Scoring;
@@ -37,6 +39,7 @@ builder.Services.Configure<HealthOptions>(builder.Configuration.GetSection(Healt
 builder.Services.AddSingleton<WorkerHeartbeat>();
 builder.Services.AddHostedService<WorkerHealthServer>();
 builder.Services.AddSpotify(builder.Configuration);
+builder.Services.AddMusicProviders(builder.Configuration);
 builder.Services.Configure<BaselineOptions>(builder.Configuration.GetSection(BaselineOptions.Section));
 builder.Services.AddSingleton<CatalogLoader>();
 
@@ -65,6 +68,8 @@ builder.Services.AddSingleton<IJobHandler, RedactionSweepJob>();
 builder.Services.AddSingleton<IJobHandler, SpotifySyncJob>();
 builder.Services.AddSingleton<IJobHandler, ScheduleSpotifySyncsJob>();
 builder.Services.AddSingleton<IJobHandler, PollPlaysJob>();
+builder.Services.AddSingleton<IJobHandler, MusicSyncJob>();
+builder.Services.AddSingleton<IJobHandler, ScheduleMusicSyncsJob>();
 builder.Services.AddSingleton<IJobHandler, ArtistOnboardingJob>();
 builder.Services.AddSingleton<IJobHandler, CatalogRefreshJob>();
 builder.Services.AddSingleton<IJobHandler, ScheduleCatalogRefreshesJob>();

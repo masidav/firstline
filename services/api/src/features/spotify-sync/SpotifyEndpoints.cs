@@ -114,14 +114,15 @@ public static partial class SpotifyEndpoints
             "SELECT spotify_user_id FROM spotify_connections WHERE user_id = @userId FOR UPDATE", new { userId }, transaction);
         if (previous is not null && previous != account.Id)
         {
-            // A different Spotify account: data synced from the old one must not count for the new one.
+            // A different Spotify account: data synced from the old one must not count for the new one. Rows from
+            // other services (migration 0058) stay.
             await connection.ExecuteAsync(
                 """
                 DELETE FROM spotify_connections WHERE user_id = @userId;
-                DELETE FROM user_track_likes WHERE user_id = @userId;
-                DELETE FROM user_artist_signals WHERE user_id = @userId;
-                DELETE FROM user_album_saves WHERE user_id = @userId;
-                DELETE FROM user_plays WHERE user_id = @userId;
+                DELETE FROM user_track_likes WHERE user_id = @userId AND provider = 'spotify';
+                DELETE FROM user_artist_signals WHERE user_id = @userId AND provider = 'spotify';
+                DELETE FROM user_album_saves WHERE user_id = @userId AND provider = 'spotify';
+                DELETE FROM user_plays WHERE user_id = @userId AND provider = 'spotify';
                 """,
                 new { userId }, transaction);
         }
@@ -167,10 +168,10 @@ public static partial class SpotifyEndpoints
         await connection.ExecuteAsync(
             """
             DELETE FROM spotify_connections WHERE user_id = @userId;
-            DELETE FROM user_track_likes WHERE user_id = @userId;
-            DELETE FROM user_artist_signals WHERE user_id = @userId;
-            DELETE FROM user_album_saves WHERE user_id = @userId;
-            DELETE FROM user_plays WHERE user_id = @userId;
+            DELETE FROM user_track_likes WHERE user_id = @userId AND provider = 'spotify';
+            DELETE FROM user_artist_signals WHERE user_id = @userId AND provider = 'spotify';
+            DELETE FROM user_album_saves WHERE user_id = @userId AND provider = 'spotify';
+            DELETE FROM user_plays WHERE user_id = @userId AND provider = 'spotify';
             """,
             new { userId = user.UserId() }, transaction);
         await transaction.CommitAsync(cancellationToken);

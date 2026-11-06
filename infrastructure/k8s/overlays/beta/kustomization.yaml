@@ -55,6 +55,12 @@ configMapGenerator:
       - Auth__Google__ClientIds=494880048811-14ch6rdq1p4vuatcebg2qq187dkgm4iv.apps.googleusercontent.com
       - Spotify__ClientId=e2d216438a484d2299cfdc6608ac41e7
       - Spotify__RedirectUris=https://app.beta.firstline-5730kl.com/spotify-callback
+      # Apple Music and Tidal (ADR 0007): off until the owner fills these in (docs/OWNER_TODO.md, section B). The
+      # MusicKit private key is a secret (MusicProviders__AppleMusic__PrivateKey, secrets.yaml) once it exists.
+      - MusicProviders__AppleMusic__TeamId=
+      - MusicProviders__AppleMusic__KeyId=
+      - MusicProviders__Tidal__ClientId=
+      - MusicProviders__Tidal__RedirectUris=https://app.beta.firstline-5730kl.com/tidal-callback
       # The two web apps call the API from their own hostnames (gateway.yaml).
       - Cors__AllowedOrigins=https://app.beta.firstline-5730kl.com,https://promoters.beta.firstline-5730kl.com
       # Buckets from terraform output buckets: Terraform names them after the project ("<project_id>-quarantine").

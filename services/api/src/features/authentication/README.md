@@ -10,6 +10,7 @@ Design and reasoning: [ADR 0003](../../../../../docs/adr/0003-authentication.md)
 | `POST /v1/auth/refresh` | none, rate limited | Rotates the refresh token. Reusing an old one revokes the session. |
 | `DELETE /v1/auth/sessions/current` | bearer | Ends this device's session. |
 | `POST /v1/webhooks/apple` | Apple-signed JWT | Sign in with Apple notifications: `consent-revoked` signs out everywhere, `account-delete` deletes the account. |
+| `POST /v1/auth/apple/callback` | none, rate limited | Sign in with Apple on the web (2026-11-05): Apple's `form_post` lands here and is handed to the app at `<origin>/apple-callback#id_token=…&state=…`; the origin comes from `state` and must be in `Cors__AllowedOrigins`. Nothing is validated or stored; the app finishes with `POST /auth/sessions`. |
 
 ## Files
 | File | Role |
@@ -19,6 +20,7 @@ Design and reasoning: [ADR 0003](../../../../../docs/adr/0003-authentication.md)
 | `SessionService.cs` | Sessions, refresh-token rotation and reuse detection, access-token issuing. |
 | `AppleClient.cs` | Revokes the Apple sign-in on account deletion (code exchange, then revoke). |
 | `AppleNotificationEndpoints.cs` | `POST /v1/webhooks/apple`. |
+| `AppleWebEndpoints.cs` | `POST /v1/auth/apple/callback`: the web relay (303 with the token in the fragment; origin allow-listed from `state`). |
 | `IdentityTokenValidator.cs` | Checks Apple/Google identity tokens against their OpenID configuration (`IIdentityTokenValidator`). |
 | `AuthOptions.cs` | `Auth` configuration section. |
 
@@ -28,6 +30,9 @@ Tables: `auth_identities`, `auth_sessions`, `refresh_tokens` (`database/migratio
 `Auth__SigningKey` (required secret), `Auth__Apple__ClientIds`, `Auth__Google__ClientIds`, and for Apple revocation
 `Auth__Apple__TeamId`, `Auth__Apple__KeyId`, `Auth__Apple__PrivateKey` (secret). See `.env.example`
 and the ADR. With no client IDs set, sign-in returns `422` for that provider; tests replace the validator.
+For Apple on the web: `Auth__Apple__ClientIds` must include the Services ID, `Cors__AllowedOrigins` the web app's
+origin, and the Services ID's return URL in the Apple Developer account is `{App__PublicOrigin}/v1/auth/apple/callback`
+(Apple verifies the domain).
 
 ## Tests
 - `tests/FandomScore.Tests/AuthApiTests.cs`: sign-in (a nonce is required), account creation rules, conflicts, token checks, rotation

@@ -58,11 +58,26 @@ add that scheme to `app.json`), and the app exchanges it with PKCE (`googleSignI
 IDs in `Auth__Google__ClientIds`. Not yet run on a device (no iOS build yet).
 
 ## Sign in with Apple
-`expo-apple-authentication` on iOS: Apple's sheet returns an identity token, which goes to the same endpoint with
+**iOS:** `expo-apple-authentication`: Apple's sheet returns an identity token, which goes to the same endpoint with
 the raw nonce (Apple gets its SHA-256). Deleting an Apple account first shows the sheet again and sends the fresh
 authorization code so the API can revoke the sign-in (App Store rule). Needs the Apple Developer Program, the
-bundle ID in `Auth__Apple__ClientIds`, and an iOS build; the button is hidden on the web and Android. Apple's web
-flow (Services ID plus a server-side form post) is not built.
+bundle ID in `Auth__Apple__ClientIds`, and an iOS build. Hidden on Android.
+
+**Web:** the app sends the fan to `appleid.apple.com` (a full-page redirect, like Google). Apple only returns the
+token with the email through a form post, so it posts to the API (`POST /v1/auth/apple/callback`), which sends the
+browser on to `/apple-callback#id_token=…&state=…`; the app checks the `state` this tab started and finishes with
+`POST /v1/auth/sessions` like any other sign-in (`src/features/authentication/appleSignIn.ts`).
+1. Apple developer portal → Identifiers → a **Services ID** (e.g. `com.firstline.fandomscore.web`) with Sign in
+   with Apple enabled, grouped with the app's App ID. In its configuration, register the API's domain (Apple
+   verifies it) and the return URL `{API origin}/v1/auth/apple/callback`, e.g.
+   `https://api.beta.firstline-5730kl.com/v1/auth/apple/callback` (the API's `App__PublicOrigin`). Apple accepts
+   HTTPS only, so locally the API needs a tunnel.
+2. Repo root `.env`: `Auth__Apple__ClientIds` lists the Services ID next to the bundle ID, and `Cors__AllowedOrigins`
+   the app's origin (the API only sends the browser back to an allowed origin).
+3. `apps/mobile/.env.local`: `EXPO_PUBLIC_APPLE_SERVICES_ID=<the Services ID>` (`APPLE_SERVICES_ID` in the hosted
+   image's environment). Empty hides the button on the web.
+Deleting an Apple account on the web can't show Apple's sheet for a fresh authorization code, so the deletion goes
+ahead without revoking the sign-in (the API allows it). Not yet tried against a real Services ID.
 
 ## Connect Spotify
 Spotify only redirects back to HTTPS addresses or the literal `http://127.0.0.1` (not `localhost`), so for
@@ -83,6 +98,13 @@ How it works: the app makes a PKCE verifier, sends the browser to Spotify, and o
 the `state` matches what this tab started before sending `code` + `code_verifier` to `PUT /v1/me/spotify`. The
 server does the exchange; no Spotify token ever reaches the browser. Code: `src/features/spotify/`.
 
+## Connect Apple Music and Tidal
+Profile → **Other music services** (`/music`). Tidal uses the same PKCE redirect as Spotify (`/tidal-callback`,
+`EXPO_PUBLIC_TIDAL_CLIENT_ID` = the API's `MusicProviders__Tidal__ClientId`, redirect URIs in
+`MusicProviders__Tidal__RedirectUris` and the TIDAL dashboard). Apple Music connects on the web through MusicKit JS
+(`EXPO_PUBLIC_APPLE_MUSIC_ENABLED=true`; the API needs its MusicKit key); the iOS app has no MusicKit module yet.
+Details: `src/features/music/README.md`, design: `docs/adr/0007-music-providers.md`.
+
 ## Publish a static build
 ```bash
 EXPO_PUBLIC_API_URL=https://api.example.com/v1 npm run build:web   # writes dist/
@@ -100,7 +122,7 @@ at startup from `/config.js`, which nginx writes from its environment, so one im
 ## Layout
 | Path | Contents |
 | --- | --- |
-| `src/app/` | Routes (expo-router): `index` (routing by session state), `sign-in`, `google-callback`, `profile`, `spotify`, `spotify-callback`. |
+| `src/app/` | Routes (expo-router): `index` (routing by session state), `sign-in`, `google-callback`, `apple-callback`, `profile`, `spotify`, `spotify-callback`, `music`, `tidal-callback`. |
 | `src/auth/` | `SessionManager` (tokens, single-flight refresh, sign-in/out, deletion), `SessionProvider`, token storage. |
 | `src/api/` | `schema.d.ts` (generated, don't edit), `client.ts` (typed client, `ApiError`), `errors.ts` (messages). |
 | `src/features/<feature>/` | Feature UI, e.g. `authentication/SignInScreen` (Google, Apple, developer sign-in), `settings/ProfileScreen`. |
@@ -136,7 +158,7 @@ e2e/run.sh             # end-to-end journeys in a browser against the API and a 
 ## Building the iOS app
 The native project is generated from `app.json` and `app.config.ts` (`expo prebuild`); nothing under `ios/` is
 hand-edited or committed. What's set: bundle ID `com.firstline.fandomscore`, Sign in with Apple, push
-(`aps-environment`), the photo-library purpose string, the `fandomscore` URL scheme (Spotify's redirect
+(`aps-environment`), the photo-library and location (when in use only) purpose strings, the `fandomscore` URL scheme (Spotify's redirect
 `fandomscore://spotify-callback`), Google's reversed-client-ID scheme when `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` is
 set, portrait only, iPhone only, and the export-compliance answer (`usesNonExemptEncryption: false`, the app only
 uses HTTPS). CI runs `npm run check:ios` on every push: the prebuild and an iOS JavaScript bundle, which is as far
@@ -205,4 +227,4 @@ the app) and EAS Update (over-the-air JavaScript fixes) are not set up.
 
 ## Not done yet
 Everything native is written but not run on a device (needs the Apple program and an iOS build; see above). Apple's
-web flow. Android is configured (`android.package`, adaptive icon) but has never been built.
+web flow is built but not yet tried against a real Services ID. Android is configured (`android.package`, adaptive icon) but has never been built.

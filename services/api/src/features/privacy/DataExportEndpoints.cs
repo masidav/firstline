@@ -91,30 +91,35 @@ public static class DataExportEndpoints
                        top_artists_added, plays_polled_at
                 FROM spotify_connections WHERE user_id = @me
                 """)),
+            ("music_connections", Rows(
+                """
+                SELECT provider, provider_user_id, scopes, storefront, connected_at, last_synced_at, sync_state, sync_error, tracked_artists_found
+                FROM music_connections WHERE user_id = @me ORDER BY provider
+                """)),
             ("artist_signals", Rows(
                 """
-                SELECT a.id AS artist_id, a.name AS artist_name, s.liked_tracks, s.playlist_tracks, s.distinct_albums,
+                SELECT s.provider, a.id AS artist_id, a.name AS artist_name, s.liked_tracks, s.playlist_tracks, s.distinct_albums,
                        s.top_artist_rank, s.top_artist_rank_short, s.top_artist_rank_long, s.top_tracks, s.playlists_featuring,
                        s.dedicated_playlists, s.followed, s.followed_since, s.followed_since_baseline, s.recent_plays, s.synced_at
-                FROM user_artist_signals s JOIN artists a ON a.id = s.artist_id WHERE s.user_id = @me ORDER BY a.name
+                FROM user_artist_signals s JOIN artists a ON a.id = s.artist_id WHERE s.user_id = @me ORDER BY a.name, s.provider
                 """)),
             ("saved_tracks", Rows(
                 """
-                SELECT t.spotify_track_id, t.title AS track_title, al.title AS album_title, a.name AS artist_name, l.source, l.saved_at,
+                SELECT l.provider, t.spotify_track_id, t.title AS track_title, al.title AS album_title, a.name AS artist_name, l.source, l.saved_at,
                        l.saved_at_baseline
                 FROM user_track_likes l JOIN tracks t ON t.id = l.track_id JOIN albums al ON al.id = t.album_id
                 JOIN artists a ON a.id = al.artist_id
-                WHERE l.user_id = @me ORDER BY a.name, al.title, t.title, l.source
+                WHERE l.user_id = @me ORDER BY a.name, al.title, t.title, l.source, l.provider
                 """)),
             ("saved_albums", Rows(
                 """
-                SELECT al.spotify_album_id, al.title AS album_title, a.name AS artist_name, s.saved_at
+                SELECT s.provider, al.spotify_album_id, al.title AS album_title, a.name AS artist_name, s.saved_at
                 FROM user_album_saves s JOIN albums al ON al.id = s.album_id JOIN artists a ON a.id = al.artist_id
-                WHERE s.user_id = @me ORDER BY a.name, al.title
+                WHERE s.user_id = @me ORDER BY a.name, al.title, s.provider
                 """)),
             ("plays", Rows(
                 """
-                SELECT p.played_at, p.spotify_track_id,
+                SELECT p.provider, p.played_at, p.spotify_track_id,
                        (SELECT t.title FROM tracks t WHERE t.spotify_track_id = p.spotify_track_id) AS track_title,
                        a.name AS artist_name
                 FROM user_plays p JOIN artists a ON a.id = p.artist_id WHERE p.user_id = @me ORDER BY p.played_at DESC

@@ -1,13 +1,14 @@
 import { router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { type components, unwrap } from '../../api/client';
+import { type Api, type components, unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { Avatar } from '../../ui/Avatar';
 import { Body, Button, ErrorText, Field, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
+import { hasLocationPermission, recordLocationCheck } from '../hub-cities/locationCheck';
 import { openTracked } from '../links/openLink';
 import { saleLines, statusLabel, ticketLink, whenLabel } from './showInfo';
 import { formatPrice, standingMessage } from './standing';
@@ -27,6 +28,16 @@ const reasons: Record<string, string> = {
   already_registered: "You're registered for another allocation of this show.",
   named_as_guest: "Someone named you as their +1 for this show, so you can't register yourself. Decline it if you didn't agree.",
 };
+
+/**
+ * A location check in the background, part of confirming the fan's hub city (src/features/hub-cities/README.md):
+ * only for a fan who already allowed location (this screen never prompts), and never waited for or shown.
+ */
+function checkLocationQuietly(api: Api, kind: 'eligibility' | 'registration', allocationId: string): void {
+  void hasLocationPermission()
+    .then((allowed) => (allowed ? recordLocationCheck(api, { kind, allocation_id: allocationId }) : null))
+    .catch(() => null);
+}
 
 /** A show and its fan allocations (GET /events/{id}), with registration for each. */
 export function ShowScreen({ eventId }: { eventId: string }) {
@@ -119,6 +130,14 @@ function AllocationCard({ allocation }: { allocation: Allocation }) {
   useEffect(() => {
     if (allocation.status !== 'cancelled') void load(false);
   }, [load, allocation.status]);
+
+  // Once per open allocation, when its standing first loads (reloads after registering don't count again).
+  const checkedEligibility = useRef(false);
+  useEffect(() => {
+    if (!eligibility || allocation.status !== 'open' || checkedEligibility.current) return;
+    checkedEligibility.current = true;
+    checkLocationQuietly(session.api, 'eligibility', id);
+  }, [eligibility, allocation.status, session, id]);
 
   const act = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -230,12 +249,12 @@ function AllocationCard({ allocation }: { allocation: Allocation }) {
           busy={busy}
           onPress={() =>
             void act(async () => {
-              unwrap(
-                await session.api.PUT('/allocations/{allocationId}/registration', {
-                  params: { path: { allocationId: id } },
-                  body: { plus_one: plusOne },
-                }),
-              );
+              const result = await session.api.PUT('/allocations/{allocationId}/registration', {
+                params: { path: { allocationId: id } },
+                body: { plus_one: plusOne },
+              });
+              unwrap(result);
+              if (result.response.status === 201) checkLocationQuietly(session.api, 'registration', id);
             })
           }
         />

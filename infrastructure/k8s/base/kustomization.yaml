@@ -31,6 +31,10 @@ configMapGenerator:
       - DEV_SIGN_IN=false
       - GOOGLE_WEB_CLIENT_ID=
       - SPOTIFY_CLIENT_ID=
+      # Sign in with Apple on the web (the Services ID), Tidal's client, and whether Apple Music is set up on the API.
+      - APPLE_SERVICES_ID=
+      - TIDAL_CLIENT_ID=
+      - APPLE_MUSIC_ENABLED=false
   - name: app-config
     literals:
       # Secret Manager secrets are mounted here, one file per configuration key (secrets.yaml in the overlay).

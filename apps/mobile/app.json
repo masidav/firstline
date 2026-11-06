@@ -28,6 +28,16 @@
       ],
       "expo-sharing",
       [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "FirstLine uses your location, only when you ask, to confirm you're near your hub city so fans in a show's city get first pick.",
+          "locationAlwaysAndWhenInUsePermission": false,
+          "locationAlwaysPermission": false,
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon.png",

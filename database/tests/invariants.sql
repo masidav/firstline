@@ -449,7 +449,7 @@ BEGIN
   -- (n = 18 since migration 0015; the expectations below count the rules so weights can be added later).
   INSERT INTO user_artist_signals (user_id, artist_id, liked_tracks, playlist_tracks, distinct_albums, top_artist_rank, recent_plays)
   VALUES (alice, v_artist, 100, 0, 0, 1, 0)
-  ON CONFLICT (user_id, artist_id) DO UPDATE SET liked_tracks = 100, playlist_tracks = 0, distinct_albums = 0,
+  ON CONFLICT (user_id, provider, artist_id) DO UPDATE SET liked_tracks = 100, playlist_tracks = 0, distinct_albums = 0,
                                                  top_artist_rank = 1, recent_plays = 0;
   SELECT * INTO v FROM v_raw_scores WHERE user_id = alice AND artist_id = v_artist;
   ASSERT v.liked_share = 1 AND v.top_share = 1 AND v.playlist_share = 0, 'saturated signals earn full shares';
@@ -583,7 +583,7 @@ SELECT pg_temp.expect_error(
 SELECT pg_temp.expect_error($$SELECT set_hub_cities('00000000-0000-0000-0000-0000000000a1', '{us-xx-atlantis}')$$, 'unknown city');
 SELECT pg_temp.expect_error($$INSERT INTO user_hub_cities VALUES ('00000000-0000-0000-0000-0000000000a1', 4, 'us-il-chicago')$$,
   'user_hub_cities_position_check');
-SELECT pg_temp.expect_error($$INSERT INTO cities (id, name, region, country, time_zone) VALUES ('Chicago', 'Chicago', 'IL', 'US', 'America/Chicago')$$,
+SELECT pg_temp.expect_error($$INSERT INTO cities (id, name, region, country, time_zone, latitude, longitude) VALUES ('Chicago', 'Chicago', 'IL', 'US', 'America/Chicago', 41.9, -87.6)$$,
   'cities_id_check');
 
 DO $$
@@ -2110,7 +2110,7 @@ BEGIN
   ASSERT (SELECT time_zone FROM cities WHERE id = 'us-tn-knoxville') = 'America/New_York', 'Knoxville is on Eastern time';
 END $$;
 SELECT pg_temp.expect_error($$UPDATE cities SET time_zone = 'America/Atlantis' WHERE id = 'us-il-chicago'$$, 'not a known time zone');
-SELECT pg_temp.expect_error($$INSERT INTO cities (id, name, region, country) VALUES ('us-xx-nowhere', 'Nowhere', 'XX', 'US')$$, 'time_zone');
+SELECT pg_temp.expect_error($$INSERT INTO cities (id, name, region, country, latitude, longitude) VALUES ('us-xx-nowhere', 'Nowhere', 'XX', 'US', 0, 0)$$, 'time_zone');
 
 -- An allocation with a registration is locked even while its window hasn't opened (a registration can only get in
 -- early by an insert outside register_for_allocation(); the lock no longer depends on the clock alone).
@@ -2290,7 +2290,7 @@ DO $$
 BEGIN
   ASSERT parts_average('{"a": 1, "b": 0, "c": 0.5}') = 0.5, 'parts weigh equally';
   ASSERT parts_average('{}') = 0, 'no parts is zero';
-  ASSERT (SELECT count(*) FROM jsonb_object_keys(fan_trust_parts('00000000-0000-0000-0000-000000000001'))) = 4, 'four trust parts';
+  ASSERT (SELECT count(*) FROM jsonb_object_keys(fan_trust_parts('00000000-0000-0000-0000-000000000001'))) = 5, 'five trust parts (hub_confirmed since 0057)';
   ASSERT (SELECT count(*) FROM jsonb_object_keys(fan_activity_parts('00000000-0000-0000-0000-000000000001'))) = 5, 'five activity parts';
 END $$;
 SELECT pg_temp.expect_error(
@@ -3216,5 +3216,139 @@ BEGIN
   DELETE FROM submissions WHERE id = sub;
 END $$;
 DELETE FROM storage_deletions;
+
+-- ------------------------------------------------------------ hub location checks (0057)
+-- Every city has coordinates; distances are sane; a check stores the nearest city and rounded distances, never the
+-- position; rough readings are dropped; the two rules fire at their thresholds; trust and retention follow.
+DO $$
+DECLARE a uuid; b uuid; al uuid; ev uuid; art uuid; r record; hits jsonb;
+BEGIN
+  ASSERT NOT EXISTS (SELECT 1 FROM cities WHERE latitude IS NULL OR longitude IS NULL), 'every city has coordinates';
+  ASSERT city_distance_km('us-il-chicago', 'us-ny-new-york') BETWEEN 1100 AND 1200, 'Chicago to New York is about 1 145 km';
+  ASSERT city_distance_km('us-ca-san-francisco', 'us-ca-oakland') < 20, 'San Francisco to Oakland is close';
+  ASSERT distance_km(0, 0, 0, 0) = 0, 'no distance to the same point';
+
+  INSERT INTO users (handle, email) VALUES ('loc_a', 'loc_a@example.test') RETURNING id INTO a;
+  INSERT INTO users (handle, email) VALUES ('loc_b', 'loc_b@example.test') RETURNING id INTO b;
+  PERFORM set_hub_cities(a, ARRAY['us-il-chicago', 'us-wi-milwaukee']);
+  INSERT INTO artists (name, spotify_artist_id) VALUES ('Loc Artist', 'sp-loc-artist') RETURNING id INTO art;
+  INSERT INTO artist_baselines (artist_id, dist_params, curve) VALUES (art, '{}', '[]');
+  UPDATE artists SET status = 'active', catalog_loaded_at = now() WHERE id = art;
+  INSERT INTO events (artist_id, name, city_id, starts_at) VALUES (art, 'Loc Show', 'us-il-chicago', now() + interval '30 days') RETURNING id INTO ev;
+  INSERT INTO allocations (event_id, tickets, face_value_cents, min_raw_score, registration_opens_at, registration_closes_at, published_at)
+  VALUES (ev, 10, 4500, 0, now() - interval '1 hour', now() + interval '6 days', now()) RETURNING id INTO al;
+
+  -- In Evanston (19 km from Chicago's centre): matched, rounded to 10 km.
+  SELECT * INTO r FROM record_hub_location(a, 'hub_set', NULL, 42.0451, -87.6877, 30);
+  ASSERT r.recorded AND r.nearest_city_id = 'us-il-chicago' AND r.hub_match AND r.nearest_city_km = 20 AND r.nearest_hub_km = 20, r::text;
+  -- In Los Angeles: nearest city LA, nearest hub Chicago, no match.
+  SELECT * INTO r FROM record_hub_location(a, 'eligibility', al, 34.05, -118.25, 100);
+  ASSERT r.recorded AND r.nearest_city_id = 'us-ca-los-angeles' AND NOT r.hub_match AND r.nearest_hub_km BETWEEN 2700 AND 2900, r::text;
+  -- Too rough to use (an IP-level guess): nothing recorded.
+  SELECT * INTO r FROM record_hub_location(a, 'registration', al, 41.88, -87.63, 60000);
+  ASSERT NOT r.recorded AND r.nearest_city_id IS NULL, 'rough readings are dropped';
+  -- No hub cities: recorded, no hub distance, no match.
+  SELECT * INTO r FROM record_hub_location(b, 'eligibility', al, 41.88, -87.63, 50);
+  ASSERT r.recorded AND r.nearest_hub_km IS NULL AND NOT r.hub_match, r::text;
+  ASSERT (SELECT count(*) FROM hub_location_checks WHERE user_id = a) = 2, 'two checks kept';
+  ASSERT NOT EXISTS (SELECT column_name FROM information_schema.columns WHERE table_name = 'hub_location_checks'
+                      AND column_name IN ('latitude', 'longitude', 'position', 'accuracy_m')), 'no position column';
+
+  -- Trust: a matched check in the last 180 days confirms the hub.
+  ASSERT (fan_trust_parts(a) ->> 'hub_confirmed')::numeric = 1, 'hub confirmed: ' || fan_trust_parts(a)::text;
+  ASSERT (fan_trust_parts(b) ->> 'hub_confirmed')::numeric = 0, 'no match, no confirmation';
+
+  -- hub_location_mismatch: far checks on two distinct days fire; one day doesn't.
+  hits := fraud_rule_hits(a);
+  ASSERT NOT hits ? 'hub_location_mismatch', 'one far day is not enough: ' || hits::text;
+  INSERT INTO hub_location_checks (user_id, kind, allocation_id, nearest_city_id, nearest_city_km, nearest_hub_km, hub_match, at)
+  VALUES (a, 'registration', al, 'us-ca-los-angeles', 0, 2800, false, now() - interval '3 days');
+  hits := fraud_rule_hits(a);
+  ASSERT hits -> 'hub_location_mismatch' = jsonb_build_object('checks', 2, 'days', 2, 'closest_hub_km', 2800, 'min_km', 500), hits::text;
+  ASSERT NOT (hits::text LIKE '%latitude%' OR hits::text LIKE '%-87.%'), 'evidence carries no position';
+
+  -- impossible_travel: Chicago then Los Angeles within an hour fires; Chicago then Milwaukee doesn't.
+  hits := fraud_rule_hits(b);
+  ASSERT NOT hits ? 'impossible_travel', hits::text;
+  INSERT INTO hub_location_checks (user_id, kind, allocation_id, nearest_city_id, nearest_city_km, nearest_hub_km, hub_match, at)
+  VALUES (b, 'registration', al, 'us-wi-milwaukee', 0, NULL, false, now() + interval '30 minutes');
+  ASSERT NOT fraud_rule_hits(b) ? 'impossible_travel', 'a short hop is fine';
+  INSERT INTO hub_location_checks (user_id, kind, allocation_id, nearest_city_id, nearest_city_km, nearest_hub_km, hub_match, at)
+  VALUES (b, 'registration', al, 'us-ca-los-angeles', 0, NULL, false, now() + interval '1 hour');
+  hits := fraud_rule_hits(b);
+  ASSERT (hits -> 'impossible_travel' ->> 'pairs')::int = 2 AND (hits -> 'impossible_travel' ->> 'farthest_km')::int BETWEEN 2700 AND 2900, hits::text;
+  ASSERT (hits -> 'impossible_travel' ->> 'min_km')::int = 1500, hits::text;
+
+  -- The sweep reaches a fan with a recent check; the flag is named by the rule's reason.
+  ASSERT detect_fraud(b) IS NOT NULL, 'b is flagged';
+  ASSERT (SELECT reason FROM fraud_flags WHERE user_id = b) = 'duplicate_account', 'impossible travel reads as a duplicate account';
+
+  -- Deletion and retention.
+  UPDATE users SET deleted_at = now() WHERE id = a;
+  ASSERT NOT EXISTS (SELECT 1 FROM hub_location_checks WHERE user_id = a), 'deletion scrubs the checks';
+  INSERT INTO hub_location_checks (user_id, kind, allocation_id, nearest_city_id, nearest_city_km, nearest_hub_km, hub_match, at)
+  VALUES (b, 'eligibility', al, 'us-il-chicago', 0, NULL, false, now() - interval '91 days');
+  ASSERT (SELECT removed FROM prune_client_signals() WHERE record = 'hub_location_checks') = 1, 'old checks pruned';
+  ASSERT (SELECT count(*) FROM hub_location_checks WHERE user_id = b) = 3, 'recent checks stay';
+END $$;
+SELECT pg_temp.expect_error($$INSERT INTO hub_location_checks (user_id, kind, nearest_city_id, nearest_city_km, hub_match)
+  VALUES ((SELECT id FROM users WHERE handle = 'loc_b'), 'app_open', 'us-il-chicago', 0, false)$$, 'hub_location_checks_kind_check');
+SELECT pg_temp.expect_error($$INSERT INTO hub_location_checks (user_id, kind, nearest_city_id, nearest_city_km, hub_match)
+  VALUES ((SELECT id FROM users WHERE handle = 'loc_b'), 'registration', 'us-il-chicago', 0, false)$$, 'hub_location_checks_subject_check');
+SELECT pg_temp.expect_error($$INSERT INTO cities (id, name, region, country, time_zone) VALUES ('us-xx-nowhere', 'Nowhere', 'XX', 'US', 'America/Chicago')$$,
+  'null value in column "latitude"');
+
+-- ------------------------------------------------------------ Apple Music and Tidal (0058)
+-- Connections: one per fan and provider, a Tidal account to one fan, Tidal needs a user id; the sync queue; the
+-- reuse history; deletion. Signals: each provider its own rows, the score taking the strongest across them.
+DO $$
+DECLARE a uuid; b uuid; art uuid := (SELECT id FROM artists WHERE spotify_artist_id = 'sp-active'); al uuid; tr uuid; v record;
+BEGIN
+  INSERT INTO users (handle, email) VALUES ('mus_a', 'mus_a@example.test') RETURNING id INTO a;
+  INSERT INTO users (handle, email) VALUES ('mus_b', 'mus_b@example.test') RETURNING id INTO b;
+  INSERT INTO music_connections (user_id, provider, token_enc) VALUES (a, 'apple_music', '\x01');
+  INSERT INTO music_connections (user_id, provider, provider_user_id, token_enc) VALUES (a, 'tidal', 'td-1', '\x01');
+  ASSERT request_music_sync(a, 'tidal'), 'queues a sync';
+  ASSERT NOT request_music_sync(b, 'tidal'), 'no connection, nothing queued';
+  ASSERT (SELECT count(*) FROM jobs WHERE kind = 'music.sync' AND status = 'queued' AND payload->>'provider' = 'tidal' AND payload->>'user_id' = a::text) = 1, 'one job';
+  ASSERT (SELECT sync_state FROM music_connections WHERE user_id = a AND provider = 'tidal') = 'queued', 'marked queued';
+  ASSERT (SELECT count(*) FROM spotify_account_links WHERE account_hash = spotify_account_hash('tidal:td-1') AND user_id = a) = 1, 'Tidal account in the reuse history';
+  -- Apple Music connections (no user id) never join the history.
+  ASSERT (SELECT count(*) FROM spotify_account_links WHERE user_id = a) = 1, 'only the Tidal account';
+
+  -- Provider rows side by side; the score reads the strongest.
+  SELECT id INTO al FROM albums WHERE artist_id = art ORDER BY id LIMIT 1;
+  IF al IS NULL THEN
+    INSERT INTO albums (artist_id, title, spotify_album_id) VALUES (art, 'Mus Album', 'al-mus') RETURNING id INTO al;
+  END IF;
+  INSERT INTO tracks (album_id, title, spotify_track_id, isrc) VALUES (al, 'Mus Track', 'tr-mus', 'USMUS0000001') RETURNING id INTO tr;
+  INSERT INTO user_artist_signals (user_id, provider, artist_id, liked_tracks, top_artist_rank_short, followed) VALUES
+    (a, 'spotify', art, 3, 5, false), (a, 'apple_music', art, 8, 2, false), (a, 'tidal', art, 1, NULL, true);
+  INSERT INTO user_track_likes (user_id, provider, track_id, source, saved_at) VALUES
+    (a, 'spotify', tr, 'liked', now() - interval '10 days'), (a, 'tidal', tr, 'liked', now() - interval '400 days');
+  INSERT INTO user_album_saves (user_id, provider, album_id, saved_at) VALUES (a, 'spotify', al, now()), (a, 'apple_music', al, now());
+  SELECT * INTO v FROM v_raw_scores WHERE user_id = a AND artist_id = art;
+  ASSERT v.liked_tracks = 8 AND v.top_artist_rank_short = 2 AND v.followed AND v.saved_albums = 1 AND v.tracks_touched = 1, v::text;
+  ASSERT v.tenure_days BETWEEN 399 AND 401, 'tenure from the earliest save on any service: ' || v.tenure_days;
+  ASSERT (SELECT count(*) FROM v_raw_scores WHERE user_id = a AND artist_id = art) = 1, 'one score row per fan and artist';
+
+  -- Deleting the account removes the connections at once.
+  UPDATE users SET deleted_at = now() WHERE id = a;
+  ASSERT NOT EXISTS (SELECT 1 FROM music_connections WHERE user_id = a), 'deletion removes the connections';
+  DELETE FROM user_track_likes WHERE track_id = tr;
+  DELETE FROM tracks WHERE id = tr;
+END $$;
+SELECT pg_temp.expect_error($$INSERT INTO music_connections (user_id, provider, token_enc)
+  VALUES ((SELECT id FROM users WHERE handle = 'mus_b'), 'deezer', '\x01')$$, 'music_connections_provider_check');
+SELECT pg_temp.expect_error($$INSERT INTO music_connections (user_id, provider, token_enc)
+  VALUES ((SELECT id FROM users WHERE handle = 'mus_b'), 'tidal', '\x01')$$, 'music_connections_tidal_user_check');
+SELECT pg_temp.expect_error($$INSERT INTO music_connections (user_id, provider, provider_user_id, token_enc)
+  VALUES ((SELECT id FROM users WHERE handle = 'mus_b'), 'tidal', 'td-1', '\x01');
+  INSERT INTO music_connections (user_id, provider, provider_user_id, token_enc)
+  VALUES ('00000000-0000-0000-0000-000000000002', 'tidal', 'td-1', '\x01')$$, 'music_connections_provider_user_key');
+SELECT pg_temp.expect_error($$INSERT INTO user_artist_signals (user_id, provider, artist_id)
+  VALUES ('00000000-0000-0000-0000-000000000002', 'deezer', (SELECT id FROM artists WHERE spotify_artist_id = 'sp-active'))$$, 'user_artist_signals_provider_check');
+SELECT pg_temp.expect_error($$INSERT INTO tracks (album_id, title, isrc) SELECT id, 'bad isrc', 'bad' FROM albums LIMIT 1$$, 'tracks_isrc_check');
+SELECT pg_temp.expect_error($$INSERT INTO albums (artist_id, title, upc) SELECT id, 'bad upc', 'x' FROM artists LIMIT 1$$, 'albums_upc_check');
 
 \echo ALL INVARIANT TESTS PASSED

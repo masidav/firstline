@@ -69,6 +69,13 @@ Details: [API](services/api/TODO.md) · [Database](database/TODO.md) · [Tests](
 - [x] Implement user profile and authorization rules. `/me` read, update, and delete; bearer auth on all of `/v1`; staff policy for `/admin` (checked per request). Verified 2026-10-18: `dotnet test` 36/36.
 - [x] Implement account recovery and account deletion policy. Recovery is provider sign-in (no passwords). Deletion scrubs personal data at once; content is hard-deleted after 30 days (`accounts.purge_deleted` job). Verified 2026-10-18: `dotnet test` 45/45.
 - [x] Apple follow-ups: server-to-server notifications (`POST /v1/webhooks/apple`) and Apple sign-in revocation on account deletion. Verified 2026-10-18: AppleTests 8/8.
+- [x] Sign in with Apple on the web, next to Google (requested 2026-11-05). Apple only returns a token with the email
+      scope through a `form_post`, so `POST /v1/auth/apple/callback` relays it to the app's `/apple-callback` fragment
+      (origin allow-listed from `state` against `Cors__AllowedOrigins`; `AppleWebEndpoints.cs`). The web app gets a
+      Services ID (`EXPO_PUBLIC_APPLE_SERVICES_ID` / `APPLE_SERVICES_ID`), a "Continue with Apple" button, and the
+      callback route; Android still has no Apple sign-in. Owner steps (Services ID, return URL, domain verification):
+      `docs/OWNER_TODO.md` B. Verified 2026-11-05: `dotnet test` 448/448 (AuthApiTests: relay, refused origins, bad
+      forms; SecurityRouteTests), fan app `npm test` 423/423 and typecheck clean. Not tried against Apple.
 - [x] Profile pictures (2026-10-31, migration 0052): a fan adds, changes, or removes a picture on their profile page
       (the upload flow with `purpose: avatar`; the API crops it square at 512 px and re-encodes it, so no metadata
       survives; public `GET /avatars/{uploadId}` that dies with the picture). The picture, or the fan's initial, shows
@@ -440,13 +447,37 @@ Details: [Notifications](services/api/src/features/notifications/TODO.md) · [Mo
       2+ registrations within 10 minutes of sign-up; polling = 300+ eligibility checks of one show in a day. Signal
       retention (address hashes 30 days with a 2-day salt, device history 90, Spotify history 180, eligibility counts
       90) confirmed 2026-11-02, and the signal tables stay out of the fan's data download; the other six device,
-      network, and bot thresholds are still provisional.
+      network, and bot thresholds are still provisional. Location (2026-11-05, migration 0057): hub match within
+      100 km; mismatch = 2+ checks on distinct days each 500+ km from every hub in 90 days; impossible travel = two
+      checks within 6 hours whose nearest cities are 1 500+ km apart, in 30 days; checks kept 90 days, out of the data
+      download; `hub_confirmed` weighs like the other four trust parts. All provisional.
 - [x] Automatic flags stay hidden from the fan until a person reviews them (decided 2026-10-30): registering is refused
       with a neutral "Registration isn't available for your account right now"; no notice, review screen, appeal, or
       data-download trace until staff uphold; an unreviewed flag leaves the fan in the draw, and staff are told when a
       flagged fan is in a draw still to run. *Done 2026-10-30 (migration 0044). Verified: `dotnet test`
       (FraudReviewApiTests 7, invariants), app Jest 301/301.*
 - [ ] Add verification sources: Apple Music (MusicKit), direct-to-consumer store purchases, verified attendance history.
+      *Apple Music and Tidal started 2026-11-05 (migration 0058, [ADR 0007](docs/adr/0007-music-providers.md)):
+      `packages/music-providers` (MusicKit developer tokens, Music User Token check; Tidal PKCE and the v2 collection
+      API), `/me/music/{provider}` connect/status/disconnect/sync, worker `music.sync` matching library items to the
+      catalog by artist name then ISRC or title (codes learned into `tracks.isrc`/`albums.upc`), a `provider` column on
+      the four signal tables, and `v_raw_scores` taking the strongest signal per artist across services. Fan app:
+      `/music` screen (Apple Music through MusicKit JS on the web, Tidal through PKCE on web and native). Verified
+      2026-11-05: `dotnet test` 448/448 (MusicSyncJobTests 6, MusicApiTests 6, SpotifySyncJobTests, invariants 0058),
+      `npm test` 423/423. **Neither provider has been run against the real API** (ADR 0007 "Not verified"); provider
+      accounts are owner steps (`docs/OWNER_TODO.md` B). Store purchases and attendance: not started.*
+- [ ] Location tied to hub cities to confirm fans aren't bots (requested 2026-11-05). *Done 2026-11-05 (migration 0057,
+      `docs/security/hub-location-checks.md`): the app asks for the device location, optionally, when the fan sets hub
+      cities, opens a show's standing, or registers (`POST /me/location-checks`); only the nearest curated city,
+      distances rounded to 10 km, and a hub match within 100 km are stored (every city now has coordinates; 90 days;
+      deleted with the account; not in the export). A match confirms the hub for trust (`hub_confirmed`, a fifth part);
+      rules `hub_location_mismatch` (2 far days) and `impossible_travel` (two cities 1 500 km apart within 6 hours)
+      join the sweep. Verified: `dotnet test` 448/448 (HubCityApiTests, FraudReviewApiTests, invariants 0057,
+      AccountDeletionTests), `npm test` 423/423 (locationCheck, HubCitiesScreen, ShowScreen). Thresholds, retention,
+      and the trust weight are provisional (below and `docs/OWNER_TODO.md` C).*
+- [ ] More stat-based ways to verify fandom (requested 2026-11-05): twelve proposals with what each proves, how it's
+      gamed, and the cost, in `docs/product/fandom-verification-signals.md`; suggested next three: release-day
+      listening, journal-backed logs, human listening shape (then attendance). Which to build is an owner decision.
 - [ ] Bind one person to one account (phone or ID verification at allocation time) without over-collecting personal data.
 - [x] Add fraud review tooling, an appeals process, and audit logging for every eligibility decision.
       *Done 2026-10-29 (migration 0042, `services/api/src/features/fraud`): staff flag a fan with evidence and a note;

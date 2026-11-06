@@ -5,7 +5,7 @@ import { codeChallenge, randomString } from './crypto';
 import {
   completeGoogleSignIn,
   googleAuthorizeUrl,
-  parseGoogleRedirect,
+  parseProviderRedirect,
   type PendingGoogleSignIn,
   type SignInOutcome,
 } from './providerSignIn';
@@ -45,7 +45,7 @@ export async function startGoogleSignIn(): Promise<SignInOutcome> {
     // The fan closed the browser (cancel or dismiss); nothing was granted.
     return 'cancelled';
   }
-  return completeGoogleSignIn(parseGoogleRedirect(result.url), pending, exchangeCode);
+  return completeGoogleSignIn(parseProviderRedirect(result.url), pending, exchangeCode);
 }
 
 /** Native sign-ins finish inside startGoogleSignIn; there is never a pending web redirect. */

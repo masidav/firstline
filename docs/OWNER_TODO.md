@@ -168,6 +168,23 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   *Before the program (decided 2026-10-29):* on a Mac with Xcode and a free Apple ID, `npm run ios:personal` installs
   the app on your own iPhone for 7 days at a time, without Apple sign-in or push (same README, "On your own iPhone
   with a free Apple ID").
+- [ ] **Apple sign-in on the web** (built 2026-11-05; needs the Apple Developer Program). In the developer account:
+  a Services ID (e.g. `com.firstline.fandomscore.web`) with Sign in with Apple enabled, domain
+  `api.beta.firstline-5730kl.com` verified, and return URL `https://api.beta.firstline-5730kl.com/v1/auth/apple/callback`.
+  Then add the Services ID to `Auth__Apple__ClientIds` (overlay, after the bundle ID) and set `APPLE_SERVICES_ID` in
+  the beta overlay's `web-config`. The app's side: `apps/mobile/README.md`, "Sign in with Apple".
+- [ ] **Apple Music** (built 2026-11-05, ADR 0007; not yet tried against the real API). In the developer account
+  (Keys): a key with the **MusicKit** (Media Services) service. Team ID and Key ID go in the overlay
+  (`MusicProviders__AppleMusic__TeamId`, `__KeyId`); the `.p8` goes to Secret Manager as
+  `MusicProviders__AppleMusic__PrivateKey` and to `secrets.yaml`; set `APPLE_MUSIC_ENABLED=true` in `web-config`.
+  Check Apple's MusicKit terms on using listening data for eligibility (section D). The web app connects through
+  MusicKit JS; the iPhone app can't yet (no MusicKit module in Expo SDK 57).
+- [ ] **Tidal** (built 2026-11-05, ADR 0007; not yet tried against the real API). At developer.tidal.com create an
+  app, note the client ID (no secret needed: PKCE), and register the redirect URIs
+  `https://app.beta.firstline-5730kl.com/tidal-callback` and `fandomscore://tidal-callback`. Set
+  `MusicProviders__Tidal__ClientId` and `__RedirectUris` in the overlay and `TIDAL_CLIENT_ID` in `web-config`. Then
+  connect one real account on beta and check the sync (the collection endpoints moved in autumn 2026; ADR 0007 lists
+  what to verify).
 - [ ] **Email** for staff alerts now and fan email later. Needs a provider chosen (section C).
 
 ## C. Product decisions
@@ -181,8 +198,16 @@ Rules already in code provisionally; confirm or change each (details in `PROJECT
   returns allowed until the show starts.
 - [ ] Takedowns: a taken-down photo stays as proof with its points; a taken-down log loses its points.
 - [ ] Pausing an artist with an open allocation: for now registration and selection refuse.
+- [ ] Location checks (2026-11-05, `docs/security/hub-location-checks.md`): a hub counts as matched within 100 km;
+  `hub_location_mismatch` at 2 far days (500 km) in 90 days; `impossible_travel` at 1 500 km within 6 hours; checks
+  kept 90 days and out of the fan's data download; `hub_confirmed` weighs like the other four trust parts.
+- [ ] Listening from two services (2026-11-05, ADR 0007): the score takes the strongest signal per artist across
+  services, never the sum; Apple Music can't be one-account-per-fan (no account id).
 
 Still open:
+- [ ] Which of the proposed verification signals to build next, and their weights
+  (`docs/product/fandom-verification-signals.md`; suggested: release-day listening, journal-backed logs, human
+  listening shape, attendance).
 - [ ] Receipts in the feed: a separate never-shared "receipt" proof kind, a staff "not shareable" flag, or both.
 - [ ] Blind album rankings: which day and how often (not Tuesday or Thursday, decided 2026-10-27; those are trivia and prompt days).
 - [ ] How much journal and proof points weigh against the 0 to 100 Spotify score.

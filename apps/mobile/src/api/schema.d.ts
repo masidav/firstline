@@ -74,6 +74,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/apple/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign in with Apple on the web (Apple posts here)
+         * @description The redirect URI of Sign in with Apple JS for the web app: Apple only returns an identity token with the
+         *     email scope through a `form_post`, so the browser can't take it from a URL fragment as it does with Google.
+         *     Register `{App__PublicOrigin}/v1/auth/apple/callback` as the Services ID's return URL (Apple verifies the
+         *     domain). The web app sends the fan to `https://appleid.apple.com/auth/authorize` with `response_type=code
+         *     id_token`, `response_mode=form_post`, `scope=name email`, a `nonce`, and `state` = base64url JSON
+         *     `{"o": "<the app's origin>", "s": "<random>"}`. This endpoint checks that the origin is one of
+         *     `Cors__AllowedOrigins` and answers `303` to `<origin>/apple-callback#id_token=…&state=…` (or `#error=…&state=…`
+         *     when the fan backed out), where the app checks the state and finishes with `POST /auth/sessions` like any
+         *     other sign-in. Nothing is validated, stored, or logged here; the fragment never reaches a server.
+         */
+        post: operations["appleWebCallback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/sessions/current": {
         parameters: {
             query?: never;
@@ -173,6 +201,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/location-checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm the fan is near a hub city
+         * @description Optional, and only when the fan agrees to share their location: the app sends the device position at three
+         *     moments (`hub_set` right after choosing hub cities, `eligibility` when opening a show's fan-ticket standing,
+         *     `registration` right after registering). The position is never stored. What is kept, for 90 days and deleted
+         *     with the account: the nearest curated city, the distance to it and to the fan's nearest hub city rounded to
+         *     10 km, and whether a hub city was within 100 km (`hub_match`). A match confirms the fan's hub for the trust
+         *     score (a tie-breaker in draws); checks far from every hub, or two checks that would need impossible travel,
+         *     go to staff review like any other fraud signal. A reading with `accuracy_m` worse than 50 km is not recorded
+         *     (`recorded: false`). Sharing nothing never lowers a score.
+         */
+        post: operations["recordLocationCheck"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cities": {
         parameters: {
             query?: never;
@@ -254,6 +309,112 @@ export interface paths {
          *     otherwise it queues like a manual sync.
          */
         post: operations["syncSpotify"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/music": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Apple Music and Tidal connections
+         * @description One status per provider (`apple_music`, `tidal`), connected or not. Spotify stays at `GET /me/spotify`.
+         */
+        get: operations["listMusicConnections"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/music/apple_music/developer-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A MusicKit developer token for the app
+         * @description The app's MusicKit needs a developer token (signed with the server's MusicKit key, ADR 0007) to ask the fan
+         *     for a Music User Token. Short-lived (`expires_in` seconds); get a fresh one when connecting. `503
+         *     music_unavailable` when Apple Music is not set up on this server.
+         */
+        get: operations["getAppleMusicDeveloperToken"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/music/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Anything else is `404 not_found`. */
+                provider: components["parameters"]["MusicProvider"];
+            };
+            cookie?: never;
+        };
+        /** One provider's connection and sync status */
+        get: operations["getMusicConnection"];
+        /**
+         * Connect Apple Music or Tidal
+         * @description **Apple Music:** send `music_user_token` from MusicKit (`music.authorize()` on the web, MusicKit on iOS). The
+         *     server checks it with one call to Apple and stores it encrypted; it is long-lived and never refreshed, so a
+         *     token Apple stops accepting puts the connection in `reauth_required`.
+         *     **Tidal:** the app runs Tidal's authorization code flow with PKCE (`https://login.tidal.com/authorize`, scopes
+         *     `user.read collection.read playlists.read`) and sends `code`, `code_verifier`, and `redirect_uri` (one of
+         *     the server's `MusicProviders__Tidal__RedirectUris`); the server exchanges the code and stores the refresh
+         *     token encrypted. A Tidal account can be connected to one fan account (`409 music_in_use`); Apple Music has no
+         *     account id, so that check doesn't exist there (ADR 0007).
+         *     Either way a first sync is queued. Only tracked, active artists are counted: the provider's items are
+         *     matched to the catalog by artist name, then ISRC or title (ADR 0007); nothing about other artists is stored.
+         *     Connecting a different account of the same service deletes the data synced from the previous one.
+         *     `422 validation_failed` when the provider rejects the token or code.
+         */
+        put: operations["connectMusic"];
+        post?: never;
+        /**
+         * Disconnect the provider and delete the data synced from it
+         * @description Only this provider's rows go; Spotify's and the other provider's stay. Succeeds when nothing is connected.
+         */
+        delete: operations["disconnectMusic"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/music/{provider}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Anything else is `404 not_found`. */
+                provider: components["parameters"]["MusicProvider"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request a sync now
+         * @description A sync already `queued` or `running` is returned as is. Otherwise one manual sync per 15 minutes per provider
+         *     (`429 rate_limited`). `409 music_not_connected` without a connection; `409 music_reauth_required` when the
+         *     provider rejected the stored authorization (connect again with `PUT /me/music/{provider}`).
+         */
+        post: operations["syncMusic"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3574,7 +3735,7 @@ export interface components {
              * @description Stable machine-readable code.
              * @enum {string}
              */
-            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "named_as_guest" | "under_review" | "registration_unavailable" | "flag_open" | "appeal_unavailable" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "reservation_unavailable" | "trivia_answered" | "trivia_expired" | "prompt_closed" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_track_not_found" | "followers_only" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "spotify_no_device" | "spotify_premium_required" | "spotify_player_refused" | "spotify_library_refused" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
+            code: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "conflict" | "handle_taken" | "email_in_use" | "idempotency_conflict" | "rate_limited" | "artist_add_limit" | "allocation_locked" | "registration_closed" | "hub_city_required" | "not_eligible" | "already_registered" | "named_as_guest" | "under_review" | "registration_unavailable" | "flag_open" | "appeal_unavailable" | "plus_one_unavailable" | "guest_unavailable" | "selection_not_ready" | "reservation_unavailable" | "trivia_answered" | "trivia_expired" | "prompt_closed" | "hub_change_limit" | "artist_not_active" | "spotify_artist_not_found" | "spotify_track_not_found" | "followers_only" | "spotify_not_connected" | "spotify_reauth_required" | "spotify_in_use" | "spotify_unavailable" | "music_not_connected" | "music_reauth_required" | "music_in_use" | "music_unavailable" | "spotify_no_device" | "spotify_premium_required" | "spotify_player_refused" | "spotify_library_refused" | "duplicate_submission" | "score_not_ready" | "upload_expired" | "internal_error" | "file_too_large" | "unsupported_media_type";
             errors?: {
                 field?: string;
                 message?: string;
@@ -3833,6 +3994,18 @@ export interface components {
             /** @description IANA time zone, e.g. `America/Chicago`. Show local times with it. */
             time_zone: string;
         };
+        LocationCheck: {
+            /** @description False when the reading was too rough to use; everything else is then null. */
+            recorded: boolean;
+            /** @description A hub city was within 100 km. */
+            hub_match: boolean | null;
+            /** @description The nearest curated city, whether or not it is one of the fan's hubs. */
+            nearest_city: components["schemas"]["HubCity"] | null;
+            /** @description Distance to `nearest_city` */
+            nearest_city_km: number | null;
+            /** @description Distance to the fan's nearest hub city */
+            nearest_hub_km: number | null;
+        };
         MeUpdate: {
             handle?: string;
             display_name?: string | null;
@@ -3862,6 +4035,32 @@ export interface components {
                 presales?: boolean;
                 staff?: boolean;
             };
+        };
+        /** @description `music_user_token` for Apple Music; `code`, `code_verifier`, and `redirect_uri` for Tidal. */
+        MusicConnect: {
+            music_user_token?: string;
+            code?: string;
+            code_verifier?: string;
+            redirect_uri?: string;
+        };
+        MusicStatus: {
+            /** @enum {string} */
+            provider: "apple_music" | "tidal";
+            connected: boolean;
+            /** Format: date-time */
+            connected_at: string | null;
+            /** Format: date-time */
+            last_synced_at: string | null;
+            /**
+             * @description `failed`: gave up after retries, or the provider refused the account; the daily automatic sync tries again.
+             *     `reauth_required`: the provider no longer accepts the authorization; only reconnecting clears it.
+             * @enum {string}
+             */
+            sync_state: "idle" | "queued" | "running" | "failed" | "reauth_required";
+            /** @enum {string|null} */
+            sync_error: "provider_unavailable" | "provider_forbidden" | "provider_reauth_required" | "internal_error" | null;
+            /** @description Tracked artists matched in the library at the last sync. */
+            tracked_artists_found: number;
         };
         SpotifyConnect: {
             code: string;
@@ -5696,6 +5895,16 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
+        /** @description The provider did not respond, or it is not set up on this server (`code: music_unavailable`) */
+        MusicUnavailable: {
+            headers: {
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
         /** @description Request body or parameters are invalid */
         ValidationFailed: {
             headers: {
@@ -5734,6 +5943,8 @@ export interface components {
         EventId: string;
         AllocationId: string;
         OrganizationId: string;
+        /** @description Anything else is `404 not_found`. */
+        MusicProvider: "apple_music" | "tidal";
         AlbumId: string;
         LogId: string;
         CommentId: string;
@@ -5840,6 +6051,38 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    appleWebCallback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/x-www-form-urlencoded": {
+                    state: string;
+                    id_token?: string;
+                    code?: string;
+                    /** @description JSON with the name and email */
+                    user?: string;
+                    error?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Handed to the app: `Location` is `<origin>/apple-callback#…`. */
+            303: {
+                headers: {
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
         };
     };
@@ -6004,6 +6247,44 @@ export interface operations {
             };
         };
     };
+    recordLocationCheck: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    kind: "hub_set" | "eligibility" | "registration";
+                    /**
+                     * Format: uuid
+                     * @description Required for `eligibility` and `registration`; absent for `hub_set`.
+                     */
+                    allocation_id?: string | null;
+                    latitude: number;
+                    longitude: number;
+                    /** @description The reading's accuracy radius in metres, as the device reports it. */
+                    accuracy_m?: number | null;
+                };
+            };
+        };
+        responses: {
+            /** @description What was recorded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocationCheck"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
     searchCities: {
         parameters: {
             query?: {
@@ -6141,6 +6422,164 @@ export interface operations {
                     "application/json": components["schemas"]["SpotifyStatus"];
                 };
             };
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    listMusicConnections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Statuses */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["MusicStatus"][];
+                    };
+                };
+            };
+        };
+    };
+    getAppleMusicDeveloperToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The token */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        token: string;
+                        /** @description Seconds */
+                        expires_in: number;
+                    };
+                };
+            };
+            503: components["responses"]["MusicUnavailable"];
+        };
+    };
+    getMusicConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Anything else is `404 not_found`. */
+                provider: components["parameters"]["MusicProvider"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MusicStatus"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    connectMusic: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Anything else is `404 not_found`. */
+                provider: components["parameters"]["MusicProvider"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MusicConnect"];
+            };
+        };
+        responses: {
+            /** @description Connected */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MusicStatus"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description This account is connected to another fan (`code: music_in_use`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["MusicUnavailable"];
+        };
+    };
+    disconnectMusic: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Anything else is `404 not_found`. */
+                provider: components["parameters"]["MusicProvider"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Disconnected */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    syncMusic: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Anything else is `404 not_found`. */
+                provider: components["parameters"]["MusicProvider"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sync queued. Poll `GET /me/music/{provider}` for `sync_state`. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MusicStatus"];
+                };
+            };
+            404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             429: components["responses"]["RateLimited"];
         };

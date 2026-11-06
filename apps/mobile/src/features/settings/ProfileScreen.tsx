@@ -10,6 +10,7 @@ import { Body, Button, ErrorText, Field, Screen, Title } from '../../ui/componen
 import { colors, space } from '../../ui/theme';
 import { reauthenticateWithApple } from '../authentication/appleSignIn';
 import { cityLabel, formatDay } from '../hub-cities/HubCitiesScreen';
+import { MusicSummary } from '../music/MusicSummary';
 import { AlertsButton } from '../notifications/AlertsButton';
 import { unregisterPush } from '../notifications/push';
 import { FanLevelSection } from '../fan-level/FanLevelSection';
@@ -299,6 +300,8 @@ export function ProfileScreen({ me }: { me: Me }) {
         kind="secondary"
         onPress={() => router.push('/spotify')}
       />
+      <MusicSummary />
+      <Button label="Other music services" kind="secondary" onPress={() => router.push('/music')} />
 
       <View style={{ height: 24 }} />
       <Body>

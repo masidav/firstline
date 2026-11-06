@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 
 import { useSession } from '../auth/SessionProvider';
 import { takePendingGoogleSignIn } from '../features/authentication/googleSignIn';
-import { completeGoogleSignIn, parseGoogleRedirect, type SignInResult } from '../features/authentication/providerSignIn';
+import { completeGoogleSignIn, parseProviderRedirect, type SignInResult } from '../features/authentication/providerSignIn';
 import { SignInScreen } from '../features/authentication/SignInScreen';
 import { Body, Button, ErrorText, Loading, Screen, Title } from '../ui/components';
 
@@ -16,7 +16,7 @@ export default function GoogleCallback() {
   const [result, setResult] = useState<SignInResult | null>(null);
 
   useEffect(() => {
-    const params = parseGoogleRedirect(window.location.href);
+    const params = parseProviderRedirect(window.location.href);
     let cancelled = false;
     void completeGoogleSignIn(params, takePendingGoogleSignIn()).then((outcome) => {
       // By now (a microtask after this commit) the router has written its first URL, which keeps the browser's

@@ -14,6 +14,8 @@ jest.mock('../../auth/SessionProvider', () => ({
   useSession: () => ({ session: mockSession }),
 }));
 jest.mock('expo-router', () => ({ router: { replace: jest.fn(), push: jest.fn(), back: jest.fn(), canGoBack: jest.fn(() => true) } }));
+jest.mock('./locationCheck', () => ({ recordLocationCheck: jest.fn() }));
+const locationCheck = () => jest.requireMock('./locationCheck').recordLocationCheck as jest.Mock;
 
 const chicago = { id: 'us-il-chicago', name: 'Chicago', region: 'IL', country: 'US' };
 const toronto = { id: 'ca-on-toronto', name: 'Toronto', region: 'ON', country: 'CA' };
@@ -41,7 +43,10 @@ const { router } = jest.requireMock('expo-router');
 beforeEach(() => {
   jest.clearAllMocks();
   serveCities();
+  locationCheck().mockResolvedValue(null);
 });
+
+const found = (hubMatch: boolean, nearest: unknown) => ({ recorded: true, hub_match: hubMatch, nearest_city: nearest, nearest_city_km: 0, nearest_hub_km: 0 });
 
 test('a new fan searches, picks a primary city and a backup, and continues home', async () => {
   const saved = me([chicago, toronto]);
@@ -63,9 +68,56 @@ test('a new fan searches, picks a primary city and a backup, and continues home'
   expect(fontSize('Chicago, IL')).toBeGreaterThan(fontSize('Toronto, ON'));
   fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
 
-  await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/home'));
+  // Saved; the optional location step comes before home, and "Not now" skips it.
+  expect(await screen.findByText("Confirm you're near Chicago?")).toBeTruthy();
   expect(mockApi.PUT).toHaveBeenCalledWith('/me/hub-cities', { body: { city_ids: ['us-il-chicago', 'ca-on-toronto'] } });
   expect(mockSetMe).toHaveBeenCalledWith(saved);
+  expect(router.replace).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByRole('button', { name: 'Not now' }));
+
+  expect(router.replace).toHaveBeenCalledWith('/home');
+  expect(locationCheck()).not.toHaveBeenCalled();
+});
+
+test('sharing location after the first save confirms the hub, then continues home', async () => {
+  mockApi.PUT.mockResolvedValue(ok(me([chicago, toronto])));
+  locationCheck().mockResolvedValue(found(true, chicago));
+  render(<HubCitiesScreen me={me([])} />);
+
+  fireEvent.changeText(screen.getByLabelText('Search for your city'), 'chi');
+  fireEvent.press(await screen.findByRole('button', { name: 'Add Chicago, IL' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
+  fireEvent.press(await screen.findByRole('button', { name: 'Share my location' }));
+
+  expect(await screen.findByText("Confirmed: you're near Chicago.")).toBeTruthy();
+  expect(locationCheck()).toHaveBeenCalledWith(mockApi, { kind: 'hub_set' });
+  expect(screen.queryByRole('button', { name: 'Share my location' })).toBeNull();
+  expect(router.replace).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
+
+  expect(router.replace).toHaveBeenCalledWith('/home');
+});
+
+test('far from every hub, the fan is told where they are and that the hub stays; an unreadable location is said plainly', async () => {
+  mockApi.PUT.mockResolvedValue(ok(me([chicago])));
+  locationCheck().mockResolvedValueOnce(found(false, { id: 'us-ca-los-angeles', name: 'Los Angeles', region: 'CA', country: 'US' }));
+  render(<HubCitiesScreen me={me([])} />);
+  fireEvent.changeText(screen.getByLabelText('Search for your city'), 'chi');
+  fireEvent.press(await screen.findByRole('button', { name: 'Add Chicago, IL' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
+  fireEvent.press(await screen.findByRole('button', { name: 'Share my location' }));
+  expect(await screen.findByText("You're nearest to Los Angeles right now; your hub stays Chicago.")).toBeTruthy();
+
+  screen.unmount();
+  locationCheck().mockResolvedValueOnce(null);
+  render(<HubCitiesScreen me={me([])} />);
+  fireEvent.changeText(screen.getByLabelText('Search for your city'), 'chi');
+  fireEvent.press(await screen.findByRole('button', { name: 'Add Chicago, IL' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
+  fireEvent.press(await screen.findByRole('button', { name: 'Share my location' }));
+  expect(await screen.findByText("Couldn't read your location.")).toBeTruthy();
+  fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
+  expect(router.replace).toHaveBeenCalledWith('/home');
 });
 
 test('a backup can be made primary, and three is the most', async () => {
@@ -91,8 +143,14 @@ test('changing hub cities warns about the weekly limit before saving', async () 
   expect(mockApi.PUT).not.toHaveBeenCalled();
   fireEvent.press(screen.getByRole('button', { name: 'Save hub cities' }));
 
-  await waitFor(() => expect(router.back).toHaveBeenCalled());
+  // A later change offers the location step too; the way on is still back to the profile.
+  expect(await screen.findByText("Confirm you're near Toronto?")).toBeTruthy();
   expect(mockApi.PUT).toHaveBeenCalledWith('/me/hub-cities', { body: { city_ids: ['ca-on-toronto'] } });
+  expect(router.back).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByRole('button', { name: 'Not now' }));
+
+  await waitFor(() => expect(router.back).toHaveBeenCalled());
+  expect(router.replace).not.toHaveBeenCalled();
 });
 
 test('a recent change locks editing until next week', () => {

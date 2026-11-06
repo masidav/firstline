@@ -18,6 +18,11 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Retry failed Apple revocations once the job queue exists (Phase 3).
 - [ ] Register the notification URL and create the Sign in with Apple key in the Apple Developer account; store the key in Secret Manager.
 - [x] ~~Account linking~~ *Decided 2026-10-18: one email per account, no linking (`409 email_in_use`).*
+- [x] Sign in with Apple on the web (requested 2026-11-05): `POST /v1/auth/apple/callback` relays Apple's `form_post` to the
+      web app's `/apple-callback` fragment, origin allow-listed from `state` (`AppleWebEndpoints.cs`; AuthApiTests: relay,
+      refused origins, bad forms). The web app's side is in `apps/mobile/src/features/authentication`.
+- [ ] Register the Services ID's return URL (`{App__PublicOrigin}/v1/auth/apple/callback`) and verify the API domain in the
+      Apple Developer account; add the Services ID to `Auth__Apple__ClientIds` on beta.
 
 ## Verification
 - [x] Add or update automated tests for the behavior above.

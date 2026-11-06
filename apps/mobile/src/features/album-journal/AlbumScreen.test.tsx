@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { AlbumScreen } from './AlbumScreen';
+import { todayLocal } from './journal';
 import { journalQueue } from './journalQueue';
 
 const ok = (data: unknown, status = 200) => ({ data, response: { ok: true, status } });
@@ -138,7 +139,8 @@ test('without a connection the log is kept on the device, then sent when the con
   fireEvent.press(screen.getByRole('button', { name: 'Save log' }));
 
   expect(await screen.findByText("Saved on this device. It will sync when you're back online.")).toBeTruthy();
-  expect(screen.getByText('4 ★ · ' + new Date().toISOString().slice(0, 10) + ' · public')).toBeTruthy();
+  // The screen dates the entry in local time (todayLocal); a UTC date would differ around midnight.
+  expect(screen.getByText('4 ★ · ' + todayLocal() + ' · public')).toBeTruthy();
   expect(screen.getByText('Logged on the train.')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Log this album' })).toBeTruthy();
   // The form's attempt, then the queue's first try (also offline).

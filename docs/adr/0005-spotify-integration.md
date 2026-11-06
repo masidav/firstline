@@ -3,7 +3,9 @@
 - **Status:** Accepted (2026-10-18). Implemented in Phase 4 (backend). Amended 2026-10-20: app token
   (client credentials) for artist search and lookup. Amended 2026-10-26: playback scopes and the player endpoints
   for the app's now-playing bar and play buttons; access tokens held in API memory for them. Amended 2026-10-31:
-  the library scope and `/me/spotify/library` for Like buttons, queue, and album play.
+  the library scope and `/me/spotify/library` for Like buttons, queue, and album play. Amended 2026-11-05
+  ([ADR 0007](0007-music-providers.md)): the signal tables carry a `provider` column (`'spotify'` here); the sync
+  replaces only Spotify's rows, and `v_raw_scores` reads the strongest signal across services.
 - **Code:** `packages/spotify` (`FandomScore.Spotify`: client, token encryption, options),
   `services/api/src/features/spotify-sync` (endpoints), `services/api/src/features/artists` (search and add),
   `workers/spotify-sync` (jobs), `database/migrations/0005_spotify_sync.sql`.

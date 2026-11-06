@@ -5,7 +5,7 @@ import { ApiError } from '../../api/client';
 import {
   completeGoogleSignIn,
   googleAuthorizeUrl,
-  parseGoogleRedirect,
+  parseProviderRedirect,
   signInErrorMessage,
   suggestHandle,
 } from './providerSignIn';
@@ -40,14 +40,14 @@ test('the native app asks for a code with a PKCE challenge', () => {
 });
 
 test('the redirect is read from the fragment (web) or the query (native)', () => {
-  expect(parseGoogleRedirect('http://localhost:8081/google-callback#state=s1&id_token=t.o.k&authuser=0')).toEqual({
+  expect(parseProviderRedirect('http://localhost:8081/google-callback#state=s1&id_token=t.o.k&authuser=0')).toEqual({
     id_token: 't.o.k',
     state: 's1',
     code: undefined,
     error: undefined,
   });
-  expect(parseGoogleRedirect('com.googleusercontent.apps.x:/oauth2redirect?code=4%2Fabc&state=s1')).toMatchObject({ code: '4/abc', state: 's1' });
-  expect(parseGoogleRedirect('http://localhost:8081/google-callback?error=access_denied#')).toMatchObject({ error: 'access_denied' });
+  expect(parseProviderRedirect('com.googleusercontent.apps.x:/oauth2redirect?code=4%2Fabc&state=s1')).toMatchObject({ code: '4/abc', state: 's1' });
+  expect(parseProviderRedirect('http://localhost:8081/google-callback?error=access_denied#')).toMatchObject({ error: 'access_denied' });
 });
 
 test('a matching state yields the credential with the nonce the API should check', async () => {

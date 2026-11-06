@@ -168,6 +168,43 @@ paths:
               schema: {$ref: '#/components/schemas/Session'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '429': {$ref: '#/components/responses/RateLimited'}
+  /auth/apple/callback:
+    post:
+      tags: [Auth]
+      operationId: appleWebCallback
+      summary: Sign in with Apple on the web (Apple posts here)
+      description: |
+        The redirect URI of Sign in with Apple JS for the web app: Apple only returns an identity token with the
+        email scope through a `form_post`, so the browser can't take it from a URL fragment as it does with Google.
+        Register `{App__PublicOrigin}/v1/auth/apple/callback` as the Services ID's return URL (Apple verifies the
+        domain). The web app sends the fan to `https://appleid.apple.com/auth/authorize` with `response_type=code
+        id_token`, `response_mode=form_post`, `scope=name email`, a `nonce`, and `state` = base64url JSON
+        `{"o": "<the app's origin>", "s": "<random>"}`. This endpoint checks that the origin is one of
+        `Cors__AllowedOrigins` and answers `303` to `<origin>/apple-callback#id_token=…&state=…` (or `#error=…&state=…`
+        when the fan backed out), where the app checks the state and finishes with `POST /auth/sessions` like any
+        other sign-in. Nothing is validated, stored, or logged here; the fragment never reaches a server.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [state]
+              properties:
+                state: {type: string}
+                id_token: {type: string}
+                code: {type: string}
+                user: {type: string, description: JSON with the name and email, first sign-in only; not used (the token carries the email).}
+                error: {type: string}
+      responses:
+        '303':
+          description: 'Handed to the app: `Location` is `<origin>/apple-callback#…`.'
+          headers:
+            Location:
+              schema: {type: string, format: uri}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '429': {$ref: '#/components/responses/RateLimited'}
   /auth/sessions/current:
     delete:
       tags: [Auth]
@@ -302,6 +339,47 @@ paths:
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
+  /me/location-checks:
+    post:
+      tags: [Me]
+      operationId: recordLocationCheck
+      summary: Confirm the fan is near a hub city
+      description: |
+        Optional, and only when the fan agrees to share their location: the app sends the device position at three
+        moments (`hub_set` right after choosing hub cities, `eligibility` when opening a show's fan-ticket standing,
+        `registration` right after registering). The position is never stored. What is kept, for 90 days and deleted
+        with the account: the nearest curated city, the distance to it and to the fan's nearest hub city rounded to
+        10 km, and whether a hub city was within 100 km (`hub_match`). A match confirms the fan's hub for the trust
+        score (a tie-breaker in draws); checks far from every hub, or two checks that would need impossible travel,
+        go to staff review like any other fraud signal. A reading with `accuracy_m` worse than 50 km is not recorded
+        (`recorded: false`). Sharing nothing never lowers a score.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, latitude, longitude]
+              properties:
+                kind: {type: string, enum: [hub_set, eligibility, registration]}
+                allocation_id:
+                  type: [string, 'null']
+                  format: uuid
+                  description: Required for `eligibility` and `registration`; absent for `hub_set`.
+                latitude: {type: number, minimum: -90, maximum: 90}
+                longitude: {type: number, minimum: -180, maximum: 180}
+                accuracy_m:
+                  type: [number, 'null']
+                  minimum: 0
+                  description: The reading's accuracy radius in metres, as the device reports it.
+      responses:
+        '200':
+          description: What was recorded
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LocationCheck'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
   /cities:
     get:
       tags: [Me]
@@ -417,6 +495,123 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/SpotifyStatus'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /me/music:
+    get:
+      tags: [Me]
+      operationId: listMusicConnections
+      summary: Apple Music and Tidal connections
+      description: One status per provider (`apple_music`, `tidal`), connected or not. Spotify stays at `GET /me/spotify`.
+      responses:
+        '200':
+          description: Statuses
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/MusicStatus'}
+  /me/music/apple_music/developer-token:
+    get:
+      tags: [Me]
+      operationId: getAppleMusicDeveloperToken
+      summary: A MusicKit developer token for the app
+      description: |
+        The app's MusicKit needs a developer token (signed with the server's MusicKit key, ADR 0007) to ask the fan
+        for a Music User Token. Short-lived (`expires_in` seconds); get a fresh one when connecting. `503
+        music_unavailable` when Apple Music is not set up on this server.
+      responses:
+        '200':
+          description: The token
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, expires_in]
+                properties:
+                  token: {type: string}
+                  expires_in: {type: integer, description: Seconds}
+        '503': {$ref: '#/components/responses/MusicUnavailable'}
+  /me/music/{provider}:
+    parameters:
+      - {$ref: '#/components/parameters/MusicProvider'}
+    get:
+      tags: [Me]
+      operationId: getMusicConnection
+      summary: One provider's connection and sync status
+      responses:
+        '200':
+          description: Status
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MusicStatus'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [Me]
+      operationId: connectMusic
+      summary: Connect Apple Music or Tidal
+      description: |
+        **Apple Music:** send `music_user_token` from MusicKit (`music.authorize()` on the web, MusicKit on iOS). The
+        server checks it with one call to Apple and stores it encrypted; it is long-lived and never refreshed, so a
+        token Apple stops accepting puts the connection in `reauth_required`.
+        **Tidal:** the app runs Tidal's authorization code flow with PKCE (`https://login.tidal.com/authorize`, scopes
+        `user.read collection.read playlists.read`) and sends `code`, `code_verifier`, and `redirect_uri` (one of
+        the server's `MusicProviders__Tidal__RedirectUris`); the server exchanges the code and stores the refresh
+        token encrypted. A Tidal account can be connected to one fan account (`409 music_in_use`); Apple Music has no
+        account id, so that check doesn't exist there (ADR 0007).
+        Either way a first sync is queued. Only tracked, active artists are counted: the provider's items are
+        matched to the catalog by artist name, then ISRC or title (ADR 0007); nothing about other artists is stored.
+        Connecting a different account of the same service deletes the data synced from the previous one.
+        `422 validation_failed` when the provider rejects the token or code.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MusicConnect'}
+      responses:
+        '200':
+          description: Connected
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MusicStatus'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: 'This account is connected to another fan (`code: music_in_use`)'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '503': {$ref: '#/components/responses/MusicUnavailable'}
+    delete:
+      tags: [Me]
+      operationId: disconnectMusic
+      summary: Disconnect the provider and delete the data synced from it
+      description: Only this provider's rows go; Spotify's and the other provider's stay. Succeeds when nothing is connected.
+      responses:
+        '204': {description: Disconnected}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /me/music/{provider}/sync:
+    parameters:
+      - {$ref: '#/components/parameters/MusicProvider'}
+    post:
+      tags: [Me]
+      operationId: syncMusic
+      summary: Request a sync now
+      description: |
+        A sync already `queued` or `running` is returned as is. Otherwise one manual sync per 15 minutes per provider
+        (`429 rate_limited`). `409 music_not_connected` without a connection; `409 music_reauth_required` when the
+        provider rejected the stored authorization (connect again with `PUT /me/music/{provider}`).
+      responses:
+        '202':
+          description: Sync queued. Poll `GET /me/music/{provider}` for `sync_state`.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MusicStatus'}
+        '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         '429': {$ref: '#/components/responses/RateLimited'}
   /me/spotify/player:
@@ -4101,6 +4296,8 @@ components:
       {name: allocationId, in: path, required: true, schema: {type: string, format: uuid}}
     OrganizationId:
       {name: organizationId, in: path, required: true, schema: {type: string, format: uuid}}
+    MusicProvider:
+      {name: provider, in: path, required: true, schema: {type: string, enum: [apple_music, tidal]}, description: 'Anything else is `404 not_found`.'}
     AlbumId:
       {name: albumId, in: path, required: true, schema: {type: string, format: uuid}}
     LogId:
@@ -4137,6 +4334,14 @@ components:
           schema: {$ref: '#/components/schemas/Problem'}
     AllocationLocked:
       description: 'Registration has opened, so the allocation''s rules and the show''s time and city are fixed (`code: allocation_locked`)'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    MusicUnavailable:
+      description: 'The provider did not respond, or it is not set up on this server (`code: music_unavailable`)'
+      headers:
+        Retry-After:
+          schema: {type: integer}
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
@@ -4252,6 +4457,10 @@ components:
             - spotify_reauth_required
             - spotify_in_use
             - spotify_unavailable
+            - music_not_connected
+            - music_reauth_required
+            - music_in_use
+            - music_unavailable
             - spotify_no_device
             - spotify_premium_required
             - spotify_player_refused
@@ -4511,6 +4720,19 @@ components:
         region: {type: string, description: State or province code}
         country: {type: string, description: ISO 3166-1 alpha-2}
         time_zone: {type: string, description: 'IANA time zone, e.g. `America/Chicago`. Show local times with it.'}
+    LocationCheck:
+      type: object
+      required: [recorded, hub_match, nearest_city, nearest_city_km, nearest_hub_km]
+      properties:
+        recorded: {type: boolean, description: False when the reading was too rough to use; everything else is then null.}
+        hub_match: {type: [boolean, 'null'], description: A hub city was within 100 km.}
+        nearest_city:
+          oneOf:
+            - $ref: '#/components/schemas/HubCity'
+            - type: 'null'
+          description: The nearest curated city, whether or not it is one of the fan's hubs.
+        nearest_city_km: {type: [integer, 'null'], description: Distance to `nearest_city`, rounded to 10 km.}
+        nearest_hub_km: {type: [integer, 'null'], description: Distance to the fan's nearest hub city, rounded to 10 km; null without hub cities.}
     MeUpdate:
       type: object
       properties:
@@ -4548,6 +4770,32 @@ components:
             tickets: {type: boolean}
             presales: {type: boolean}
             staff: {type: boolean}
+    MusicConnect:
+      type: object
+      description: '`music_user_token` for Apple Music; `code`, `code_verifier`, and `redirect_uri` for Tidal.'
+      properties:
+        music_user_token: {type: string, maxLength: 4096}
+        code: {type: string}
+        code_verifier: {type: string, minLength: 43, maxLength: 128}
+        redirect_uri: {type: string}
+    MusicStatus:
+      type: object
+      required: [provider, connected, sync_state, connected_at, last_synced_at, sync_error, tracked_artists_found]
+      properties:
+        provider: {type: string, enum: [apple_music, tidal]}
+        connected: {type: boolean}
+        connected_at: {type: [string, 'null'], format: date-time}
+        last_synced_at: {type: [string, 'null'], format: date-time}
+        sync_state:
+          type: string
+          enum: [idle, queued, running, failed, reauth_required]
+          description: |
+            `failed`: gave up after retries, or the provider refused the account; the daily automatic sync tries again.
+            `reauth_required`: the provider no longer accepts the authorization; only reconnecting clears it.
+        sync_error:
+          type: [string, 'null']
+          enum: [provider_unavailable, provider_forbidden, provider_reauth_required, internal_error, null]
+        tracked_artists_found: {type: integer, description: Tracked artists matched in the library at the last sync.}
     SpotifyConnect:
       type: object
       required: [code, code_verifier, redirect_uri]

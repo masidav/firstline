@@ -40,6 +40,7 @@ public sealed class AuthApiTests(PostgresFixture postgres) : IAsyncLifetime
             builder.UseSetting("App:PublicOrigin", TestAuth.PublicOrigin);
             builder.UseSetting("ConnectionStrings:Database", _connectionString);
             builder.UseSetting("Auth:SigningKey", TestAuth.SigningKey);
+            builder.UseSetting("Cors:AllowedOrigins", $"{WebOrigin},http://localhost:8081");
             builder.UseSetting("Logging:LogLevel:Default", "Debug");
             builder.ConfigureLogging(logging => logging.AddProvider(new CapturingLoggerProvider(_logs)));
             builder.ConfigureTestServices(services =>
@@ -49,6 +50,73 @@ public sealed class AuthApiTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     public async Task DisposeAsync() => await _factory.DisposeAsync();
+
+    private const string WebOrigin = "https://app.firstline.test";
+
+    [Fact]
+    public async Task Apple_web_callback_hands_the_token_to_the_app_in_a_fragment()
+    {
+        using var browser = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var state = AppleWebEndpoints.State(WebOrigin, "random-1");
+
+        var posted = await browser.PostAsync("/v1/auth/apple/callback", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["state"] = state,
+            ["code"] = "apple-code-1",
+            ["id_token"] = "eyJhbGciOiJSUzI1NiJ9.apple-token-1.sig",
+            ["user"] = """{"name":{"firstName":"Fan"},"email":"fan@privaterelay.appleid.com"}""",
+        }));
+
+        Assert.Equal(HttpStatusCode.SeeOther, posted.StatusCode);
+        Assert.Equal($"{WebOrigin}/apple-callback#state={state}&id_token=eyJhbGciOiJSUzI1NiJ9.apple-token-1.sig",
+            posted.Headers.Location?.ToString());
+        Assert.Equal(0, posted.Content.Headers.ContentLength ?? 0);
+
+        // Backing out at Apple comes back as an error for the app to show.
+        var cancelled = await browser.PostAsync("/v1/auth/apple/callback", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["state"] = state,
+            ["error"] = "user_cancelled_authorize",
+        }));
+        Assert.Equal(HttpStatusCode.SeeOther, cancelled.StatusCode);
+        Assert.Equal($"{WebOrigin}/apple-callback#state={state}&error=user_cancelled_authorize", cancelled.Headers.Location?.ToString());
+
+        // The token and code never reach the logs.
+        Assert.DoesNotContain(_logs, line => line.Contains("apple-token-1", StringComparison.Ordinal) || line.Contains("apple-code-1", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("https://evil.example")]                 // not an allowed origin
+    [InlineData("https://app.firstline.test/evil")]      // a path, not an origin
+    [InlineData("http://localhost:8081.evil.example")]   // a look-alike
+    public async Task Apple_web_callback_refuses_origins_the_api_does_not_serve(string origin)
+    {
+        using var browser = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+        var posted = await browser.PostAsync("/v1/auth/apple/callback", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["state"] = AppleWebEndpoints.State(origin, "random-1"),
+            ["id_token"] = "token",
+        }));
+
+        var problem = await ProblemAsync(posted, 422);
+        Assert.Equal("state", problem.GetProperty("errors")[0].GetProperty("field").GetString());
+    }
+
+    [Fact]
+    public async Task Apple_web_callback_needs_a_form_with_a_readable_state()
+    {
+        using var browser = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+        var json = await browser.PostAsJsonAsync("/v1/auth/apple/callback", new { state = AppleWebEndpoints.State(WebOrigin, "r") });
+        Assert.Equal("state", (await ProblemAsync(json, 422)).GetProperty("errors")[0].GetProperty("field").GetString());
+
+        var garbage = await browser.PostAsync("/v1/auth/apple/callback", new FormUrlEncodedContent(new Dictionary<string, string> { ["state"] = "not-base64url-json!" }));
+        Assert.Equal("state", (await ProblemAsync(garbage, 422)).GetProperty("errors")[0].GetProperty("field").GetString());
+
+        var missing = await browser.PostAsync("/v1/auth/apple/callback", new FormUrlEncodedContent(new Dictionary<string, string> { ["id_token"] = "token" }));
+        Assert.Equal("state", (await ProblemAsync(missing, 422)).GetProperty("errors")[0].GetProperty("field").GetString());
+    }
 
     [Fact]
     public async Task First_sign_in_creates_the_account_and_later_sign_ins_return_it()

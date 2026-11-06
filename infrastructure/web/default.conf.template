@@ -22,7 +22,7 @@ server {
         include /etc/nginx/snippets/security-headers.conf;
         add_header Cache-Control "no-store" always;
         default_type application/javascript;
-        return 200 'window.__FANDOM_CONFIG__ = {"apiUrl": "${API_URL}", "devSignIn": ${DEV_SIGN_IN}, "googleWebClientId": "${GOOGLE_WEB_CLIENT_ID}", "spotifyClientId": "${SPOTIFY_CLIENT_ID}"};\n';
+        return 200 'window.__FANDOM_CONFIG__ = {"apiUrl": "${API_URL}", "devSignIn": ${DEV_SIGN_IN}, "googleWebClientId": "${GOOGLE_WEB_CLIENT_ID}", "appleServicesId": "${APPLE_SERVICES_ID}", "spotifyClientId": "${SPOTIFY_CLIENT_ID}", "tidalClientId": "${TIDAL_CLIENT_ID}", "appleMusicEnabled": ${APPLE_MUSIC_ENABLED}};\n';
     }
 
     # Build output with content hashes in the names (Vite's assets/, Expo's _expo/static/): safe to cache for good.

@@ -803,6 +803,61 @@ public sealed class FraudReviewApiTests(PostgresFixture postgres) : IAsyncLifeti
         Assert.Equal((allocationId.ToString(), 300), (hit.GetProperty("allocation_id").GetString(), hit.GetProperty("checks").GetInt32()));
     }
 
+    [Fact]
+    public async Task The_detection_job_flags_a_fan_far_from_every_hub_on_two_days_and_a_fan_in_two_cities_at_once_with_counts_only()
+    {
+        var allocationId = await AllocationAsync(tickets: 10);
+        // "Local" to Chicago, but checks in from Los Angeles twice, two days apart: claiming a hub they're never near.
+        var away = await FanAsync("far_away", score: 80, "us-il-chicago");
+        await JsonAsync(await SendAsync(HttpMethod.Post, "/v1/me/location-checks", away,
+            new { kind = "eligibility", allocation_id = allocationId, latitude = 34.05, longitude = -118.25, accuracy_m = 50 }), HttpStatusCode.OK);
+        // A single far day: nothing yet.
+        await DetectAsync();
+        Assert.Empty(await QueueAsync());
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            await connection.ExecuteAsync(
+                "UPDATE hub_location_checks SET at = at - interval '2 days' WHERE user_id = (SELECT id FROM users WHERE handle = 'far_away')");
+        }
+
+        await JsonAsync(await SendAsync(HttpMethod.Post, "/v1/me/location-checks", away,
+            new { kind = "registration", allocation_id = allocationId, latitude = 34.06, longitude = -118.24, accuracy_m = 50 }), HttpStatusCode.OK);
+
+        // Checks in from Chicago, then from Los Angeles ten minutes later: one account in two places.
+        var twoPlaces = await FanAsync("two_places", score: 80, "us-il-chicago");
+        await JsonAsync(await SendAsync(HttpMethod.Post, "/v1/me/location-checks", twoPlaces,
+            new { kind = "eligibility", allocation_id = allocationId, latitude = 41.88, longitude = -87.63, accuracy_m = 50 }), HttpStatusCode.OK);
+        await JsonAsync(await SendAsync(HttpMethod.Post, "/v1/me/location-checks", twoPlaces,
+            new { kind = "registration", allocation_id = allocationId, latitude = 34.05, longitude = -118.25, accuracy_m = 50 }), HttpStatusCode.OK);
+
+        // At home: a hub match, nothing to review.
+        var home = await FanAsync("at_home", score: 80, "us-il-chicago");
+        await JsonAsync(await SendAsync(HttpMethod.Post, "/v1/me/location-checks", home,
+            new { kind = "eligibility", allocation_id = allocationId, latitude = 41.88, longitude = -87.63, accuracy_m = 50 }), HttpStatusCode.OK);
+
+        await DetectAsync();
+        await DetectAsync();
+
+        var flags = await QueueAsync();
+        Assert.Equal(2, flags.Count);
+        var awayFlag = Assert.Single(flags, f => f.GetProperty("user").GetProperty("handle").GetString() == "far_away");
+        Assert.Equal("other", awayFlag.GetProperty("reason").GetString());
+        var mismatch = awayFlag.GetProperty("evidence").GetProperty("rules").GetProperty("hub_location_mismatch");
+        Assert.Equal((2, 2), (mismatch.GetProperty("checks").GetInt32(), mismatch.GetProperty("days").GetInt32()));
+        Assert.InRange(mismatch.GetProperty("closest_hub_km").GetInt32(), 2700, 2900);
+        var travelFlag = Assert.Single(flags, f => f.GetProperty("user").GetProperty("handle").GetString() == "two_places");
+        Assert.Equal("duplicate_account", travelFlag.GetProperty("reason").GetString());
+        var travel = travelFlag.GetProperty("evidence").GetProperty("rules").GetProperty("impossible_travel");
+        Assert.Equal(1, travel.GetProperty("pairs").GetInt32());
+        Assert.InRange(travel.GetProperty("farthest_km").GetInt32(), 2700, 2900);
+        Assert.All(flags, flag => Assert.DoesNotContain("-118", flag.GetProperty("evidence").GetRawText(), StringComparison.Ordinal));
+
+        // The hub match counts for trust; the others' doesn't.
+        await using var db = await _db.OpenConnectionAsync();
+        Assert.Equal(1m, await db.ExecuteScalarAsync<decimal>("SELECT (fan_trust_parts(id) ->> 'hub_confirmed')::numeric FROM users WHERE handle = 'at_home'"));
+        Assert.Equal(0m, await db.ExecuteScalarAsync<decimal>("SELECT (fan_trust_parts(id) ->> 'hub_confirmed')::numeric FROM users WHERE handle = 'far_away'"));
+    }
+
     // ------------------------------------------------------------------ helpers
 
     /// <summary>Sets the client address from a test header, as the load balancer would (TestServer has none).</summary>

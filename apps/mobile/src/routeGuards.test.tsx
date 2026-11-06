@@ -30,7 +30,7 @@ function routeFiles(dir = path.join(__dirname, 'app')): string[] {
   });
 }
 
-const SKIPPED = ['_layout.tsx', 'index.tsx', 'sign-in.tsx', 'google-callback.tsx'];
+const SKIPPED = ['_layout.tsx', 'index.tsx', 'sign-in.tsx', 'google-callback.tsx', 'apple-callback.tsx'];
 const routes = routeFiles().filter((file) => !SKIPPED.includes(path.basename(file)));
 
 beforeEach(() => {

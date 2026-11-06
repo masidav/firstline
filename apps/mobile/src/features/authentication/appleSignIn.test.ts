@@ -1,86 +1,79 @@
 /**
  * @jest-environment node
  */
-import { createHash } from 'node:crypto';
-
-import { isAppleSignInAvailable, reauthenticateWithApple, startAppleSignIn } from './appleSignIn';
-
-const mockSignIn = jest.fn();
-const mockAvailable = jest.fn();
-
-jest.mock('expo-apple-authentication', () => ({
-  AppleAuthenticationScope: { FULL_NAME: 0, EMAIL: 1 },
-  isAvailableAsync: () => mockAvailable(),
-  signInAsync: (options?: unknown) => mockSignIn(options),
+const mockConfig = { apiUrl: 'https://api.example/v1', appleServicesId: 'com.example.web' };
+jest.mock('../../config', () => ({
+  get config() {
+    return mockConfig;
+  },
 }));
-const mockExtra: { appleSignIn?: boolean } = {};
-// A getter: the factory runs during import hoisting, before mockExtra is assigned.
-jest.mock('expo-constants', () => ({ __esModule: true, default: { expoConfig: { get extra() { return mockExtra; } } } }));
 jest.mock('expo-crypto', () => {
   const nodeCrypto = jest.requireActual<typeof import('node:crypto')>('node:crypto');
-  return {
-    CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
-    CryptoEncoding: { BASE64: 'base64', HEX: 'hex' },
-    getRandomBytes: (n: number) => new Uint8Array(nodeCrypto.randomBytes(n)),
-    digestStringAsync: async (_algorithm: string, data: string, options: { encoding: 'base64' | 'hex' }) =>
-      nodeCrypto.createHash('sha256').update(data).digest(options.encoding),
-  };
+  return { getRandomBytes: (n: number) => new Uint8Array(nodeCrypto.randomBytes(n)) };
 });
 
-beforeEach(() => jest.clearAllMocks());
+// Jest resolves `./appleSignIn` to the native file (iOS platform), so the web file is loaded by its full name.
+const web = jest.requireActual('./appleSignIn.ts') as typeof import('./appleSignIn');
 
-test('Apple gets the hashed nonce; the API gets the raw one with the identity token', async () => {
-  mockSignIn.mockResolvedValue({ identityToken: 'apple.id.token', authorizationCode: 'code', user: 'u' });
+// The browser pieces the web flow touches, in place of a DOM.
+const assign = jest.fn();
+const store = new Map<string, string>();
+const sessionStorage = {
+  getItem: (key: string) => store.get(key) ?? null,
+  setItem: (key: string, value: string) => void store.set(key, value),
+  removeItem: (key: string) => void store.delete(key),
+};
+Object.assign(globalThis, { window: { location: { origin: 'http://localhost:8081', assign } }, sessionStorage });
 
-  const outcome = await startAppleSignIn();
-
-  expect(outcome).toMatchObject({ ok: true, credential: { provider: 'apple', idToken: 'apple.id.token' } });
-  const nonce = (outcome as { credential: { nonce: string } }).credential.nonce;
-  const options = mockSignIn.mock.calls[0][0] as { nonce: string; requestedScopes: number[] };
-  expect(options.requestedScopes).toEqual([0, 1]);
-  expect(options.nonce).toBe(createHash('sha256').update(nonce).digest('hex'));
+beforeEach(() => {
+  jest.clearAllMocks();
+  store.clear();
+  mockConfig.appleServicesId = 'com.example.web';
+  mockConfig.apiUrl = 'https://api.example/v1';
 });
 
-test('backing out of the Apple sheet cancels; other failures are a message', async () => {
-  mockSignIn.mockRejectedValueOnce({ code: 'ERR_REQUEST_CANCELED' });
-  await expect(startAppleSignIn()).resolves.toBe('cancelled');
+test('leaves for Apple with the Services ID, the API callback as the return URL, a form post, and a state carrying this origin', async () => {
+  await expect(web.startAppleSignIn()).resolves.toBe('redirecting');
 
-  mockSignIn.mockRejectedValueOnce(new Error('ERR_REQUEST_FAILED'));
-  await expect(startAppleSignIn()).resolves.toEqual({ ok: false, message: "Couldn't sign in with Apple. Try again." });
-});
-
-test('re-authentication before deletion returns the authorization code, or why there is none', async () => {
-  mockSignIn.mockResolvedValueOnce({ identityToken: 't', authorizationCode: 'fresh-code', user: 'u' });
-  await expect(reauthenticateWithApple()).resolves.toEqual({ code: 'fresh-code' });
-
-  mockSignIn.mockRejectedValueOnce({ code: 'ERR_REQUEST_CANCELED' });
-  await expect(reauthenticateWithApple()).resolves.toBe('cancelled');
-
-  mockSignIn.mockRejectedValueOnce(new Error('no network'));
-  await expect(reauthenticateWithApple()).resolves.toBe('failed');
-});
-
-test('availability follows the module, and a throwing module means unavailable', async () => {
-  mockAvailable.mockResolvedValueOnce(true);
-  await expect(isAppleSignInAvailable()).resolves.toBe(true);
-  mockAvailable.mockRejectedValueOnce(new Error('no module'));
-  await expect(isAppleSignInAvailable()).resolves.toBe(false);
-});
-
-describe('a build without the Sign in with Apple entitlement', () => {
-  afterEach(() => {
-    delete mockExtra.appleSignIn;
+  const url = new URL(assign.mock.calls[0][0] as string);
+  expect(url.origin + url.pathname).toBe('https://appleid.apple.com/auth/authorize');
+  const params = Object.fromEntries(url.searchParams);
+  expect(params).toEqual({
+    client_id: 'com.example.web',
+    redirect_uri: 'https://api.example/v1/auth/apple/callback',
+    response_type: 'code id_token',
+    response_mode: 'form_post',
+    scope: 'name email',
+    state: expect.any(String),
+    nonce: expect.stringMatching(/^[A-Za-z0-9\-._~]{32}$/),
   });
-
-  it('hides the button even where the module is available', async () => {
-    mockAvailable.mockResolvedValue(true);
-    mockExtra.appleSignIn = false;
-    await expect(isAppleSignInAvailable()).resolves.toBe(false);
+  // base64url JSON without padding: the API reads the origin, the random part makes it unguessable.
+  expect(params.state).toMatch(/^[A-Za-z0-9_-]+$/);
+  expect(JSON.parse(Buffer.from(params.state!, 'base64url').toString())).toEqual({
+    o: 'http://localhost:8081',
+    s: expect.stringMatching(/^[A-Za-z0-9\-._~]{32}$/),
   });
+});
 
-  it('asks the module when the build has the entitlement', async () => {
-    mockAvailable.mockResolvedValue(true);
-    mockExtra.appleSignIn = true;
-    await expect(isAppleSignInAvailable()).resolves.toBe(true);
-  });
+test('the state and the raw nonce are kept for the callback, and taken only once', async () => {
+  await web.startAppleSignIn();
+  const url = new URL(assign.mock.calls[0][0] as string);
+
+  expect(web.takePendingAppleSignIn()).toEqual({ state: url.searchParams.get('state'), nonce: url.searchParams.get('nonce') });
+  expect(web.takePendingAppleSignIn()).toBeNull();
+});
+
+test('the return URL is the API origin without /v1, whatever the trailing slash', async () => {
+  mockConfig.apiUrl = 'http://localhost:5271/v1/';
+  expect(web.appleCallbackUri()).toBe('http://localhost:5271/v1/auth/apple/callback');
+});
+
+test('available only with a Services ID', async () => {
+  await expect(web.isAppleSignInAvailable()).resolves.toBe(true);
+  mockConfig.appleServicesId = '';
+  await expect(web.isAppleSignInAvailable()).resolves.toBe(false);
+});
+
+test('re-authentication before deletion cannot produce a code on the web; deletion goes ahead without one', async () => {
+  await expect(web.reauthenticateWithApple()).resolves.toBe('failed');
 });

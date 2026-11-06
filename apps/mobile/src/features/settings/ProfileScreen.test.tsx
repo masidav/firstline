@@ -22,6 +22,7 @@ jest.mock('../../auth/SessionProvider', () => ({
   useSession: () => ({ session: mockSession, state: mockState }),
 }));
 jest.mock('../fan-level/FanLevelSection', () => ({ FanLevelSection: () => null }));
+jest.mock('../music/MusicSummary', () => ({ MusicSummary: () => null }));
 jest.mock('../notifications/push', () => ({
   pushSupported: () => false,
   registerForPush: jest.fn(),
@@ -385,4 +386,12 @@ test('a photo the server cannot read is explained, and the profile is left alone
   expect(await screen.findByText("That photo couldn't be read. Try another one.")).toBeTruthy();
   expect(mockApi.PATCH).not.toHaveBeenCalled();
   expect(mockSetMe).not.toHaveBeenCalled();
+});
+
+test('"Other music services" opens the Apple Music and Tidal screen', () => {
+  render(<ProfileScreen me={fan} />);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Other music services' }));
+
+  expect(jest.requireMock('expo-router').router.push).toHaveBeenCalledWith('/music');
 });

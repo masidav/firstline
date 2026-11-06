@@ -42,6 +42,8 @@ export async function chooseHubCity(page: Page, city: string): Promise<void> {
   await page.getByLabel('Search for your city').fill(city);
   await page.getByRole('button', { name: new RegExp(`^Add ${city}`) }).first().click();
   await page.getByRole('button', { name: 'Continue' }).click();
+  // The optional location step after saving; the browser would prompt, so skip it.
+  await page.getByRole('button', { name: 'Not now' }).click();
   await page.waitForURL(/\/home/);
   await expect(page.getByRole('heading', { name: 'Your artists' })).toBeVisible();
 }

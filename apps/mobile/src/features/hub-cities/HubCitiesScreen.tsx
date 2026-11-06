@@ -7,6 +7,7 @@ import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Field, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
+import { type LocationCheck, recordLocationCheck } from './locationCheck';
 
 export type HubCity = components['schemas']['HubCity'];
 
@@ -21,6 +22,17 @@ function backToProfile() {
 
 export function cityLabel(city: HubCity): string {
   return `${city.name}, ${city.region}`;
+}
+
+/** One line about what a `hub_set` location check found, for the hub cities just saved (the primary first). */
+export function locationCheckLine(check: LocationCheck | null, hubCities: HubCity[]): string {
+  const primary = hubCities[0];
+  if (!check?.recorded || !primary || !check.nearest_city) return "Couldn't read your location.";
+  if (check.hub_match) {
+    const near = hubCities.find((city) => city.id === check.nearest_city?.id) ?? primary;
+    return `Confirmed: you're near ${near.name}.`;
+  }
+  return `You're nearest to ${check.nearest_city.name} right now; your hub stays ${primary.name}.`;
 }
 
 /** "Wednesday, October 28": when the next change is allowed. */
@@ -44,6 +56,11 @@ export function HubCitiesScreen({ me }: { me: Me }) {
   const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
+  // After a successful save: the optional location step, with what was saved (`me` changes under us by then).
+  const [saved, setSaved] = useState<{ cities: HubCity[]; firstTime: boolean } | null>(null);
+  const [checking, setChecking] = useState(false);
+  // undefined: not run; null: couldn't read the location.
+  const [check, setCheck] = useState<LocationCheck | null | undefined>(undefined);
   // Only the newest search may show its results.
   const latest = useRef(0);
 
@@ -93,12 +110,48 @@ export function HubCitiesScreen({ me }: { me: Me }) {
     try {
       const updated = unwrap(await session.api.PUT('/me/hub-cities', { body: { city_ids: chosen.map((c) => c.id) } }));
       session.setMe(updated);
-      if (firstTime) router.replace('/home');
-      else backToProfile();
+      setSaved({ cities: updated.hub_cities, firstTime });
+      setSaving(false);
     } catch (e) {
       setError(e instanceof ApiError && e.code === 'hub_change_limit' ? e.message : errorMessage(e));
       setSaving(false);
     }
+  }
+
+  /** Where the save was heading: home for a new fan, otherwise back to the profile. */
+  function continueOn() {
+    if (saved?.firstTime) router.replace('/home');
+    else backToProfile();
+  }
+
+  /** The fan's choice to share: the system prompt the first time, one reading, one line about it. Never blocks. */
+  async function shareLocation() {
+    setChecking(true);
+    setCheck(await recordLocationCheck(session.api, { kind: 'hub_set' }));
+    setChecking(false);
+  }
+
+  if (saved) {
+    return (
+      <Screen>
+        <Title>Confirm you're near {saved.cities[0]?.name ?? 'your hub city'}?</Title>
+        <Body muted>
+          Fans in a show's city get first pick, so we check hub cities against your location when you choose to share it.
+          Nothing is stored but the nearest city.
+        </Body>
+        {check === undefined ? (
+          <>
+            <Button label="Share my location" testID="hub-location-share" onPress={() => void shareLocation()} busy={checking} />
+            <Button label="Not now" testID="hub-location-not-now" kind="secondary" onPress={continueOn} disabled={checking} />
+          </>
+        ) : (
+          <>
+            <Body>{locationCheckLine(check, saved.cities)}</Body>
+            <Button label="Continue" testID="hub-location-continue" onPress={continueOn} />
+          </>
+        )}
+      </Screen>
+    );
   }
 
   if (lockedUntil) {

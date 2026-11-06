@@ -131,6 +131,74 @@ public sealed class HubCityApiTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal("city_ids", problem.GetProperty("errors")[0].GetProperty("field").GetString());
     }
 
+    [Fact]
+    public async Task Location_checks_record_the_nearest_city_and_hub_match_never_the_position()
+    {
+        var token = await SignInAsync("fan_one");
+        await JsonAsync(await PutAsync(token, "us-il-chicago", "us-wi-milwaukee"), HttpStatusCode.OK);
+
+        // Evanston, 19 km from Chicago's centre: matched, distances rounded to 10 km.
+        var near = await JsonAsync(await SendAsync(HttpMethod.Post, "/v1/me/location-checks", token,
+            JsonContent.Create(new { kind = "hub_set", latitude = 42.0451, longitude = -87.6877, accuracy_m = 35 })), HttpStatusCode.OK);
+        Assert.True(near.GetProperty("recorded").GetBoolean());
+        Assert.True(near.GetProperty("hub_match").GetBoolean());
+        Assert.Equal("us-il-chicago", near.GetProperty("nearest_city").GetProperty("id").GetString());
+        Assert.Equal((20, 20), (near.GetProperty("nearest_city_km").GetInt32(), near.GetProperty("nearest_hub_km").GetInt32()));
+
+        // Los Angeles, for a show: recorded, no match, nearest hub far away.
+        var allocationId = await AllocationAsync();
+        var far = await JsonAsync(await SendAsync(HttpMethod.Post, "/v1/me/location-checks", token,
+            JsonContent.Create(new { kind = "eligibility", allocation_id = allocationId, latitude = 34.05, longitude = -118.25, accuracy_m = 100 })), HttpStatusCode.OK);
+        Assert.False(far.GetProperty("hub_match").GetBoolean());
+        Assert.Equal("us-ca-los-angeles", far.GetProperty("nearest_city").GetProperty("id").GetString());
+        Assert.InRange(far.GetProperty("nearest_hub_km").GetInt32(), 2700, 2900);
+
+        // An IP-level guess is dropped.
+        var rough = await JsonAsync(await SendAsync(HttpMethod.Post, "/v1/me/location-checks", token,
+            JsonContent.Create(new { kind = "registration", allocation_id = allocationId, latitude = 41.88, longitude = -87.63, accuracy_m = 80000 })), HttpStatusCode.OK);
+        Assert.False(rough.GetProperty("recorded").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, rough.GetProperty("nearest_city").ValueKind);
+
+        await using var connection = await _db.OpenConnectionAsync();
+        var rows = (await connection.QueryAsync<(string Kind, string City, int CityKm, int? HubKm, bool Match)>(
+            "SELECT kind, nearest_city_id, nearest_city_km, nearest_hub_km, hub_match FROM hub_location_checks ORDER BY id")).ToList();
+        Assert.Equal([("hub_set", "us-il-chicago", 20, 20, true), ("eligibility", "us-ca-los-angeles", 0, rows[1].HubKm, false)], rows);
+        Assert.Empty(await connection.QueryAsync<string>(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'hub_location_checks' AND column_name IN ('latitude', 'longitude')"));
+    }
+
+    [Theory]
+    [InlineData("""{"kind": "app_open", "latitude": 1, "longitude": 1}""", "kind")]
+    [InlineData("""{"kind": "hub_set", "allocation_id": "11111111-1111-1111-1111-111111111111", "latitude": 1, "longitude": 1}""", "allocation_id")]
+    [InlineData("""{"kind": "eligibility", "latitude": 1, "longitude": 1}""", "allocation_id")]
+    [InlineData("""{"kind": "hub_set", "latitude": 91, "longitude": 1}""", "latitude")]
+    [InlineData("""{"kind": "hub_set", "latitude": 1, "longitude": -181}""", "longitude")]
+    [InlineData("""{"kind": "hub_set", "latitude": 1, "longitude": 1, "accuracy_m": -1}""", "accuracy_m")]
+    public async Task Location_checks_are_validated(string body, string field)
+    {
+        var token = await SignInAsync("fan_one");
+
+        var problem = await JsonAsync(await SendAsync(HttpMethod.Post, "/v1/me/location-checks", token,
+            new StringContent(body, System.Text.Encoding.UTF8, "application/json")), HttpStatusCode.UnprocessableEntity);
+
+        Assert.Equal(field, problem.GetProperty("errors")[0].GetProperty("field").GetString());
+    }
+
+    private async Task<Guid> AllocationAsync()
+    {
+        var artistId = await ScoringSetup.ActiveArtistAsync(_db, "sp-loc", "Loc Artist", releases: 1);
+        await using var connection = await _db.OpenConnectionAsync();
+        var eventId = await connection.ExecuteScalarAsync<Guid>(
+            "INSERT INTO events (artist_id, name, city_id, starts_at) VALUES (@artistId, 'Loc Show', 'us-il-chicago', now() + interval '30 days') RETURNING id",
+            new { artistId });
+        return await connection.ExecuteScalarAsync<Guid>(
+            """
+            INSERT INTO allocations (event_id, tickets, face_value_cents, min_raw_score, registration_opens_at, registration_closes_at, published_at)
+            VALUES (@eventId, 10, 4500, 0, now() - interval '1 hour', now() + interval '6 days', now()) RETURNING id
+            """,
+            new { eventId });
+    }
+
     private static List<string?> Ids(JsonElement me) =>
         [.. me.GetProperty("hub_cities").EnumerateArray().Select(c => c.GetProperty("id").GetString())];
 

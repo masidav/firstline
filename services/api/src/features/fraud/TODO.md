@@ -15,7 +15,13 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
       days), `spotify_account_reuse` (Spotify account history), and the bot rules `headless_registration`,
       `instant_registration`, `eligibility_polling` (daily eligibility counts). Not detectable: clusters on separate
       phones, networks, and Spotify accounts; request cadence (no per-request log kept); payments (none exist).*
-- [x] Keep a living document of known gaming strategies and the mitigation for each. *`docs/security/gaming-strategies.md`, 2026-10-29.*
+      *Location tied to hub cities done 2026-11-05 (migration 0057, `docs/security/hub-location-checks.md`): optional
+      device location at three moments, stored as the nearest city and rounded distances only; trust part
+      `hub_confirmed`; rules `hub_location_mismatch` and `impossible_travel`. Verified: HubCityApiTests (endpoint,
+      validation), FraudReviewApiTests (both rules, trust), invariants (0057).*
+- [x] Keep a living document of known gaming strategies and the mitigation for each. *`docs/security/gaming-strategies.md`, 2026-10-29; strategies 12 and 13 added 2026-11-05.*
+- [ ] More stat-based verification signals: proposals with costs in `docs/product/fandom-verification-signals.md`
+      (2026-11-05); which to build next is an owner decision.
 - [ ] Freeze each fan's eligibility snapshot when an allocation's registration closes so late gaming has no effect.
 - [ ] Verify one person per account at registration (phone or ID check) and record only the verification result, not raw documents.
 - [x] Give staff a fraud review queue with the evidence behind each flag; reuse the audit-trail pattern of `verification_checks`.
