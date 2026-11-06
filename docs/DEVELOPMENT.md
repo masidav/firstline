@@ -106,6 +106,10 @@ The suite starts its own PostgreSQL 16 container, so it needs Docker but not the
   creates a local dev user and session (local database only), runs Spotify's sign-in in your browser, calls
   `PUT /v1/me/spotify`, and shows what the sync stored. Register `http://127.0.0.1:8888/callback` in the
   Spotify dashboard and add it to `Spotify__RedirectUris`.
+- The same for Apple Music and Tidal (ADR 0007): `python3 tools/dev/music_connect.py tidal connect` (register
+  `http://127.0.0.1:8889/callback` in the Tidal dashboard and add it to `MusicProviders__Tidal__RedirectUris`) and
+  `python3 tools/dev/music_connect.py apple-music connect` (serves a MusicKit JS page on 127.0.0.1 with the API's
+  developer token). Both need the `MusicProviders__*` settings and `Spotify__TokenKey`.
 - `testScripts/` holds local helpers, runnable from any directory: `startWebAppLocal.sh` (fan app in the
   browser), `testSpotifyAPI.sh` (add a test artist and connect Spotify), and `wipeLocalDb.sh` (deletes ALL data
   in the local compose database and re-applies migrations; asks first unless given `--yes`), and

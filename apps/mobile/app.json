@@ -51,7 +51,10 @@
       "bundleIdentifier": "com.firstline.fandomscore",
       "supportsTablet": false,
       "usesAppleSignIn": true,
-      "config": { "usesNonExemptEncryption": false }
+      "config": { "usesNonExemptEncryption": false },
+      "infoPlist": {
+        "NSAppleMusicUsageDescription": "FirstLine reads your Apple Music library and listening history, only for artists you follow here, to measure your fandom."
+      }
     },
     "android": {
       "package": "com.firstline.fandomscore",

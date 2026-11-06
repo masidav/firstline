@@ -5,8 +5,8 @@ import type { Api } from '../../api/client';
 import { notConnected } from './musicConnect';
 
 // Jest resolves `./appleMusicConnect` to the native file (iOS platform), so the web file is loaded by its full name.
+// The native flow has its own test (appleMusicConnect.native.test.ts).
 const web = jest.requireActual('./appleMusicConnect.ts') as typeof import('./appleMusicConnect');
-const native = jest.requireActual('./appleMusicConnect.native.ts') as typeof import('./appleMusicConnect.native');
 
 const ok = (data: unknown, status = 200) => ({ data, response: { ok: true, status } });
 const problem = (status: number, code: string) => ({ error: { code }, response: { ok: false, status } });
@@ -92,7 +92,23 @@ test('a token Apple rejects is explained from the field error', async () => {
   await expect(web.connectAppleMusic(api)).resolves.toEqual({ ok: false, message: 'Apple Music rejected the token.' });
 });
 
-test('the native app points to the web app for now', async () => {
-  await expect(native.connectAppleMusic(api)).resolves.toEqual({ ok: false, message: 'Apple Music connects from the web app for now.' });
-  expect(mockApi.GET).not.toHaveBeenCalled();
+test('a MusicKit script that fails to load is an error, not a cancel', async () => {
+  // A fresh page (a fresh module, so nothing is cached): no MusicKit yet, and the script tag's error handler fires
+  // instead of `musickitloaded`.
+  let fresh = web;
+  jest.isolateModules(() => {
+    fresh = jest.requireActual('./appleMusicConnect.ts') as typeof web;
+  });
+  fakeWindow.MusicKit = undefined;
+  const appendChild = fakeDocument.head.appendChild;
+  fakeDocument.head.appendChild = () => scripts[scripts.length - 1]?.onerror?.();
+  try {
+    await expect(fresh.connectAppleMusic(api)).resolves.toEqual({
+      ok: false,
+      message: "Couldn't load Apple Music. Check your connection and try again.",
+    });
+  } finally {
+    fakeDocument.head.appendChild = appendChild;
+  }
+  expect(mockApi.PUT).not.toHaveBeenCalled();
 });

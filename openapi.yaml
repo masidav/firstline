@@ -4702,6 +4702,10 @@ components:
         spotify:
           $ref: '#/components/schemas/SpotifyStatus'
           description: Same as `GET /me/spotify`.
+        music:
+          type: array
+          description: Apple Music and Tidal, one status each, connected or not. Same as `GET /me/music`.
+          items: {$ref: '#/components/schemas/MusicStatus'}
         hub_cities:
           type: array
           maxItems: 3

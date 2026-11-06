@@ -38,7 +38,9 @@
   tokens apart.
 
 ## Not verified (do before the first fan connects)
-- Neither client has been run against the real API. The tests fake both. Tidal moved its collection endpoints in
+- Neither client has been run against the real API. The tests fake both. `tools/dev/music_connect.py` (2026-11-06)
+  runs a real account through connect and sync on the local stack (`tidal connect`, `apple-music connect`) and
+  prints what was stored; that is the check to run once per provider. Tidal moved its collection endpoints in
   autumn 2026 (`/userCollection{Tracks,Albums,Artists,Playlists}/me/relationships/items`, cursor paging through
   `links.next`, artists through `/tracks?filter[id]=…&include=artists`); the client follows that, and the
   constants are at the top of `TidalClient.cs` if they move again. Apple Music's library endpoints

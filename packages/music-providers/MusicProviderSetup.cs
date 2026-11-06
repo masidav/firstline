@@ -15,6 +15,7 @@ public static class MusicProviderSetup
         var section = configuration.GetSection(MusicProviderOptions.Section);
         AppleMusicClient.ValidateKey((section.Get<MusicProviderOptions>() ?? new MusicProviderOptions()).AppleMusic);
         services.Configure<MusicProviderOptions>(section);
+        services.AddSingleton<AppleMusicDeveloperTokens>();
         services.AddHttpClient<AppleMusicClient>(http => http.Timeout = ProviderHttp.RequestTimeout)
             .UseSocketsHttpHandler((handler, _) => handler.PooledConnectionLifetime = TimeSpan.FromMinutes(15))
             .SetHandlerLifetime(Timeout.InfiniteTimeSpan);

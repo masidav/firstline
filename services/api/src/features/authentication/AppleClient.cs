@@ -96,7 +96,11 @@ public sealed partial class AppleClient(
             IssuedAt = now,
             NotBefore = now,
             Expires = now.AddMinutes(5),
-            SigningCredentials = new SigningCredentials(new ECDsaSecurityKey(key) { KeyId = _apple.KeyId }, SecurityAlgorithms.EcdsaSha256),
+            // The key is disposed with this call, so the library must not cache a signature provider over it.
+            SigningCredentials = new SigningCredentials(new ECDsaSecurityKey(key) { KeyId = _apple.KeyId }, SecurityAlgorithms.EcdsaSha256)
+            {
+                CryptoProviderFactory = new CryptoProviderFactory { CacheSignatureProviders = false },
+            },
         });
     }
 

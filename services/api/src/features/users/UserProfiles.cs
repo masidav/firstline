@@ -1,8 +1,10 @@
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Dapper;
+using FandomScore.Api.Features.MusicSync;
 using FandomScore.Api.Features.SpotifySync;
 using FandomScore.Api.Infrastructure;
+using FandomScore.MusicProviders;
 using Npgsql;
 
 namespace FandomScore.Api.Features.Users;
@@ -23,6 +25,9 @@ public sealed record MeResponse(
     public PushSettings Push => new(PushTickets, PushPresales, PushStaff);
 
     public SpotifyStatus Spotify { get; init; } = SpotifyStatus.NotConnected;
+
+    /// <summary>Apple Music and Tidal, one status each, connected or not (same as <c>GET /me/music</c>; ADR 0007).</summary>
+    public IReadOnlyList<MusicStatus> Music { get; init; } = [];
 
     /// <summary>Primary first. Empty until the fan picks them (the app asks right after sign-up).</summary>
     public IReadOnlyList<HubCity> HubCities { get; init; } = [];
@@ -83,9 +88,16 @@ public static partial class UserProfiles
         }
 
         var (hubs, changeAvailableAt) = await HubCities.LoadAsync(connection, userId, transaction);
+        var music = new List<MusicStatus>();
+        foreach (var provider in MusicProvider.All)
+        {
+            music.Add(await MusicEndpoints.LoadStatusAsync(connection, userId, provider, transaction));
+        }
+
         return me with
         {
             Spotify = await SpotifyConnections.LoadStatusAsync(connection, userId, transaction),
+            Music = music,
             HubCities = hubs,
             HubCitiesChangeAvailableAt = changeAvailableAt,
         };

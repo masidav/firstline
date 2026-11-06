@@ -87,6 +87,13 @@ public sealed class MusicApiTests(PostgresFixture postgres) : IAsyncLifetime, ID
 
         var problem = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/music/deezer", token), HttpStatusCode.NotFound);
         Assert.Equal("not_found", problem.GetProperty("code").GetString());
+
+        // Me carries the same two statuses, so the app needs no second call.
+        var me = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me", token), HttpStatusCode.OK);
+        Assert.Equal(["apple_music", "tidal"], me.GetProperty("music").EnumerateArray().Select(i => i.GetProperty("provider").GetString()));
+        await JsonAsync(await SendAsync(HttpMethod.Put, "/v1/me/music/apple_music", token, new { music_user_token = "mut-1" }), HttpStatusCode.OK);
+        me = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me", token), HttpStatusCode.OK);
+        Assert.True(me.GetProperty("music")[0].GetProperty("connected").GetBoolean());
     }
 
     [Fact]

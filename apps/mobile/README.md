@@ -101,9 +101,12 @@ server does the exchange; no Spotify token ever reaches the browser. Code: `src/
 ## Connect Apple Music and Tidal
 Profile → **Other music services** (`/music`). Tidal uses the same PKCE redirect as Spotify (`/tidal-callback`,
 `EXPO_PUBLIC_TIDAL_CLIENT_ID` = the API's `MusicProviders__Tidal__ClientId`, redirect URIs in
-`MusicProviders__Tidal__RedirectUris` and the TIDAL dashboard). Apple Music connects on the web through MusicKit JS
-(`EXPO_PUBLIC_APPLE_MUSIC_ENABLED=true`; the API needs its MusicKit key); the iOS app has no MusicKit module yet.
-Details: `src/features/music/README.md`, design: `docs/adr/0007-music-providers.md`.
+`MusicProviders__Tidal__RedirectUris` and the TIDAL dashboard). Apple Music connects through MusicKit
+(`EXPO_PUBLIC_APPLE_MUSIC_ENABLED=true`; the API needs its MusicKit key): MusicKit JS on the web, and on iOS the local
+Expo module `modules/apple-music-kit` (Swift, wraps Apple's MusicKit framework; `NSAppleMusicUsageDescription` in
+`app.json`), which needs an iOS build, an iOS 15+ iPhone, and the Apple Developer Program, and has not been
+compiled on a device yet. Android has no MusicKit for third-party apps, so there Apple Music connects from the web
+app. Details: `src/features/music/README.md`, design: `docs/adr/0007-music-providers.md`.
 
 ## Publish a static build
 ```bash
@@ -127,6 +130,7 @@ at startup from `/config.js`, which nginx writes from its environment, so one im
 | `src/api/` | `schema.d.ts` (generated, don't edit), `client.ts` (typed client, `ApiError`), `errors.ts` (messages). |
 | `src/features/<feature>/` | Feature UI, e.g. `authentication/SignInScreen` (Google, Apple, developer sign-in), `settings/ProfileScreen`. |
 | `src/ui/` | Shared components and theme tokens. |
+| `modules/` | Local Expo modules (native code Expo autolinks): `apple-music-kit` (Swift, Apple's MusicKit on iOS; its `index.ts` answers `null` / `unavailable` where the native module doesn't exist). |
 | `app.json`, `app.config.ts` | App config: the static part (name, bundle ID, icon, plugins) and the part that depends on the environment (Google's scheme, EAS project id, local-network exception, the personal-team build). |
 | `eas.json` | EAS Build profiles: `development`, `development-simulator`, `beta`, `production`. |
 | `assets/` | Icon and splash image, drawn by `tools/dev/app-icons.mjs` (placeholders until there is a brand). |
@@ -158,7 +162,8 @@ e2e/run.sh             # end-to-end journeys in a browser against the API and a 
 ## Building the iOS app
 The native project is generated from `app.json` and `app.config.ts` (`expo prebuild`); nothing under `ios/` is
 hand-edited or committed. What's set: bundle ID `com.firstline.fandomscore`, Sign in with Apple, push
-(`aps-environment`), the photo-library and location (when in use only) purpose strings, the `fandomscore` URL scheme (Spotify's redirect
+(`aps-environment`), the photo-library, Apple Music, and location (when in use only) purpose strings, the local
+MusicKit module (`modules/apple-music-kit`, autolinked), the `fandomscore` URL scheme (Spotify's redirect
 `fandomscore://spotify-callback`), Google's reversed-client-ID scheme when `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` is
 set, portrait only, iPhone only, and the export-compliance answer (`usesNonExemptEncryption: false`, the app only
 uses HTTPS). CI runs `npm run check:ios` on every push: the prebuild and an iOS JavaScript bundle, which is as far
@@ -221,8 +226,9 @@ TestFlight. `production` is the same against the production API, whose hostname 
   (expo.dev → Account settings → Access tokens) and the one-time setup above; it stops with a message otherwise.
 
 Not tried yet, in this order, once a build exists: Sign in with Apple and Google, connecting Spotify, push
-notifications on a real phone, the share sheets, and the offline journal queue (Keychain and file storage are
-written and unit-tested with the modules mocked). Universal links (`https://app.beta.firstline-5730kl.com/...` opening
+notifications on a real phone, the share sheets, the offline journal queue (Keychain and file storage are
+written and unit-tested with the modules mocked), and connecting Apple Music (the Swift in `modules/apple-music-kit`
+has never been compiled; it needs an iPhone on iOS 15+ with an Apple Music subscription and the API's MusicKit key). Universal links (`https://app.beta.firstline-5730kl.com/...` opening
 the app) and EAS Update (over-the-air JavaScript fixes) are not set up.
 
 ## Not done yet

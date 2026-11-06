@@ -68,9 +68,12 @@ public sealed class FakeAppleMusic : HttpMessageHandler
         Tidal = new TidalOptions { ClientId = tidalClientId ?? FakeTidal.ClientId, RedirectUris = FakeTidal.RedirectUri },
     };
 
-    public AppleMusicClient Client(MusicProviderOptions? options = null) =>
-        new(new HttpClient(this, disposeHandler: false), Microsoft.Extensions.Options.Options.Create(options ?? Options()),
-            TimeProvider.System, NullLogger<AppleMusicClient>.Instance);
+    public AppleMusicClient Client(MusicProviderOptions? options = null)
+    {
+        var settings = Microsoft.Extensions.Options.Options.Create(options ?? Options());
+        return new AppleMusicClient(new HttpClient(this, disposeHandler: false), settings,
+            new AppleMusicDeveloperTokens(settings, TimeProvider.System), TimeProvider.System, NullLogger<AppleMusicClient>.Instance);
+    }
 
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {

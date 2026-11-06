@@ -1,4 +1,4 @@
-import { ApiError, type components } from '../../api/client';
+import { type Api, ApiError, type components, unwrap } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 
 // Apple Music and Tidal as listening sources (openapi /me/music, docs/adr/0007-music-providers.md). The same
@@ -81,6 +81,44 @@ export async function completeTidalConnect(
     return { ok: true, status };
   } catch (error) {
     return { ok: false, message: connectErrorMessage(error, 'tidal') };
+  }
+}
+
+/**
+ * The Apple Music connect flow around a platform's MusicKit (MusicKit JS on the web, the local MusicKit module on
+ * iOS): the developer token from the API (signed with its MusicKit key), then `authorize` for the fan's Music User
+ * Token, then that token to the API (`PUT /me/music/apple_music`), which checks and stores it. `authorize` resolves
+ * to no token when the fan backed out (`cancelled`), and throws with a message to show when MusicKit itself failed.
+ */
+export async function connectAppleMusicWith(
+  api: Api,
+  authorize: (developerToken: string) => Promise<string | null | undefined>,
+): Promise<ConnectResult | 'cancelled'> {
+  let developerToken: string;
+  try {
+    developerToken = unwrap(await api.GET('/me/music/apple_music/developer-token')).token;
+  } catch (error) {
+    return { ok: false, message: connectErrorMessage(error, 'apple_music') };
+  }
+
+  let musicUserToken: string | null | undefined;
+  try {
+    musicUserToken = await authorize(developerToken);
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "Apple Music couldn't start. Try again." };
+  }
+  if (!musicUserToken) return 'cancelled';
+
+  try {
+    const status = unwrap(
+      await api.PUT('/me/music/{provider}', {
+        params: { path: { provider: 'apple_music' } },
+        body: { music_user_token: musicUserToken },
+      }),
+    );
+    return { ok: true, status };
+  } catch (error) {
+    return { ok: false, message: connectErrorMessage(error, 'apple_music') };
   }
 }
 

@@ -5,8 +5,6 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.JsonWebTokens;
-using Microsoft.IdentityModel.Tokens;
 
 namespace FandomScore.MusicProviders;
 
@@ -17,7 +15,8 @@ namespace FandomScore.MusicProviders;
 /// logged or put in exception messages. Not yet tried against the real API (see the package README).
 /// </summary>
 public sealed partial class AppleMusicClient(
-    HttpClient http, IOptions<MusicProviderOptions> options, TimeProvider time, ILogger<AppleMusicClient> logger) : IDisposable
+    HttpClient http, IOptions<MusicProviderOptions> options, AppleMusicDeveloperTokens developerTokens, TimeProvider time,
+    ILogger<AppleMusicClient> logger)
 {
     public static readonly Uri ApiBase = new("https://api.music.apple.com/v1/");
 
@@ -25,59 +24,10 @@ public sealed partial class AppleMusicClient(
     private const int PageSize = 100;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    private readonly AppleMusicOptions _apple = options.Value.AppleMusic;
     private readonly MusicProviderOptions _options = options.Value;
-    private readonly SemaphoreSlim _tokenLock = new(1, 1);
-    private (string Token, DateTimeOffset ExpiresAt)? _developerToken;
-    private ECDsa? _signingKey;
 
-    /// <summary>
-    /// A developer token: an ES256 JWT with the team id as issuer and the key id in the header, good for
-    /// <see cref="AppleMusicOptions.DeveloperTokenLifetime"/>. Cached per process until a minute before expiry. The
-    /// app's MusicKit needs one too (<c>GET /me/music/apple_music/developer-token</c>).
-    /// </summary>
-    public async Task<string> DeveloperTokenAsync(CancellationToken cancellationToken)
-    {
-        if (_developerToken is { } current && current.ExpiresAt > time.GetUtcNow())
-        {
-            return current.Token;
-        }
-
-        await _tokenLock.WaitAsync(cancellationToken);
-        try
-        {
-            if (_developerToken is { } fresh && fresh.ExpiresAt > time.GetUtcNow())
-            {
-                return fresh.Token;
-            }
-
-            var now = time.GetUtcNow().UtcDateTime;
-            var expires = now + _apple.DeveloperTokenLifetime;
-            // One key for the life of the client: the token handler caches a signing provider per security key, so a
-            // key disposed after the first token would be used again for the next.
-            if (_signingKey is null)
-            {
-                var key = ECDsa.Create();
-                key.ImportFromPem(_apple.PrivateKey);
-                _signingKey = key;
-            }
-
-            var token = new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
-            {
-                Issuer = _apple.TeamId,
-                IssuedAt = now,
-                NotBefore = now,
-                Expires = expires,
-                SigningCredentials = new SigningCredentials(new ECDsaSecurityKey(_signingKey) { KeyId = _apple.KeyId }, SecurityAlgorithms.EcdsaSha256),
-            });
-            _developerToken = (token, new DateTimeOffset(expires) - TimeSpan.FromMinutes(1));
-            return token;
-        }
-        finally
-        {
-            _tokenLock.Release();
-        }
-    }
+    /// <summary>The current developer token (see <see cref="AppleMusicDeveloperTokens"/>); the app's MusicKit needs one too.</summary>
+    public Task<string> DeveloperTokenAsync(CancellationToken cancellationToken) => developerTokens.GetAsync(cancellationToken);
 
     /// <summary>Fails startup on a malformed key instead of at the first connection.</summary>
     public static void ValidateKey(AppleMusicOptions apple)
@@ -196,12 +146,6 @@ public sealed partial class AppleMusicClient(
 
         return await response.Content.ReadFromJsonAsync<T>(Json, cancellationToken)
                ?? throw new MusicUnavailableException($"Apple Music returned an empty {label} response.");
-    }
-
-    public void Dispose()
-    {
-        _tokenLock.Dispose();
-        _signingKey?.Dispose();
     }
 
     private sealed record Document<T>(IReadOnlyList<T>? Data, string? Next);

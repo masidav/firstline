@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { Platform } from 'react-native';
 
 import { notConnected } from './musicConnect';
 import { MusicScreen } from './MusicScreen';
@@ -114,10 +115,25 @@ test('a cancelled Apple Music connect leaves things as they were; a failed one s
   fireEvent.press(await screen.findByRole('button', { name: 'Connect Apple Music' }));
   await waitFor(() => expect(screen.getByRole('button', { name: 'Connect Apple Music' })).toBeEnabled());
 
-  connectAppleMusic.mockResolvedValueOnce({ ok: false, message: 'Apple Music connects from the web app for now.' });
+  connectAppleMusic.mockResolvedValueOnce({ ok: false, message: "Apple Music couldn't sign you in." });
   fireEvent.press(screen.getByRole('button', { name: 'Connect Apple Music' }));
 
-  expect(await screen.findByText('Apple Music connects from the web app for now.')).toBeTruthy();
+  expect(await screen.findByText("Apple Music couldn't sign you in.")).toBeTruthy();
+});
+
+test('on Android, Apple Music has no Connect button, only the note to use the web app', async () => {
+  Platform.OS = 'android';
+  try {
+    listing();
+    render(<MusicScreen />);
+
+    expect(await screen.findByText(/Apple Music connects from the web app for now/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Connect Apple Music' })).toBeNull();
+    // Tidal connects in place on Android as on iOS.
+    expect(screen.getByRole('button', { name: 'Connect Tidal' })).toBeTruthy();
+  } finally {
+    Platform.OS = 'ios';
+  }
 });
 
 test('sync now posts to the provider, shows the sync, and polls until it is done', async () => {

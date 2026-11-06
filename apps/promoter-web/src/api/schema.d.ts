@@ -3975,6 +3975,8 @@ export interface components {
             presale_reminders: boolean;
             /** @description Same as `GET /me/spotify`. */
             spotify?: components["schemas"]["SpotifyStatus"];
+            /** @description Apple Music and Tidal, one status each, connected or not. Same as `GET /me/music`. */
+            music?: components["schemas"]["MusicStatus"][];
             /** @description Primary first. Empty until the fan chooses them (the app asks right after sign-up). */
             hub_cities: components["schemas"]["HubCity"][];
             /**

@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 
 import { ApiError, unwrap } from '../../api/client';
 import { useSession } from '../../auth/SessionProvider';
@@ -34,6 +34,15 @@ const CONFIG_HINT: Record<MusicProvider, string> = {
   apple_music: 'EXPO_PUBLIC_APPLE_MUSIC_ENABLED',
   tidal: 'EXPO_PUBLIC_TIDAL_CLIENT_ID',
 };
+
+/**
+ * Apple Music connects through MusicKit: MusicKit JS on the web, the local MusicKit module on iOS. Apple has no
+ * MusicKit for third-party Android apps, so there the fan connects from the web app (the connection lives on the
+ * server and counts everywhere).
+ */
+function webOnly(provider: MusicProvider): boolean {
+  return provider === 'apple_music' && Platform.OS === 'android';
+}
 
 /** Connect, sync, and disconnect Apple Music and Tidal (openapi /me/music). Spotify has its own screen. */
 export function MusicScreen() {
@@ -172,6 +181,8 @@ export function MusicScreen() {
                 <Body muted>
                   {name} isn't set up for this build ({CONFIG_HINT[provider]}).
                 </Body>
+              ) : webOnly(provider) ? (
+                needsConnect && <Body muted>{name} connects from the web app for now. A connection made there counts here too.</Body>
               ) : (
                 needsConnect && (
                   <Button

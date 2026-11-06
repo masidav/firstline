@@ -136,6 +136,25 @@ public sealed class StatsApiTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal((0, 0, 0, 0), (listening.GetProperty("saved_albums").GetInt32(), listening.GetProperty("top_tracks").GetInt32(),
             listening.GetProperty("followed_artists").GetInt32(), listening.GetProperty("plays_last_quarter").GetInt32()));
 
+        // The same artist on a second service (migration 0058): the strongest signal per artist, never the sum, and
+        // the same album saved on both counts once.
+        await using (var connection = await _db.OpenConnectionAsync())
+        {
+            await connection.ExecuteAsync(
+                """
+                INSERT INTO user_artist_signals (user_id, provider, artist_id, liked_tracks, playlist_tracks, distinct_albums, recent_plays, followed)
+                VALUES (@me, 'apple_music', @artist, 7, 5, 1, 1, true);
+                INSERT INTO user_album_saves (user_id, provider, album_id, saved_at)
+                SELECT @me, p, id, now() FROM albums, unnest(ARRAY['spotify', 'tidal']) p WHERE spotify_album_id = 'sp-geese-al-1';
+                """,
+                new { me, artist });
+        }
+
+        var two = (await StatsAsync(token)).GetProperty("listening");
+        Assert.Equal((1, 10, 5, 1, 3, 1, 1), (two.GetProperty("artists").GetInt32(), two.GetProperty("liked_tracks").GetInt32(),
+            two.GetProperty("playlist_tracks").GetInt32(), two.GetProperty("distinct_albums").GetInt32(),
+            two.GetProperty("recent_plays").GetInt32(), two.GetProperty("saved_albums").GetInt32(), two.GetProperty("followed_artists").GetInt32()));
+
         var journal = stats.GetProperty("journal");
         Assert.Equal((2, 1, 1, 1, 1, 1, 1), (journal.GetProperty("logs").GetInt32(), journal.GetProperty("albums_logged").GetInt32(),
             journal.GetProperty("relistens").GetInt32(), journal.GetProperty("reviews").GetInt32(),

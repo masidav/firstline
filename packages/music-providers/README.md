@@ -6,7 +6,8 @@ Apple Music and Tidal clients, options, and the shared HTTP retry policy (ADR 00
 | File | What |
 | --- | --- |
 | `MusicProviderOptions.cs` | `MusicProviders` section: Apple Music key, Tidal client, sync intervals and limits. `MusicProvider` names the providers and the token purpose. |
-| `AppleMusicClient.cs` | Developer tokens (ES256 JWT, cached per process), `me/storefront` to check a user token, the library reads. |
+| `AppleMusicClient.cs` | `me/storefront` to check a user token, the library reads. |
+| `AppleMusicDeveloperTokens.cs` | Developer tokens (ES256 JWT with the MusicKit key), one per process, renewed before expiry. A singleton because the token library caches signature providers per key and the typed client is transient. |
 | `TidalClient.cs` | Token endpoint (PKCE exchange, refresh), `users/me`, the collection and playlist reads (JSON:API, cursor paging), artist lookups. |
 | `MusicModels.cs` | `MusicLibrary`: a provider's library in one shape for the matcher. |
 | `MusicErrors.cs` | Authorization (reconnect), request (don't retry), unavailable (retry later). |

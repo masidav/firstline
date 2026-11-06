@@ -465,7 +465,13 @@ Details: [Notifications](services/api/src/features/notifications/TODO.md) · [Mo
       `/music` screen (Apple Music through MusicKit JS on the web, Tidal through PKCE on web and native). Verified
       2026-11-05: `dotnet test` 448/448 (MusicSyncJobTests 6, MusicApiTests 6, SpotifySyncJobTests, invariants 0058),
       `npm test` 423/423. **Neither provider has been run against the real API** (ADR 0007 "Not verified"); provider
-      accounts are owner steps (`docs/OWNER_TODO.md` B). Store purchases and attendance: not started.*
+      accounts are owner steps (`docs/OWNER_TODO.md` B). Store purchases and attendance: not started.
+      Follow-ups 2026-11-06: `tools/dev/music_connect.py` runs a real Tidal or Apple Music account through connect and
+      sync on the local stack (the check to run once per provider); `Me.music` carries both statuses; listening stats
+      take the strongest signal per artist across services (no double count); Apple Music on iOS through a local Expo
+      module wrapping MusicKit (`apps/mobile/modules/apple-music-kit`, Swift not yet compiled: needs a Mac or an EAS
+      build); a latent bug fixed where the token library cached a signing provider over a disposed key (developer
+      tokens now live in one process-wide holder). Verified: `dotnet test` 448/448, fan app `npm test` 434/434.*
 - [ ] Location tied to hub cities to confirm fans aren't bots (requested 2026-11-05). *Done 2026-11-05 (migration 0057,
       `docs/security/hub-location-checks.md`): the app asks for the device location, optionally, when the fan sets hub
       cities, opens a show's standing, or registers (`POST /me/location-checks`); only the nearest curated city,

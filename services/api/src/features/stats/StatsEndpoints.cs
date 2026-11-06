@@ -89,17 +89,23 @@ public static class StatsEndpoints
             WHERE s.user_id = @userId
             ORDER BY s.percentile DESC, lower(a.name), a.id;
 
+            -- Per artist, the strongest signal across the fan's services (as v_raw_scores reads them, migration 0058), so a
+            -- track liked on two services counts once; then the totals.
             SELECT count(*)::int AS Artists, COALESCE(sum(liked_tracks), 0)::int AS LikedTracks,
                    COALESCE(sum(playlist_tracks), 0)::int AS PlaylistTracks,
                    COALESCE(sum(distinct_albums), 0)::int AS DistinctAlbums, COALESCE(sum(recent_plays), 0)::int AS RecentPlays,
-                   (SELECT count(*) FROM user_album_saves v JOIN albums al ON al.id = v.album_id AND al.delisted_at IS NULL
+                   (SELECT count(DISTINCT v.album_id) FROM user_album_saves v JOIN albums al ON al.id = v.album_id AND al.delisted_at IS NULL
                      JOIN artists aa ON aa.id = al.artist_id AND aa.status = 'active' WHERE v.user_id = @userId)::int AS SavedAlbums,
                    COALESCE(sum(top_tracks), 0)::int AS TopTracks,
                    count(*) FILTER (WHERE followed)::int AS FollowedArtists,
                    (SELECT count(*) FROM user_plays p JOIN artists pa ON pa.id = p.artist_id AND pa.status = 'active'
                      WHERE p.user_id = @userId AND p.played_at >= now() - interval '90 days')::int AS PlaysLastQuarter
-            FROM user_artist_signals s JOIN artists a ON a.id = s.artist_id AND a.status = 'active'
-            WHERE s.user_id = @userId;
+            FROM (SELECT s.artist_id, max(s.liked_tracks) AS liked_tracks, max(s.playlist_tracks) AS playlist_tracks,
+                         max(s.distinct_albums) AS distinct_albums, max(s.recent_plays) AS recent_plays, max(s.top_tracks) AS top_tracks,
+                         bool_or(s.followed) AS followed
+                    FROM user_artist_signals s JOIN artists a ON a.id = s.artist_id AND a.status = 'active'
+                   WHERE s.user_id = @userId
+                   GROUP BY s.artist_id) s;
 
             SELECT count(*)::int AS Logs, count(DISTINCT album_id)::int AS AlbumsLogged,
                    count(*) FILTER (WHERE is_relisten)::int AS Relistens,
