@@ -13,6 +13,7 @@ using FandomScore.Storage;
 using FandomScore.Worker.MusicSync;
 using FandomScore.Worker.Jobs;
 using FandomScore.Worker.Notifications;
+using FandomScore.Worker.Notifications.Email;
 using FandomScore.Worker.Scoring;
 using FandomScore.Worker.SpotifySync;
 using FandomScore.Worker.StorageCleanup;
@@ -58,6 +59,12 @@ builder.Services.AddHttpClient<ExpoPushClient>(http => http.Timeout = ExpoPushCl
     .UseSocketsHttpHandler((handler, _) => handler.PooledConnectionLifetime = TimeSpan.FromMinutes(15))
     .SetHandlerLifetime(Timeout.InfiniteTimeSpan);
 
+// Staff notices by email (Email__Enabled, Email__Provider, Email__From, Email__AppOrigin). workers/notifications/email.
+builder.Services.AddEmail(builder.Configuration);
+
+// Retention periods still to be decided (Retention__*; unset keeps the record). workers/account-retention.
+builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection(RetentionOptions.Section));
+
 // One line per job kind. Feature folders under workers/ hold the handlers.
 builder.Services.AddSingleton<IJobHandler, PruneJobsJob>();
 builder.Services.AddSingleton<IJobHandler, PurgeDeletedAccountsJob>();
@@ -81,6 +88,7 @@ builder.Services.AddSingleton<IJobHandler, FanScoresJob>();
 builder.Services.AddSingleton<IJobHandler, DetectFraudJob>();
 builder.Services.AddSingleton<IJobHandler, PushNotificationJob>();
 builder.Services.AddSingleton<IJobHandler, PushReceiptsJob>();
+builder.Services.AddSingleton<IJobHandler, StaffEmailJob>();
 builder.Services.AddSingleton<IJobHandler, ScoreArtistJob>();
 builder.Services.AddSingleton<IJobHandler, RescoreAllJob>();
 builder.Services.AddSingleton<IJobHandler, ConcertSyncJob>();

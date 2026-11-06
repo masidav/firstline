@@ -2915,6 +2915,7 @@ BEGIN
   INSERT INTO push_devices (user_id, token, platform) VALUES (fan, 'ExponentPushToken[privlivetoken1]', 'ios') RETURNING id INTO dev_live;
   INSERT INTO notifications (user_id, kind, subject_id, data) VALUES (fan, 'presale', gen_random_uuid(), '{}') RETURNING id INTO n;
   INSERT INTO push_deliveries (notification_id, device_id, sent_at, status) VALUES (n, dev_live, now() - interval '31 days', 'sent');
+  INSERT INTO email_deliveries (notification_id, sent_at, status) VALUES (n, now() - interval '31 days', 'sent');   -- 0059
 
   FOR r IN SELECT * FROM prune_expired_records() LOOP
     ASSERT r.removed >= CASE r.record WHEN 'auth_sessions' THEN 2 ELSE 1 END, r.record || ' pruned';
@@ -3350,5 +3351,41 @@ SELECT pg_temp.expect_error($$INSERT INTO user_artist_signals (user_id, provider
   VALUES ('00000000-0000-0000-0000-000000000002', 'deezer', (SELECT id FROM artists WHERE spotify_artist_id = 'sp-active'))$$, 'user_artist_signals_provider_check');
 SELECT pg_temp.expect_error($$INSERT INTO tracks (album_id, title, isrc) SELECT id, 'bad isrc', 'bad' FROM albums LIMIT 1$$, 'tracks_isrc_check');
 SELECT pg_temp.expect_error($$INSERT INTO albums (artist_id, title, upc) SELECT id, 'bad upc', 'x' FROM artists LIMIT 1$$, 'albums_upc_check');
+
+-- ------------------------------------------------------------ staff email (0059) and retention switches (0060)
+-- A staff notice queues an email for staff who want one; a fan's notice and a declined staff member's never do.
+-- Delivery records go with the notification; the optional pruning does nothing with NULL periods.
+INSERT INTO users (id, handle, email, is_staff) VALUES
+  ('59000000-0000-0000-0000-000000000001', 'mail_staff', 'mail_staff@example.test', true),
+  ('59000000-0000-0000-0000-000000000002', 'mail_quiet', 'mail_quiet@example.test', true),
+  ('59000000-0000-0000-0000-000000000003', 'mail_fan', 'mail_fan@example.test', false);
+UPDATE users SET email_staff = false WHERE handle = 'mail_quiet';
+DO $$
+DECLARE wanted uuid; quiet uuid; fan uuid; n integer;
+BEGIN
+  INSERT INTO notifications (user_id, kind, subject_id) VALUES ('59000000-0000-0000-0000-000000000001', 'staff_report', gen_random_uuid()) RETURNING id INTO wanted;
+  INSERT INTO notifications (user_id, kind, subject_id) VALUES ('59000000-0000-0000-0000-000000000002', 'staff_report', gen_random_uuid()) RETURNING id INTO quiet;
+  INSERT INTO notifications (user_id, kind, subject_id, created_at)   -- written long ago (only read_at may change later)
+  VALUES ('59000000-0000-0000-0000-000000000003', 'presale', gen_random_uuid(), now() - interval '2 years') RETURNING id INTO fan;
+  ASSERT (SELECT count(*) FROM jobs WHERE kind = 'notifications.email' AND payload->>'notification_id' = wanted::text) = 1, 'staff notice queues an email';
+  ASSERT NOT EXISTS (SELECT 1 FROM jobs WHERE kind = 'notifications.email' AND payload->>'notification_id' = quiet::text), 'declined staff get no email job';
+  ASSERT NOT EXISTS (SELECT 1 FROM jobs WHERE kind = 'notifications.email' AND payload->>'notification_id' = fan::text), 'fans get no email job';
+
+  INSERT INTO email_deliveries (notification_id, status, provider_message_id) VALUES (wanted, 'sent', 'msg-1');
+  -- Nothing is pruned without a period; a read period removes only what was read long enough ago.
+  SELECT coalesce(sum(removed), 0) INTO n FROM prune_optional_records();
+  ASSERT n = 0, 'NULL periods prune nothing: ' || n;
+  UPDATE notifications SET read_at = now() - interval '1 year' WHERE id = wanted;
+  SELECT removed INTO n FROM prune_optional_records(p_read_notifications => interval '2 years');
+  ASSERT n = 0 AND EXISTS (SELECT 1 FROM notifications WHERE id = wanted), 'read within the period stays';
+  SELECT removed INTO n FROM prune_optional_records(p_read_notifications => interval '180 days');
+  ASSERT n = 1 AND NOT EXISTS (SELECT 1 FROM notifications WHERE id = wanted), 'read before the period goes';
+  ASSERT NOT EXISTS (SELECT 1 FROM email_deliveries WHERE notification_id = wanted), 'its delivery record goes with it';
+  SELECT removed INTO n FROM prune_optional_records(p_notifications => interval '1 year');
+  ASSERT n = 1 AND NOT EXISTS (SELECT 1 FROM notifications WHERE id = fan), 'an old unread notice goes with the all-notifications period';
+  ASSERT EXISTS (SELECT 1 FROM notifications WHERE id = quiet), 'a recent one stays';
+END $$;
+SELECT pg_temp.expect_error($$INSERT INTO email_deliveries (notification_id, status)
+  SELECT id, 'queued' FROM notifications WHERE user_id = '59000000-0000-0000-0000-000000000002'$$, 'email_deliveries_status_check');
 
 \echo ALL INVARIANT TESTS PASSED

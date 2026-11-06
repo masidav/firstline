@@ -352,6 +352,13 @@ Details: [Sharing API](services/api/src/features/sharing/TODO.md) · [Sharing UI
       invariants), app Jest (NotificationsScreen, HomeScreen), Chrome at phone size.
 - [ ] Email staff when something needs them (the same three staff events as the in-app notices). Needs an email
       provider (open decision) and a staff address list; the notification rows are the source to send from.
+      *Built 2026-11-06 up to the provider (migration 0059): every `staff_*` notice queues `notifications.email` for
+      a staff member with "Staff notices by email" on (`Me.email_settings.staff`, `PATCH /v1/me`, the Profile switch,
+      on by default; the address is the account's). The worker's `StaffEmailJob` sends the in-app text plus a web-app
+      link through `IEmailSender`; the only sender is `log` (writes to the worker log), and `Email__Enabled` is false
+      everywhere, so nothing is sent until a provider is chosen and one class is written for it
+      (`workers/notifications/README.md`). Verified: `dotnet test` (StaffEmailTests 7, invariants 0059 section),
+      app Jest (PushSettingsSection 6).*
 - [ ] Complete privacy review, deletion flows, and retention rules.
       *2026-10-27: "Download my data": `GET /me/export` returns everything the app holds about the fan as one JSON
       file (secrets, hashes, staff-internal fields, and other fans' private data left out; list in
@@ -906,17 +913,18 @@ Index of every provisional, open, and recently decided item: [`docs/DECISIONS.md
       score snapshot 1 year after the show and keep outcome and seats; reservations may be a legal/tax record once
       money moves.
 - [ ] Decide retention for notifications (kept for good today). Proposal: delete read notices after 180 days and all
-      after 1 year.
+      after 1 year. *Switches ready 2026-11-06 (migration 0060, `Retention__ReadNotifications`,
+      `Retention__Notifications`; unset = kept): deciding is a setting in the overlay. Verified: RetentionSwitchTests.*
 - [ ] Decide what happens to reports a deleted fan filed: kept today with their free-text details (the reporter id
       points at the anonymous account row). Proposal: clear `details` at the purge once the report is resolved.
 - [ ] Decide retention for staff work records (`moderation_actions`, `organization_audit`, `created_by`/`ran_by`
       columns) and whether a staff member's export includes them. Proposal: 2 years, not exported.
 - [ ] Decide retention for OCR text (`submissions.extracted`), kept with the submission today, and whether the
       (redacted) text belongs in "Download my data". Proposal: clear it 30 days after the submission is decided (the
-      order-reference hash still catches duplicates); not exported.
+      order-reference hash still catches duplicates); not exported. *Switch ready 2026-11-06: `Retention__OcrText`.*
 - [ ] Decide what to keep when a fan's Spotify connection stops working (`reauth_required`): today the synced data
       stays and keeps counting until they reconnect or disconnect. Proposal: delete it after 180 days without a working
       connection.
 - [ ] Decide whether "Download my data" includes the Apple/Google sign-in subject id (left out today).
 - [ ] Decide retention for outbound ticket/merch link clicks of live fans (kept for good; unlinked at purge).
-      Proposal: unlink after 1 year.
+      Proposal: unlink after 1 year. *Switch ready 2026-11-06: `Retention__ClickLinks`.*

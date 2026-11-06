@@ -185,7 +185,12 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   `MusicProviders__Tidal__ClientId` and `__RedirectUris` in the overlay and `TIDAL_CLIENT_ID` in `web-config`. Then
   connect one real account on beta and check the sync (the collection endpoints moved in autumn 2026; ADR 0007 lists
   what to verify).
-- [ ] **Email** for staff alerts now and fan email later. Needs a provider chosen (section C).
+- [ ] **Email** for staff alerts now and fan email later. Needs a provider chosen (section C). The staff side is
+  built (2026-11-06): staff notices queue an email to each staff member's account address, and each staff member has
+  a Profile switch for it. Nothing is sent until a provider exists: once you pick one, Claude writes its sender
+  class (`workers/notifications/README.md`, "Email"); you store its key like `Ticketmaster__ApiKey`, and the overlay
+  gets `Email__Enabled=true`, `Email__Provider`, and `Email__From` (a sending address on a domain you own; the
+  provider will ask you to verify the domain with DNS records, which Claude can add to Cloud DNS).
 
 ## C. Product decisions
 

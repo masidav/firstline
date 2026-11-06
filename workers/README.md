@@ -13,7 +13,7 @@ dotnet run --project workers        # needs ConnectionStrings__Database, like th
 | `Program.cs` | Host setup and the list of registered job handlers. |
 | `jobs/` | Queue runtime: `JobQueue` (claim, finish, retry, schedules), `JobRunner` (polling loops), `IJobHandler`, `PruneJobsJob`. |
 | `hosting/` | Secrets mounted as files (`SecretsDirectory`), and the liveness endpoint (`WorkerHeartbeat`, `WorkerHealthServer`). |
-| `account-retention/` | `PurgeDeletedAccountsJob`: hourly, purges content of accounts deleted 30+ days ago. `PruneExpiredRecordsJob` (`privacy.retention`): daily, deletes sessions expired or revoked 30+ days ago, idempotency keys after 24 hours, and push delivery records and disabled push devices after 30 days (migration 0053), and the fraud rules' client signals past their period (address hashes 30 days, push device history 90, Spotify account history 180, eligibility checks 90; migration 0054). |
+| `account-retention/` | `PurgeDeletedAccountsJob`: hourly, purges content of accounts deleted 30+ days ago. `PruneExpiredRecordsJob` (`privacy.retention`): daily, deletes sessions expired or revoked 30+ days ago, idempotency keys after 24 hours, and push and email delivery records and disabled push devices after 30 days (migrations 0053, 0059), and the fraud rules' client signals past their period (address hashes 30 days, push device history 90, Spotify account history 180, eligibility checks 90; migration 0054). The same job prunes the records whose period is still an owner decision, each only once its `Retention__*` setting is set (`RetentionOptions`, migration 0060; see "Retention" below). |
 | `storage-cleanup/` | `StorageCleanupJob` (`storage.cleanup`, hourly): deletes stored files nothing needs (expired upload slots, deleted accounts' files before their purge, files queued in `storage_deletions`). See the folder's README. |
 | `concerts/` | `ConcertSyncJob` (`concerts.sync_artist`) and hourly `ScheduleConcertSyncsJob` (`concerts.schedule`): load tracked artists' upcoming shows, sales, and presales from Ticketmaster. See the folder's README. |
 | `fans/` | `FanScoresJob` (`fans.overall_scores`, hourly): refreshes every fan's trust and fan level (migration 0039; `services/api/src/features/fan-levels/README.md`). |
@@ -47,6 +47,19 @@ The kind filters let one image run as several Deployments with different identit
 and `worker` excludes them (`infrastructure/k8s/base`). Claims skip other kinds and only the kinds a process runs
 get their schedules registered there; due schedules are fired by whichever process polls first. Locally neither is
 set and one worker runs everything.
+
+## Retention (`Retention` section, all unset)
+Periods the owner has not decided yet (PROJECT_TODO "Decide retention for ..."; proposals in
+`services/api/src/features/privacy/DATA_INVENTORY.md`). Unset keeps the record for good, as today; setting one turns
+that pruning on in the daily `privacy.retention` job (`prune_optional_records()`, migration 0060). Deciding is then a
+configuration change in the overlay, not code. Values are .NET time spans (`180.00:00:00` is 180 days).
+
+| Setting | Prunes | Proposal |
+| --- | --- | --- |
+| `Retention__ReadNotifications` | notifications this long after they were read | 180 days |
+| `Retention__Notifications` | notifications this long after they were written, read or not | 1 year |
+| `Retention__ClickLinks` | which fan made an outbound ticket or merch click (the click stays, unlinked) | 1 year |
+| `Retention__OcrText` | a submission's OCR text (`submissions.extracted`) this long after it was verified or rejected; the order-reference hash stays | 30 days |
 
 ## Liveness (`Health` section)
 The worker serves no traffic, so Kubernetes cannot tell a stuck process from a quiet one. Each job loop reports to

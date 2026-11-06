@@ -57,6 +57,7 @@ public static class DataExportEndpoints
                 SELECT u.id, u.handle::text AS handle, u.email::text AS email, u.display_name, u.avatar_url, u.is_staff,
                        u.is_artist, u.band_url, u.instagram_handle, u.x_handle, u.presale_reminders,
                        json_build_object('tickets', u.push_tickets, 'presales', u.push_presales, 'staff', u.push_staff) AS push,
+                       json_build_object('staff', u.email_staff) AS email_settings,
                        u.hubs_changed_at, u.created_at
                 FROM users u WHERE u.id = @me AND u.deleted_at IS NULL
                 """)),

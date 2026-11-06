@@ -1,7 +1,7 @@
 # Notifications API
 
-In-app notifications (migration 0021, 2026-10-25), also pushed to the fan's phones (migration 0032, 2026-10-26).
-Email is a later channel over the same rows. The text comes from `packages/notifications` (`NotificationText`), shared
+In-app notifications (migration 0021, 2026-10-25), also pushed to the fan's phones (migration 0032, 2026-10-26), and
+staff notices also emailed to staff (migration 0059, 2026-11-06; off until a provider is configured). The text comes from `packages/notifications` (`NotificationText`), shared
 with the worker so a push reads like its in-app row.
 
 ## What is sent
@@ -28,7 +28,8 @@ afterwards (`trg_notifications_guard`). A deleted account's notifications are de
   notifications are allowed; a token moves to whoever signed in last on that phone. `DELETE /v1/me/push-devices/{id}`
   on sign-out.
 - Push settings are on the profile: `Me.push` (`tickets`, `presales`, `staff`, all on by default), changed with
-  `PATCH /v1/me` `{"push": {"presales": false}}`.
+  `PATCH /v1/me` `{"push": {"presales": false}}`. Email has its own: `Me.email_settings` (`staff`, on by default),
+  changed with `{"email_settings": {"staff": false}}`; it only ever applies to staff accounts.
 
 ## Push
 Every new notification for a fan with a live device queues `notifications.push` (trigger, migration 0032). The worker
@@ -37,4 +38,14 @@ already read, or it is older than `Push__MaxAge` (12 hours); the badge is the un
 `notifications.push_receipts` (every 15 minutes) records delivered or failed and switches off devices Apple or Google
 no longer know (`DeviceNotRegistered`). A deleted account's devices are deleted at once.
 
-Tests: `tests/FandomScore.Tests/NotificationApiTests.cs`, `database/tests/invariants.sql` (0021 section).
+## Email (staff only)
+Every new `staff_*` notification for a staff member with `email_staff` on queues `notifications.email` (trigger,
+migration 0059). The worker (`workers/notifications/email/StaffEmailJob.cs`) sends the same title and sentence to the
+account's email address with a link into the web app (`Email__AppOrigin` + `link`), unless email is off for the
+deployment (`Email__Enabled`, false by default: no provider is chosen yet), the setting was turned off since, the
+notice was read, it is older than `Email__MaxAge` (12 hours), or it was emailed already. One `email_deliveries` row
+per notification (`sent` or `failed` with the sender's reason), pruned after 30 days. Fans get no email from this: no
+fan kind queues one, and the job refuses anything but a staff kind. Senders: `workers/notifications/README.md`.
+
+Tests: `tests/FandomScore.Tests/NotificationApiTests.cs`, `StaffEmailTests.cs`, `database/tests/invariants.sql`
+(0021 and 0059 sections).

@@ -156,6 +156,27 @@ public static class MeEndpoints
             }
         }
 
+        // email_settings: {staff?}; a missing key is left alone. Fans may set it, it just never applies to them.
+        if (body.TryGetProperty("email_settings", out var emailSettings))
+        {
+            if (emailSettings.ValueKind != JsonValueKind.Object)
+            {
+                errors.Add(new FieldError("email_settings", "Send an object with staff."));
+            }
+            else if (emailSettings.TryGetProperty("staff", out var staffByEmail))
+            {
+                if (staffByEmail.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                {
+                    sets.Add("email_staff = @email_staff");
+                    parameters.Add("email_staff", staffByEmail.GetBoolean());
+                }
+                else
+                {
+                    errors.Add(new FieldError("email_settings.staff", "Send true or false."));
+                }
+            }
+        }
+
         var links = new (string Field, Regex Pattern, string Rule, Func<string, string> Normalize)[]
         {
             ("band_url", UserProfiles.BandUrlPattern(), UserProfiles.BandUrlRule, static v => v),

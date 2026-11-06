@@ -4665,7 +4665,7 @@ components:
         user: {$ref: '#/components/schemas/Me'}
     Me:
       type: object
-      required: [id, handle, email, created_at, hub_cities, is_artist, presale_reminders, push]
+      required: [id, handle, email, created_at, hub_cities, is_artist, presale_reminders, push, email_settings]
       properties:
         id: {type: string, format: uuid}
         handle: {type: string}
@@ -4694,6 +4694,8 @@ components:
           description: The band's X handle without the @; the link is `https://x.com/{handle}`.
         push:
           $ref: '#/components/schemas/PushSettings'
+        email_settings:
+          $ref: '#/components/schemas/EmailSettings'
         presale_reminders:
           type: boolean
           description: |
@@ -4773,6 +4775,11 @@ components:
           properties:
             tickets: {type: boolean}
             presales: {type: boolean}
+            staff: {type: boolean}
+        email_settings:
+          type: object
+          description: Only the categories sent change.
+          properties:
             staff: {type: boolean}
     MusicConnect:
       type: object
@@ -5007,7 +5014,7 @@ components:
           properties:
             profile:
               type: object
-              description: id, handle, email, display_name, avatar_url, is_staff, is_artist, band_url, instagram_handle, x_handle, presale_reminders, push {tickets, presales, staff}, hubs_changed_at, created_at.
+              description: id, handle, email, display_name, avatar_url, is_staff, is_artist, band_url, instagram_handle, x_handle, presale_reminders, push {tickets, presales, staff}, email_settings {staff}, hubs_changed_at, created_at.
               required: [id, handle, email, created_at]
               properties:
                 id: {type: string, format: uuid}
@@ -5178,6 +5185,15 @@ components:
         tickets: {type: boolean, description: 'Draw results, seats that open up, delivered tickets.'}
         presales: {type: boolean, description: Presale reminders.}
         staff: {type: boolean, description: Staff notices (staff accounts only).}
+    EmailSettings:
+      type: object
+      description: |
+        Which notifications also go to the account's email address. Only staff notices can, so far (`staff_*` kinds,
+        to staff accounts; on by default). Fans never get email from this. Nothing is sent until the deployment has an
+        email provider configured (`Email__Enabled`, worker); the in-app notice and push are unaffected.
+      required: [staff]
+      properties:
+        staff: {type: boolean, description: Staff notices by email (staff accounts only).}
     PushDevice:
       type: object
       required: [id, platform, created_at, last_seen_at]

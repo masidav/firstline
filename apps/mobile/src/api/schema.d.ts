@@ -3968,6 +3968,7 @@ export interface components {
             /** @description The band's X handle without the @; the link is `https://x.com/{handle}`. */
             x_handle?: string | null;
             push: components["schemas"]["PushSettings"];
+            email_settings: components["schemas"]["EmailSettings"];
             /**
              * @description Remind me of presales (a `presale` notification), on by default: once per presale, within a day of it
              *     opening, for shows by artists the fan has a score for in their hub cities.
@@ -4035,6 +4036,10 @@ export interface components {
             push?: {
                 tickets?: boolean;
                 presales?: boolean;
+                staff?: boolean;
+            };
+            /** @description Only the categories sent change. */
+            email_settings?: {
                 staff?: boolean;
             };
         };
@@ -4249,7 +4254,7 @@ export interface components {
             /** Format: uuid */
             user_id: string;
             account: {
-                /** @description id, handle, email, display_name, avatar_url, is_staff, is_artist, band_url, instagram_handle, x_handle, presale_reminders, push {tickets, presales, staff}, hubs_changed_at, created_at. */
+                /** @description id, handle, email, display_name, avatar_url, is_staff, is_artist, band_url, instagram_handle, x_handle, presale_reminders, push {tickets, presales, staff}, email_settings {staff}, hubs_changed_at, created_at. */
                 profile: {
                     /** Format: uuid */
                     id: string;
@@ -4380,6 +4385,15 @@ export interface components {
             /** @description Presale reminders. */
             presales: boolean;
             /** @description Staff notices (staff accounts only). */
+            staff: boolean;
+        };
+        /**
+         * @description Which notifications also go to the account's email address. Only staff notices can, so far (`staff_*` kinds,
+         *     to staff accounts; on by default). Fans never get email from this. Nothing is sent until the deployment has an
+         *     email provider configured (`Email__Enabled`, worker); the in-app notice and push are unaffected.
+         */
+        EmailSettings: {
+            /** @description Staff notices by email (staff accounts only). */
             staff: boolean;
         };
         PushDevice: {

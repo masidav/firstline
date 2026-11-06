@@ -172,7 +172,7 @@ public sealed class AccountDeletionTests(PostgresFixture postgres) : IAsyncLifet
     [Fact]
     public async Task Housekeeping_removes_old_sessions_cached_responses_and_push_records_only()
     {
-        var job = new PruneExpiredRecordsJob(_db, NullLogger<PruneExpiredRecordsJob>.Instance);
+        var job = new PruneExpiredRecordsJob(_db, Microsoft.Extensions.Options.Options.Create(new RetentionOptions()), NullLogger<PruneExpiredRecordsJob>.Instance);
         Assert.Equal("privacy.retention", job.Kind);
         Assert.Equal(TimeSpan.FromDays(1), job.Every);
         await SignInAsync("keeper");

@@ -16,7 +16,10 @@ const CATEGORIES: { key: Category; label: string; staffOnly?: boolean }[] = [
   { key: 'staff', label: 'Staff notices', staffOnly: true },
 ];
 
-/** Profile section: turn push on for this phone, and choose which notifications are pushed (PATCH /me push). */
+/**
+ * Profile section: turn push on for this phone, and choose which notifications are pushed (PATCH /me push). Staff
+ * also choose whether staff notices reach their email address (PATCH /me email_settings), on every platform.
+ */
 export function PushSettingsSection({ me }: { me: Me }) {
   const { session } = useSession();
   const [state, setState] = useState<PushState | null>(null);
@@ -44,8 +47,33 @@ export function PushSettingsSection({ me }: { me: Me }) {
     }
   }
 
+  async function setStaffEmail(on: boolean) {
+    setError(undefined);
+    try {
+      const updated = unwrap(await session.api.PATCH('/me', { body: { email_settings: { staff: on } } }));
+      session.updateMe({ email_settings: updated.email_settings });
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  const staffEmail = me.is_staff && (
+    <View style={styles.row}>
+      <View style={styles.text}>
+        <Body muted>Staff notices by email, to {me.email}</Body>
+      </View>
+      <Switch accessibilityLabel="Email: Staff notices" value={me.email_settings.staff} onValueChange={(on) => void setStaffEmail(on)} />
+    </View>
+  );
+
   if (!pushSupported()) {
-    return <Body muted>Push notifications work in the phone app. Notifications here appear under Alerts.</Body>;
+    return (
+      <View style={styles.section}>
+        <Body muted>Push notifications work in the phone app. Notifications here appear under Alerts.</Body>
+        {staffEmail}
+        <ErrorText>{error}</ErrorText>
+      </View>
+    );
   }
 
   return (
@@ -68,6 +96,7 @@ export function PushSettingsSection({ me }: { me: Me }) {
             <Switch accessibilityLabel={`Push: ${c.label}`} value={me.push[c.key]} onValueChange={(on) => void setCategory(c.key, on)} />
           </View>
         ))}
+      {staffEmail}
       <ErrorText>{error}</ErrorText>
     </View>
   );

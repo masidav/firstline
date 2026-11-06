@@ -112,11 +112,11 @@ configuration, and what GCP logs at the edge.
 | Archive old versions | 30 days after replaced or deleted | implemented (Terraform, to apply) |
 | Expired or revoked sessions (and refresh tokens) | 30 days after expiry/revocation | implemented (`privacy.retention`) |
 | Idempotency keys | 24 hours | implemented (`privacy.retention` plus the API's own) |
-| Push delivery records; disabled push devices | 30 days | implemented (`privacy.retention`) |
+| Push delivery records; disabled push devices; email delivery records | 30 days | implemented (`privacy.retention`; email records since migration 0059) |
 | Finished jobs | succeeded 7 days, failed 30 days | already in place (`jobs.prune`) |
 | Play ledger | 400 days (`Spotify__PlayHistoryRetention`) | set provisionally, confirm or change |
 | Spotify data of a fan whose connection stopped working (`reauth_required`) | kept until reconnect or disconnect | decide (proposal: delete synced data after 180 days without a working connection) |
-| Notifications | kept | decide (proposal: read notices after 180 days, all after 1 year) |
+| Notifications | kept | decide (proposal: read notices after 180 days, all after 1 year). Switches ready since 2026-11-06: `Retention__ReadNotifications`, `Retention__Notifications` (worker, migration 0060; unset = kept) |
 | Logs (app, load balancer with IPs, flow logs) | 30 days (Cloud Logging default) | set provisionally, confirm or change |
 | IP addresses and rate-limit counters | in memory only (limiter); in logs 30 days | no stored data; follows the log period |
 | Fraud signals (0054): address hashes 30 days (daily salt 2 days), push device history 90 days, Spotify account history 180 days, eligibility check counts 90 days | as listed | confirmed 2026-11-02 (`docs/security/bot-and-shared-device-detection.md`); the tables stay out of the fan's data download |
@@ -126,6 +126,6 @@ configuration, and what GCP logs at the edge.
 | Reservations | kept | decide (likely legal/tax once money moves) |
 | Reports filed by a deleted fan (details) | kept | decide (proposal: clear `details` at purge once resolved) |
 | Moderation and organization audit, staff work records | kept | decide (proposal: 2 years) |
-| OCR text (`submissions.extracted`) | kept with the submission | decide (proposal: clear 30 days after the submission is decided; the order-ref hash still catches duplicates) |
-| Outbound clicks of live fans | kept | decide (proposal: unlink after 1 year) |
+| OCR text (`submissions.extracted`) | kept with the submission | decide (proposal: clear 30 days after the submission is decided; the order-ref hash still catches duplicates). Switch ready: `Retention__OcrText` |
+| Outbound clicks of live fans | kept | decide (proposal: unlink after 1 year). Switch ready: `Retention__ClickLinks` |
 | Database backups | 14 days beta, 30 days prod, PITR 7 days | set provisionally (Terraform), confirm or change |

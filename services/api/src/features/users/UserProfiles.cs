@@ -16,13 +16,20 @@ namespace FandomScore.Api.Features.Users;
 /// </remarks>
 public sealed record PushSettings(bool Tickets, bool Presales, bool Staff);
 
+/// <summary>Which notifications also go out by email (migration 0059). Only staff notices can, so far.</summary>
+public sealed record EmailSettings(bool Staff);
+
 public sealed record MeResponse(
     Guid Id, string Handle, string Email, string? DisplayName, string? AvatarUrl, bool IsStaff, DateTime CreatedAt,
     bool IsArtist, string? BandUrl, string? InstagramHandle, string? XHandle, bool PresaleReminders,
-    [property: JsonIgnore] bool PushTickets, [property: JsonIgnore] bool PushPresales, [property: JsonIgnore] bool PushStaff)
+    [property: JsonIgnore] bool PushTickets, [property: JsonIgnore] bool PushPresales, [property: JsonIgnore] bool PushStaff,
+    [property: JsonIgnore] bool EmailStaff)
 {
     /// <summary>Which notifications also go to the fan's phones (migration 0032).</summary>
     public PushSettings Push => new(PushTickets, PushPresales, PushStaff);
+
+    /// <summary>Which notifications also go to the account's email address (migration 0059).</summary>
+    public EmailSettings EmailSettings => new(EmailStaff);
 
     public SpotifyStatus Spotify { get; init; } = SpotifyStatus.NotConnected;
 
@@ -78,7 +85,7 @@ public static partial class UserProfiles
                    avatar_url AS AvatarUrl, is_staff AS IsStaff, created_at AS CreatedAt,
                    is_artist AS IsArtist, band_url AS BandUrl, instagram_handle AS InstagramHandle, x_handle AS XHandle,
                    presale_reminders AS PresaleReminders, push_tickets AS PushTickets, push_presales AS PushPresales,
-                   push_staff AS PushStaff
+                   push_staff AS PushStaff, email_staff AS EmailStaff
             FROM users WHERE id = @userId AND deleted_at IS NULL
             """,
             new { userId }, transaction);

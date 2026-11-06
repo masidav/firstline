@@ -63,6 +63,11 @@ configMapGenerator:
       - MusicProviders__Tidal__RedirectUris=https://app.beta.firstline-5730kl.com/tidal-callback
       # The two web apps call the API from their own hostnames (gateway.yaml).
       - Cors__AllowedOrigins=https://app.beta.firstline-5730kl.com,https://promoters.beta.firstline-5730kl.com
+      # Staff notices by email (worker): off until an email provider is chosen (docs/OWNER_TODO.md, section B). Then
+      # Email__Enabled=true, Email__Provider=<its name>, Email__From=<verified sending address>, and its key in
+      # secrets.yaml. The link in each email opens the fan web app.
+      - Email__Enabled=false
+      - Email__AppOrigin=https://app.beta.firstline-5730kl.com
       # Buckets from terraform output buckets: Terraform names them after the project ("<project_id>-quarantine").
       - Storage__QuarantineBucket=project-ef36a8a9-d958-4163-b4c-quarantine
       - Storage__ArchiveBucket=project-ef36a8a9-d958-4163-b4c-archive

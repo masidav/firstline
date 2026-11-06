@@ -58,6 +58,7 @@ const fan = {
   x_handle: null,
   presale_reminders: true,
   push: { tickets: true, presales: true, staff: true },
+  email_settings: { staff: true },
 };
 const artist = { ...fan, is_artist: true, band_url: 'https://open.spotify.com/artist/abc', instagram_handle: 'the.band', x_handle: 'theband' };
 
