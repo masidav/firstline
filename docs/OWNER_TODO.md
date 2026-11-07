@@ -64,7 +64,8 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   beta runs trivia and prompts daily instead of weekly (`overlays/beta/settings`, "Environment settings"). The demo
   account `secondfan` (d57590971@gmail.com) is pre-provisioned with a full feed: sign in with Google as that address
   and it's yours, no handle step. Add that Google account as an OAuth test user first (step 5).
-  - [ ] **Real artists in the demo data** (requested 2026-10-31). Two steps, in order:
+  - [x] **Real artists in the demo data** (requested 2026-10-31; done the same day: after `db-wipe.sh beta`, Deploy run
+    41225290885 at 17:42Z printed "artists: real, from Spotify"). To redo it later, two steps, in order:
     1. `cd infrastructure/terraform/envs/beta && terraform apply` (1 to add: the deploy identity may read
        `Spotify__ClientSecret`; plus the usual cosmetic dashboard change).
     2. `infrastructure/k8s/db-wipe.sh beta`, then `gh workflow run Deploy --repo masidav/firstline -f environment=beta`.
