@@ -1,7 +1,9 @@
 # Plan: split the monorepo so each piece ships on its own
 
 Status: steps 1–3 done (2026-11-03, 2026-11-07): the pieces deploy, version, and test separately inside this one
-repository. Steps 4–6 (the actual extraction) wait for the owner's decisions at the end of this file. Date: 2026-10-31.
+repository. **Decided 2026-11-07 (owner): stop here for now.** Per-component deploys already exist, so steps 4–6
+(the actual extraction) are parked; the open questions at the end of this file stay open until that changes.
+Date: 2026-10-31.
 
 ## Why, and what has to change
 

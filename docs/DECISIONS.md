@@ -104,7 +104,7 @@ All with a proposal in [DATA_INVENTORY](../services/api/src/features/privacy/DAT
 | --- | --- | --- |
 | Email provider | a transactional email API | staff email alerts, later fan email |
 | Prod domain | prod overlay hostname is a placeholder (`infrastructure/k8s/overlays/prod`, `apps/mobile/eas.json`) | prod setup ([OWNER_TODO](OWNER_TODO.md) E) |
-| Repository split | org or personal account, PRs for infra bumps, repo names, stop after step 3 or split | [repo-split plan](plans/2026-10-31-repo-split.md) |
+| Repository split | decided 2026-11-07: stop after step 3 for now (per-component deploys, versioned contract, testkit stack, all in one repo); the extraction (org or personal account, repo names, PRs for infra bumps) is parked | [repo-split plan](plans/2026-10-31-repo-split.md) |
 
 ### Business and legal
 | Question | Options known | Blocks |
