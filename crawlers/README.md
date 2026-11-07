@@ -12,6 +12,8 @@ python3 music_industry_moves.py --llm                  # Claude extracts name/co
 
 python3 band_trivia.py Paramore Radiohead --format table     # trivia questions and facts
 python3 band_trivia.py --file artists.txt --format csv --out trivia.csv
+
+python3 industry_newsletter.py --dry-run               # the twice-weekly email brief, printed instead of sent
 ```
 
 Both scripts identify themselves to the sites they call. Set `CRAWLER_CONTACT` (an email or URL) to add
@@ -140,3 +142,56 @@ artists...           names, Wikidata IDs (Q...), or spotify:<artist id>
 
 It takes roughly a minute per artist, mostly waiting on the Wikidata query service and MusicBrainz's
 one-request-per-second limit.
+
+## industry_newsletter.py
+
+Emails the owner a short brief twice a week (Monday and Thursday, 08:00 local, cron on this machine): **hires, exits
+and layoffs** in the music business, **concert news** (tours, residencies, festival lineups, cancellations) and
+**ticketing-industry news** (Ticketmaster and Live Nation, resale, fees, regulation, deals). Every item is a
+development from the last 7 days, dated by the event itself, not by when the article ran. An email with
+"No updates." is a normal outcome.
+
+How it works:
+
+1. Gathers candidates from the hires/exits sources above (shared with `music_industry_moves.py`) plus touring and
+   ticketing feeds (Billboard Touring, Pollstar, IQ Magazine, TicketNews, Rolling Stone, Stereogum, NME,
+   BrooklynVegan) and Google News searches for tours, festivals, cancellations and the ticketing companies.
+2. Sends each headline and snippet to Claude (`claude-opus-5-5`) with a fixed JSON schema: section
+   (`moves` / `concerts` / `ticketing` / `skip`), the **date of the development** (resolved against the article
+   date; a 2027 tour counts on the day it was announced), a one-line summary, and a key shared by every story about
+   the same development so duplicates collapse to one line with "also Billboard, Pollstar".
+3. Keeps items whose event date is within the window, drops anything already emailed (`--state`), and sends one
+   plain-text email over SMTP (Gmail relay, STARTTLS). If the run itself fails, the email says so instead.
+
+```
+--dry-run     print the email; send nothing, update no state
+--state FILE  story keys already emailed; the Thursday email doesn't repeat Monday's items
+--days N      event window (default 7)
+--to ADDR     recipient (default davidjmasi@gmail.com, or NEWSLETTER_TO)
+--no-llm      skip Claude: sections by source and publish dates (for testing without credentials)
+--no-google   feeds only
+--out FILE    also write the email text here
+```
+
+### Schedule and settings
+
+`newsletter_cron.sh` is the cron entry point. It loads `~/.config/industry-newsletter/env` (outside the repo,
+mode 600; a template with blanks was written on 2026-11-07), then runs the script with the state file and the last
+email under `~/.local/state/industry-newsletter/`. Output of each run is appended to `run.log` there.
+
+```
+0 8 * * 1,4  /home/glide/firstline/crawlers/newsletter_cron.sh >> /home/glide/.local/state/industry-newsletter/run.log 2>&1
+```
+
+Two blanks in the settings file have to be filled in before anything is sent:
+
+- `NEWSLETTER_SMTP_PASSWORD`: a Google App Password for d57590971@gmail.com (the platform's sending address; the
+  same app-password step as the "Email" item in `docs/OWNER_TODO.md`, or a second one named "Industry brief").
+- `ANTHROPIC_API_KEY`: for the classification step. Without it the run fails and the email says so.
+
+Try it by hand with `./newsletter_cron.sh --dry-run` (prints instead of sending) or `./newsletter_cron.sh` (sends
+now and records what was sent). Cron logs to `~/.local/state/industry-newsletter/run.log`; `last-email.txt` next to
+it is the most recent email.
+
+Cost: one run is roughly 500 to 800 candidate headlines in batches of 30 to Claude, about a dollar or two per run
+at Opus prices; `--model claude-sonnet-5-5` is the cheaper setting.
