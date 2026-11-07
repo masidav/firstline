@@ -1,6 +1,7 @@
 # Agent tooling and remote code management
 
 Status: 2026-10-18. Covers Claude Code configuration, remote access, and OpenClaw. Phase 14 in `PROJECT_TODO.md`.
+What to add next (hooks, skills, MCP servers, scheduled runs, goals): [AI support to-do](plans/2026-11-07-ai-support-todo.md).
 
 ## Principles
 1. **Agents never deploy to production or hold production credentials.** For now (2026-10-18), changes are

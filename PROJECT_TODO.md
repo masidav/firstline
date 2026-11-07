@@ -694,7 +694,8 @@ Can run in parallel with any phase; the first two items unblock the rest.
 - [ ] Require every agent change (Claude Code, OpenClaw, CI bots) to land through a reviewed pull request; agents never push to `main` or deploy to prod. *Deferred with branch protection.*
 - [x] Document how to start, stop, and audit remote agent sessions, and how to revoke their access. See [Agent tooling](docs/agent-tooling.md).
 
-Details: [Agent tooling](docs/agent-tooling.md) · [Developer tooling](docs/TODO.md)
+Details: [Agent tooling](docs/agent-tooling.md) · [Developer tooling](docs/TODO.md) ·
+[AI support to-do](docs/plans/2026-11-07-ai-support-todo.md) (hooks, skills, MCP servers, scheduled runs, goals; 2026-11-07)
 
 ## Phase 15 — User stats
 A fan's numbers in one list: on their own profile in full, and on other fans' profiles subject to visibility
