@@ -130,7 +130,7 @@ From the business plan; none of this is in operation yet.
 
 ## About this report
 
-This report is generated every Monday by an automated job that reads the repository and rewrites this file,
+This report is generated on the 1st of each month by an automated job that reads the repository and rewrites this file,
 the business-logic document beside it, and the plain-words summaries at the top of each folder's README. The
 instructions it follows are in `docs/product/PROMPTS.md`; edit that file to change what gets written. This
 version was written by hand on 2026-10-24 as the starting point.

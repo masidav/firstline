@@ -135,11 +135,11 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   commands if that fails. The steps it runs are the numbered list in `tools/load/README.md`, "Running it on beta".
 
 - [ ] **11. Add the `ANTHROPIC_API_KEY` repository secret** (or delete the workflow). Deferred 2026-11-05: keep the
-  workflow, add the secret later; until then it fails each Monday. `.github/workflows/weekly-docs.yml`
-  ("Weekly product docs", Mondays 09:00 UTC) rewrites the product docs with Claude and commits the result; it has
-  failed every week since 2026-10-26 because the secret is missing (run 41507776960: "Either ANTHROPIC_API_KEY ...
-  is required"). GitHub → Settings → Secrets and variables → Actions → New repository secret. Billed to your
-  Anthropic account per run.
+  workflow, add the secret later; until then it fails on the 1st of each month. `.github/workflows/product-docs.yml`
+  ("Product docs", the 1st at 09:00 UTC; weekly until 2026-11-07, made monthly to save on cost) rewrites the product
+  docs with Claude and commits the result; it failed every week from 2026-10-26 because the secret is missing (run
+  41507776960: "Either ANTHROPIC_API_KEY ... is required"). GitHub → Settings → Secrets and variables → Actions →
+  New repository secret. Billed to your Anthropic account per run (one Opus run a month).
 
 - [ ] **12. Make your second email address staff too** (added 2026-11-07). Staff is a flag on the user row, so
   the account has to exist first: open https://app.beta.firstline-5730kl.com, Continue with Google with the second

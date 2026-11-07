@@ -1,7 +1,7 @@
-# Prompts for the weekly product documentation job
+# Prompts for the monthly product documentation job
 
 Edit this file to change what the automation writes. Nothing else needs to change: the workflow
-(`.github/workflows/weekly-docs.yml`) hands this whole file to Claude every Monday and asks it to follow the
+(`.github/workflows/product-docs.yml`) hands this whole file to Claude on the 1st of each month and asks it to follow the
 section for each task. Edits take effect on the next run (or run the workflow by hand from the Actions tab).
 
 Each `##` section below is one task. Keep the headings as they are; the workflow refers to them by name.
@@ -55,7 +55,7 @@ Rules:
   the folder actually contains, in addition to the plain-words block. Read the folder's files and its `TODO.md`
   first. Do not describe things that are not there.
 - Only revisit folders that changed since the last run, plus any README that has no block yet or is still the
-  starter template. Find changed folders with `git log --since="8 days ago" --name-only`.
+  starter template. Find changed folders with `git log --since="32 days ago" --name-only`.
 - Do not create new README files; only update ones that exist.
 
 ---
@@ -118,7 +118,7 @@ Structure:
 8. **How the company makes money** — from the executive summary; mark anything not yet decided.
 9. **Go-to-market** — the pilot plan from the executive summary.
 10. **Open questions** — the open decisions a reader should know about, in plain words.
-11. **About this report** — generated weekly by this job; where the prompts live; the date.
+11. **About this report** — generated monthly by this job; where the prompts live; the date.
 
 Rules:
 - Rewrite the whole file each run; keep the heading structure above.
