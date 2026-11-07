@@ -8,8 +8,10 @@ conf="${NEWSLETTER_ENV:-$HOME/.config/industry-newsletter/env}"
 state_dir="$HOME/.local/state/industry-newsletter"
 mkdir -p "$state_dir"
 if [ -f "$conf" ]; then
+  set -a
   # shellcheck source=/dev/null
-  set -a; . "$conf"; set +a
+  . "$conf"
+  set +a
 else
   echo "$(date -Is) no settings file at $conf; nothing sent" >&2
   exit 1
