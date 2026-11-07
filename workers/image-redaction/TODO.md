@@ -21,12 +21,15 @@ Use `- [x]` only after the task is implemented and verified.
       days (`storage.cleanup`).
 - [x] Staff decisions: `GET /v1/admin/redactions`, `POST /v1/admin/redactions/{fileId}/decision` (archive or
       discard), the app's Photo redaction screen, and a `staff_redaction` notice.
-- [ ] Hide printed order numbers too (OCR), if staff find them on tickets often. *Not started: there is no OCR in
-      the codebase (nothing writes `submissions.extracted` or `order_ref_hash`), and picking one is the open decision
-      in `services/api/src/integrations/ocr/TODO.md` (Tesseract means native libraries and language data in the
-      chiseled worker image; a cloud vision API means paying for and sending every ticket to a third party). Whether
-      staff find printed numbers often is now measurable: count archived files with `staff_boxes` (query in
-      `services/api/src/features/redaction/README.md`). Decide once real tickets have been through review.*
+- [ ] Hide printed order numbers too (OCR), if staff find them on tickets often. *Built 2026-11-06 behind a switch
+      (migration 0061, `TextFinder.cs`, `OrderNumberFinder.cs`, README "Printed order numbers"): with
+      `Redaction__TesseractCommand` set, tickets, screenshots, and receipts have their order and confirmation numbers
+      blacked out, counted (`text_redacted`, `extracted` counts only), and hashed into `order_ref_hash`; a number
+      another fan already verified sends the file to staff. Verified: RedactionJobTests (finder rules, TSV parsing, a
+      fake Tesseract end to end, the duplicate case, OCR off and failing). Still open: Tesseract isn't in the chiseled
+      worker image (owner to-do; `services/api/src/integrations/ocr/TODO.md`), and the rules haven't met a real
+      ticket. Whether staff find printed numbers often is measurable: count archived files with `staff_boxes` (query in
+      `services/api/src/features/redaction/README.md`).*
 - [x] Let staff draw boxes themselves on a file the scanner can't settle. *Done 2026-11-05 (migration 0056,
       `StaffBox.cs`): the archive decision carries up to 20 boxes as fractions of the image; the job paints them
       black before scanning; the app's Photo redaction screen has a "Draw boxes" mode (drag with mouse or finger).

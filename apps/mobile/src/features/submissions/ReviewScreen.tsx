@@ -8,17 +8,22 @@ import { useSession } from '../../auth/SessionProvider';
 import { Avatar } from '../../ui/Avatar';
 import { Body, Button, ErrorText, Field, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
-import { kindLabel, type Submission, submissionConcertLine } from './photoUpload';
+import { kindLabel, neverShared, type Submission, submissionConcertLine } from './photoUpload';
 
 type AdminSubmission = components['schemas']['AdminSubmission'];
 
-/** Staff only (route /review): posts waiting for review, oldest first, with approve and reject. */
+/**
+ * Staff only (route /review): posts waiting for review, oldest first, with approve and reject. A merch or concert
+ * photo that is really a receipt, or shows personal details, can be marked not shareable (with a staff-only note)
+ * independently of the decision: it keeps its status and points but never reaches the feed until staff allow it again.
+ */
 export function ReviewScreen() {
   const { session } = useSession();
   const [queue, setQueue] = useState<AdminSubmission[] | null>(null);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState<string | null>(null);
   const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [notes, setNotes] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     setError(undefined);
@@ -51,6 +56,26 @@ export function ReviewScreen() {
     }
   }
 
+  async function setShareable(item: AdminSubmission, shareable: boolean) {
+    setBusy(item.id);
+    setError(undefined);
+    try {
+      const note = notes[item.id]?.trim();
+      const updated = unwrap(
+        await session.api.PUT('/admin/submissions/{submissionId}/shareable', {
+          params: { path: { submissionId: item.id } },
+          body: shareable || !note ? { shareable } : { shareable, note },
+        }),
+      );
+      setQueue((current) => current?.map((q) => (q.id === updated.id ? updated : q)) ?? null);
+      if (shareable) setNotes((current) => ({ ...current, [item.id]: '' }));
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   if (!queue && !error) return <Loading />;
 
   return (
@@ -73,6 +98,25 @@ export function ReviewScreen() {
             <Text style={styles.caption}>Concert: {submissionConcertLine(item as Submission)}</Text>
           ) : null}
           {item.caption ? <Text style={styles.caption}>{item.caption}</Text> : null}
+          {!neverShared(item.kind) &&
+            (item.share_blocked ? (
+              <>
+                <Text style={styles.note}>Not shareable{item.share_blocked_note ? `: ${item.share_blocked_note}` : ''}</Text>
+                <Button label="Allow sharing again" kind="secondary" busy={busy === item.id} onPress={() => void setShareable(item, true)} />
+              </>
+            ) : (
+              <>
+                <Field
+                  label="Note if not shareable (staff only)"
+                  placeholder="A receipt, personal details in view"
+                  value={notes[item.id] ?? ''}
+                  onChangeText={(text) => setNotes((current) => ({ ...current, [item.id]: text }))}
+                  maxLength={500}
+                  autoCapitalize="sentences"
+                />
+                <Button label="Not shareable" kind="secondary" busy={busy === item.id} onPress={() => void setShareable(item, false)} />
+              </>
+            ))}
           <Button label="Approve" busy={busy === item.id} onPress={() => void decide(item, 'approve')} />
           <Field
             label="Reason if rejecting (the fan sees it)"
@@ -102,4 +146,5 @@ const styles = StyleSheet.create({
   who: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   whoText: { flex: 1 },
   caption: { color: colors.text, fontSize: 15 },
+  note: { color: colors.muted, fontSize: 14 },
 });

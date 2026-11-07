@@ -1,23 +1,7 @@
 # OCR and vision integration
 
-## Purpose
-This folder owns the ocr and vision integration responsibilities for Fandom Score.
-
-## Responsibilities
-- Implement the feature's domain behavior and interfaces.
-- Validate inputs and enforce authorization at the correct boundary.
-- Handle expected failures and avoid duplicate effects on retries.
-- Keep implementation and automated tests close to the feature where practical.
-
-## Dependencies
-Review the corresponding `TODO.md` and the repository's architecture documentation for upstream dependencies, provider choices, database contracts, and unresolved decisions.
-
-## Development
-1. Inspect existing code and tests before changing files.
-2. Implement tasks in `TODO.md` in dependency order.
-3. Add tests for success, failure, authorization, and edge cases.
-4. Run tests and document actual results.
-5. Update documentation and the root `PROJECT_TODO.md`.
-
-## Scope note
-This README is a starter document. Replace generic details with the real module interfaces and setup instructions once the implementation is inspected.
+There is no separate OCR service. Printed order numbers on proof photos are found by the redaction worker
+(`workers/image-redaction`, `TextFinder.cs` and `OrderNumberFinder.cs`, migration 0061) with the Tesseract command
+line when `Redaction__TesseractCommand` is set; the README there has the rules, what is stored (counts and one hash,
+never the text), and how the duplicate-order case reaches staff. The provider decision (Tesseract in the worker image
+or a cloud vision API) is in `TODO.md`.

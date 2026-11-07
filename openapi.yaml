@@ -1640,7 +1640,7 @@ paths:
       operationId: shareSubmission
       summary: Share a verified photo to the home feed, or stop sharing
       description: |
-        Only verified `merch` and `concert_photo` submissions can be shared (`can_share`). Tickets and screenshots
+        Only verified `merch` and `concert_photo` submissions can be shared (`can_share`). Tickets, screenshots, and receipts
         never are: they can show barcodes or personal details. A later rejection takes the photo off the feed.
       parameters:
         - {$ref: '#/components/parameters/SubmissionId'}
@@ -3274,6 +3274,37 @@ paths:
               schema: {$ref: '#/components/schemas/AdminSubmission'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/Conflict'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /admin/submissions/{submissionId}/shareable:
+    put:
+      tags: [Admin]
+      operationId: setSubmissionShareable
+      summary: Mark a submission not shareable, or shareable again
+      description: |
+        `shareable: false` (2026-11-06): a merch or concert photo that is really a receipt, or shows personal details,
+        comes off the home feed at once and can't be shared again; it keeps its status and points. `note` (up to 500
+        characters) is for staff. `shareable: true` lifts the mark. Any status; receipts, tickets, and screenshots
+        are never shareable regardless.
+      parameters:
+        - {$ref: '#/components/parameters/SubmissionId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [shareable]
+              properties:
+                shareable: {type: boolean}
+                note: {type: [string, 'null'], maxLength: 500}
+      responses:
+        '200':
+          description: Updated submission
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminSubmission'}
+        '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
   /admin/reports:
@@ -5228,7 +5259,7 @@ components:
       properties:
         file_id: {type: string, format: uuid}
         submission_id: {type: string, format: uuid}
-        kind: {type: string, enum: [ticket, merch, screenshot, concert_photo]}
+        kind: {type: string, enum: [ticket, merch, screenshot, concert_photo, receipt]}
         artist: {$ref: '#/components/schemas/ArtistRef'}
         user: {$ref: '#/components/schemas/UserRef'}
         note: {type: [string, 'null'], description: Why the worker couldn't finish the file.}
@@ -5751,12 +5782,13 @@ components:
             comments: {type: integer}
         proof:
           type: object
-          required: [tickets, merch, screenshots]
+          required: [tickets, merch, screenshots, receipts]
           description: Verified submissions only.
           properties:
             tickets: {type: integer}
             merch: {type: integer}
             screenshots: {type: integer}
+            receipts: {type: integer}
         social: {$ref: '#/components/schemas/SocialStats'}
         ledger_points: {type: number}
     ProfileStats:
@@ -5791,12 +5823,13 @@ components:
             comments: {type: integer}
         proof:
           type: object
-          required: [tickets, merch, screenshots]
+          required: [tickets, merch, screenshots, receipts]
           description: Verified submissions only.
           properties:
             tickets: {type: integer}
             merch: {type: integer}
             screenshots: {type: integer}
+            receipts: {type: integer}
         social: {$ref: '#/components/schemas/SocialStats'}
         ledger_points: {type: number}
     SocialStats:
@@ -6079,7 +6112,7 @@ components:
 
     SubmissionKind:
       type: string
-      enum: [ticket, merch, screenshot, concert_photo]
+      enum: [ticket, merch, screenshot, concert_photo, receipt]
     SubmissionStatus:
       type: string
       enum: [pending, processing, needs_review, verified, rejected]
@@ -6130,8 +6163,14 @@ components:
             city: {type: string}
         caption: {type: [string, 'null']}
         shared_at: {type: [string, 'null'], format: date-time, description: On the home feed since; null when not shared.}
-        can_share: {type: boolean, description: Verified merch or concert photo that staff haven't taken down.}
+        can_share: {type: boolean, description: Verified merch or concert photo that staff haven't taken down or marked not shareable.}
         removed: {type: boolean, description: Staff took it off the feed after a report; it stays as proof.}
+        share_blocked:
+          type: boolean
+          description: |
+            Staff marked it not shareable (a merch photo that is really a receipt, personal details in view; 2026-11-06):
+            off the feed for good unless staff reverse it. It still counts as proof. Receipts, tickets, and screenshots
+            are never shareable whatever this says.
         kind: {$ref: '#/components/schemas/SubmissionKind'}
         status: {$ref: '#/components/schemas/SubmissionStatus'}
         event: {oneOf: [{$ref: '#/components/schemas/EventRef'}, {type: 'null'}]}
@@ -6513,10 +6552,11 @@ components:
           properties:
             user: {$ref: '#/components/schemas/UserRef'}
             trust_score: {type: [number, 'null'], minimum: 0, maximum: 1}
-            extracted: {type: object, additionalProperties: true}
+            extracted: {type: object, additionalProperties: true, description: 'OCR results as counts only (`words`, `order_numbers_redacted`); never the numbers themselves.'}
             checks:
               type: array
               items: {$ref: '#/components/schemas/VerificationCheck'}
+            share_blocked_note: {type: [string, 'null'], description: Why staff marked it not shareable (staff only).}
     AdminSubmissionPage:
       type: object
       required: [items, next_cursor]

@@ -9,7 +9,7 @@ const mockSession = { api: mockApi };
 
 jest.mock('../../auth/SessionProvider', () => ({ useSession: () => ({ session: mockSession }) }));
 jest.mock('expo-router', () => ({ router: { back: jest.fn(), replace: jest.fn() } }));
-jest.mock('expo-image-manipulator', () => ({ manipulateAsync: jest.fn(), SaveFormat: { JPEG: 'jpeg' } }));
+jest.mock('expo-image-manipulator', () => ({ manipulateAsync: jest.fn().mockResolvedValue({ uri: 'file:///prepared.jpg' }), SaveFormat: { JPEG: 'jpeg' } }));
 jest.mock('expo-image-picker', () => ({
   launchImageLibraryAsync: jest.fn().mockResolvedValue({ canceled: false, assets: [{ uri: 'file:///p.jpg', width: 800 }] }),
 }));
@@ -57,4 +57,29 @@ test('listed past shows are offered, and merch needs no concert', async () => {
   fireEvent.press(screen.getByRole('radio', { name: 'Merch' }));
   expect(screen.queryByText('Which concert?')).toBeNull();
   expect(screen.getByRole('button', { name: 'Send for review' })).toBeEnabled();
+});
+
+test('a receipt is proof only: no caption, posted as kind receipt, and no promise of sharing', async () => {
+  serve(notFound);
+  mockApi.POST.mockImplementation(async (path: string) => {
+    if (path === '/uploads') return ok({ upload_id: 'u1', method: 'PUT', url: 'https://api.test/v1/uploads/u1/content', expires_at: 'x' });
+    return { data: { id: 's1', status: 'needs_review' }, response: { ok: true, status: 201 } };
+  });
+  // The upload itself goes straight to the signed link, outside the API client.
+  const fetchImpl = jest.fn().mockResolvedValueOnce({ blob: async () => new Blob(['x']) }).mockResolvedValueOnce({ ok: true, status: 204 });
+  (globalThis as { fetch: unknown }).fetch = fetchImpl;
+  render(<PostPhotoScreen />);
+
+  fireEvent.press(screen.getByRole('radio', { name: 'Receipt' }));
+  expect(screen.getByText(/never shown on the feed/)).toBeTruthy();
+  expect(screen.queryByLabelText('Caption (optional)')).toBeNull();
+  expect(screen.queryByText('Which concert?')).toBeNull();
+  fireEvent.press(await screen.findByRole('radio', { name: 'Geese' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Choose a photo' }));
+  await screen.findByLabelText('Chosen photo');
+  fireEvent.press(screen.getByRole('button', { name: 'Send for review' }));
+
+  expect(await screen.findByText('Sent for review')).toBeTruthy();
+  expect(screen.getByText("Staff check every post. Once it's verified you earn points.")).toBeTruthy();
+  expect(mockApi.POST).toHaveBeenLastCalledWith('/submissions', { body: { artist_id: 'a1', kind: 'receipt', upload_ids: ['u1'], caption: null } });
 });

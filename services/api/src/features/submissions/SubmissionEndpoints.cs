@@ -19,7 +19,7 @@ namespace FandomScore.Api.Features.Submissions;
 /// </summary>
 public static class SubmissionEndpoints
 {
-    public static readonly IReadOnlyList<string> Kinds = ["ticket", "merch", "screenshot", "concert_photo"];
+    public static readonly IReadOnlyList<string> Kinds = ["ticket", "merch", "screenshot", "concert_photo", "receipt"];
     public static readonly IReadOnlyList<string> ShareableKinds = ["merch", "concert_photo"];
     public const int DailySubmissions = 20;
     public const int CaptionMaxLength = 500;
@@ -36,6 +36,7 @@ public static class SubmissionEndpoints
         admin.MapGet("/reviews", ReviewQueueAsync);
         admin.MapGet("/submissions/{submissionId:guid}", GetForReviewAsync);
         admin.MapPost("/submissions/{submissionId:guid}/decision", DecideAsync);
+        admin.MapPut("/submissions/{submissionId:guid}/shareable", SetShareableAsync);
     }
 
     public sealed record SubmissionFile(Guid Id, string MimeType, string Url, bool Redacted);
@@ -51,7 +52,8 @@ public static class SubmissionEndpoints
     public sealed record Submission(
         Guid Id, Guid ArtistId, ScoringEndpoints.ArtistRef Artist, string Kind, string Status, EventRef? Event,
         Concert? Concert, string? RejectionReason, DateTime SubmittedAt, DateTime? VerifiedAt, bool Archived, string? Caption,
-        DateTime? SharedAt, bool CanShare, bool Removed, IReadOnlyList<SubmissionFile> Files, IReadOnlyList<PointsAward> PointsAwarded);
+        DateTime? SharedAt, bool CanShare, bool Removed, bool ShareBlocked, IReadOnlyList<SubmissionFile> Files,
+        IReadOnlyList<PointsAward> PointsAwarded);
 
     public sealed record SubmissionPage(IReadOnlyList<Submission> Items, string? NextCursor);
 
@@ -63,8 +65,9 @@ public static class SubmissionEndpoints
     public sealed record AdminSubmission(
         Guid Id, Guid ArtistId, ScoringEndpoints.ArtistRef Artist, string Kind, string Status, EventRef? Event,
         Concert? Concert, string? RejectionReason, DateTime SubmittedAt, DateTime? VerifiedAt, bool Archived, string? Caption,
-        DateTime? SharedAt, bool CanShare, bool Removed, IReadOnlyList<SubmissionFile> Files, IReadOnlyList<PointsAward> PointsAwarded,
-        UserRef User, decimal? TrustScore, JsonElement Extracted, IReadOnlyList<VerificationCheck> Checks);
+        DateTime? SharedAt, bool CanShare, bool Removed, bool ShareBlocked, IReadOnlyList<SubmissionFile> Files,
+        IReadOnlyList<PointsAward> PointsAwarded, UserRef User, decimal? TrustScore, JsonElement Extracted,
+        IReadOnlyList<VerificationCheck> Checks, string? ShareBlockedNote);
 
     public sealed record AdminSubmissionPage(IReadOnlyList<AdminSubmission> Items, string? NextCursor);
 
@@ -148,8 +151,15 @@ public static class SubmissionEndpoints
             INSERT INTO submission_files (submission_id, storage_key, sha256, mime_type, bytes)
             SELECT @submissionId, u.storage_key, u.sha256, u.mime_type, u.bytes FROM uploads u WHERE u.id = ANY(@uploadIds);
             UPDATE uploads SET submission_id = @submissionId WHERE id = ANY(@uploadIds);
+            -- The same photo from another fan (same bytes, migration 0061): not refused, but staff see a file_hash check
+            -- that failed, with how many other fans sent it. Rejected copies don't count.
+            INSERT INTO verification_checks (submission_id, check_type, result, details)
+            SELECT @submissionId, 'file_hash', 'fail', jsonb_build_object('other_fans', count(DISTINCT s.user_id), 'other_submissions', count(DISTINCT s.id))
+            FROM submission_files f JOIN submissions s ON s.id = f.submission_id
+            WHERE s.user_id <> @userId AND s.status <> 'rejected' AND f.sha256 = ANY(@hashes)
+            HAVING count(*) > 0;
             """,
-            new { submissionId, uploadIds }, transaction);
+            new { submissionId, uploadIds, userId, hashes = uploads.Select(u => u.Sha256).ToArray() }, transaction);
 
         var submission = (await LoadAsync(connection, transaction, request, urls, submissionId))!;
         if (key is not null)
@@ -180,7 +190,7 @@ public static class SubmissionEndpoints
         var kind = body.TryGetProperty("kind", out var k) && k.ValueKind == JsonValueKind.String ? k.GetString()! : "";
         if (!Kinds.Contains(kind))
         {
-            errors.Add(new FieldError("kind", "Use ticket, merch, screenshot, or concert_photo."));
+            errors.Add(new FieldError("kind", "Use ticket, merch, screenshot, concert_photo, or receipt."));
         }
 
         var uploadIds = new List<Guid>();
@@ -394,16 +404,17 @@ public static class SubmissionEndpoints
         {
             throw new ApiProblemException(StatusCodes.Status409Conflict, "conflict", "Can't share this",
                 current.Removed ? "Staff took this photo down, so it can't be shared."
+                : current.ShareBlocked ? "Staff marked this photo as not shareable: it shows a receipt or personal details. It still counts as proof."
                 : ShareableKinds.Contains(current.Kind)
                     ? "Only verified photos can be shared. This one is still being checked."
-                    : "Tickets and screenshots can't be shared; they can show barcodes or personal details.");
+                    : "Tickets, screenshots, and receipts can't be shared; they can show barcodes or personal details.");
         }
 
-        // Re-checked in the UPDATE: staff may have rejected it since it was loaded.
+        // Re-checked in the UPDATE: staff may have rejected or blocked it since it was loaded.
         if (await connection.ExecuteAsync(
                 """
                 UPDATE submissions SET shared_at = CASE WHEN @shared THEN COALESCE(shared_at, now()) END
-                WHERE id = @submissionId AND (NOT @shared OR (status = 'verified' AND removed_at IS NULL))
+                WHERE id = @submissionId AND (NOT @shared OR (status = 'verified' AND removed_at IS NULL AND share_blocked_at IS NULL))
                 """,
                 new { submissionId, shared = value.GetBoolean() }) == 0)
         {
@@ -523,6 +534,42 @@ public static class SubmissionEndpoints
         return Results.Ok(result);
     }
 
+    // Staff mark a submission not shareable (a merch photo that is really a receipt, personal details in view;
+    // migration 0061): it comes off the feed and can't go back on. It stays as proof with its points. Reversible.
+    private static async Task<IResult> SetShareableAsync(
+        ClaimsPrincipal user, Guid submissionId, JsonElement body, HttpRequest request, NpgsqlDataSource db, SignedUrls urls,
+        CancellationToken cancellationToken)
+    {
+        if (body.ValueKind != JsonValueKind.Object || !body.TryGetProperty("shareable", out var value)
+            || value.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+        {
+            throw ApiProblemException.Validation(new FieldError("shareable", "Send false to keep this off the feed, or true to allow sharing again."));
+        }
+
+        var note = body.TryGetProperty("note", out var n) && n.ValueKind == JsonValueKind.String ? n.GetString()!.Trim() : null;
+        if (note is { Length: > 500 })
+        {
+            throw ApiProblemException.Validation(new FieldError("note", "Use up to 500 characters."));
+        }
+
+        await using var connection = await db.OpenConnectionAsync(cancellationToken);
+        var changed = await connection.ExecuteAsync(
+            """
+            UPDATE submissions
+            SET share_blocked_at = CASE WHEN @shareable THEN NULL ELSE COALESCE(share_blocked_at, now()) END,
+                share_blocked_by = CASE WHEN @shareable THEN NULL ELSE COALESCE(share_blocked_by, @staff) END,
+                share_blocked_note = CASE WHEN @shareable THEN NULL ELSE COALESCE(@note, share_blocked_note) END
+            WHERE id = @submissionId
+            """,
+            new { submissionId, shareable = value.GetBoolean(), staff = user.UserId(), note = string.IsNullOrEmpty(note) ? null : note });
+        if (changed == 0)
+        {
+            throw NotFound();
+        }
+
+        return Results.Ok(await LoadForReviewAsync(connection, null, request, urls, submissionId));
+    }
+
     private static ApiProblemException NotFound() =>
         new(StatusCodes.Status404NotFound, "not_found", "Submission not found", "No submission of yours has this id.");
 
@@ -547,7 +594,8 @@ public static class SubmissionEndpoints
                    s.status::text AS Status, s.rejection_reason AS RejectionReason, s.submitted_at AS SubmittedAt,
                    s.verified_at AS VerifiedAt, s.archived_at IS NOT NULL AS Archived, s.caption AS Caption, s.shared_at AS SharedAt,
                    s.user_id AS UserId, s.trust_score AS TrustScore, s.extracted::text AS Extracted,
-                   s.removed_at IS NOT NULL AS Removed, s.event_id AS EventId, s.concert_date AS ConcertDate, s.concert_venue AS ConcertVenue, s.concert_city AS ConcertCity
+                   s.removed_at IS NOT NULL AS Removed, s.event_id AS EventId, s.concert_date AS ConcertDate, s.concert_venue AS ConcertVenue, s.concert_city AS ConcertCity,
+                   s.share_blocked_at IS NOT NULL AS ShareBlocked, s.share_blocked_note AS ShareBlockedNote
             FROM submissions s JOIN artists a ON a.id = s.artist_id WHERE s.id = @submissionId
             """,
             new { submissionId }, transaction);
@@ -563,7 +611,7 @@ public static class SubmissionEndpoints
         var awards = (await connection.QueryAsync<PointsAward>(
             "SELECT rule_key AS RuleKey, points AS Points FROM score_events WHERE source_type = 'submission' AND source_id = @submissionId AND reversed_at IS NULL",
             new { submissionId }, transaction)).ToList();
-        var canShare = row.Status == "verified" && ShareableKinds.Contains(row.Kind) && !row.Removed;
+        var canShare = row.Status == "verified" && ShareableKinds.Contains(row.Kind) && !row.Removed && !row.ShareBlocked;
         var pinned = row.EventId is { } eventId
             ? await connection.QuerySingleOrDefaultAsync<EventRef>(
                 """
@@ -574,7 +622,7 @@ public static class SubmissionEndpoints
         var concert = row.ConcertDate is { } date ? new Concert(date, row.ConcertVenue!, row.ConcertCity!) : null;
         return new Submission(row.Id, row.ArtistId, new ScoringEndpoints.ArtistRef(row.ArtistId, row.ArtistName, row.ArtistImageUrl),
             row.Kind, row.Status, pinned, concert, row.RejectionReason, row.SubmittedAt, row.VerifiedAt, row.Archived, row.Caption,
-            row.SharedAt, canShare, row.Removed, files, awards);
+            row.SharedAt, canShare, row.Removed, row.ShareBlocked, files, awards);
     }
 
     private static async Task<AdminSubmission?> LoadForReviewAsync(
@@ -585,11 +633,11 @@ public static class SubmissionEndpoints
             return null;
         }
 
-        var extra = await connection.QuerySingleAsync<(string? Handle, bool Deleted, string? DisplayName, string? AvatarUrl, decimal? TrustScore, string Extracted)>(
+        var extra = await connection.QuerySingleAsync<(string? Handle, bool Deleted, string? DisplayName, string? AvatarUrl, decimal? TrustScore, string Extracted, string? ShareBlockedNote)>(
             """
             SELECT CASE WHEN u.deleted_at IS NULL THEN u.handle::text END, u.deleted_at IS NOT NULL,
                    CASE WHEN u.deleted_at IS NULL THEN u.display_name END, CASE WHEN u.deleted_at IS NULL THEN u.avatar_url END,
-                   s.trust_score, s.extracted::text
+                   s.trust_score, s.extracted::text, s.share_blocked_note
             FROM submissions s JOIN users u ON u.id = s.user_id WHERE s.id = @submissionId
             """,
             new { submissionId }, transaction);
@@ -603,8 +651,9 @@ public static class SubmissionEndpoints
             .Select(c => new VerificationCheck(c.Id, c.CheckType, c.Result, c.Confidence, Parse(c.Details), c.ReviewerId, c.CreatedAt))
             .ToList();
         return new AdminSubmission(s.Id, s.ArtistId, s.Artist, s.Kind, s.Status, s.Event, s.Concert, s.RejectionReason, s.SubmittedAt,
-            s.VerifiedAt, s.Archived, s.Caption, s.SharedAt, s.CanShare, s.Removed, s.Files, s.PointsAwarded,
-            new UserRef(extra.Handle, extra.Deleted, extra.DisplayName, extra.AvatarUrl), extra.TrustScore, Parse(extra.Extracted), checks);
+            s.VerifiedAt, s.Archived, s.Caption, s.SharedAt, s.CanShare, s.Removed, s.ShareBlocked, s.Files, s.PointsAwarded,
+            new UserRef(extra.Handle, extra.Deleted, extra.DisplayName, extra.AvatarUrl), extra.TrustScore, Parse(extra.Extracted), checks,
+            extra.ShareBlockedNote);
     }
 
     private static JsonElement Parse(string json)
@@ -616,7 +665,8 @@ public static class SubmissionEndpoints
     private sealed record SubmissionRow(
         Guid Id, Guid ArtistId, string ArtistName, string? ArtistImageUrl, string Kind, string Status, string? RejectionReason,
         DateTime SubmittedAt, DateTime? VerifiedAt, bool Archived, string? Caption, DateTime? SharedAt, Guid UserId,
-        decimal? TrustScore, string Extracted, bool Removed, Guid? EventId, DateOnly? ConcertDate, string? ConcertVenue, string? ConcertCity);
+        decimal? TrustScore, string Extracted, bool Removed, Guid? EventId, DateOnly? ConcertDate, string? ConcertVenue, string? ConcertCity,
+        bool ShareBlocked, string? ShareBlockedNote);
 
     private sealed record CheckRow(
         Guid Id, string CheckType, string Result, decimal? Confidence, string Details, Guid? ReviewerId, DateTime CreatedAt);

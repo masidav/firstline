@@ -7,14 +7,19 @@ Use `- [x]` only after the task is implemented and verified. Adapt this checklis
 - [ ] Implement authenticated upload initiation and validate size, MIME type, extension, and upload ownership.
 - [ ] Upload originals to a quarantine storage tier with private access by default.
 - [ ] Create submission and file records with explicit pending/processing states.
-- [ ] Compute SHA-256 hashes and detect duplicate files.
-- [ ] Store order-reference hashes rather than raw order references. *`order_ref_hash` exists (0001) but nothing
-      writes it: there is no OCR yet (`services/api/src/integrations/ocr/TODO.md`).*
+- [x] Compute SHA-256 hashes and detect duplicate files. *Hashes since 0012; a fan's own duplicate is refused
+      (`409 duplicate_submission`); since 2026-11-06 the same photo from another fan is accepted with a failed
+      `file_hash` check staff see (migration 0061; ProofApiTests).*
+- [x] Store order-reference hashes rather than raw order references. *2026-11-06: the redaction worker writes
+      `order_ref_hash` (SHA-256 of the first printed order number, normalized) when OCR is configured; the numbers
+      themselves are never stored (`workers/image-redaction/README.md`). OCR is off until Tesseract is in the image.*
 - [ ] Queue OCR, metadata, event-match, partner-confirmation, and other verification checks.
 - [ ] Expose submission status and manual-review outcomes to the owning user without exposing reviewer-only data.
 - [ ] Transition statuses only through validated, auditable state changes.
 - [ ] Award points only when a submission becomes verified and reverse awards if it is later rejected.
-- [ ] Ensure the same order cannot be verified for multiple people under the configured uniqueness rule.
+- [ ] Ensure the same order cannot be verified for multiple people under the configured uniqueness rule. *The unique
+      index exists (0001); with OCR on, a printed number another verified submission carries sends the file to staff
+      with a failed `order_ref` check instead of archiving it (2026-11-06). Without OCR, only the file hash is checked.*
 - [ ] Add tests for invalid uploads, duplicate files/orders, lifecycle transitions, and award reversals.
 
 ## Verification

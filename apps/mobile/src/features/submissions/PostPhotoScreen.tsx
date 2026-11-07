@@ -13,6 +13,7 @@ import {
   type ConcertInput,
   type ConcertPin,
   concertLine,
+  neverShared,
   POST_KINDS,
   postPhoto,
   preparePhoto,
@@ -25,8 +26,9 @@ type Show = { id: string; name: string; venue?: string | null; city?: string | n
 const UNLISTED = 'unlisted';
 
 /**
- * Post a concert photo, merch, or ticket (route /post). It goes to staff as proof of fandom; once verified it earns
- * points, and a concert or merch photo can then be shared to the home feed from Posts.
+ * Post a concert photo, merch, a ticket, or a receipt (route /post). It goes to staff as proof of fandom; once verified
+ * it earns points, and a concert or merch photo can then be shared to the home feed from Posts. Tickets and receipts
+ * are proof only: never on the feed.
  */
 export function PostPhotoScreen() {
   const { session } = useSession();
@@ -121,7 +123,7 @@ export function PostPhotoScreen() {
         <Title>Sent for review</Title>
         <Body>
           Staff check every post. Once it's verified you earn points
-          {kind === 'ticket' ? '.' : ', and you can share it to the home feed from Posts.'}
+          {neverShared(kind) ? '.' : ', and you can share it to the home feed from Posts.'}
         </Body>
         <Button label="Posts" onPress={() => router.replace('/posts')} />
         <Button label="Back to home" kind="secondary" onPress={() => router.replace('/home')} />
@@ -212,7 +214,7 @@ export function PostPhotoScreen() {
       {photo && <Image source={{ uri: photo.uri }} style={styles.preview} resizeMode="cover" accessibilityLabel="Chosen photo" />}
       <Button label={photo ? 'Choose another photo' : 'Choose a photo'} kind="secondary" onPress={() => void pick()} />
 
-      {kind !== 'ticket' && (
+      {!neverShared(kind) && (
         <Field
           label="Caption (optional)"
           placeholder="Shown if you share it"

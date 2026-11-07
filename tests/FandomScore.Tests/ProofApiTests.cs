@@ -243,6 +243,67 @@ public sealed class ProofApiTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Receipts_are_proof_but_never_shared_and_staff_can_take_a_merch_photo_off_the_feed_for_good()
+    {
+        var fan = await SignInAsync("fan_one");
+        var staff = await StaffAsync("staffer");
+        var receipt = await SubmitAsync(fan, "receipt", Jpeg("receipt"));
+        var merch = await SubmitAsync(fan, "merch", Jpeg("hoodie"));
+        await DecideAsync(staff, receipt, "approve");
+        await DecideAsync(staff, merch, "approve");
+
+        // A receipt earns points and counts as proof, but can't go on the feed.
+        var verified = await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/submissions/{receipt}", fan), HttpStatusCode.OK);
+        Assert.Equal(("receipt", "verified", false), (verified.GetProperty("kind").GetString(), verified.GetProperty("status").GetString(), verified.GetProperty("can_share").GetBoolean()));
+        Assert.Equal("receipt_verified", verified.GetProperty("points_awarded")[0].GetProperty("rule_key").GetString());
+        var refused = await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/submissions/{receipt}/share", fan, new { shared = true }), HttpStatusCode.Conflict);
+        Assert.Contains("receipts", refused.GetProperty("detail").GetString(), StringComparison.Ordinal);
+        var stats = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/stats", fan), HttpStatusCode.OK);
+        Assert.Equal((1, 1), (stats.GetProperty("proof").GetProperty("receipts").GetInt32(), stats.GetProperty("proof").GetProperty("merch").GetInt32()));
+
+        // The merch photo is shared, then staff find it's really a receipt: off the feed, and it can't come back.
+        await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/submissions/{merch}/share", fan, new { shared = true }), HttpStatusCode.OK);
+        var blocked = await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/admin/submissions/{merch}/shareable", staff,
+            new { shareable = false, note = "It's an order confirmation, not the hoodie." }), HttpStatusCode.OK);
+        Assert.Equal((true, false, JsonValueKind.Null), (blocked.GetProperty("share_blocked").GetBoolean(), blocked.GetProperty("can_share").GetBoolean(),
+            blocked.GetProperty("shared_at").ValueKind));
+        Assert.Equal("It's an order confirmation, not the hoodie.", blocked.GetProperty("share_blocked_note").GetString());
+        var again = await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/submissions/{merch}/share", fan, new { shared = true }), HttpStatusCode.Conflict);
+        Assert.Contains("not shareable", again.GetProperty("detail").GetString(), StringComparison.Ordinal);
+        var mine = await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/submissions/{merch}", fan), HttpStatusCode.OK);
+        Assert.True(mine.GetProperty("share_blocked").GetBoolean());
+        Assert.Equal("verified", mine.GetProperty("status").GetString());
+        Assert.DoesNotContain((await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/feed", fan), HttpStatusCode.OK)).GetProperty("items").EnumerateArray(),
+            i => i.GetProperty("type").GetString() == "photo");
+
+        // Staff can lift it; the fan shares again.
+        await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/admin/submissions/{merch}/shareable", staff, new { shareable = true }), HttpStatusCode.OK);
+        var shared = await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/submissions/{merch}/share", fan, new { shared = true }), HttpStatusCode.OK);
+        Assert.NotEqual(JsonValueKind.Null, shared.GetProperty("shared_at").ValueKind);
+        // Only staff, and only a real submission.
+        Assert.Equal(HttpStatusCode.Forbidden, (await SendAsync(HttpMethod.Put, $"/v1/admin/submissions/{merch}/shareable", fan, new { shareable = false })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Put, $"/v1/admin/submissions/{Guid.NewGuid()}/shareable", staff, new { shareable = false })).StatusCode);
+    }
+
+    [Fact]
+    public async Task The_same_photo_from_another_fan_is_accepted_but_flagged_for_staff()
+    {
+        var one = await SignInAsync("fan_one");
+        var two = await SignInAsync("fan_two");
+        var staff = await StaffAsync("staffer");
+        var photo = Jpeg("same-ticket");
+        var first = await SubmitAsync(one, "ticket", photo);
+        var second = await SubmitAsync(two, "ticket", photo);
+
+        var review = await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/admin/submissions/{second}", staff), HttpStatusCode.OK);
+        var check = Assert.Single(review.GetProperty("checks").EnumerateArray(), c => c.GetProperty("check_type").GetString() == "file_hash");
+        Assert.Equal(("fail", 1, 1), (check.GetProperty("result").GetString(), check.GetProperty("details").GetProperty("other_fans").GetInt32(),
+            check.GetProperty("details").GetProperty("other_submissions").GetInt32()));
+        var original = await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/admin/submissions/{first}", staff), HttpStatusCode.OK);
+        Assert.DoesNotContain(original.GetProperty("checks").EnumerateArray(), c => c.GetProperty("check_type").GetString() == "file_hash");
+    }
+
+    [Fact]
     public async Task Pending_submissions_can_be_withdrawn_and_their_files_go_too()
     {
         var fan = await SignInAsync("fan_one");

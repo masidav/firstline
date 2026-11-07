@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { concertComplete, concertLine, postPhoto, statusLabel, type Submission } from './photoUpload';
+import { concertComplete, concertLine, neverShared, POST_KINDS, postPhoto, statusLabel, type Submission } from './photoUpload';
 
 jest.mock('expo-image-manipulator', () => ({ manipulateAsync: jest.fn(), SaveFormat: { JPEG: 'jpeg' } }));
 
@@ -58,6 +58,15 @@ test('status labels', () => {
   expect(statusLabel(base)).toBe('Waiting for review');
   expect(statusLabel({ ...base, status: 'verified', shared_at: '2026-10-21T00:00:00Z' })).toBe('Verified · on the feed');
   expect(statusLabel({ ...base, status: 'rejected', rejection_reason: 'Blurry' })).toBe('Not accepted: Blurry');
+});
+
+test('only merch and concert photos can be shared; tickets, receipts, and screenshots are proof only', () => {
+  expect(POST_KINDS.map((k) => k.kind)).toEqual(['concert_photo', 'merch', 'ticket', 'receipt']);
+  expect(neverShared('merch')).toBe(false);
+  expect(neverShared('concert_photo')).toBe(false);
+  expect(neverShared('ticket')).toBe(true);
+  expect(neverShared('receipt')).toBe(true);
+  expect(neverShared('screenshot')).toBe(true);
 });
 
 test('a concert pin is sent as event_id or as a trimmed concert', async () => {

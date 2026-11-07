@@ -208,6 +208,13 @@ Rules already in code provisionally; confirm or change each (details in `PROJECT
   kept 90 days and out of the fan's data download; `hub_confirmed` weighs like the other four trust parts.
 - [ ] Listening from two services (2026-11-05, ADR 0007): the score takes the strongest signal per artist across
   services, never the sum; Apple Music can't be one-account-per-fan (no account id).
+- [ ] Receipts (2026-11-06, migration 0061; both options from the 2026-10-26 request are built): a `receipt` proof
+  kind, never shared, 20 points like merch; and a staff "not shareable" mark on any photo (off the feed for good,
+  status and points kept). Keep both, or one?
+- [ ] Printed order numbers (2026-11-06): the worker blacks them out and keeps one hash per submission (one order,
+  one fan) when a Tesseract command is configured. Turning it on means a worker image with `tesseract-ocr` (the
+  current image is chiseled) or a cloud vision API instead; decide once real tickets have been through review
+  (`workers/image-redaction/README.md`, "Printed order numbers").
 
 Still open:
 - [ ] Which of the proposed verification signals to build next, and their weights

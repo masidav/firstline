@@ -40,7 +40,7 @@ public static class StatsEndpoints
 
     public sealed record JournalStats(int Logs, int AlbumsLogged, int Relistens, int Reviews, int Ratings, int Lists, int Comments);
 
-    public sealed record ProofStats(int Tickets, int Merch, int Screenshots);
+    public sealed record ProofStats(int Tickets, int Merch, int Screenshots, int Receipts);
 
     /// <summary>Followers and following on this platform (not Spotify), live accounts only.</summary>
     public sealed record SocialStats(int Followers, int Following);
@@ -120,7 +120,8 @@ public static class StatsEndpoints
 
             SELECT count(*) FILTER (WHERE kind = 'ticket')::int AS Tickets,
                    count(*) FILTER (WHERE kind = 'merch')::int AS Merch,
-                   count(*) FILTER (WHERE kind = 'screenshot')::int AS Screenshots
+                   count(*) FILTER (WHERE kind = 'screenshot')::int AS Screenshots,
+                   count(*) FILTER (WHERE kind::text = 'receipt')::int AS Receipts
             FROM submissions WHERE user_id = @userId AND status = 'verified';
 
             -- Live accounts only; account deletion scrubs follows both ways anyway (users_social_scrub).

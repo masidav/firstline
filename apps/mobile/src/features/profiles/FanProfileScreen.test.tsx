@@ -20,7 +20,7 @@ const answers = { items: [{ answer: { id: 'pa1', prompt_id: 'p1', user: { handle
   created_at: '2026-10-25T00:00:00Z', updated_at: '2026-10-25T00:00:00Z', mine: false, following: false }, prompt_text: 'Best band name?', day: '2026-10-25' }] };
 const stats = { artists: [{ artist: { id: 'a1', name: 'Geese', image_url: null }, raw_score: 70, percentile: 92, rank: 3, fans: 41, is_estimated: false,
   computed_at: '2026-10-25T00:00:00Z' }], journal: { logs: 2, albums_logged: 2, relistens: 0, reviews: 1, ratings: 2, lists: 0, comments: 0 },
-  proof: { tickets: 1, merch: 1, screenshots: 0 }, ledger_points: 41.3 };
+  proof: { tickets: 1, merch: 1, screenshots: 0, receipts: 1 }, ledger_points: 41.3 };
 const bag = { owner: { handle: 'ana', deleted: false }, slots: 5, items: [{ id: 'g1', position: 1, spotify_track_id: '1aaaaaaaaaaaaaaaaaaaaa', title: 'Cowboy Nudes',
   artist: { id: 'a1', name: 'Geese', image_url: null }, artist_status: 'active', album_title: null, cover_url: null,
   spotify_url: 'https://open.spotify.com/track/1aaaaaaaaaaaaaaaaaaaaa', added_at: '2026-10-25T00:00:00Z' }] };
@@ -60,7 +60,8 @@ test('a stranger sees the basics and is asked to follow; following reveals stats
   expect(mockApi.PUT).toHaveBeenCalledWith('/users/{handle}/follow', { params: { path: { handle: 'ana' } } });
   expect(await screen.findByText('Top 8% of fans · #3 of 41')).toBeTruthy();
   expect(screen.getByText('Cowboy Nudes')).toBeTruthy();
-  expect(screen.getByText('2 albums logged · 1 review · 2 verified proofs · 41 points')).toBeTruthy();
+  // Receipts count as verified proof next to tickets and merch.
+  expect(screen.getByText('2 albums logged · 1 review · 3 verified proofs · 41 points')).toBeTruthy();
   await waitFor(() => expect(screen.queryByText(/Follow Ana to see/)).toBeNull());
 });
 

@@ -121,6 +121,7 @@ export function StatsScreen() {
             <Stat label="Tickets" value={stats.proof.tickets} />
             <Stat label="Merch" value={stats.proof.merch} />
             <Stat label="Screenshots" value={stats.proof.screenshots} />
+            <Stat label="Receipts" value={stats.proof.receipts} />
           </Section>
 
           <Section title="Points" hint="Earned from your journal and verified proof; added to your Spotify scores.">

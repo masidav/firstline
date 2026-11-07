@@ -44,6 +44,26 @@ count only on a file in `approved`: a pending file never has any, and if one did
 shouldn't shape the archive. The boxes stay on the row after archiving so we can tell how often staff need them
 (`services/api/src/features/redaction/README.md` has the query).
 
+## Printed order numbers (OCR, `TextFinder.cs`, `OrderNumberFinder.cs`; migration 0061)
+Off unless `Redaction__TesseractCommand` names a Tesseract executable (`RedactionOptions`). When it does, every ticket,
+screenshot, and receipt (not merch or concert photos, which go on the feed and don't carry order numbers) is read
+after the codes are blacked out: `tesseract <png> stdout --psm 11 tsv` gives each printed word with its box (the
+image goes to it as a PNG of at most 2000 px through a temporary file, deleted afterwards). `OrderNumberFinder` picks
+the order, confirmation, and booking numbers: any run of 8+ capitals and digits with 5+ digits that isn't a date, time,
+or price, and the one or two tokens after a label such as ORDER, CONFIRMATION, REF, BOOKING, TICKET #, PNR. Each gets a
+padded black box. What is stored: `submission_files.text_redacted` (how many), `submissions.extracted` (`words`,
+`order_numbers_redacted`, `ocr`, `checked_at`: counts, never the text), an `ocr_extract` check, and
+`submissions.order_ref_hash` = SHA-256 of the first number, normalized to capitals and digits. If another verified
+submission of the same kind already has that hash, the file goes to staff instead (`needs_review`, "The printed order
+number matches another verified submission") with an `order_ref` check that failed: one order, one fan
+(`submissions_order_ref_uidx` from the initial schema finally has data). Tesseract failing or timing out counts as
+"didn't run" (no counts claimed), never as "nothing to redact".
+
+Which OCR to run for real is still the open decision in `services/api/src/integrations/ocr/TODO.md`: the worker image
+is chiseled and has no Tesseract, so turning this on means a worker image with `tesseract-ocr` and its language data
+(or a sidecar), an owner to-do. Tests fake the executable with a shell script (`RedactionJobTests`, "printed order
+numbers").
+
 ## Guarantees and limits
 - Only verified submissions that weren't taken down are archived. Rejected and taken-down files are deleted after 30
   days by `storage.cleanup`.
@@ -51,11 +71,10 @@ shouldn't shape the archive. The boxes stay on the row after archiving so we can
   (`submission_files_check`, `submission_files_archive_consistent`).
 - A failed write or crash leaves the original quarantined and `pending`; the archive key is fixed per file, so a retry
   overwrites instead of duplicating, and a copy whose row update failed is deleted.
-- **No OCR**: an order number printed elsewhere on a ticket (not under a barcode) is not found by the scanner; staff
-  can draw a box over it when the file comes to them, but a ticket whose codes were all found never reaches staff.
-  Tickets and screenshots are never shown on the feed; the archive is staff-only proof. (`submissions.extracted` and
-  `order_ref_hash` from the initial schema are not written by anything yet: there is no OCR anywhere, so no
-  duplicate-order detection by order number either.)
+- **OCR only when configured**: without `Redaction__TesseractCommand`, an order number printed elsewhere on a ticket
+  (not under a barcode) is not found; staff can draw a box over it when the file comes to them, but a ticket whose
+  codes were all found never reaches staff. Tickets, screenshots, and receipts are never shown on the feed; the
+  archive is staff-only proof.
 - A scan that finds nothing is not proof of a clean image; that is why tickets and screenshots without a code go to
   staff.
 - `submission_files.sha256` stays the original's (duplicate detection compares new uploads with what fans sent).

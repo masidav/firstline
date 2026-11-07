@@ -272,11 +272,18 @@ Details: [Album journal API](services/api/src/features/album-journal/TODO.md) ·
       (Playwright `apps/mobile/e2e/redaction.spec.ts`, Chrome, against the API and a seeded database): a real mouse drag
       over the photo drew the box where the mouse went, the archive decision carried one box inside 0..1, the row left
       the list; new spec 1/1 and the whole web suite 11/11, Jest 360/360, typecheck.*
-- [ ] Hide printed order numbers on tickets (OCR) if staff find them often. *2026-11-05: not started. There is no OCR
-      in the codebase (nothing writes `submissions.extracted` or `order_ref_hash`), and choosing one (Tesseract in the
-      chiseled worker image, or a paid cloud vision API that sees every ticket) is the open decision in
-      `services/api/src/integrations/ocr/TODO.md`. "Often" is now measurable: archived files with `staff_boxes`
-      (query in `services/api/src/features/redaction/README.md`). Decide after real tickets have been through review.*
+- [ ] Hide printed order numbers on tickets (OCR) if staff find them often. *Built 2026-11-06 behind a switch
+      (migration 0061, `workers/image-redaction/TextFinder.cs`, `OrderNumberFinder.cs`): with
+      `Redaction__TesseractCommand` set, the worker runs Tesseract on verified tickets, screenshots, and receipts after
+      the codes are blacked out, paints over order, confirmation, and booking numbers, stores counts only
+      (`text_redacted`, `extracted`) plus the first number's SHA-256 in `order_ref_hash`, and sends a file whose number
+      another verified submission already carries to staff (one order, one fan). The provider decision stays open:
+      the chiseled worker image has no Tesseract (`docs/OWNER_TODO.md` C; `services/api/src/integrations/ocr/TODO.md`).
+      Verified: `dotnet test` 475/475 (RedactionJobTests: finder rules, TSV parsing, a fake Tesseract end to end, the
+      duplicate case, OCR off and failing). Not yet met a real ticket.*
+- [x] The same photo from two fans is flagged (2026-11-06, migration 0061): a new submission whose file another fan
+      already sent (and that wasn't rejected) is accepted with a failed `file_hash` check staff see in review.
+      Verified: ProofApiTests.
 - [ ] David adds real photos to test redaction (added 2026-10-26): phone shots of real tickets, ticket screenshots,
       merch, and receipts, with glare, angles, and blur. Run them through the worker and tune the scanner on what it
       misses (`workers/image-redaction/TODO.md`). Keep them out of the repo: they hold real order details.
@@ -285,7 +292,14 @@ Details: [Submissions API](services/api/src/features/submissions/TODO.md) · [Su
 
 - [ ] Keep receipts out of the scroll feed (requested 2026-10-26): a "merch" photo that is really a receipt or
       order confirmation shouldn't be shareable. Options: a separate `receipt` proof kind that is never shared (like
-      tickets), a staff "not shareable" flag at review, or both. Needs a decision.
+      tickets), a staff "not shareable" flag at review, or both. *Both built 2026-11-06, provisionally (migration
+      0061): kind `receipt` (proof, 20 points like merch, never shared; "Receipt" in the app's picker, "Proof only" on
+      the fan's posts, counted in stats) and `PUT /admin/submissions/{id}/shareable` (staff mark with a note; the
+      photo comes off the feed at once and can't go back on; reversible; the fan sees why; the staff review screen
+      has the control). Verified: `dotnet test` 475/475 (ProofApiTests, invariants 0061), fan app `npm test` 441/441
+      and typecheck, promoter typecheck and tests 29/29. Still open: which option to keep (`docs/OWNER_TODO.md` C),
+      and a staff control on already-verified posts (the review queue only lists posts waiting for review; the
+      reported-posts screen is the natural place).*
 
 Fans can share verified merch and concert photos to the home feed (`PUT /submissions/{id}/share`); tickets and
 screenshots are never shared. The home feed (`GET /feed`) is one vertical scroll mixing, at random, shared photos

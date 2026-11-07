@@ -21,6 +21,8 @@ const base = {
 };
 const verified = { ...base, id: 's1', kind: 'concert_photo', status: 'verified', can_share: true, points_awarded: [{ rule_key: 'concert_photo_verified', points: 5 }] };
 const pending = { ...base, id: 's2', kind: 'ticket', status: 'needs_review', can_share: false };
+const blocked = { ...base, id: 's3', kind: 'merch', status: 'verified', can_share: false, share_blocked: true, caption: 'Order confirmation' };
+const receipt = { ...base, id: 's4', kind: 'receipt', status: 'verified', can_share: false, points_awarded: [{ rule_key: 'receipt_verified', points: 5 }] };
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -40,4 +42,20 @@ test('a verified photo can be shared; a pending ticket can be withdrawn', async 
   fireEvent.press(screen.getByRole('button', { name: 'Withdraw' }));
   expect(await screen.findByRole('button', { name: 'Remove from feed' })).toBeTruthy();
   expect(screen.queryByText('Waiting for review')).toBeNull();
+});
+
+test('a post staff marked not shareable has no share toggle and says why; a receipt is never shared, like a ticket', async () => {
+  mockApi.GET.mockResolvedValue(ok({ items: [blocked, receipt, pending], next_cursor: null }));
+  render(<MyPostsScreen />);
+
+  expect(await screen.findByText('Order confirmation')).toBeTruthy();
+  expect(screen.getByText('Staff marked this as not shareable (it shows a receipt or personal details). It still counts as proof.')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Share to feed' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Remove from feed' })).toBeNull();
+
+  // The receipt and the ticket get the same proof-only line; the receipt still earned its points.
+  expect(screen.getByText('Receipt · Geese')).toBeTruthy();
+  expect(screen.getAllByText('Proof only: never shown on the feed.')).toHaveLength(2);
+  expect(screen.getByText('+5 points')).toBeTruthy();
+  expect(mockApi.PUT).not.toHaveBeenCalled();
 });

@@ -97,6 +97,30 @@ public static class CodeRedactor
             data.ToArray(), redacted.Count, found.Select(c => c.Code).Distinct(StringComparer.Ordinal).Count(), staffBoxes?.Count ?? 0);
     }
 
+    /// <summary>Paints the boxes black and re-encodes; null when the bytes aren't an image. For OCR hits (printed order numbers).</summary>
+    public static byte[]? PaintBoxes(byte[] content, string mimeType, IReadOnlyList<SKRect> boxes)
+    {
+        using var bitmap = TryDecode(content);
+        if (bitmap is null)
+        {
+            return null;
+        }
+
+        using (var canvas = new SKCanvas(bitmap))
+        using (var paint = new SKPaint { Color = SKColors.Black, Style = SKPaintStyle.Fill })
+        {
+            foreach (var box in boxes)
+            {
+                canvas.DrawRect(box, paint);
+            }
+        }
+
+        var format = mimeType == "image/png" ? SKEncodedImageFormat.Png : SKEncodedImageFormat.Jpeg;
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(format, JpegQuality);
+        return data.ToArray();
+    }
+
     /// <summary>The decoded image, or null when the bytes aren't an image Skia can read.</summary>
     public static SKBitmap? TryDecode(byte[] content)
     {

@@ -7,9 +7,12 @@ import { errorMessage } from '../../api/errors';
 import { useSession } from '../../auth/SessionProvider';
 import { Body, Button, ErrorText, Loading, Screen, Title } from '../../ui/components';
 import { colors, space } from '../../ui/theme';
-import { kindLabel, statusLabel, type Submission, submissionConcertLine } from './photoUpload';
+import { kindLabel, NEVER_SHARED_LINE, neverShared, SHARE_BLOCKED_LINE, statusLabel, type Submission, submissionConcertLine } from './photoUpload';
 
-/** The fan's posts with their review status (route /posts). Verified concert and merch photos can be shared. */
+/**
+ * The fan's posts with their review status (route /posts). Verified concert and merch photos can be shared, unless
+ * staff marked them not shareable (`share_blocked`). Tickets and receipts never are.
+ */
 export function MyPostsScreen() {
   const { session } = useSession();
   const [posts, setPosts] = useState<Submission[] | null>(null);
@@ -67,7 +70,7 @@ export function MyPostsScreen() {
       <Title>Posts</Title>
       <Button label="Post a photo" onPress={() => router.push('/post')} />
       <ErrorText>{error}</ErrorText>
-      {posts?.length === 0 && <Body muted>Nothing yet. Post a concert photo, merch, or a ticket to earn points.</Body>}
+      {posts?.length === 0 && <Body muted>Nothing yet. Post a concert photo, merch, a ticket, or a receipt to earn points.</Body>}
       {posts?.map((post) => (
         <View key={post.id} style={styles.card}>
           {post.files?.[0] && (
@@ -82,7 +85,9 @@ export function MyPostsScreen() {
           {(post.points_awarded ?? []).length > 0 && (
             <Text style={styles.status}>+{(post.points_awarded ?? []).reduce((sum, a) => sum + a.points, 0)} points</Text>
           )}
-          {post.can_share && (
+          {neverShared(post.kind) && <Text style={styles.status}>{NEVER_SHARED_LINE}</Text>}
+          {post.share_blocked && <Text style={styles.status}>{SHARE_BLOCKED_LINE}</Text>}
+          {post.can_share && !post.share_blocked && (
             <Button
               label={post.shared_at ? 'Remove from feed' : 'Share to feed'}
               kind={post.shared_at ? 'secondary' : 'primary'}

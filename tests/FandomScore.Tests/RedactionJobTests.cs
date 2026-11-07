@@ -250,32 +250,215 @@ public sealed class RedactionJobTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Contains("(1 wait for staff)", warning.Text, StringComparison.Ordinal);
     }
 
+    // ---------------------------------------------------------------- printed order numbers (OCR, migration 0061)
+
+    [Theory]
+    [InlineData("ORDER # 12345678", "12345678")]                   // a label, then the number
+    [InlineData("Confirmation no. ABC-98765", "ABC98765")]           // filler word, punctuation
+    [InlineData("Booking ref: 7Q2K9D", "7Q2K9D")]                   // short but labelled
+    [InlineData("Barcode 1234 5678 9012 3456", "1234")]             // first token after the label (the rest are standalone hits too)
+    [InlineData("Your ticket 9876543210 is ready", "9876543210")]   // unlabelled, long and mostly digits
+    public void Order_numbers_are_found_after_labels_and_as_long_digit_runs(string line, string expectedFirst)
+    {
+        var words = Words(line);
+        var found = OrderNumberFinder.Find(words);
+        Assert.NotEmpty(found);
+        Assert.Equal(expectedFirst, found[0].Normalized);
+        Assert.All(found, n => Assert.True(n.Box.Width > 0 && n.Box.Height > 0));
+    }
+
+    [Theory]
+    [InlineData("Doors 7:30 PM, show 8:00 PM")]
+    [InlineData("2026-11-06 at the Metro, $45.00 plus fees")]
+    [InlineData("Sec 101 Row A Seat 5")]
+    [InlineData("Order your merch online")]
+    public void Dates_times_prices_seats_and_prose_are_not_order_numbers(string line) =>
+        Assert.Empty(OrderNumberFinder.Find(Words(line)));
+
+    [Fact]
+    public void Tesseract_tsv_is_parsed_into_words_with_boxes_and_lines()
+    {
+        const string tsv = "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
+                           + "1\t1\t0\t0\t0\t0\t0\t0\t1400\t1000\t-1\t\n"
+                           + "5\t1\t1\t1\t1\t1\t100\t200\t80\t30\t95.5\tORDER\n"
+                           + "5\t1\t1\t1\t1\t2\t200\t200\t160\t30\t91\t12345678\n"
+                           + "5\t1\t1\t1\t2\t1\t100\t260\t60\t30\t80\tRow\n"
+                           + "5\t1\t1\t1\t2\t2\t180\t260\t20\t30\t10\t \n";
+        var words = TesseractCliTextFinder.ParseTsv(tsv, factor: 2);
+        Assert.Equal(["ORDER", "12345678", "Row"], words.Select(w => w.Text));
+        Assert.Equal((200f, 400f, 360f, 460f), (words[0].Box.Left, words[0].Box.Top, words[0].Box.Right, words[0].Box.Bottom));
+        Assert.Equal((words[0].Line, words[0].Line, words[0].Line + 1), (words[0].Line, words[1].Line, words[2].Line));
+        Assert.Equal(95.5f, words[0].Confidence);
+    }
+
+    [Fact]
+    public async Task With_ocr_on_a_ticket_has_its_printed_order_number_blacked_out_hashed_and_counted()
+    {
+        var ticket = TicketWithOrderNumber();
+        var (submission, file, _) = await SubmissionAsync("ticket", ticket);
+        var finder = FakeTesseract("ORDER # 12345678");
+
+        await RunAsync(submission, finder);
+
+        var row = await FileAsync(file);
+        Assert.Equal(("archived", 1), (row.State, row.Codes));
+        await using var connection = await _db.OpenConnectionAsync();
+        var (textRedacted, extracted, hash) = await connection.QuerySingleAsync<(int?, string, byte[]?)>(
+            """
+            SELECT f.text_redacted, s.extracted::text, s.order_ref_hash
+            FROM submission_files f JOIN submissions s ON s.id = f.submission_id WHERE f.id = @file
+            """,
+            new { file });
+        Assert.Equal(1, textRedacted);
+        Assert.Contains("\"order_numbers_redacted\": 1", extracted, StringComparison.Ordinal);
+        Assert.DoesNotContain("12345678", extracted, StringComparison.Ordinal);
+        Assert.Equal(OrderNumberFinder.Hash("12345678"), hash);
+        Assert.Equal(["ocr_extract:pass"], await connection.QueryAsync<string>(
+            "SELECT check_type::text || ':' || result::text FROM verification_checks WHERE submission_id = @submission", new { submission }));
+
+        // The number's box is black in the archive; the rest of the strip it sat on is not.
+        using var archived = SKBitmap.Decode(await new LocalFileStore(_storage).ReadAsync(row.StorageKey, CancellationToken.None));
+        Assert.True(IsBlack(archived.GetPixel(NumberBox.MidX, NumberBox.MidY)), "the order number is blacked out");
+        Assert.False(IsBlack(archived.GetPixel(NumberBox.Right + 120, NumberBox.MidY)), "text next to it is left alone");
+    }
+
+    [Fact]
+    public async Task A_ticket_whose_order_number_another_fan_already_verified_goes_to_staff_instead_of_the_archive()
+    {
+        var ticket = TicketWithOrderNumber();
+        var finder = FakeTesseract("ORDER # 12345678");
+        var (first, firstFile, _) = await SubmissionAsync("ticket", ticket);
+        await RunAsync(first, finder);
+        Assert.Equal("archived", (await FileAsync(firstFile)).State);
+
+        await using var connection = await _db.OpenConnectionAsync();
+        var other = await connection.ExecuteScalarAsync<Guid>("INSERT INTO users (handle, email) VALUES ('fan_two', 'two@example.test') RETURNING id");
+        var (second, secondFile, key) = await SubmissionAsync("ticket", TicketWithOrderNumber(), owner: other);
+        await RunAsync(second, finder);
+
+        var row = await FileAsync(secondFile);
+        Assert.Equal(("needs_review", key), (row.State, row.StorageKey));
+        Assert.Contains("matches another verified submission", row.Note, StringComparison.Ordinal);
+        Assert.Null(await connection.ExecuteScalarAsync<byte[]?>("SELECT order_ref_hash FROM submissions WHERE id = @second", new { second }));
+        var check = await connection.QuerySingleAsync<(string Result, string Details)>(
+            "SELECT result::text, details::text FROM verification_checks WHERE submission_id = @second AND check_type = 'order_ref'", new { second });
+        Assert.Equal("fail", check.Result);
+        Assert.Contains(first.ToString(), check.Details, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Without_ocr_nothing_changes_and_a_failing_tesseract_is_not_nothing_to_redact()
+    {
+        var (submission, file, _) = await SubmissionAsync("ticket", TicketWithOrderNumber());
+        await RunAsync(submission);
+        await using var connection = await _db.OpenConnectionAsync();
+        Assert.Equal(("archived", (int?)null, "{}"), await connection.QuerySingleAsync<(string, int?, string)>(
+            "SELECT f.redaction_state, f.text_redacted, s.extracted::text FROM submission_files f JOIN submissions s ON s.id = f.submission_id WHERE f.id = @file",
+            new { file }));
+
+        // Tesseract present but failing: archived as before (codes are redacted), with no OCR counts claimed.
+        var (failing, failingFile, _) = await SubmissionAsync("ticket", TicketWithOrderNumber());
+        await RunAsync(failing, FakeTesseract("", exitCode: 2));
+        Assert.Equal(("archived", (int?)null), await connection.QuerySingleAsync<(string, int?)>(
+            "SELECT redaction_state, text_redacted FROM submission_files WHERE id = @failingFile", new { failingFile }));
+    }
+
+    /// <summary>Where the fixture prints its order number (a dark strip stands in for the digits).</summary>
+    private static readonly SKRectI NumberBox = SKRectI.Create(700, 820, 260, 40);
+
+    /// <summary>A ticket with a QR code and a printed "ORDER # 12345678" strip at <see cref="NumberBox"/>.</summary>
+    private static byte[] TicketWithOrderNumber()
+    {
+        var ticket = Ticket(qr: true);
+        using var bitmap = SKBitmap.Decode(ticket);
+        using (var canvas = new SKCanvas(bitmap))
+        using (var paint = new SKPaint { Color = new SKColor(90, 80, 70) })
+        {
+            canvas.DrawRect(SKRectI.Create(520, 820, 150, 40), paint);   // "ORDER #"
+            canvas.DrawRect(NumberBox, paint);                           // "12345678"
+            canvas.DrawRect(SKRectI.Create(1000, 820, 300, 40), paint);  // other text on the same line
+        }
+
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Jpeg, 85);
+        return data.ToArray();
+    }
+
+    /// <summary>
+    /// A "tesseract" that is a shell script printing a fixed TSV: the words of <paramref name="line"/>, laid out along
+    /// the fixture's strip at <see cref="NumberBox"/>'s row (the image goes to it at 1400 px, so no scaling).
+    /// </summary>
+    private TesseractCliTextFinder FakeTesseract(string line, int exitCode = 0)
+    {
+        Directory.CreateDirectory(_storage);
+        var script = Path.Combine(_storage, $"tesseract-{Guid.NewGuid():N}.sh");
+        var rows = new List<string> { "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext" };
+        var x = 520;
+        var n = 0;
+        foreach (var word in line.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var width = word == "12345678" ? NumberBox.Width : word.Length * 18;
+            if (word == "12345678")
+            {
+                x = NumberBox.Left;
+            }
+
+            rows.Add($"5\t1\t1\t1\t1\t{++n}\t{x}\t{NumberBox.Top}\t{width}\t{NumberBox.Height}\t92\t{word}");
+            x += width + 30;
+        }
+
+        var tsv = string.Join("\\n", rows).Replace("\t", "\\t", StringComparison.Ordinal);
+        File.WriteAllText(script, $"#!/bin/sh\ntest -s \"$1\" || exit 3\nprintf '{tsv}\\n'\nexit {exitCode}\n");
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+        return new TesseractCliTextFinder(
+            Microsoft.Extensions.Options.Options.Create(new RedactionOptions { TesseractCommand = script }), NullLogger<TesseractCliTextFinder>.Instance);
+    }
+
+    /// <summary>OCR words for one line of text, laid out left to right.</summary>
+    private static List<OcrWord> Words(string line)
+    {
+        var words = new List<OcrWord>();
+        var x = 0f;
+        foreach (var word in line.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var width = word.Length * 18f;
+            words.Add(new OcrWord(word, new SKRect(x, 100, x + width, 130), 90, 0));
+            x += width + 12;
+        }
+
+        return words;
+    }
+
     // ---------------------------------------------------------------- helpers
 
-    private async Task RunAsync(Guid submission)
+    private async Task RunAsync(Guid submission, ITextFinder? textFinder = null)
     {
-        var job = new RedactSubmissionJob(_db, new LocalFileStore(_storage), NullLogger<RedactSubmissionJob>.Instance);
+        var job = new RedactSubmissionJob(_db, new LocalFileStore(_storage), NullLogger<RedactSubmissionJob>.Instance, textFinder);
         await job.RunAsync(new ClaimedJob(++_runs, job.Kind, Payload(submission), 1, 10), CancellationToken.None);
     }
 
     private static string Payload(Guid submission) => $$"""{"submission_id":"{{submission}}"}""";
 
     /// <summary>A submission with one stored file, attached the way POST /submissions attaches it.</summary>
-    private async Task<(Guid Submission, Guid File, string Key)> SubmissionAsync(string kind, byte[] content, string status = "verified")
+    private async Task<(Guid Submission, Guid File, string Key)> SubmissionAsync(string kind, byte[] content, string status = "verified", Guid? owner = null)
     {
+        var fan = owner ?? _fan;
         var key = $"quarantine/{Guid.NewGuid()}";
         await new LocalFileStore(_storage).PutAsync(key, content, CancellationToken.None);
         await using var connection = await _db.OpenConnectionAsync();
         var submission = await connection.ExecuteScalarAsync<Guid>(
-            "INSERT INTO submissions (user_id, artist_id, kind) VALUES (@_fan, @_artistId, @kind::submission_kind) RETURNING id",
-            new { _fan, _artistId, kind });
+            "INSERT INTO submissions (user_id, artist_id, kind) VALUES (@fan, @_artistId, @kind::submission_kind) RETURNING id",
+            new { fan, _artistId, kind });
         var mime = content.Length > 3 && content[0] == 0x89 ? "image/png" : "image/jpeg";
         await connection.ExecuteAsync(
             """
             INSERT INTO uploads (user_id, purpose, mime_type, declared_bytes, storage_key, sha256, bytes, uploaded_at, submission_id)
-            VALUES (@_fan, 'submission', @mime, @bytes, @key, sha256(@key::bytea), @bytes, now(), @submission)
+            VALUES (@fan, 'submission', @mime, @bytes, @key, sha256(@key::bytea), @bytes, now(), @submission)
             """,
-            new { _fan, mime, bytes = content.Length, key, submission });
+            new { fan, mime, bytes = content.Length, key, submission });
         var file = await connection.ExecuteScalarAsync<Guid>(
             """
             INSERT INTO submission_files (submission_id, storage_key, sha256, mime_type, bytes)

@@ -3299,6 +3299,38 @@ SELECT pg_temp.expect_error($$INSERT INTO hub_location_checks (user_id, kind, ne
 SELECT pg_temp.expect_error($$INSERT INTO cities (id, name, region, country, time_zone) VALUES ('us-xx-nowhere', 'Nowhere', 'XX', 'US', 'America/Chicago')$$,
   'null value in column "latitude"');
 
+-- ------------------------------------------------------------ receipts, the share block, order numbers (0061)
+-- A receipt is proof (points) but never shared; a staff block takes a shared photo off the feed and keeps it off;
+-- lifting it allows sharing again; the printed-number column takes counts only.
+DO $$
+DECLARE fan uuid := '00000000-0000-0000-0000-000000000001'; staff uuid;
+        art uuid := (SELECT id FROM artists WHERE spotify_artist_id = 'sp-active'); rcpt uuid; merch uuid;
+BEGIN
+  INSERT INTO users (handle, email, is_staff) VALUES ('rcpt_staff', 'rcpt_staff@example.test', true) RETURNING id INTO staff;
+  INSERT INTO submissions (user_id, artist_id, kind) VALUES (fan, art, 'receipt') RETURNING id INTO rcpt;
+  UPDATE submissions SET status = 'verified', verified_at = now() WHERE id = rcpt;
+  ASSERT (SELECT count(*) FROM score_events WHERE source_id = rcpt AND rule_key = 'receipt_verified' AND reversed_at IS NULL) = 1,
+         'a verified receipt earns receipt_verified';
+
+  INSERT INTO submissions (user_id, artist_id, kind) VALUES (fan, art, 'merch') RETURNING id INTO merch;
+  UPDATE submissions SET status = 'verified', verified_at = now() WHERE id = merch;
+  UPDATE submissions SET shared_at = now() WHERE id = merch;
+  UPDATE submissions SET share_blocked_at = now(), share_blocked_by = staff, share_blocked_note = 'a receipt' WHERE id = merch;
+  ASSERT (SELECT shared_at IS NULL FROM submissions WHERE id = merch), 'blocking unshares';
+  ASSERT (SELECT status = 'verified' FROM submissions WHERE id = merch), 'blocking keeps the status';
+  UPDATE submissions SET share_blocked_at = NULL, share_blocked_by = NULL, share_blocked_note = NULL WHERE id = merch;
+  UPDATE submissions SET shared_at = now() WHERE id = merch;
+  ASSERT (SELECT shared_at IS NOT NULL FROM submissions WHERE id = merch), 'lifted: shareable again';
+  UPDATE submissions SET share_blocked_at = now() WHERE id = merch;
+END $$;
+SELECT pg_temp.expect_error($$UPDATE submissions SET shared_at = now() WHERE kind::text = 'receipt' AND status = 'verified'$$,
+  'only merch and concert photos can be shared');
+SELECT pg_temp.expect_error($$UPDATE submissions SET shared_at = now() WHERE kind = 'merch' AND share_blocked_at IS NOT NULL$$,
+  'not shareable');
+SELECT pg_temp.expect_error($$UPDATE submissions SET share_blocked_note = 'x' WHERE kind = 'merch' AND share_blocked_at IS NULL$$,
+  'submissions_share_block_fields');
+SELECT pg_temp.expect_error($$UPDATE submission_files SET text_redacted = -1$$, 'submission_files_text_redacted_check');
+
 -- ------------------------------------------------------------ Apple Music and Tidal (0058)
 -- Connections: one per fan and provider, a Tidal account to one fan, Tidal needs a user id; the sync queue; the
 -- reuse history; deletion. Signals: each provider its own rows, the score taking the strongest across them.

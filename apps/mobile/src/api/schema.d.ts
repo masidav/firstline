@@ -1331,7 +1331,7 @@ export interface paths {
         get?: never;
         /**
          * Share a verified photo to the home feed, or stop sharing
-         * @description Only verified `merch` and `concert_photo` submissions can be shared (`can_share`). Tickets and screenshots
+         * @description Only verified `merch` and `concert_photo` submissions can be shared (`can_share`). Tickets, screenshots, and receipts
          *     never are: they can show barcodes or personal details. A later rejection takes the photo off the feed.
          */
         put: operations["shareSubmission"];
@@ -2851,6 +2851,29 @@ export interface paths {
          *     verified submission reverses its points.
          */
         post: operations["decideSubmission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/submissions/{submissionId}/shareable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Mark a submission not shareable, or shareable again
+         * @description `shareable: false` (2026-11-06): a merch or concert photo that is really a receipt, or shows personal details,
+         *     comes off the home feed at once and can't be shared again; it keeps its status and points. `note` (up to 500
+         *     characters) is for staff. `shareable: true` lifts the mark. Any status; receipts, tickets, and screenshots
+         *     are never shareable regardless.
+         */
+        put: operations["setSubmissionShareable"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4436,7 +4459,7 @@ export interface components {
             /** Format: uuid */
             submission_id: string;
             /** @enum {string} */
-            kind: "ticket" | "merch" | "screenshot" | "concert_photo";
+            kind: "ticket" | "merch" | "screenshot" | "concert_photo" | "receipt";
             artist: components["schemas"]["ArtistRef"];
             user: components["schemas"]["UserRef"];
             /** @description Why the worker couldn't finish the file. */
@@ -4990,6 +5013,7 @@ export interface components {
                 tickets: number;
                 merch: number;
                 screenshots: number;
+                receipts: number;
             };
             social: components["schemas"]["SocialStats"];
             ledger_points: number;
@@ -5024,6 +5048,7 @@ export interface components {
                 tickets: number;
                 merch: number;
                 screenshots: number;
+                receipts: number;
             };
             social: components["schemas"]["SocialStats"];
             ledger_points: number;
@@ -5272,7 +5297,7 @@ export interface components {
             next_cursor: string | null;
         };
         /** @enum {string} */
-        SubmissionKind: "ticket" | "merch" | "screenshot" | "concert_photo";
+        SubmissionKind: "ticket" | "merch" | "screenshot" | "concert_photo" | "receipt";
         /** @enum {string} */
         SubmissionStatus: "pending" | "processing" | "needs_review" | "verified" | "rejected";
         SubmissionCreate: {
@@ -5322,10 +5347,16 @@ export interface components {
              * @description On the home feed since; null when not shared.
              */
             shared_at?: string | null;
-            /** @description Verified merch or concert photo that staff haven't taken down. */
+            /** @description Verified merch or concert photo that staff haven't taken down or marked not shareable. */
             can_share: boolean;
             /** @description Staff took it off the feed after a report; it stays as proof. */
             removed: boolean;
+            /**
+             * @description Staff marked it not shareable (a merch photo that is really a receipt, personal details in view; 2026-11-06):
+             *     off the feed for good unless staff reverse it. It still counts as proof. Receipts, tickets, and screenshots
+             *     are never shareable whatever this says.
+             */
+            share_blocked?: boolean;
             kind: components["schemas"]["SubmissionKind"];
             status: components["schemas"]["SubmissionStatus"];
             event?: components["schemas"]["EventRef"] | null;
@@ -5700,10 +5731,13 @@ export interface components {
         AdminSubmission: components["schemas"]["Submission"] & {
             user?: components["schemas"]["UserRef"];
             trust_score?: number | null;
+            /** @description OCR results as counts only (`words`, `order_numbers_redacted`); never the numbers themselves. */
             extracted?: {
                 [key: string]: unknown;
             };
             checks?: components["schemas"]["VerificationCheck"][];
+            /** @description Why staff marked it not shareable (staff only). */
+            share_blocked_note?: string | null;
         };
         AdminSubmissionPage: {
             items: components["schemas"]["AdminSubmission"][];
@@ -10120,6 +10154,38 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    setSubmissionShareable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submissionId: components["parameters"]["SubmissionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    shareable: boolean;
+                    note?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated submission */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSubmission"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
         };
     };

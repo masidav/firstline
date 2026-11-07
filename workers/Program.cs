@@ -44,6 +44,10 @@ builder.Services.AddMusicProviders(builder.Configuration);
 builder.Services.Configure<BaselineOptions>(builder.Configuration.GetSection(BaselineOptions.Section));
 builder.Services.AddSingleton<CatalogLoader>();
 
+// Printed order numbers on proof photos (Redaction__TesseractCommand; empty keeps OCR off). workers/image-redaction.
+builder.Services.Configure<RedactionOptions>(builder.Configuration.GetSection(RedactionOptions.Section));
+builder.Services.AddSingleton<ITextFinder, TesseractCliTextFinder>();
+
 // Stored files (Storage__LocalPath): must be the same storage the API writes to, or cleanup can't delete them.
 builder.Services.AddFileStore(builder.Configuration, builder.Environment.ContentRootPath);
 
