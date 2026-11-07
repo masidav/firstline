@@ -159,7 +159,7 @@ steps with `prod` in place of `beta`.
 
 The fan app (`apps/mobile`, its web build) and the promoter dashboard (`apps/promoter-web`) are static sites. Each
 is an image (`Dockerfile` targets `web` and `promoter-web`) holding the built files and an unprivileged nginx
-(`infrastructure/web/`) that serves them, sends every unknown path to `index.html` so deep links reload, caches
+(configured from `apps/<app>/web/`, one copy per app) that serves them, sends every unknown path to `index.html` so deep links reload, caches
 the hashed assets for a year, and adds security headers. They run in the same cluster behind the same Gateway and
 address as the API, each on its own hostname (beta: `app.beta.firstline-5730kl.com` and `promoters.beta.firstline-5730kl.com`),
 with its own certificate in the same certificate map (Terraform `web_domains`) and the same Cloud Armor policy.
@@ -185,9 +185,9 @@ Three components deploy separately, each at its own version (a git commit, which
 
 | Component | Images (Deployments) | Built from (`k8s/versions.sh`) |
 | --- | --- | --- |
-| `backend` | `api`, `worker` (`worker`, `redaction`), `migrate` (Job) | `services/api`, `workers`, `database`, `packages/{spotify,storage,notifications}`, `global.json`, `Directory.Build.props` |
-| `web` | `web` (fan web app) | `apps/mobile`, `infrastructure/web` |
-| `promoter-web` | `promoter-web` | `apps/promoter-web`, `infrastructure/web` |
+| `backend` | `api`, `worker` (`worker`, `redaction`), `migrate` (Job), `testkit` (not deployed: migrate + seed for the apps' e2e suites, `tools/testkit`) | `services/api`, `workers`, `database`, `packages/{spotify,music-providers,storage,notifications}`, `global.json`, `Directory.Build.props`, `tools/dev/seed.py`, `tools/dev/spotify_connect.py`, `tools/testkit` |
+| `web` | `web` (fan web app) | `apps/mobile` (its nginx config included, `apps/mobile/web`) |
+| `promoter-web` | `promoter-web` | `apps/promoter-web` (`apps/promoter-web/web`) |
 
 The `Dockerfile` and `.dockerignore` count for all three. `k8s/overlays/<env>/versions.env` says per component
 `auto` (normal) or a commit (held there, a rollback). `auto` resolves to the last commit that changed the

@@ -51,13 +51,13 @@ API as UTC.
 npm run dev            # dev server
 npm test               # Vitest component tests
 npm run typecheck
-npm run generate:api   # after openapi.yaml changes (CI checks it)
+npm run sync:api       # after openapi.yaml changes: vendors it in contract/ and regenerates the types (CI checks both)
 npm run build          # static site in dist/ (any static host; serve index.html for every path)
 ```
 
 ## Hosting
 Beta hosts it at `https://promoters.beta.firstline-5730kl.com`: the `Dockerfile` target `promoter-web` builds it and serves it
-with nginx (`infrastructure/README.md` "Web apps"). Settings come at startup from `/config.js`, which nginx writes
+with nginx configured from `web/` here (`infrastructure/README.md` "Web apps"). Settings come at startup from `/config.js`, which nginx writes
 from its environment, so the same image serves beta and prod; locally the `VITE_` values apply (`src/config.ts`).
 Google sign-in needs `https://promoters.beta.firstline-5730kl.com` as an authorized origin of the web client and
 `https://promoters.beta.firstline-5730kl.com/google-callback` as a redirect URI.
@@ -65,7 +65,7 @@ Google sign-in needs `https://promoters.beta.firstline-5730kl.com` as an authori
 ```bash
 docker build --target promoter-web -t promoter-web .
 docker run --rm -p 8082:8080 -e API_URL=http://localhost:5271/v1 -e DEV_SIGN_IN=true promoter-web
-e2e/run.sh             # journeys: throwaway database, migrations, seed, API, a production build, Chrome
+e2e/run.sh             # journeys: the backend from its images (tools/testkit/compose.yml), a production build, Chrome
 ```
 
 ## Tests

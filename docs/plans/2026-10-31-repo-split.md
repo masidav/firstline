@@ -1,6 +1,7 @@
 # Plan: split the monorepo so each piece ships on its own
 
-Status: step 1 done (2026-11-03); steps 2–6 are proposals. Date: 2026-10-31.
+Status: steps 1–3 done (2026-11-03, 2026-11-07): the pieces deploy, version, and test separately inside this one
+repository. Steps 4–6 (the actual extraction) wait for the owner's decisions at the end of this file. Date: 2026-10-31.
 
 ## Why, and what has to change
 
@@ -120,8 +121,46 @@ are tested where rollback is trivial.
    (this note) deploys nothing.
 2. **Contract releases + vendored contract.** Add the release tagging and `oasdiff` check; switch both apps to
    `contract/openapi.yaml` + `sync:api`. Ends the `../../openapi.yaml` reach-around.
+   **Done 2026-11-07.** The version is `info.version` in `openapi.yaml` (set to 1.0.0; it was a placeholder 0.1.0),
+   bumped by whoever edits the file, rather than a counter CI commits back (CI doesn't push to `main`, step 1).
+   CI job `contract`: compares with the newest `contract-v*` tag's copy; a changed file needs a higher version
+   (`tools/ci/check_contract_version.py`, unit-tested); `oasdiff breaking --fail-on ERR` between the two makes a
+   major bump mandatory. Two oasdiff checks are lowered to info in `tools/ci/oasdiff-severity.txt` (adding a
+   response enum value or a oneOf variant), because adding an error `code` is this project's most common
+   contract change and the apps handle unknown codes generically; the file takes no comments. Job
+   `contract-release` (pushes to `main` only, `contents: write`) runs `gh release create contract-v<version>
+   openapi.yaml` with the oasdiff changelog as notes. Both apps: `contract/openapi.yaml` + `contract/VERSION`
+   (+ a README), `npm run generate:api` reads the vendored copy, and `npm run sync:api` (`scripts/sync-api.mjs`)
+   refreshes it from `../../openapi.yaml` while the app is here, or from the release with
+   `npm run sync:api -- 1.3.0` (`gh release download`, so a private repository works without a registry token).
+   The apps' CI jobs run `sync:api` and fail on a diff in `contract/` or `schema.d.ts`. Known gap: the concurrency
+   group cancels a superseded CI run, so a version that lives on `main` for one commit only may never get its
+   release; the next run releases the version then current. Verified: `python3 -m unittest discover -s tools/ci`
+   (contract tests included) OK; the check script on the real file: bumped → pass, identical → `changed=false`,
+   edited without a bump → exit 1 with the message, breaking with a major bump → pass; oasdiff on `openapi.yaml`
+   at HEAD~30 vs now with the severity file exits 0 (about 1,400 enum-value additions and 7 oneOf additions
+   lowered, nothing else); `sync:api` in both apps leaves `schema.d.ts` byte-identical; actionlint clean.
 3. **Testkit image.** Publish it; switch `apps/*/e2e/run.sh` and the CI `e2e` job to use it. Move
    `infrastructure/web` into each app (or a `web-base` image built by infra).
+   **Done 2026-11-07.** `Dockerfile` target `testkit` (runtime image, not chiseled: python3 + psql, the migrator's
+   publish output, `tools/dev/seed.py` and `spotify_connect.py`, `tools/testkit/entrypoint.sh`; runs as `app`):
+   waits for PostgreSQL, migrates, seeds (`SEED_ARGS`, default `--fake`), exits. `tools/testkit/compose.yml`:
+   `db` (postgres:16, port `E2E_DB_PORT` for the fixtures' direct SQL), `testkit` (once), `api` (Development, dev
+   sign-in, 1000 sign-ins a minute, CORS for both apps' origins, uploads on a tmpfs; `E2E_SIGNING_KEY` required so
+   no key sits in the repo). Images default to local builds (`build:` from the repo root) and switch to published
+   ones with `E2E_IMAGE_PREFIX`/`E2E_BACKEND_TAG`; `versions.sh` lists `testkit` among the backend's images, so
+   the Deploy workflow pushes it with `api`/`worker`/`migrate` at every backend version (nothing deploys it).
+   Both `e2e/run.sh` scripts start the stack and need neither the .NET SDK nor Python; both Playwright configs lost
+   their `dotnet run` server. The CI `e2e` job builds `api` + `testkit` (gha cache), starts the stack, runs both
+   suites against it, and prints the backend logs on failure. `infrastructure/web` moved to `apps/mobile/web` and
+   a copy to `apps/promoter-web/web` (identical today; each app's image copies its own), so each app's image
+   builds from its own directory alone; `versions.sh` paths updated (also adding `packages/music-providers`, which
+   the Dockerfile copied but the backend's path list missed). Verified: compose stack from this checkout → testkit
+   log "migrations" then "seed", `GET /v1/health` ok, `/v1/me` 401, 201 fans / 8 artists / 204 registrations in
+   the database; fan app e2e 11/11 and promoter e2e 4/4 (axe scan included) against it; `versions.sh beta`
+   resolves all three components; shellcheck, hadolint, actionlint, gitleaks clean; both apps typecheck,
+   Jest 441/441, Vitest 29/29; `web` and `promoter-web` images build and the web one serves `/healthz`,
+   `/config.js`, and the security headers; `dotnet build` 0 warnings, `dotnet test` 475/475.
 4. **Extract `firstline-infra`** with `git filter-repo --path infrastructure/ --path .github/workflows/deploy*.yml`
    (keeps history). Apply the Terraform WIF change first: the attribute condition lists all four repos
    (image pushes) and only the infra repo gets deploy roles. Move GitHub environment secrets/vars. Do one manual
@@ -131,7 +170,8 @@ are tested where rollback is trivial.
 6. **Clean up the backend repo:** remove the moved dirs, slim the Dockerfile to `api`/`worker`/`migrate`/`testkit`,
    update `CLAUDE.md`, `README.md`, `docs/DEVELOPMENT.md`, `TODO_INDEX.md`, and copy the agent hooks
    (`tools/claude-config`, `guard_paths.py`) to each new repo with only the rules that apply there (the migration
-   guard stays here; the `.env` guard goes everywhere). Record the decision in `docs/adr/0007-repo-split.md`.
+   guard stays here; the `.env` guard goes everywhere). Record the decision in `docs/adr/0008-repo-split.md` (0007
+   is music providers).
 
 Local dev after the split: a `firstline-dev` checkout script (or a short section in each README) clones the repos
 side by side; `docker compose` with the testkit image runs the backend for app work without the .NET SDK.

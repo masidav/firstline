@@ -96,12 +96,22 @@ jobs:
           git diff --name-only --diff-filter=A "${{ steps.range.outputs.range }}" -- 'database/migrations/*.sql' \
             | xargs -r python3 tools/ci/check_migration_safety.py
 
+  # openapi.yaml is versioned (info.version) and every version that reaches main is released as `contract-v<version>`
+  # (job "contract-release"), because the web apps vendor the copy they are built against (apps/*/contract,
+  # docs/plans/2026-10-31-repo-split.md). An edit must bump the version; a breaking change (oasdiff) must bump the
+  # major part: tools/ci/check_contract_version.py.
   contract:
-    name: OpenAPI contract is valid
+    name: OpenAPI contract is valid and versioned
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
+    outputs:
+      changed: ${{ steps.version.outputs.changed }}
+      version: ${{ steps.version.outputs.version }}
+      previous: ${{ steps.previous.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the contract-v* tags
 
       - uses: actions/setup-python@v5
         with:
@@ -111,6 +121,86 @@ jobs:
         run: |
           pip install openapi-spec-validator==0.7.1
           openapi-spec-validator openapi.yaml
+
+      - name: Latest contract release
+        id: previous
+        run: |
+          tag=$(git tag --list 'contract-v*' | sort -V | tail -1)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [ -n "$tag" ]; then
+            git show "$tag:openapi.yaml" > "${RUNNER_TEMP}/previous.yaml"
+            echo "Comparing with $tag."
+          else
+            echo "No contract release yet: this version becomes the first."
+          fi
+
+      # ERR-level findings are breaking (removed or tightened). Adding a value to a response enum or a variant to a
+      # oneOf is additive here (the apps treat unknown codes generically), so tools/ci/oasdiff-severity.txt lowers
+      # those two to info; oasdiff reads that file without comments. Exit 1 = breaking changes; anything else = the
+      # tool failed.
+      - name: Breaking changes since the latest release (oasdiff)
+        id: breaking
+        if: steps.previous.outputs.tag != ''
+        run: |
+          set +e
+          docker run --rm -v "$PWD:/repo:ro" -v "${RUNNER_TEMP}:/tmp/previous:ro" tufin/oasdiff:latest breaking \
+            --fail-on ERR --severity-levels /repo/tools/ci/oasdiff-severity.txt /tmp/previous/previous.yaml /repo/openapi.yaml
+          status=$?
+          set -e
+          case "$status" in
+            0) echo "breaking=false" >> "$GITHUB_OUTPUT" ;;
+            1) echo "breaking=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::oasdiff failed with status $status."; exit 1 ;;
+          esac
+
+      - name: Version bumped as the change requires
+        id: version
+        run: |
+          args=(--current openapi.yaml)
+          [ -z "${{ steps.previous.outputs.tag }}" ] || args+=(--previous "${RUNNER_TEMP}/previous.yaml")
+          [ "${{ steps.breaking.outputs.breaking }}" != "true" ] || args+=(--breaking)
+          python3 tools/ci/check_contract_version.py "${args[@]}"
+
+  # On main, a changed contract is released: the tag contract-v<version> at this commit, with openapi.yaml attached
+  # and the changelog since the previous release as the notes. The apps vendor it with `npm run sync:api -- <version>`.
+  contract-release:
+    name: Contract release
+    needs: contract
+    if: github.event_name == 'push' && needs.contract.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Release notes
+        env:
+          PREVIOUS: ${{ needs.contract.outputs.previous }}
+          VERSION: ${{ needs.contract.outputs.version }}
+        run: |
+          {
+            echo "\`openapi.yaml\` at ${GITHUB_SHA}, contract version ${VERSION}."
+            echo "Vendor it in an app with \`npm run sync:api -- ${VERSION}\`."
+            if [ -n "$PREVIOUS" ]; then
+              git show "$PREVIOUS:openapi.yaml" > "${RUNNER_TEMP}/previous.yaml"
+              echo; echo "## Changes since ${PREVIOUS}"; echo; echo '```'
+              docker run --rm -v "$PWD:/repo:ro" -v "${RUNNER_TEMP}:/tmp/previous:ro" tufin/oasdiff:latest changelog \
+                /tmp/previous/previous.yaml /repo/openapi.yaml | head -400 || echo "(oasdiff could not list the changes)"
+              echo '```'
+            fi
+          } > "${RUNNER_TEMP}/notes.md"
+          cat "${RUNNER_TEMP}/notes.md"
+
+      - name: Tag and release contract-v${{ needs.contract.outputs.version }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.contract.outputs.version }}
+        run: |
+          gh release create "contract-v${VERSION}" openapi.yaml --target "$GITHUB_SHA" \
+            --title "API contract ${VERSION}" --notes-file "${RUNNER_TEMP}/notes.md"
 
   secrets:
     name: No secrets in the tree
@@ -143,12 +233,12 @@ jobs:
 
       - run: npm ci
 
-      # The generated client must match openapi.yaml.
-      - name: API types are up to date
+      # The vendored contract (contract/) must be the repo's openapi.yaml, and the generated client must match it.
+      - name: Vendored contract and API types are up to date
         run: |
-          npm run generate:api
-          git diff --exit-code -- src/api/schema.d.ts || {
-            echo "::error::src/api/schema.d.ts is out of date. Run 'npm run generate:api' in apps/mobile."; exit 1; }
+          npm run sync:api
+          git diff --exit-code -- contract src/api/schema.d.ts || {
+            echo "::error::contract/ or src/api/schema.d.ts is out of date. Run 'npm run sync:api' in apps/mobile."; exit 1; }
 
       - run: npm run typecheck
       - run: npm test -- --ci
@@ -179,11 +269,11 @@ jobs:
 
       - run: npm ci
 
-      - name: API types are up to date
+      - name: Vendored contract and API types are up to date
         run: |
-          npm run generate:api
-          git diff --exit-code -- src/api/schema.d.ts || {
-            echo "::error::src/api/schema.d.ts is out of date. Run 'npm run generate:api' in apps/promoter-web."; exit 1; }
+          npm run sync:api
+          git diff --exit-code -- contract src/api/schema.d.ts || {
+            echo "::error::contract/ or src/api/schema.d.ts is out of date. Run 'npm run sync:api' in apps/promoter-web."; exit 1; }
 
       - run: npm run typecheck
       - run: npm test
@@ -228,27 +318,19 @@ jobs:
 
   # Critical fan journeys in a real browser: the production web build against the API and a seeded database. Beta
   # deploys from main, so a journey that breaks here would break for beta testers (apps/mobile/e2e/README.md).
+  # The backend runs from its images (api, and testkit = migrate + seed) through tools/testkit/compose.yml, the way
+  # the apps' suites will run it once they leave this repository (docs/plans/2026-10-31-repo-split.md, step 3).
   e2e:
     name: End-to-end journeys (browser)
     runs-on: ubuntu-latest
     timeout-minutes: 35
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_DB: fandom_e2e
-          POSTGRES_USER: fandom
-          POSTGRES_PASSWORD: ci
-        ports: ['5432:5432']
-        options: --health-cmd "pg_isready -U fandom -d fandom_e2e" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      E2E_DATABASE_URL: postgres://fandom:ci@127.0.0.1:5432/fandom_e2e
+      E2E_DB_PORT: '55480'
+      E2E_API_PORT: '5271'
+      E2E_APP_ORIGINS: http://127.0.0.1:8081,http://127.0.0.1:8082
+      E2E_DATABASE_URL: postgres://fandom:e2e@127.0.0.1:55480/fandom_e2e
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
 
       - uses: actions/setup-node@v4
         with:
@@ -256,19 +338,30 @@ jobs:
           cache: npm
           cache-dependency-path: apps/mobile/package-lock.json
 
-      - name: Apply migrations
-        env:
-          ConnectionStrings__Database: Host=127.0.0.1;Port=5432;Database=fandom_e2e;Username=fandom;Password=ci
-        run: dotnet run --project database
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Seed
-        env:
-          PGPASSWORD: ci
-        run: python3 tools/dev/seed.py --fake --sql | psql -h 127.0.0.1 -U fandom -d fandom_e2e -v ON_ERROR_STOP=1 -q
+      - name: Build the api and testkit images
+        run: |
+          for target in api testkit; do
+            docker buildx build --target "$target" --tag "fandomscore-$target" --load \
+              --cache-from type=gha --cache-to type=gha,mode=max .
+          done
 
-      # Built ahead so the test run's `dotnet run` starts the API well inside its startup timeout.
-      - name: Build the API
-        run: dotnet build services/api
+      # The stack's token signing key, for this run only (compose reads it for every command, logs included).
+      - name: Signing key
+        run: |
+          key="$(head -c 32 /dev/urandom | base64)"
+          echo "::add-mask::$key"
+          echo "E2E_SIGNING_KEY=$key" >> "$GITHUB_ENV"
+
+      - name: Start the backend (PostgreSQL, migrations, seed, API)
+        run: |
+          docker compose -f tools/testkit/compose.yml up -d --wait
+          for _ in $(seq 60); do
+            curl -fsS "http://127.0.0.1:${E2E_API_PORT}/v1/health" && break
+            sleep 1
+          done
+          curl -fsS "http://127.0.0.1:${E2E_API_PORT}/v1/health" >/dev/null
 
       - name: Install
         working-directory: apps/mobile
@@ -281,12 +374,16 @@ jobs:
         run: npm run e2e
 
       # The promoter dashboard's journeys and its axe accessibility scan of every page, against the same database and
-      # API build (apps/promoter-web/e2e; serious or critical violations fail the scan).
+      # API (apps/promoter-web/e2e; serious or critical violations fail the scan).
       - name: Promoter journeys and accessibility scan
         working-directory: apps/promoter-web
         run: |
           npm ci
           npm run e2e
+
+      - name: Backend logs
+        if: failure()
+        run: docker compose -f tools/testkit/compose.yml logs --no-color testkit api | tail -200
 
       - name: Upload report and traces
         if: failure()
@@ -352,9 +449,9 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      - name: Build the api, worker, migrate, web, and promoter-web images
+      - name: Build the api, worker, migrate, testkit, web, and promoter-web images
         run: |
-          for target in api worker migrate web promoter-web; do
+          for target in api worker migrate testkit web promoter-web; do
             docker buildx build --target "$target" --output type=cacheonly \
               --cache-from type=gha --cache-to type=gha,mode=max .
           done

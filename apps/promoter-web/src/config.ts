@@ -1,5 +1,5 @@
 // Settings. A hosted build reads them at startup from /config.js, which the web server writes from its environment
-// (infrastructure/web/), so one image serves beta and prod. Otherwise (local development, tests) they are build-time
+// (web/ in this app), so one image serves beta and prod. Otherwise (local development, tests) they are build-time
 // values: VITE_* are inlined into the bundle, so never put secrets in either. See the env example file.
 
 /** What /config.js may set (window.__FANDOM_CONFIG__). Empty strings count as unset. */

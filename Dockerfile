@@ -5,6 +5,7 @@
 #   docker build --target migrate      -t fandomscore-migrate      .
 #   docker build --target web          -t fandomscore-web          .   # fan web app
 #   docker build --target promoter-web -t fandomscore-promoter-web .   # promoter dashboard
+#   docker build --target testkit      -t fandomscore-testkit      .   # migrate + seed for the apps' e2e stack
 # Runtime images are Ubuntu "chiseled" (no shell or package manager) and run as the non-root `app` user
 # (by its numeric id, APP_UID=1654, so Kubernetes' runAsNonRoot can verify it).
 
@@ -64,8 +65,26 @@ COPY --from=build /out/migrate .
 USER $APP_UID
 ENTRYPOINT ["dotnet", "FandomScore.Database.dll"]
 
-# --- Web apps: built once without any environment's settings (they come from /config.js at runtime,
-# infrastructure/web), then served as static files by unprivileged nginx (uid 101) on 8080. ---
+# --- Testkit: the backend as the web apps' end-to-end suites need it (tools/testkit/compose.yml): the migrator
+# above plus tools/dev/seed.py and psql, so one run leaves a migrated, seeded database for the API image at the same
+# version, with no .NET SDK or Python on the machine. Published with the backend's images, never deployed. Not
+# chiseled (it needs python3 and psql); still runs as `app`. The apt versions are what noble ships today: pinning
+# them breaks the build when Ubuntu drops a superseded package, and nothing here depends on an exact version.
+FROM mcr.microsoft.com/dotnet/runtime:${DOTNET_VERSION}-noble AS testkit
+# hadolint ignore=DL3008
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 postgresql-client \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=build /out/migrate migrate/
+COPY tools/dev/seed.py tools/dev/spotify_connect.py tools/dev/
+COPY --chmod=755 tools/testkit/entrypoint.sh testkit
+USER $APP_UID
+ENTRYPOINT ["/app/testkit"]
+
+# --- Web apps: built once without any environment's settings (they come from /config.js at runtime, written by
+# nginx from its environment: apps/<app>/web/), then served as static files by unprivileged nginx (uid 101) on 8080.
+# Each app carries its own nginx configuration so it can leave this repository on its own (docs/plans/2026-10-31-repo-split.md). ---
 FROM node:22-bookworm-slim AS web-build
 WORKDIR /src
 COPY apps/mobile/package.json apps/mobile/package-lock.json apps/mobile/
@@ -81,16 +100,19 @@ RUN cd apps/promoter-web && npm ci --no-audit --no-fund
 COPY apps/promoter-web/ apps/promoter-web/
 RUN cd apps/promoter-web && npx tsc --noEmit && npx vite build --outDir /out/promoter-web
 
-FROM nginxinc/nginx-unprivileged:1.29-alpine AS web-server
-COPY infrastructure/web/default.conf.template /etc/nginx/templates/default.conf.template
-COPY infrastructure/web/security-headers.conf /etc/nginx/snippets/security-headers.conf
+FROM nginxinc/nginx-unprivileged:1.29-alpine AS web
+COPY apps/mobile/web/default.conf.template /etc/nginx/templates/default.conf.template
+COPY apps/mobile/web/security-headers.conf /etc/nginx/snippets/security-headers.conf
 # Defaults for /config.js; the Kubernetes ConfigMap web-config sets the real ones.
 ENV API_URL="" DEV_SIGN_IN=false GOOGLE_WEB_CLIENT_ID="" APPLE_SERVICES_ID="" SPOTIFY_CLIENT_ID="" TIDAL_CLIENT_ID="" APPLE_MUSIC_ENABLED=false
+COPY --from=web-build /out/web /usr/share/nginx/html
 USER 101
 EXPOSE 8080
 
-FROM web-server AS web
-COPY --from=web-build /out/web /usr/share/nginx/html
-
-FROM web-server AS promoter-web
+FROM nginxinc/nginx-unprivileged:1.29-alpine AS promoter-web
+COPY apps/promoter-web/web/default.conf.template /etc/nginx/templates/default.conf.template
+COPY apps/promoter-web/web/security-headers.conf /etc/nginx/snippets/security-headers.conf
+ENV API_URL="" DEV_SIGN_IN=false GOOGLE_WEB_CLIENT_ID="" APPLE_SERVICES_ID="" SPOTIFY_CLIENT_ID="" TIDAL_CLIENT_ID="" APPLE_MUSIC_ENABLED=false
 COPY --from=promoter-web-build /out/promoter-web /usr/share/nginx/html
+USER 101
+EXPOSE 8080

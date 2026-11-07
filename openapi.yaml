@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Fandom Score API
-  version: 0.1.0
+  version: 1.0.0
   summary: Mobile-first API for artist fandom scores, an album journal, and fan-proof submissions.
   description: |
     Companion to `database/migrations` and `README.md`. Only artists on the tracked-artist list can be scored,
@@ -10,6 +10,12 @@ info:
     ## Conventions
 
     - **Versioning:** URL prefix `/v1`. Breaking changes ship as `/v2`.
+    - **Contract version:** `info.version` above is the version of this file (semver). Bump it in the same change
+      as any edit to this file: minor for additive changes, major for a breaking one (something removed or
+      tightened). CI refuses an edit without a bump, refuses a breaking change without a major bump (`oasdiff`,
+      `tools/ci/check_contract_version.py`), and tags every version pushed to `main` as a release
+      `contract-v<version>` with this file attached. The web apps vendor the copy they were built against
+      (`apps/*/contract/`, `npm run sync:api`). Plan: `docs/plans/2026-10-31-repo-split.md`.
     - **Auth:** `Authorization: Bearer <access token>` (JWT, 15 minutes). Refresh tokens rotate on every use.
       Staff-only routes live under `/admin` and require `is_staff` (checked on every request; `403 forbidden` otherwise).
       So every operation without `security: []` can answer `401` (Unauthorized), and every `/admin` operation `403`

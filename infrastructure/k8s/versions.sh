@@ -31,7 +31,9 @@ components=(backend web promoter-web)
 
 images() {
   case "$1" in
-    backend) echo "api worker migrate" ;;   # one build stage; the worker image also runs the redaction Deployment
+    # One build stage; the worker image also runs the redaction Deployment; testkit (migrate + seed for the apps'
+    # end-to-end suites, tools/testkit) is published with the others and never deployed.
+    backend) echo "api worker migrate testkit" ;;
     web) echo "web" ;;
     promoter-web) echo "promoter-web" ;;
   esac
@@ -40,9 +42,9 @@ images() {
 # Everything the component's Dockerfile stages copy in, plus the Dockerfile and the build context's ignore file.
 paths() {
   case "$1" in
-    backend) echo "Dockerfile .dockerignore global.json Directory.Build.props packages/spotify packages/storage packages/notifications database services/api workers" ;;
-    web) echo "Dockerfile .dockerignore apps/mobile infrastructure/web" ;;
-    promoter-web) echo "Dockerfile .dockerignore apps/promoter-web infrastructure/web" ;;
+    backend) echo "Dockerfile .dockerignore global.json Directory.Build.props packages/spotify packages/music-providers packages/storage packages/notifications database services/api workers tools/dev/seed.py tools/dev/spotify_connect.py tools/testkit" ;;
+    web) echo "Dockerfile .dockerignore apps/mobile" ;;
+    promoter-web) echo "Dockerfile .dockerignore apps/promoter-web" ;;
   esac
 }
 

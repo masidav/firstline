@@ -140,7 +140,7 @@ at startup from `/config.js`, which nginx writes from its environment, so one im
 npm run web            # dev server with hot reload
 npm test               # Jest (jest-expo)
 npm run typecheck      # tsc
-npm run generate:api   # regenerate src/api/schema.d.ts after openapi.yaml changes (CI checks it)
+npm run sync:api       # after openapi.yaml changes: vendors it in contract/ and regenerates src/api/schema.d.ts (CI checks both)
 npm run build:web      # static web build in dist/
 npm run check:ios      # generates the iOS project (ios/, not committed) and bundles the JS for iOS; CI runs it
 npm run ios:personal   # on a Mac: build and install on a plugged-in iPhone with a free Apple ID (see below)

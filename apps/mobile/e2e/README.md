@@ -15,16 +15,20 @@ from `main`, so these run in CI on every push (`.github/workflows/ci.yml`, job "
 ## Run it
 ```bash
 cd apps/mobile
-e2e/run.sh                          # everything: throwaway database, migrations, seed, then the suite
+e2e/run.sh                          # everything: the backend stack (database, migrations, seed, API), then the suite
 e2e/run.sh journal.spec.ts --headed  # one file, with the browser visible
 ```
-`run.sh` needs Docker, the .NET SDK, Node, Python 3, and Chrome (or `npx playwright install chromium`, then
-`E2E_CHANNEL= e2e/run.sh`). Against a database you prepared yourself: `E2E_DATABASE_URL=postgres://... npm run e2e`.
+`run.sh` needs Docker (with compose), Node, curl, and Chrome (or `npx playwright install chromium`, then
+`E2E_CHANNEL= e2e/run.sh`); not the .NET SDK or Python. The backend runs from its images through
+`tools/testkit/compose.yml`: PostgreSQL 16, the `testkit` image (the migrator plus `tools/dev/seed.py --fake`), and
+the `api` image in Development mode (developer sign-in on, a high sign-in rate limit). By default the images are built
+from this checkout; `E2E_BACKEND_TAG=<commit> E2E_IMAGE_PREFIX=<registry>/` uses the ones the Deploy workflow pushed
+instead (`gcloud auth configure-docker` first). Against a backend you started yourself:
+`E2E_DATABASE_URL=postgres://... npm run e2e` with the API at `e2e/settings.ts`'s port.
 
-Playwright starts two servers itself (`playwright.config.ts`): the API with `dotnet run` (Development, developer
-sign-in on, a high sign-in rate limit), and the production web export (`expo export --clear`) served like a static
-host by `serve.mjs`. `--clear` matters: Metro's cache can keep a module built with other `EXPO_PUBLIC_` values from a
-dev-server run and put them in the build.
+Playwright starts one server itself (`playwright.config.ts`): the production web export (`expo export --clear`)
+served like a static host by `serve.mjs`. `--clear` matters: Metro's cache can keep a module built with other
+`EXPO_PUBLIC_` values from a dev-server run and put them in the build.
 
 ## How the tests are written
 - Each test signs up its own accounts with unique names (`uniqueName`), so tests run in parallel and the database

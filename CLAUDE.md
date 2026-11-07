@@ -23,12 +23,16 @@ Local setup: `docs/DEVELOPMENT.md`. If the .NET SDK isn't installed, run these i
 - `database/migrations`: plain SQL migrations, applied in name order by DbUp (`database/`).
 - `database/tests/invariants.sql`: database invariant tests, run by the test suite.
 - `infrastructure/`: Terraform, Kubernetes manifests (Kustomize), and the deploy runbook. `Dockerfile` at the root
-  builds the api, worker, migrate, web (fan app), and promoter-web images. Nothing is applied to GCP yet (`infrastructure/README.md`).
+  builds the api, worker, migrate, testkit, web (fan app), and promoter-web images (`infrastructure/README.md`).
+- `tools/testkit/`: the backend for the apps' end-to-end suites as images (`compose.yml`: PostgreSQL, the testkit
+  image = migrate + seed, the API). `apps/*/e2e/run.sh` and the CI e2e job start it; no .NET SDK needed for app work.
 - `tests/FandomScore.Tests`: xUnit tests (migrations, invariants, API).
-- `apps/mobile`: fan app (Expo; web now, iOS later). Its API types are generated from `openapi.yaml`
-  (`npm run generate:api`); regenerate them whenever the contract changes.
-- `apps/promoter-web`: promoter dashboard (Vite + React). Same generated types (`npm run generate:api` there too).
-- `openapi.yaml`: the API contract. The API implements it; clients are generated from it.
+- `apps/mobile`: fan app (Expo; web now, iOS later). It vendors the contract it is built against (`contract/`) and
+  generates its API types from that copy: run `npm run sync:api` whenever `openapi.yaml` changes (CI checks both).
+- `apps/promoter-web`: promoter dashboard (Vite + React). Same vendored contract and types (`npm run sync:api` there too).
+- `openapi.yaml`: the API contract. The API implements it; clients are generated from it. Its `info.version` is the
+  contract version: bump it with every edit (minor; major for a breaking change). CI refuses an unbumped edit and
+  releases each version on `main` as `contract-v<version>` (`tools/ci/check_contract_version.py`).
 - Decisions: `docs/adr/`. Plans: `docs/plans/`.
 
 ## Rules

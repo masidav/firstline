@@ -1,15 +1,13 @@
 import { defineConfig } from '@playwright/test';
-import { randomBytes } from 'node:crypto';
-import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { settings } from './settings';
 
-const repo = resolve(__dirname, '../../..');
 const mobile = resolve(__dirname, '..');
 
 // Critical fan journeys in a real browser against the real API and database (e2e/README.md). Playwright builds the
-// production web export and starts the API itself; the database comes ready (run.sh or the CI job).
+// production web export and serves it; the backend (API, migrated and seeded database) is already running at
+// settings.apiUrl, started from the backend's compose stack by run.sh or the CI job (tools/testkit/compose.yml).
 export default defineConfig({
   testDir: '.',
   testMatch: '*.spec.ts',
@@ -30,26 +28,6 @@ export default defineConfig({
     channel: process.env.E2E_CHANNEL || undefined,
   },
   webServer: [
-    {
-      command: 'dotnet run --project services/api --no-launch-profile',
-      cwd: repo,
-      url: `${settings.apiUrl}/health`,
-      timeout: 240_000,
-      reuseExistingServer: !process.env.CI,
-      stdout: 'ignore',
-      stderr: 'pipe',
-      env: {
-        ASPNETCORE_ENVIRONMENT: 'Development',
-        ASPNETCORE_URLS: `http://127.0.0.1:${settings.apiPort}`,
-        ConnectionStrings__Database: settings.npgsql,
-        Auth__SigningKey: randomBytes(32).toString('base64'),
-        Auth__DevSignIn: 'true',
-        // Every test signs fans up from one address; the production limit (20 a minute) would throttle the suite.
-        Auth__PermitsPerMinute: '1000',
-        Cors__AllowedOrigins: settings.appUrl,
-        Storage__LocalPath: join(tmpdir(), 'fandom-e2e-storage'),
-      },
-    },
     {
       // The production web build, served like a static host (index.html for every route). --clear: Metro's cache can
       // keep a module built with other EXPO_PUBLIC_ values (from a dev server run) and put those in this build.

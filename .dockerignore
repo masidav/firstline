@@ -8,9 +8,11 @@
 docs
 tests
 tools
+!tools/dev/seed.py
+!tools/dev/spotify_connect.py
+!tools/testkit
 testScripts
 infrastructure
-!infrastructure/web
 *.md
 *.txt
 # Env files anywhere (a developer's local settings must never reach an image), and local build output.

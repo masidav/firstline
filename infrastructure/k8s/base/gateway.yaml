@@ -50,7 +50,7 @@ spec:
   hostnames:
     - set-by-overlay
   rules:
-    # The web apps' nginx sets these itself (infrastructure/web/security-headers.conf); the API doesn't, so the load
+    # The web apps' nginx sets these itself (apps/*/web/security-headers.conf); the API doesn't, so the load
     # balancer adds them. Verified missing on beta 2026-11-01. Responses Cloud Armor denies don't get them.
     - filters:
         - type: ResponseHeaderModifier

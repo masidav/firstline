@@ -36,7 +36,7 @@ spec:
           ports:
             - name: http
               containerPort: 8080
-          # API_URL and the client IDs for /config.js (infrastructure/web/default.conf.template).
+          # API_URL and the client IDs for /config.js (apps/<app>/web/default.conf.template).
           envFrom:
             - configMapRef:
                 name: web-config
@@ -202,7 +202,7 @@ spec:
           ports:
             - name: http
               containerPort: 8080
-          # API_URL and the client IDs for /config.js (infrastructure/web/default.conf.template).
+          # API_URL and the client IDs for /config.js (apps/<app>/web/default.conf.template).
           envFrom:
             - configMapRef:
                 name: web-config

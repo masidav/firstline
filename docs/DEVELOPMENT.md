@@ -69,11 +69,12 @@ The suite starts its own PostgreSQL 16 container, so it needs Docker but not the
 |---|---|---|
 | Backend | build with analyzers as errors; migration, invariant, and API tests | `dotnet build` / `dotnet test` |
 | Applied migrations unchanged | only new migration files; new ones keep the running release working | `python3 tools/ci/check_migration_safety.py <file>` |
-| OpenAPI contract is valid | `openapi.yaml` parses and validates | `openapi-spec-validator openapi.yaml` |
+| OpenAPI contract is valid and versioned | `openapi.yaml` parses and validates; an edit bumps `info.version`, a breaking change (oasdiff) bumps the major part | `openapi-spec-validator openapi.yaml`; `python3 tools/ci/check_contract_version.py --current openapi.yaml --previous <the latest release's copy>` |
+| Contract release (pushes to `main`) | tags a changed contract `contract-v<version>` with `openapi.yaml` attached; apps vendor it with `npm run sync:api -- <version>` | — |
 | No secrets in the tree | gitleaks' default rules over every checked-out file; reviewed false positives are allowlisted in `.gitleaks.toml` | `docker run --rm -v "$PWD:/repo:ro" zricethezav/gitleaks:v8.24.3 dir /repo --redact` |
-| Fan app, Promoter dashboard | generated API types current, typecheck, unit tests, builds | `npm run generate:api`, `npm run typecheck`, `npm test` |
+| Fan app, Promoter dashboard | vendored contract (`contract/`) and generated API types current, typecheck, unit tests, builds | `npm run sync:api`, `npm run typecheck`, `npm test` |
 | Dev seed script | `tools/dev/seed.py` against the current schema | see the script's header |
-| End-to-end journeys | both web apps in a browser against the API and a seeded database | `apps/mobile/e2e/run.sh`, `apps/promoter-web/e2e/run.sh` |
+| End-to-end journeys | both web apps in a browser against the backend's images (`tools/testkit/compose.yml`: PostgreSQL, migrations + seed, the API) | `apps/mobile/e2e/run.sh`, `apps/promoter-web/e2e/run.sh` |
 | Infrastructure | `terraform fmt` and `validate`, `kustomize build`, kubeconform on the rendered manifests, every image builds | `infrastructure/README.md` |
 | Server images start | the migrate, api, and worker images come up with production settings and answer their health checks | `tools/ci/smoke-images.sh` (its header says how to build the images) |
 | Lint | shellcheck on every tracked script, actionlint on the workflows, hadolint on the Dockerfile (`.hadolint.yaml`) | commands in the job's comments |

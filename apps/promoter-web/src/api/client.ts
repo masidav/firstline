@@ -2,7 +2,7 @@ import createClient from 'openapi-fetch';
 
 import type { components, paths } from './schema';
 
-// Types come from openapi.yaml (`npm run generate:api`), like the fan app, so both share one contract.
+// Types come from the vendored contract (contract/openapi.yaml, `npm run sync:api`), like the fan app, so both share one contract.
 export type { components };
 type Schemas = components['schemas'];
 export type Me = Schemas['Me'];

@@ -1,0 +1,69 @@
+# The backend as the web apps' end-to-end suites need it (apps/mobile/e2e, apps/promoter-web/e2e; the CI job
+# "End-to-end journeys"): PostgreSQL 16, then the testkit (migrations + fake seed, runs once), then the API in
+# Development mode with developer sign-in, every one at ONE backend version. The apps' run.sh scripts start it;
+# Playwright builds and serves the app under test itself. Plan: docs/plans/2026-10-31-repo-split.md, step 3.
+#
+#   docker compose -f tools/testkit/compose.yml up -d --wait      # builds api and testkit from this checkout
+#   E2E_BACKEND_TAG=<commit> E2E_IMAGE_PREFIX=<registry>/ docker compose ... pull && ... up -d --wait
+#                                                                  # the images the Deploy workflow pushed instead
+#   docker compose -f tools/testkit/compose.yml down -v
+#
+# Variables: E2E_SIGNING_KEY (required, 32 random bytes base64; run.sh makes one), E2E_DB_PORT (55480),
+# E2E_API_PORT (5271), E2E_APP_ORIGINS (the browsers' origins the API allows), E2E_SEED_ARGS (--fake),
+# E2E_IMAGE_PREFIX and E2E_BACKEND_TAG (which images; defaults build local ones named fandomscore-<image>).
+name: fandom-e2e
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: fandom
+      POSTGRES_PASSWORD: e2e
+      POSTGRES_DB: fandom_e2e
+    # Published so the tests' fixtures can read and write the database directly (E2E_DATABASE_URL).
+    ports:
+      - "127.0.0.1:${E2E_DB_PORT:-55480}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fandom -d fandom_e2e"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  testkit:
+    image: ${E2E_IMAGE_PREFIX:-fandomscore-}testkit:${E2E_BACKEND_TAG:-latest}
+    build:
+      context: ../..
+      target: testkit
+    environment:
+      PGHOST: db
+      PGDATABASE: fandom_e2e
+      PGUSER: fandom
+      PGPASSWORD: e2e
+      SEED_ARGS: ${E2E_SEED_ARGS:---fake}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    image: ${E2E_IMAGE_PREFIX:-fandomscore-}api:${E2E_BACKEND_TAG:-latest}
+    build:
+      context: ../..
+      target: api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      DOTNET_ENVIRONMENT: Development
+      ConnectionStrings__Database: Host=db;Port=5432;Database=fandom_e2e;Username=fandom;Password=e2e
+      Auth__SigningKey: ${E2E_SIGNING_KEY:?set E2E_SIGNING_KEY to 32 random bytes, base64 (e2e/run.sh does)}
+      Auth__DevSignIn: "true"
+      # Every test signs fans up from one address; the production limit (20 a minute) would throttle the suite.
+      Auth__PermitsPerMinute: "1000"
+      Cors__AllowedOrigins: ${E2E_APP_ORIGINS:-http://127.0.0.1:8081,http://127.0.0.1:8082}
+      Storage__LocalPath: /tmp/storage
+    # The image is chiseled and runs as `app`: a tmpfs (world-writable by default) holds the uploaded files.
+    tmpfs:
+      - /tmp/storage
+    ports:
+      - "127.0.0.1:${E2E_API_PORT:-5271}:8080"
+    depends_on:
+      testkit:
+        condition: service_completed_successfully

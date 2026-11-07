@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "generate:api": "openapi-typescript ../../openapi.yaml -o src/api/schema.d.ts",
+    "generate:api": "openapi-typescript contract/openapi.yaml -o src/api/schema.d.ts",
+    "sync:api": "node scripts/sync-api.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "e2e": "playwright test -c e2e/playwright.config.ts"

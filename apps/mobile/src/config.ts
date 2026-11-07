@@ -1,5 +1,5 @@
 // Settings. A hosted web build reads them at startup from /config.js, which the web server writes from its environment
-// (infrastructure/web/), so one image serves beta and prod (prod gets beta's digest). Otherwise (local development,
+// (web/ in this app), so one image serves beta and prod (prod gets beta's digest). Otherwise (local development,
 // tests, the native app) they are build-time values: EXPO_PUBLIC_* are inlined into the bundle, so never put secrets
 // in either. See .env.example.
 
