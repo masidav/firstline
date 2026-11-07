@@ -11,10 +11,9 @@ public sealed record EmailMessage(string To, string Subject, string Text);
 public sealed record EmailResult(bool Ok, string? MessageId = null, string? Error = null);
 
 /// <summary>
-/// Sends one email. The provider is an open decision (PROJECT_TODO "Choose an email provider for staff notifications"):
-/// until then the only implementation is <see cref="LogEmailSender"/>, which writes the email to the worker's log.
-/// A real provider (an SMTP relay or an HTTP API) is one class implementing this, picked by <c>Email__Provider</c>
-/// in <see cref="EmailSetup"/>; nothing else changes.
+/// Sends one email. Implementations: <see cref="LogEmailSender"/> (the worker's log, for development) and
+/// <see cref="SmtpEmailSender"/> (an SMTP relay with a login; Gmail's on beta, decided 2026-11-07). Another provider
+/// (an HTTP API) would be one more class implementing this, picked by <c>Email__Provider</c> in <see cref="EmailSetup"/>.
 /// </summary>
 public interface IEmailSender
 {

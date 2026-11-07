@@ -11,6 +11,8 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.KeyPerFile" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
     <PackageReference Include="Npgsql.DependencyInjection" Version="10.0.3" />
+    <!-- Staff notices by email over SMTP (workers/notifications/email/SmtpEmailSender.cs). -->
+    <PackageReference Include="MailKit" Version="4.18.2" />
     <!-- Image redaction (workers/image-redaction): decoding/drawing and barcode/QR detection. -->
     <PackageReference Include="SkiaSharp" Version="4.153.1" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.153.1" />

@@ -1,6 +1,7 @@
 using FandomScore.Api.Features.Authentication;
 using FandomScore.Spotify;
 using FandomScore.Worker.Concerts;
+using FandomScore.Worker.Notifications.Email;
 
 namespace FandomScore.Tests;
 
@@ -18,6 +19,12 @@ public sealed class PlaceholderSecretTests
     {
         Assert.False(new SpotifyOptions { ClientId = "id", ClientSecret = placeholder }.IsCatalogEnabled);
         Assert.False(new TicketmasterOptions { ApiKey = placeholder }.IsEnabled);
+        Assert.False(new SmtpOptions { Password = placeholder }.HasPassword);
+        Assert.Contains("Email__Smtp__Password", new EmailOptions
+        {
+            Enabled = true, Provider = EmailOptions.SmtpProvider, From = "Fandom Score <d57590971@gmail.com>",
+            AppOrigin = "https://app.test", Smtp = { Password = placeholder },
+        }.Problem(), StringComparison.Ordinal);
         Assert.False(new AppleOptions { ClientIds = "app", TeamId = "t", KeyId = "k", PrivateKey = placeholder }.CanRevoke);
         AppleClient.ValidateKey(new AppleOptions { PrivateKey = placeholder });
     }

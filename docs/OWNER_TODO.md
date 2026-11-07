@@ -199,12 +199,24 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   `MusicProviders__Tidal__ClientId` and `__RedirectUris` in the overlay and `TIDAL_CLIENT_ID` in `web-config`. Then
   connect one real account on beta and check the sync (the collection endpoints moved in autumn 2026; ADR 0007 lists
   what to verify).
-- [ ] **Email** for staff alerts now and fan email later. Needs a provider chosen (section C). The staff side is
-  built (2026-11-06): staff notices queue an email to each staff member's account address, and each staff member has
-  a Profile switch for it. Nothing is sent until a provider exists: once you pick one, Claude writes its sender
-  class (`workers/notifications/README.md`, "Email"); you store its key like `Ticketmaster__ApiKey`, and the overlay
-  gets `Email__Enabled=true`, `Email__Provider`, and `Email__From` (a sending address on a domain you own; the
-  provider will ask you to verify the domain with DNS records, which Claude can add to Cloud DNS).
+- [ ] **Email** for staff alerts now and fan email later. Decided 2026-11-07: everything is sent as
+  d57590971@gmail.com through Gmail's SMTP relay (built the same day: `Email__Provider=smtp`, the overlay already has
+  the From address and the relay settings; `Email__Enabled` stays false until the password exists). Staff notices
+  queue an email to each staff member's account address, and each staff member has a Profile switch for it. Steps:
+  1. `cd infrastructure/terraform/envs/beta && terraform apply` (creates the secret `Email__Smtp__Password` and lets
+     the worker read it; plus the usual cosmetic dashboard change). Do this before turning beta on again: the worker
+     now mounts that secret and its pods won't start until it has a version.
+  2. In the Google account d57590971@gmail.com: turn on 2-Step Verification, then Security → App passwords → create
+     one (name it "Fandom Score beta"). Store it without it landing in your shell history:
+     ```bash
+     read -rs SECRET && printf '%s' "$SECRET" | gcloud secrets versions add Email__Smtp__Password --project project-ef36a8a9-d958-4163-b4c --data-file=- && unset SECRET
+     ```
+     (If you'd rather turn beta on first, store a placeholder, `printf ' ' | gcloud secrets versions add ...`, and
+     the real one later.)
+  3. Tell Claude: the overlay gets `Email__Enabled=true` and the push deploys; the worker restarts with it. Then flip
+     the Profile switch on your staff account and trigger a staff notice to see the first email arrive.
+  Gmail sends about 500 messages a day on a free account: fine for staff notices; fan email at launch needs a
+  Workspace account or another relay (settings only, no code).
 
 ## C. Product decisions
 

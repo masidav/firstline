@@ -887,7 +887,10 @@ Index of every provisional, open, and recently decided item: [`docs/DECISIONS.md
       staff account that uploaded it is purged.
 - [ ] Confirm takedown effects (provisional, 2026-10-24): a taken-down photo leaves the feed for good but stays as
       proof with its points; a taken-down log is hidden from everyone but its author and loses its points.
-- [ ] Choose an email provider for staff notifications (and later fan email), e.g. a transactional email API.
+- [x] Choose an email provider for staff notifications (and later fan email). *Decided 2026-11-07: everything is sent
+      as the owner's account d57590971@gmail.com through Gmail's SMTP relay with an app password (`Email__Provider=smtp`,
+      `workers/notifications/email/SmtpEmailSender.cs`; SmtpEmailSenderTests 7). Fan email at volume will need a
+      Workspace account or another relay (settings only). Owner steps in `docs/OWNER_TODO.md`, section B.*
 - [ ] Decide on the fan-side fee and whether App Store / Google Play payment rules apply to it.
 - [ ] Choose the first pilot artist(s) and promoter.
 - [x] Promoter organizations for the pilot (decided 2026-10-27): staff create each organization and its first owner

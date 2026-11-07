@@ -101,6 +101,7 @@ variable "application_secrets" {
     "Spotify__ClientSecret",
     "Spotify__TokenKey",
     "Ticketmaster__ApiKey",
+    "Email__Smtp__Password",
   ]
 }
 

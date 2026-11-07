@@ -122,6 +122,7 @@ steps with `prod` in place of `beta`.
    printf '%s' "$SPOTIFY_CLIENT_SECRET" | gcloud secrets versions add Spotify__ClientSecret --project project-ef36a8a9-d958-4163-b4c --data-file=-
    gcloud secrets versions add Auth__Apple__PrivateKey --project project-ef36a8a9-d958-4163-b4c --data-file=AuthKey_XXXX.p8
    printf '%s' "$TICKETMASTER_API_KEY" | gcloud secrets versions add Ticketmaster__ApiKey --project project-ef36a8a9-d958-4163-b4c --data-file=-
+   printf '%s' "$GMAIL_APP_PASSWORD" | gcloud secrets versions add Email__Smtp__Password --project project-ef36a8a9-d958-4163-b4c --data-file=-
    ```
    Every secret listed in `k8s/overlays/<env>/secrets.yaml` needs a version, or the pods cannot start
    (`ConnectionStrings__Database` and `Database__ServerCa` already have one, written by Terraform).

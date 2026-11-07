@@ -103,9 +103,10 @@ The suite starts its own PostgreSQL 16 container, so it needs Docker but not the
   catalog settings (`Spotify__CatalogMarket` and friends) are in `workers/artist-onboarding/README.md`.
 - Concert data from Ticketmaster needs `Ticketmaster__ApiKey` (a Discovery API key from developer.ticketmaster.com)
   for the worker. Without it the concert sync is off and only staff-entered shows exist. See `workers/concerts/README.md`.
-- Staff notices by email are off (`Email__Enabled=false`) until an email provider is chosen. To read them locally, set
-  `Email__Enabled=true` with `Email__Provider=log` (`.env.example`): the worker writes each email to its log instead of
-  sending it. See `workers/notifications/README.md`, "Email".
+- Staff notices by email are off locally (`Email__Enabled=false`). To read them, set `Email__Enabled=true` with
+  `Email__Provider=log` (`.env.example`): the worker writes each email to its log instead of sending it. Beta sends
+  through Gmail's SMTP relay (`Email__Provider=smtp`); to try that locally you need the app password in
+  `Email__Smtp__Password`. See `workers/notifications/README.md`, "Email".
 - To connect a real Spotify account without the mobile app: `python3 tools/dev/spotify_connect.py --help`. It
   creates a local dev user and session (local database only), runs Spotify's sign-in in your browser, calls
   `PUT /v1/me/spotify`, and shows what the sync stored. Register `http://127.0.0.1:8888/callback` in the

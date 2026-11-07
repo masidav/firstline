@@ -284,6 +284,7 @@ Who reads what (`k8s/overlays/<env>/secrets.yaml`) and what each rotation does:
 | `Spotify__TokenKey` | api, worker | Only with the previous key kept for decryption: README "Deploying", "Secret rotation" (`Spotify__PreviousTokenKeys`) | Rotating without that makes every stored Spotify token unreadable (fans reconnect) |
 | `Auth__Apple__PrivateKey` | api | Revoke the key in the Apple developer account, create a new one, add its `.p8` as a version, set the new key id (`Auth__Apple__KeyId`) in the overlay, deploy | Sign in with Apple fails between revocation and the deploy |
 | `Ticketmaster__ApiKey` | worker | Regenerate at developer.ticketmaster.com, add the version, restart worker; the next deploy's "Integrations" step (or `GET /healthz/integrations` on the worker) confirms the new key is accepted | Concert sync jobs fail and retry until the restart |
+| `Email__Smtp__Password` | worker | Revoke the app password in the Google account (Security, App passwords), create a new one, add the version, restart worker | Staff emails fail and retry through the queue until the restart (a refused login is retried on purpose) |
 | `Database__ServerCa` | all database clients | Not a secret (a public certificate). After `gcloud sql ssl server-ca-certs rotate`, `terraform apply` writes the new one; restart the pods | |
 
 Restart everything that reads a secret: `kubectl rollout restart deployment/api deployment/worker deployment/redaction`.
