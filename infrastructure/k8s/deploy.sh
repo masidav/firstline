@@ -188,6 +188,48 @@ if [ "${SKIP_HEALTH_CHECK:-0}" != 1 ] && [ -n "$hostname" ]; then
   fi
 fi
 
+# Outside services the worker calls, probed with the credentials the pods actually mount: GET /healthz/integrations
+# on the worker's health port (not exposed by a Service, so through a port-forward). One real request per
+# integration (workers/README.md, "Liveness and integrations"). A refused credential fails the deploy: the fix is the
+# secret and a worker restart, not a rollback. An outage at the provider only warns; a missing key reports "off".
+if [ "${SKIP_HEALTH_CHECK:-0}" != 1 ]; then
+  echo "== Integrations (worker GET /healthz/integrations)"
+  local_port="${WORKER_HEALTH_LOCAL_PORT:-18081}"
+  kubectl port-forward deployment/worker -n "$namespace" --address 127.0.0.1 "${local_port}:8081" >"${work}/port-forward.log" 2>&1 &
+  forward=$!
+  code=""
+  for attempt in $(seq 1 30); do
+    # The forward is ready within a few seconds; the probe itself may take up to 25 (IntegrationChecks.Timeout).
+    if code="$(curl -sS --max-time 40 -o "${work}/integrations.json" -w '%{http_code}' "http://127.0.0.1:${local_port}/healthz/integrations" 2>/dev/null)"; then break; fi
+    code=""
+    sleep 1
+  done
+  kill "$forward" 2>/dev/null || true
+  wait "$forward" 2>/dev/null || true
+  if [ -z "$code" ]; then
+    echo "Warning: could not reach the worker's health port through kubectl port-forward:" >&2
+    cat "${work}/port-forward.log" >&2 || true
+  else
+    cat >"${work}/integrations.py" <<'PY'
+import json, sys
+report = json.load(open(sys.argv[1]))
+refused = []
+for name, item in sorted(report.get("integrations", {}).items()):
+    detail = f" ({item['detail']})" if item.get("detail") else ""
+    print(f"   {name}: {item['status']}{detail}")
+    if item["status"] == "refused":
+        refused.append(name)
+sys.exit(2 if refused else 0)
+PY
+    if ! python3 "${work}/integrations.py" "${work}/integrations.json"; then
+      echo "The worker's credentials for an integration were refused. Store a working secret version and restart the" >&2
+      echo "worker (infrastructure/OPERATIONS.md, \"Secret rotation\"); the deployed code is fine, don't roll it back." >&2
+      exit 1
+    fi
+    [ "$code" = 200 ] || echo "Warning: an integration is unavailable (HTTP ${code}); its jobs retry through the queue." >&2
+  fi
+fi
+
 # The web apps' hostnames work once their certificates are active and DNS points at the load balancer
 # (infrastructure/README.md, "Web apps"); until then this only warns.
 if [ "${SKIP_HEALTH_CHECK:-0}" != 1 ]; then

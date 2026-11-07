@@ -12,7 +12,7 @@ dotnet run --project workers        # needs ConnectionStrings__Database, like th
 | --- | --- |
 | `Program.cs` | Host setup and the list of registered job handlers. |
 | `jobs/` | Queue runtime: `JobQueue` (claim, finish, retry, schedules), `JobRunner` (polling loops), `IJobHandler`, `PruneJobsJob`. |
-| `hosting/` | Secrets mounted as files (`SecretsDirectory`), and the liveness endpoint (`WorkerHeartbeat`, `WorkerHealthServer`). |
+| `hosting/` | Secrets mounted as files (`SecretsDirectory`), the liveness endpoint (`WorkerHeartbeat`, `WorkerHealthServer`), and the integration probes behind `GET /healthz/integrations` (`IIntegrationCheck`). |
 | `account-retention/` | `PurgeDeletedAccountsJob`: hourly, purges content of accounts deleted 30+ days ago. `PruneExpiredRecordsJob` (`privacy.retention`): daily, deletes sessions expired or revoked 30+ days ago, idempotency keys after 24 hours, and push and email delivery records and disabled push devices after 30 days (migrations 0053, 0059), and the fraud rules' client signals past their period (address hashes 30 days, push device history 90, Spotify account history 180, eligibility checks 90; migration 0054). The same job prunes the records whose period is still an owner decision, each only once its `Retention__*` setting is set (`RetentionOptions`, migration 0060; see "Retention" below). |
 | `storage-cleanup/` | `StorageCleanupJob` (`storage.cleanup`, hourly): deletes stored files nothing needs (expired upload slots, deleted accounts' files before their purge, files queued in `storage_deletions`). See the folder's README. |
 | `concerts/` | `ConcertSyncJob` (`concerts.sync_artist`) and hourly `ScheduleConcertSyncsJob` (`concerts.schedule`): load tracked artists' upcoming shows, sales, and presales from Ticketmaster. See the folder's README. |
@@ -61,13 +61,26 @@ configuration change in the overlay, not code. Values are .NET time spans (`180.
 | `Retention__ClickLinks` | which fan made an outbound ticket or merch click (the click stays, unlinked) | 1 year |
 | `Retention__OcrText` | a submission's OCR text (`submissions.extracted`) this long after it was verified or rejected; the order-reference hash stays | 30 days |
 
-## Liveness (`Health` section)
+## Liveness and integrations (`Health` section)
 The worker serves no traffic, so Kubernetes cannot tell a stuck process from a quiet one. Each job loop reports to
 `WorkerHeartbeat` every iteration; with `Health__Port` set (the container image sets `8081`), `GET /healthz` answers
 `200 {"status":"ok", ...}` while every loop has reported within `Health__StaleAfter` (default 10 minutes, twice the
 lease) and `503 {"status":"stale", ...}` otherwise, which fails the pod's liveness probe
 (`infrastructure/k8s/base/worker-deployment.yaml`). A loop that cannot reach the database keeps reporting: that is
 logged (`Job loop error`) and alerted on, since a restart would not help. Locally the port is unset and nothing listens.
+
+`GET /healthz/integrations` on the same port probes the outside services the worker calls, with the credentials the
+pod mounts: each `IIntegrationCheck` (`hosting/IntegrationCheck.cs`) makes one cheap real request and reports
+`ok`, `off` (not configured), `refused` (the service rejected the key: 401 or 403), or `unavailable` (unreachable, rate
+limited, or a server error; 25-second limit). The answer is `200` when every check is ok or off and `503` otherwise,
+with one entry per integration: `{"status":"ok","integrations":{"ticketmaster":{"status":"ok","detail":null}}}`.
+The deploy script calls it through a port-forward after every rollout and fails the deploy on `refused`
+(`infrastructure/k8s/deploy.sh`, "Integrations"). Checks today: Ticketmaster (`concerts/TicketmasterCheck.cs`, one
+classifications call). Requests are handled concurrently, so a slow probe never delays the liveness answer. By hand:
+```bash
+kubectl -n fandomscore port-forward deployment/worker 18081:8081 &
+curl -s http://127.0.0.1:18081/healthz/integrations; kill %1
+```
 
 A job that fails on its last attempt is logged at Error (`failed permanently`) and stays in the `jobs` table with
 status `failed`; on GCP a log-based metric and alert watch for that line (`infrastructure/RUNBOOK.md`).

@@ -4,6 +4,7 @@ using System.Text.Json;
 using FandomScore.Database;
 using FandomScore.Worker.Hosting;
 using FandomScore.Worker.Jobs;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -57,7 +58,7 @@ public sealed class WorkerHealthTests(PostgresFixture postgres)
         heartbeat.Beat(0);
         var port = FreePort();
         var options = Options.Create(new HealthOptions { Port = port, StaleAfter = StaleAfter });
-        using var server = new WorkerHealthServer(heartbeat, options, NullLogger<WorkerHealthServer>.Instance);
+        using var server = new WorkerHealthServer(heartbeat, Checks(), options, NullLogger<WorkerHealthServer>.Instance);
         using var http = new HttpClient();
 
         await server.StartAsync(CancellationToken.None);
@@ -77,6 +78,54 @@ public sealed class WorkerHealthTests(PostgresFixture postgres)
         {
             await server.StopAsync(CancellationToken.None);
         }
+    }
+
+    [Theory]
+    [InlineData(IntegrationState.Ok, HttpStatusCode.OK, "ok", "ok")]
+    [InlineData(IntegrationState.Off, HttpStatusCode.OK, "off", "ok")]   // the other check is ok, so overall is ok
+    [InlineData(IntegrationState.Refused, HttpStatusCode.ServiceUnavailable, "refused", "refused")]
+    [InlineData(IntegrationState.Unavailable, HttpStatusCode.ServiceUnavailable, "unavailable", "unavailable")]
+    public async Task Integrations_reports_each_check_and_fails_on_a_refused_or_unreachable_service(
+        IntegrationState state, HttpStatusCode expected, string name, string overall)
+    {
+        var heartbeat = new WorkerHeartbeat(new TestClock());
+        var port = FreePort();
+        var options = Options.Create(new HealthOptions { Port = port, StaleAfter = StaleAfter });
+        var checks = Checks(new FakeCheck("ticketmaster", new IntegrationStatus(state, "detail")), new FakeCheck("other", IntegrationStatus.Ok));
+        using var server = new WorkerHealthServer(heartbeat, checks, options, NullLogger<WorkerHealthServer>.Instance);
+        using var http = new HttpClient();
+
+        await server.StartAsync(CancellationToken.None);
+        try
+        {
+            using var _ = await GetWhenListeningAsync(http, port);
+            using var response = await http.GetAsync(new Uri($"http://127.0.0.1:{port}/healthz/integrations"));
+            Assert.Equal(expected, response.StatusCode);
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(overall, body.RootElement.GetProperty("status").GetString());
+            var ticketmaster = body.RootElement.GetProperty("integrations").GetProperty("ticketmaster");
+            Assert.Equal(name, ticketmaster.GetProperty("status").GetString());
+            Assert.Equal("detail", ticketmaster.GetProperty("detail").GetString());
+            Assert.Equal("ok", body.RootElement.GetProperty("integrations").GetProperty("other").GetProperty("status").GetString());
+
+            // The liveness route is unaffected by integration state.
+            using var liveness = await http.GetAsync(new Uri($"http://127.0.0.1:{port}/healthz"));
+            Assert.Equal(HttpStatusCode.OK, liveness.StatusCode);
+        }
+        finally
+        {
+            await server.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public void Overall_state_is_the_worst_one()
+    {
+        Assert.Equal(IntegrationState.Off, IntegrationChecks.Overall([]));
+        Assert.Equal(IntegrationState.Off, IntegrationChecks.Overall([IntegrationStatus.Off]));
+        Assert.Equal(IntegrationState.Ok, IntegrationChecks.Overall([IntegrationStatus.Off, IntegrationStatus.Ok]));
+        Assert.Equal(IntegrationState.Unavailable, IntegrationChecks.Overall([IntegrationStatus.Ok, new(IntegrationState.Unavailable)]));
+        Assert.Equal(IntegrationState.Refused, IntegrationChecks.Overall([new(IntegrationState.Unavailable), new(IntegrationState.Refused)]));
     }
 
     [Fact]
@@ -124,6 +173,24 @@ public sealed class WorkerHealthTests(PostgresFixture postgres)
                 await Task.Delay(50);
             }
         }
+    }
+
+    private static IntegrationChecks Checks(params IIntegrationCheck[] checks)
+    {
+        var services = new ServiceCollection();
+        foreach (var check in checks)
+        {
+            services.AddSingleton(check);
+        }
+
+        return new IntegrationChecks(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>());
+    }
+
+    private sealed class FakeCheck(string name, IntegrationStatus status) : IIntegrationCheck
+    {
+        public string Name => name;
+
+        public Task<IntegrationStatus> CheckAsync(CancellationToken cancellationToken) => Task.FromResult(status);
     }
 
     private static int FreePort()

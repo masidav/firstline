@@ -38,6 +38,7 @@ builder.Services.AddHostedService<JobRunner>();
 // Liveness for Kubernetes (Health__Port; off locally): the job loops report each iteration, GET /healthz answers.
 builder.Services.Configure<HealthOptions>(builder.Configuration.GetSection(HealthOptions.Section));
 builder.Services.AddSingleton<WorkerHeartbeat>();
+builder.Services.AddSingleton<IntegrationChecks>();
 builder.Services.AddHostedService<WorkerHealthServer>();
 builder.Services.AddSpotify(builder.Configuration);
 builder.Services.AddMusicProviders(builder.Configuration);
@@ -56,6 +57,7 @@ builder.Services.Configure<TicketmasterOptions>(builder.Configuration.GetSection
 builder.Services.AddHttpClient<TicketmasterClient>(http => http.Timeout = TicketmasterClient.RequestTimeout)
     .UseSocketsHttpHandler((handler, _) => handler.PooledConnectionLifetime = TimeSpan.FromMinutes(15))
     .SetHandlerLifetime(Timeout.InfiniteTimeSpan);
+builder.Services.AddTransient<IIntegrationCheck, TicketmasterCheck>();   // GET /healthz/integrations (deploy.sh)
 
 // Push notifications through Expo (Push__Enabled, Push__ExpoAccessToken). workers/notifications.
 builder.Services.Configure<PushOptions>(builder.Configuration.GetSection(PushOptions.Section));

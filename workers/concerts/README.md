@@ -44,10 +44,10 @@ Upcoming shows, sale dates, and presales for tracked artists, loaded into `event
 ## Configuration
 | Setting | Default |
 | --- | --- |
-| `Ticketmaster__ApiKey` | empty: concert syncing off (secret; developer.ticketmaster.com) |
+| `Ticketmaster__ApiKey` | empty: concert syncing off (secret; developer.ticketmaster.com). `TicketmasterCheck` probes it with one classifications call behind the worker's `GET /healthz/integrations`, which every deploy runs (`workers/README.md`, "Liveness and integrations") |
 | `Ticketmaster__Countries` | `US,CA` |
 | `Ticketmaster__SyncEvery` / `Ticketmaster__RecheckUnmatchedEvery` | `1.00:00:00` / `7.00:00:00` |
 | `Ticketmaster__MaxSyncsPerHour` | `100` |
 
 Tests: `tests/FandomScore.Tests/ConcertSyncJobTests.cs` (a fake Discovery API in Ticketmaster's JSON shapes),
-`ConcertApiTests.cs` (staff links, show fields), invariants for 0030.
+`ConcertApiTests.cs` (staff links, show fields), `TicketmasterCheckTests.cs` (the key probe), invariants for 0030.

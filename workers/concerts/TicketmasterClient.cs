@@ -36,8 +36,14 @@ public sealed class TicketmasterOptions
             .Select(c => c.ToUpperInvariant()).ToHashSet(StringComparer.Ordinal);
 }
 
-/// <summary>Ticketmaster had a problem or asked us to slow down; the job queue retries later.</summary>
-public sealed class TicketmasterUnavailableException(string message) : Exception(message);
+/// <summary>
+/// Ticketmaster had a problem or asked us to slow down; the job queue retries later. <see cref="KeyRefused"/> marks
+/// a 401 or 403: the API key is wrong or revoked, and retrying won't help until it is fixed.
+/// </summary>
+public sealed class TicketmasterUnavailableException(string message, bool keyRefused = false) : Exception(message)
+{
+    public bool KeyRefused { get; } = keyRefused;
+}
 
 /// <summary>A Ticketmaster artist ("attraction"), the Spotify artist ids it links to, and its homepage (https), if any.</summary>
 public sealed record TicketmasterAttraction(string Id, string Name, IReadOnlyList<string> SpotifyArtistIds, string? Homepage = null);
@@ -119,6 +125,15 @@ public sealed class TicketmasterClient(HttpClient http, IOptions<TicketmasterOpt
         return events;
     }
 
+    /// <summary>
+    /// One request that proves the key works: the first classification (a few hundred bytes). Throws
+    /// <see cref="TicketmasterUnavailableException"/> like every other call; <see cref="TicketmasterCheck"/> maps it.
+    /// </summary>
+    public async Task ProbeAsync(CancellationToken cancellationToken)
+    {
+        using var json = await GetAsync("classifications.json?size=1", cancellationToken);
+    }
+
     private async Task<JsonDocument?> GetAsync(string pathAndQuery, CancellationToken cancellationToken)
     {
         var separator = pathAndQuery.Contains('?', StringComparison.Ordinal) ? '&' : '?';
@@ -155,7 +170,7 @@ public sealed class TicketmasterClient(HttpClient http, IOptions<TicketmasterOpt
                 case HttpStatusCode.TooManyRequests:
                     throw new TicketmasterUnavailableException("Ticketmaster rate limit reached (429).");
                 case HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden:
-                    throw new TicketmasterUnavailableException($"Ticketmaster refused the API key ({(int)response.StatusCode}) for {path}.");
+                    throw new TicketmasterUnavailableException($"Ticketmaster refused the API key ({(int)response.StatusCode}) for {path}.", keyRefused: true);
                 case >= HttpStatusCode.InternalServerError:
                     throw new TicketmasterUnavailableException($"Ticketmaster error {(int)response.StatusCode} for {path}.");
             }

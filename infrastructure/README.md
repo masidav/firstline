@@ -13,7 +13,7 @@ manifests describe the workloads; GitHub Actions builds images and deploys.
 
 | Path | What |
 | --- | --- |
-| `../Dockerfile` | One multi-stage build with targets `api`, `worker`, `migrate` (chiseled, non-root), and `web`, `promoter-web` (nginx). |
+| `../Dockerfile` | One multi-stage build with targets `api`, `migrate` (chiseled, non-root), `worker` (full Ubuntu runtime with Tesseract for printed order numbers, non-root; 2026-11-06), and `web`, `promoter-web` (nginx). |
 | `terraform/modules/environment` | Everything one cloud environment needs (network, cluster, database, registry, secrets, buckets, edge, CI identity, alerts). |
 | `terraform/envs/{beta,prod}` | Root module per cloud environment: sizes, protection, budget. |
 | `terraform/bootstrap.sh` | One-time project setup: billing link, base APIs, Terraform state bucket. |
@@ -48,7 +48,10 @@ Beta has real users, so the deploy pipeline is built around "the previous versio
 4. **Migrate, then roll out, then check.** The migrate Job must complete (its log is printed; a failure stops
    the deploy with the old pods still serving), then the Deployments roll (surge, with a PodDisruptionBudget),
    then the public health endpoint is polled for a minute. A failing health check fails the deploy, which is
-   the signal to roll back.
+   the signal to roll back. Then the worker's `GET /healthz/integrations` is called through a port-forward: it
+   probes each outside service (Ticketmaster today) with the key the pod mounts and prints one line per
+   integration (`ok`, `off`, `refused`, `unavailable`). A refused key fails the deploy too, but that one is fixed
+   with a new secret version and a worker restart, not a rollback; an unavailable provider only warns.
 5. **Prod gets what beta ran.** The prod deploy copies beta's image digests into the prod registry; nothing is
    rebuilt. It waits for the approval on the `prod` GitHub environment, and its Workload Identity binding only
    accepts tokens from that environment, so the approval can't be skipped.
@@ -202,8 +205,9 @@ registry, and compares with what's running:
 - **Nothing changed** (`kubectl diff` empty, versions equal to the running images, `settings`/`seed` as last
   written, recorded in the ConfigMap `deploy-inputs`): prints "Nothing to deploy" and stops. Docs, Terraform, and
   CI-only pushes end here.
-- Otherwise it waits for every rollout and polls the public health endpoint, as before. `DEPLOY_ALL=1` runs every
-  step regardless (after `db-wipe.sh`, or to redo a deploy).
+- Otherwise it waits for every rollout, polls the public health endpoint, and probes the worker's integrations
+  (`GET /healthz/integrations`), as before. `DEPLOY_ALL=1` runs every step regardless (after `db-wipe.sh`, or to
+  redo a deploy). `SKIP_HEALTH_CHECK=1` skips both checks.
 
 - **The workflow.** Each push to `main` runs Deploy: `versions.sh`, then builds only the images the registry
   doesn't have (an unchanged component's image is already there under its version), then `deploy.sh`. Runs are
@@ -310,6 +314,7 @@ alert, metric, and log query in detail. What exists:
   still unredacted 25 days after upload), and the budget at 50 %, 90 %, 100 % and forecast.
 - Worker liveness: the worker serves no traffic, so each job loop reports to a heartbeat and `GET /healthz` on port
   8081 returns 503 once a loop has been silent for ten minutes; the pod then restarts (`workers/README.md`).
+  `GET /healthz/integrations` on the same port probes Ticketmaster with the mounted key; the deploy calls it.
   Job failures are log lines (`failed on attempt`, `failed permanently`) turned into log-based metrics.
 - Logs: Cloud Logging, `resource.type="k8s_container" resource.labels.namespace_name="fandomscore"`. The API and
   worker log JSON, so fields are queryable. Locally: `kubectl logs deployment/api -n fandomscore`.

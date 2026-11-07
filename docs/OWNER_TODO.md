@@ -140,6 +140,17 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   is required"). GitHub → Settings → Secrets and variables → Actions → New repository secret. Billed to your
   Anthropic account per run.
 
+- [ ] **12. Make your second email address staff too** (added 2026-11-07). Staff is a flag on the user row, so
+  the account has to exist first: open https://app.beta.firstline-5730kl.com, Continue with Google with the second
+  address (add it as an OAuth test user first, step 5), pick a handle, then:
+  ```bash
+  infrastructure/k8s/db-shell.sh beta <<'SQL'
+  UPDATE users SET is_staff = true WHERE email = '<second address>';
+  SQL
+  ```
+  It should print `UPDATE 1`. If you also want it on the promoter dashboard, add it to the 'Test Promoter'
+  organization as in step 8 (`organization_members`, role `owner`, `admin`, or `analyst`).
+
 ## B. Features that need a provider account
 
 - [x] **Spotify** (listening score, artist search, album catalog, Spotify connect). On beta since 2026-10-31: app
@@ -154,9 +165,11 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
      ```
   4. Send Claude the client ID (it isn't secret). Claude sets `Spotify__ClientId`, `Spotify__RedirectUris`, and the
      fan app's `SPOTIFY_CLIENT_ID` in the beta overlay and pushes, which deploys.
-- [ ] **Ticketmaster** (concert listings, sale dates, presale reminders). Get a key at developer.ticketmaster.com
-  and store it the same way as `Ticketmaster__ApiKey`, then restart the worker so it reads the new value:
-  `kubectl -n fandomscore rollout restart deployment/worker`. Check the terms question in section D first.
+- [x] **Ticketmaster** (concert listings, sale dates, presale reminders). Key stored on beta 2026-11-07 and the
+  worker restarted. Every deploy now probes it (`deploy.sh`, "Integrations" step: `ticketmaster: ok`); a refused key
+  fails the deploy with instructions. To rotate: store a new version of `Ticketmaster__ApiKey` the same way as the
+  Spotify secret, then `kubectl -n fandomscore rollout restart deployment/worker`. The terms question stays in
+  section D.
 - [ ] **Apple sign-in, the iPhone app, and push notifications** (when you want iOS). The app is configured and its
   iOS project is checked in CI (bundle ID `com.firstline.fandomscore`); the build runs in Expo's cloud, so no Mac is
   needed. You need: the Apple Developer Program ($99/year) and an Expo account (expo.dev, free tier builds work).
