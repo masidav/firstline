@@ -222,24 +222,22 @@ Rules already in code provisionally; confirm or change each (details in `PROJECT
   kept 90 days and out of the fan's data download; `hub_confirmed` weighs like the other four trust parts.
 - [ ] Listening from two services (2026-11-05, ADR 0007): the score takes the strongest signal per artist across
   services, never the sum; Apple Music can't be one-account-per-fan (no account id).
-- [ ] Receipts (2026-11-06, migration 0061; both options from the 2026-10-26 request are built): a `receipt` proof
-  kind, never shared, 20 points like merch; and a staff "not shareable" mark on any photo (off the feed for good,
-  status and points kept). Keep both, or one?
-- [ ] Printed order numbers (2026-11-06): the worker blacks them out and keeps one hash per submission (one order,
-  one fan) when a Tesseract command is configured. Turning it on means a worker image with `tesseract-ocr` (the
-  current image is chiseled) or a cloud vision API instead; decide once real tickets have been through review
-  (`workers/image-redaction/README.md`, "Printed order numbers").
+- [x] Receipts (2026-11-06, migration 0061; both options from the 2026-10-26 request were built). *Decided
+  2026-11-07: keep only the staff "not shareable" mark (off the feed for good, status and points kept; staff set it in
+  review, before or after verifying). The `receipt` proof kind is retired (migration 0062, contract 2.0.0).*
+- [x] Printed order numbers (2026-11-06): the worker blacks them out and keeps one hash per submission (one order,
+  one fan). *Decided 2026-11-06: Tesseract in the worker image (the `worker` Docker target is no longer chiseled; OCR
+  is on wherever that image runs). Still to do once real tickets exist: check what it misses and tune the finder
+  (`workers/image-redaction/README.md`, "Printed order numbers").*
 
 Still open:
 - [ ] Which of the proposed verification signals to build next, and their weights
   (`docs/product/fandom-verification-signals.md`; suggested: release-day listening, journal-backed logs, human
   listening shape, attendance).
-- [ ] Receipts in the feed: a separate never-shared "receipt" proof kind, a staff "not shareable" flag, or both.
 - [ ] Blind album rankings: which day and how often (not Tuesday or Thursday, decided 2026-10-27; those are trivia and prompt days).
 - [ ] How much journal and proof points weigh against the 0 to 100 Spotify score.
 - [ ] Verification thresholds and baseline parameters (provisional defaults in code).
 - [ ] How co-credited tracks and albums count.
-- [ ] Email provider.
 - [ ] Product and company name.
 - [ ] "Listening now" check-ins and a Spotify data-export upload as extra signals.
 - [x] Bot protection at the edge (found missing 2026-11-01; WAF and rate limiting are live). *Decided 2026-11-02:

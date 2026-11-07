@@ -11,7 +11,7 @@ import { kindLabel, NEVER_SHARED_LINE, neverShared, SHARE_BLOCKED_LINE, statusLa
 
 /**
  * The fan's posts with their review status (route /posts). Verified concert and merch photos can be shared, unless
- * staff marked them not shareable (`share_blocked`). Tickets and receipts never are.
+ * staff marked them not shareable (`share_blocked`). Tickets never are.
  */
 export function MyPostsScreen() {
   const { session } = useSession();
@@ -70,7 +70,7 @@ export function MyPostsScreen() {
       <Title>Posts</Title>
       <Button label="Post a photo" onPress={() => router.push('/post')} />
       <ErrorText>{error}</ErrorText>
-      {posts?.length === 0 && <Body muted>Nothing yet. Post a concert photo, merch, a ticket, or a receipt to earn points.</Body>}
+      {posts?.length === 0 && <Body muted>Nothing yet. Post a concert photo, merch, or a ticket to earn points.</Body>}
       {posts?.map((post) => (
         <View key={post.id} style={styles.card}>
           {post.files?.[0] && (

@@ -44,7 +44,7 @@ const empty = {
     plays_last_quarter: 0,
   },
   journal: { logs: 0, albums_logged: 0, relistens: 0, reviews: 0, ratings: 0, lists: 0, comments: 0 },
-  proof: { tickets: 0, merch: 0, screenshots: 0, receipts: 0 },
+  proof: { tickets: 0, merch: 0, screenshots: 0 },
   social: { followers: 0, following: 0 },
   ledger_points: 0,
 };
@@ -68,7 +68,7 @@ test('shows who you are, artist ranks, estimates, every total, and your recent a
       ],
       listening: { ...empty.listening, artists: 1, liked_tracks: 42 },
       journal: { ...empty.journal, albums_logged: 7, reviews: 2 },
-      proof: { ...empty.proof, tickets: 1, receipts: 2 },
+      proof: { ...empty.proof, tickets: 1, screenshots: 2 },
       social: { followers: 12, following: 3 },
       ledger_points: 59.5,
     },
@@ -86,7 +86,7 @@ test('shows who you are, artist ranks, estimates, every total, and your recent a
   expect(screen.getByLabelText('Albums logged: 7')).toBeTruthy();
   expect(screen.getByLabelText('Reviews: 2')).toBeTruthy();
   expect(screen.getByLabelText('Tickets: 1')).toBeTruthy();
-  expect(screen.getByLabelText('Receipts: 2')).toBeTruthy();
+  expect(screen.getByLabelText('Screenshots: 2')).toBeTruthy();
   expect(screen.getByLabelText('Points earned: 59.50')).toBeTruthy();
   expect(screen.getByLabelText('Followers: 12')).toBeTruthy();
   expect(screen.getByLabelText('Following: 3')).toBeTruthy();

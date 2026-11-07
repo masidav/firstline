@@ -3299,18 +3299,15 @@ SELECT pg_temp.expect_error($$INSERT INTO hub_location_checks (user_id, kind, ne
 SELECT pg_temp.expect_error($$INSERT INTO cities (id, name, region, country, time_zone) VALUES ('us-xx-nowhere', 'Nowhere', 'XX', 'US', 'America/Chicago')$$,
   'null value in column "latitude"');
 
--- ------------------------------------------------------------ receipts, the share block, order numbers (0061)
--- A receipt is proof (points) but never shared; a staff block takes a shared photo off the feed and keeps it off;
--- lifting it allows sharing again; the printed-number column takes counts only.
+-- ------------------------------------------------------------ the share block, order numbers (0061); receipt kind retired (0062)
+-- A staff block takes a shared photo off the feed and keeps it off; lifting it allows sharing again; the
+-- printed-number column takes counts only. The `receipt` kind (0061) is refused since 0062 and its rule is inactive.
 DO $$
 DECLARE fan uuid := '00000000-0000-0000-0000-000000000001'; staff uuid;
-        art uuid := (SELECT id FROM artists WHERE spotify_artist_id = 'sp-active'); rcpt uuid; merch uuid;
+        art uuid := (SELECT id FROM artists WHERE spotify_artist_id = 'sp-active'); merch uuid;
 BEGIN
   INSERT INTO users (handle, email, is_staff) VALUES ('rcpt_staff', 'rcpt_staff@example.test', true) RETURNING id INTO staff;
-  INSERT INTO submissions (user_id, artist_id, kind) VALUES (fan, art, 'receipt') RETURNING id INTO rcpt;
-  UPDATE submissions SET status = 'verified', verified_at = now() WHERE id = rcpt;
-  ASSERT (SELECT count(*) FROM score_events WHERE source_id = rcpt AND rule_key = 'receipt_verified' AND reversed_at IS NULL) = 1,
-         'a verified receipt earns receipt_verified';
+  ASSERT (SELECT NOT active FROM scoring_rules WHERE rule_key = 'receipt_verified'), 'receipt_verified is retired (0062)';
 
   INSERT INTO submissions (user_id, artist_id, kind) VALUES (fan, art, 'merch') RETURNING id INTO merch;
   UPDATE submissions SET status = 'verified', verified_at = now() WHERE id = merch;
@@ -3323,8 +3320,9 @@ BEGIN
   ASSERT (SELECT shared_at IS NOT NULL FROM submissions WHERE id = merch), 'lifted: shareable again';
   UPDATE submissions SET share_blocked_at = now() WHERE id = merch;
 END $$;
-SELECT pg_temp.expect_error($$UPDATE submissions SET shared_at = now() WHERE kind::text = 'receipt' AND status = 'verified'$$,
-  'only merch and concert photos can be shared');
+SELECT pg_temp.expect_error($$INSERT INTO submissions (user_id, artist_id, kind)
+  VALUES ('00000000-0000-0000-0000-000000000001', (SELECT id FROM artists WHERE spotify_artist_id = 'sp-active'), 'receipt')$$,
+  'submissions_kind_not_receipt');
 SELECT pg_temp.expect_error($$UPDATE submissions SET shared_at = now() WHERE kind = 'merch' AND share_blocked_at IS NOT NULL$$,
   'not shareable');
 SELECT pg_temp.expect_error($$UPDATE submissions SET share_blocked_note = 'x' WHERE kind = 'merch' AND share_blocked_at IS NULL$$,

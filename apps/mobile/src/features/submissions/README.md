@@ -30,12 +30,10 @@ Review the corresponding `TODO.md` and the repository's architecture documentati
 - `photoUpload.ts`: re-encodes the photo, uploads it to the signed link, submits it, and holds the labels and lines
   the screens share. Tests sit next to each file and mock the API at the generated client (`session.api`).
 
-## Receipts and the staff share block (2026-11-06)
-- **Receipts** (`kind: receipt`): an order confirmation or receipt. Like tickets and screenshots they are proof only:
-  staff check them, a verified one earns points like merch, and they never reach the home feed. The post screen hides
-  the caption for them and doesn't promise sharing; Posts shows "Proof only: never shown on the feed." under them,
-  as it does for tickets. Receipts are counted on the fan's stats (`ProofStats.receipts`) next to tickets, merch, and
-  screenshots, and in the "verified proofs" total on a fan's page.
+## The staff share block (2026-11-06; the only answer to receipts since 2026-11-07)
+- **Receipts**: there is no receipt kind. One was offered in the picker for a day (2026-11-06) and was retired with
+  contract 2.0.0 when the owner chose the staff mark below as the one mechanism. A fan who posts an order
+  confirmation as merch gets it marked not shareable in review.
 - **Share block** (`Submission.share_blocked`): staff found that a merch or concert photo is really a receipt, or shows
   personal details. In the review queue, a submission of a shareable kind has a "Not shareable" action with an
   optional staff-only note (`PUT /admin/submissions/{id}/shareable` with `shareable: false` and `note`); once blocked,

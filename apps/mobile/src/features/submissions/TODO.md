@@ -25,10 +25,10 @@ upload), My posts (`/posts`: status, points, share/unshare, withdraw), staff Rev
 feed (`features/feed/Feed.tsx`). Jest: photoUpload, Feed, MyPostsScreen, ReviewScreen. Clicked through in Chrome.
 Not yet: camera capture, several photos per post, native device run.
 
-## Status (2026-11-06): receipts and the staff share block
-Built: `receipt` in the kind picker (proof only, no caption, never on the feed, like tickets); Posts hides the share
-toggle and explains a `share_blocked` post; the review queue marks a merch or concert photo not shareable with a
-staff-only note (`PUT /admin/submissions/{id}/shareable`) and allows sharing again; receipts on Stats and in a fan
-page's "verified proofs" total. README section added. Verified: `npm run typecheck` clean; `npm test -- --ci` 69
-suites, 441 tests (photoUpload, PostPhotoScreen, MyPostsScreen, ReviewScreen, StatsScreen, FanProfileScreen cover
-the new behavior). Not clicked through in a browser against the new API.
+## Status (2026-11-06, revised 2026-11-07): the staff share block
+Built: Posts hides the share toggle and explains a `share_blocked` post; the review queue marks a merch or concert
+photo not shareable with a staff-only note (`PUT /admin/submissions/{id}/shareable`) and allows sharing again.
+The `receipt` kind added on 2026-11-06 (picker, Stats, fan page total) was removed on 2026-11-07 with contract 2.0.0
+(owner decision: the staff mark only). Verified 2026-11-07: `npm run typecheck` clean; `npm test -- --ci` 69 suites,
+441 tests (photoUpload, PostPhotoScreen, MyPostsScreen, ReviewScreen, StatsScreen, FanProfileScreen). Not clicked
+through in a browser against the new API.

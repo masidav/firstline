@@ -34,14 +34,6 @@ export function count(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-/**
- * Verified receipts on a fan's page. `openapi.yaml` requires `receipts` in `ProfileStats.proof` but doesn't list it
- * under `properties` yet, so the generated type lacks it; read it as optional until the contract is complete.
- */
-export function profileReceipts(stats: ProfileStats): number {
-  return (stats.proof as { receipts?: number }).receipts ?? 0;
-}
-
 /** "Top 8% of fans · #3 of 41", plus "estimate" while the percentile leans on the baseline. */
 export function standingLine(stat: ProfileStats['artists'][number]): string {
   const top = Math.max(1, Math.round(100 - stat.percentile));
@@ -170,7 +162,7 @@ export function FanProfileScreen({ handle }: { handle: string }) {
           ))}
           <Text style={styles.muted}>
             {count(stats.journal.albums_logged, 'album logged', 'albums logged')} · {count(stats.journal.reviews, 'review', 'reviews')} ·{' '}
-            {count(stats.proof.merch + stats.proof.tickets + profileReceipts(stats), 'verified proof', 'verified proofs')} ·{' '}
+            {count(stats.proof.merch + stats.proof.tickets, 'verified proof', 'verified proofs')} ·{' '}
             {count(Math.round(Number(stats.ledger_points)), 'point', 'points')}
           </Text>
         </Section>

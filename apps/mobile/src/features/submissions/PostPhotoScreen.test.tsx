@@ -59,7 +59,7 @@ test('listed past shows are offered, and merch needs no concert', async () => {
   expect(screen.getByRole('button', { name: 'Send for review' })).toBeEnabled();
 });
 
-test('a receipt is proof only: no caption, posted as kind receipt, and no promise of sharing', async () => {
+test('a ticket is proof only: no caption, posted as kind ticket, and no promise of sharing', async () => {
   serve(notFound);
   mockApi.POST.mockImplementation(async (path: string) => {
     if (path === '/uploads') return ok({ upload_id: 'u1', method: 'PUT', url: 'https://api.test/v1/uploads/u1/content', expires_at: 'x' });
@@ -70,8 +70,8 @@ test('a receipt is proof only: no caption, posted as kind receipt, and no promis
   (globalThis as { fetch: unknown }).fetch = fetchImpl;
   render(<PostPhotoScreen />);
 
-  fireEvent.press(screen.getByRole('radio', { name: 'Receipt' }));
-  expect(screen.getByText(/never shown on the feed/)).toBeTruthy();
+  fireEvent.press(screen.getByRole('radio', { name: 'Ticket' }));
+  expect(screen.getByText(/never shown to other fans/)).toBeTruthy();
   expect(screen.queryByLabelText('Caption (optional)')).toBeNull();
   expect(screen.queryByText('Which concert?')).toBeNull();
   fireEvent.press(await screen.findByRole('radio', { name: 'Geese' }));
@@ -81,5 +81,5 @@ test('a receipt is proof only: no caption, posted as kind receipt, and no promis
 
   expect(await screen.findByText('Sent for review')).toBeTruthy();
   expect(screen.getByText("Staff check every post. Once it's verified you earn points.")).toBeTruthy();
-  expect(mockApi.POST).toHaveBeenLastCalledWith('/submissions', { body: { artist_id: 'a1', kind: 'receipt', upload_ids: ['u1'], caption: null } });
+  expect(mockApi.POST).toHaveBeenLastCalledWith('/submissions', { body: { artist_id: 'a1', kind: 'ticket', upload_ids: ['u1'], caption: null } });
 });

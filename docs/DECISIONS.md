@@ -78,7 +78,7 @@ Thresholds are listed together in Phase 10 of [`PROJECT_TODO.md`](../PROJECT_TOD
 ### Community, journal, and proof
 | Question | Options known | Blocks |
 | --- | --- | --- |
-| Receipts in the feed | a never-shared `receipt` proof kind, a staff "not shareable" flag at review, or both | Phase 7 item |
+| Receipts in the feed | decided 2026-11-07: the staff "not shareable" mark only; the `receipt` kind built beside it was retired (0062) | done |
 | Blind album rankings | which day (not Tuesday or Thursday), how often, what's shown blind, points, which albums | building it (`apps/mobile/TODO.md`) |
 | "This or that" game | the day, what's compared, points, results shown | building it |
 | Archive meaning and user-facing archive requirements | from the source spec | nothing built for fans |

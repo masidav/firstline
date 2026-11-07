@@ -243,23 +243,22 @@ public sealed class ProofApiTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Receipts_are_proof_but_never_shared_and_staff_can_take_a_merch_photo_off_the_feed_for_good()
+    public async Task Staff_can_take_a_merch_photo_off_the_feed_for_good_and_the_receipt_kind_is_gone()
     {
         var fan = await SignInAsync("fan_one");
         var staff = await StaffAsync("staffer");
-        var receipt = await SubmitAsync(fan, "receipt", Jpeg("receipt"));
         var merch = await SubmitAsync(fan, "merch", Jpeg("hoodie"));
-        await DecideAsync(staff, receipt, "approve");
         await DecideAsync(staff, merch, "approve");
 
-        // A receipt earns points and counts as proof, but can't go on the feed.
-        var verified = await JsonAsync(await SendAsync(HttpMethod.Get, $"/v1/submissions/{receipt}", fan), HttpStatusCode.OK);
-        Assert.Equal(("receipt", "verified", false), (verified.GetProperty("kind").GetString(), verified.GetProperty("status").GetString(), verified.GetProperty("can_share").GetBoolean()));
-        Assert.Equal("receipt_verified", verified.GetProperty("points_awarded")[0].GetProperty("rule_key").GetString());
-        var refused = await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/submissions/{receipt}/share", fan, new { shared = true }), HttpStatusCode.Conflict);
-        Assert.Contains("receipts", refused.GetProperty("detail").GetString(), StringComparison.Ordinal);
+        // The `receipt` kind (2026-11-06) was retired on 2026-11-07 (migration 0062): the API refuses it as a bad kind.
+        var upload = await UploadAsync(fan, Jpeg("receipt"));
+        var refused = await JsonAsync(await SendAsync(HttpMethod.Post, "/v1/submissions", fan,
+            new { artist_id = _artistId, kind = "receipt", upload_ids = new[] { upload } }), HttpStatusCode.UnprocessableEntity);
+        Assert.Equal("validation_failed", refused.GetProperty("code").GetString());
+        Assert.Contains(refused.GetProperty("errors").EnumerateArray(), e => e.GetProperty("field").GetString() == "kind");
         var stats = await JsonAsync(await SendAsync(HttpMethod.Get, "/v1/me/stats", fan), HttpStatusCode.OK);
-        Assert.Equal((1, 1), (stats.GetProperty("proof").GetProperty("receipts").GetInt32(), stats.GetProperty("proof").GetProperty("merch").GetInt32()));
+        Assert.False(stats.GetProperty("proof").TryGetProperty("receipts", out _));
+        Assert.Equal(1, stats.GetProperty("proof").GetProperty("merch").GetInt32());
 
         // The merch photo is shared, then staff find it's really a receipt: off the feed, and it can't come back.
         await JsonAsync(await SendAsync(HttpMethod.Put, $"/v1/submissions/{merch}/share", fan, new { shared = true }), HttpStatusCode.OK);

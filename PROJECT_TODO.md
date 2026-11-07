@@ -277,10 +277,16 @@ Details: [Album journal API](services/api/src/features/album-journal/TODO.md) ·
       `Redaction__TesseractCommand` set, the worker runs Tesseract on verified tickets, screenshots, and receipts after
       the codes are blacked out, paints over order, confirmation, and booking numbers, stores counts only
       (`text_redacted`, `extracted`) plus the first number's SHA-256 in `order_ref_hash`, and sends a file whose number
-      another verified submission already carries to staff (one order, one fan). The provider decision stays open:
-      the chiseled worker image has no Tesseract (`docs/OWNER_TODO.md` C; `services/api/src/integrations/ocr/TODO.md`).
-      Verified: `dotnet test` 475/475 (RedactionJobTests: finder rules, TSV parsing, a fake Tesseract end to end, the
-      duplicate case, OCR off and failing). Not yet met a real ticket.*
+      another verified submission already carries to staff (one order, one fan). Decided 2026-11-06: Tesseract in the
+      worker image (`Dockerfile` target `worker`, no longer chiseled: `tesseract-ocr` + English data,
+      `Redaction__TesseractCommand=tesseract`), so OCR is on in the `worker` and `redaction` Deployments and off
+      locally unless `.env` sets it. Verified: `dotnet test` 475/475 (RedactionJobTests: finder rules, TSV parsing, a
+      fake Tesseract end to end, the duplicate case, OCR off and failing); `docker build --target worker` and, in that
+      image as the `app` user, Tesseract 5.3.4 on a synthetic ticket read "ORDER", "#", "12345678", "Confirmation",
+      "no.", "ABC-98765" (and the time, price, and date the finder skips) as level-5 TSV rows with boxes, the format
+      `TesseractCliTextFinder.ParseTsv` takes. Cost: Tesseract and its English data add about 52 MB to the worker
+      image (the published worker itself is about 500 MB, SkiaSharp and ZXing included).
+      Not yet met a real ticket photo (David's set).*
 - [x] The same photo from two fans is flagged (2026-11-06, migration 0061): a new submission whose file another fan
       already sent (and that wasn't rejected) is accepted with a failed `file_hash` check staff see in review.
       Verified: ProofApiTests.
@@ -290,16 +296,16 @@ Details: [Album journal API](services/api/src/features/album-journal/TODO.md) ·
 
 Details: [Submissions API](services/api/src/features/submissions/TODO.md) · [Submission UI](apps/mobile/src/features/submissions/TODO.md) · [Verification](services/api/src/features/verification/TODO.md) · [Verification worker](workers/submission-verification/TODO.md) · [Redaction worker](workers/image-redaction/TODO.md)
 
-- [ ] Keep receipts out of the scroll feed (requested 2026-10-26): a "merch" photo that is really a receipt or
-      order confirmation shouldn't be shareable. Options: a separate `receipt` proof kind that is never shared (like
-      tickets), a staff "not shareable" flag at review, or both. *Both built 2026-11-06, provisionally (migration
-      0061): kind `receipt` (proof, 20 points like merch, never shared; "Receipt" in the app's picker, "Proof only" on
-      the fan's posts, counted in stats) and `PUT /admin/submissions/{id}/shareable` (staff mark with a note; the
-      photo comes off the feed at once and can't go back on; reversible; the fan sees why; the staff review screen
-      has the control). Verified: `dotnet test` 475/475 (ProofApiTests, invariants 0061), fan app `npm test` 441/441
-      and typecheck, promoter typecheck and tests 29/29. Still open: which option to keep (`docs/OWNER_TODO.md` C),
-      and a staff control on already-verified posts (the review queue only lists posts waiting for review; the
-      reported-posts screen is the natural place).*
+- [x] Keep receipts out of the scroll feed (requested 2026-10-26): a "merch" photo that is really a receipt or
+      order confirmation shouldn't be shareable. *Both options were built 2026-11-06 (migration 0061); decided
+      2026-11-07: keep only the staff "not shareable" mark, `PUT /admin/submissions/{id}/shareable` (staff mark with a
+      note; the photo comes off the feed at once and can't go back on; reversible; the fan sees why; the review
+      screen has the control). The `receipt` proof kind is retired (migration 0062: the kind is refused, its scoring
+      rule inactive; contract 2.0.0 drops the enum value and `ProofStats.receipts`; the app's picker, Posts, Stats,
+      and the fan page no longer mention it). Verified: `dotnet test` (ProofApiTests, invariants 0061/0062), fan
+      app typecheck and `npm test` 441/441, promoter typecheck and tests 29/29. Still open: a staff control on
+      already-verified posts (the review queue only lists posts waiting for review; the reported-posts screen is the
+      natural place).*
 
 Fans can share verified merch and concert photos to the home feed (`PUT /submissions/{id}/share`); tickets and
 screenshots are never shared. The home feed (`GET /feed`) is one vertical scroll mixing, at random, shared photos

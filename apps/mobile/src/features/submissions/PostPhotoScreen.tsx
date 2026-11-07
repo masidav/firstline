@@ -26,9 +26,9 @@ type Show = { id: string; name: string; venue?: string | null; city?: string | n
 const UNLISTED = 'unlisted';
 
 /**
- * Post a concert photo, merch, a ticket, or a receipt (route /post). It goes to staff as proof of fandom; once verified
- * it earns points, and a concert or merch photo can then be shared to the home feed from Posts. Tickets and receipts
- * are proof only: never on the feed.
+ * Post a concert photo, merch, or a ticket (route /post). It goes to staff as proof of fandom; once verified it earns
+ * points, and a concert or merch photo can then be shared to the home feed from Posts. Tickets are proof only: never
+ * on the feed.
  */
 export function PostPhotoScreen() {
   const { session } = useSession();

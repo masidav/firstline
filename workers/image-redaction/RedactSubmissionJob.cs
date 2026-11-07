@@ -14,7 +14,7 @@ namespace FandomScore.Worker.ImageRedaction;
 /// <list type="number">
 /// <item>Paint black any boxes staff drew over the file (<c>staff_boxes</c>, migration 0056), then black out every
 /// barcode and QR code <see cref="CodeRedactor"/> finds, and scan again.</item>
-/// <item>On a ticket, screenshot, or receipt, when OCR is configured (<see cref="RedactionOptions"/>): read the printed
+/// <item>On a ticket or screenshot, when OCR is configured (<see cref="RedactionOptions"/>): read the printed
 /// words, black out order and confirmation numbers (<see cref="OrderNumberFinder"/>), and record counts only in
 /// <c>submissions.extracted</c> and <c>submission_files.text_redacted</c>. The first number's hash becomes
 /// <c>submissions.order_ref_hash</c>; when another verified submission already carries it, the file goes to staff
@@ -36,7 +36,7 @@ public sealed partial class RedactSubmissionJob(
     public const string JobKind = "submissions.redact";
 
     /// <summary>Kinds whose archive is staff-only proof and may carry printed order numbers.</summary>
-    public static readonly IReadOnlyList<string> OcrKinds = ["ticket", "screenshot", "receipt"];
+    public static readonly IReadOnlyList<string> OcrKinds = ["ticket", "screenshot"];   // `receipt` retired 2026-11-07 (0062)
 
     private readonly ITextFinder _textFinder = textFinder ?? NoTextFinder.Instance;
 

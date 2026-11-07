@@ -1331,7 +1331,7 @@ export interface paths {
         get?: never;
         /**
          * Share a verified photo to the home feed, or stop sharing
-         * @description Only verified `merch` and `concert_photo` submissions can be shared (`can_share`). Tickets, screenshots, and receipts
+         * @description Only verified `merch` and `concert_photo` submissions can be shared (`can_share`). Tickets and screenshots
          *     never are: they can show barcodes or personal details. A later rejection takes the photo off the feed.
          */
         put: operations["shareSubmission"];
@@ -2869,8 +2869,9 @@ export interface paths {
          * Mark a submission not shareable, or shareable again
          * @description `shareable: false` (2026-11-06): a merch or concert photo that is really a receipt, or shows personal details,
          *     comes off the home feed at once and can't be shared again; it keeps its status and points. `note` (up to 500
-         *     characters) is for staff. `shareable: true` lifts the mark. Any status; receipts, tickets, and screenshots
-         *     are never shareable regardless.
+         *     characters) is for staff. `shareable: true` lifts the mark. Any status; tickets and screenshots are never
+         *     shareable regardless. Decided 2026-11-07: this mark is how receipts stay off the feed (the `receipt` kind
+         *     was removed in 2.0.0).
          */
         put: operations["setSubmissionShareable"];
         post?: never;
@@ -4459,7 +4460,7 @@ export interface components {
             /** Format: uuid */
             submission_id: string;
             /** @enum {string} */
-            kind: "ticket" | "merch" | "screenshot" | "concert_photo" | "receipt";
+            kind: "ticket" | "merch" | "screenshot" | "concert_photo";
             artist: components["schemas"]["ArtistRef"];
             user: components["schemas"]["UserRef"];
             /** @description Why the worker couldn't finish the file. */
@@ -5013,7 +5014,6 @@ export interface components {
                 tickets: number;
                 merch: number;
                 screenshots: number;
-                receipts: number;
             };
             social: components["schemas"]["SocialStats"];
             ledger_points: number;
@@ -5048,7 +5048,6 @@ export interface components {
                 tickets: number;
                 merch: number;
                 screenshots: number;
-                receipts: number;
             };
             social: components["schemas"]["SocialStats"];
             ledger_points: number;
@@ -5297,7 +5296,7 @@ export interface components {
             next_cursor: string | null;
         };
         /** @enum {string} */
-        SubmissionKind: "ticket" | "merch" | "screenshot" | "concert_photo" | "receipt";
+        SubmissionKind: "ticket" | "merch" | "screenshot" | "concert_photo";
         /** @enum {string} */
         SubmissionStatus: "pending" | "processing" | "needs_review" | "verified" | "rejected";
         SubmissionCreate: {
@@ -5353,8 +5352,8 @@ export interface components {
             removed: boolean;
             /**
              * @description Staff marked it not shareable (a merch photo that is really a receipt, personal details in view; 2026-11-06):
-             *     off the feed for good unless staff reverse it. It still counts as proof. Receipts, tickets, and screenshots
-             *     are never shareable whatever this says.
+             *     off the feed for good unless staff reverse it. It still counts as proof. Tickets and screenshots are never
+             *     shareable whatever this says.
              */
             share_blocked?: boolean;
             kind: components["schemas"]["SubmissionKind"];

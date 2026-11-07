@@ -19,7 +19,7 @@ namespace FandomScore.Api.Features.Submissions;
 /// </summary>
 public static class SubmissionEndpoints
 {
-    public static readonly IReadOnlyList<string> Kinds = ["ticket", "merch", "screenshot", "concert_photo", "receipt"];
+    public static readonly IReadOnlyList<string> Kinds = ["ticket", "merch", "screenshot", "concert_photo"];   // `receipt` retired 2026-11-07 (0062)
     public static readonly IReadOnlyList<string> ShareableKinds = ["merch", "concert_photo"];
     public const int DailySubmissions = 20;
     public const int CaptionMaxLength = 500;
@@ -190,7 +190,7 @@ public static class SubmissionEndpoints
         var kind = body.TryGetProperty("kind", out var k) && k.ValueKind == JsonValueKind.String ? k.GetString()! : "";
         if (!Kinds.Contains(kind))
         {
-            errors.Add(new FieldError("kind", "Use ticket, merch, screenshot, concert_photo, or receipt."));
+            errors.Add(new FieldError("kind", "Use ticket, merch, screenshot, or concert_photo."));
         }
 
         var uploadIds = new List<Guid>();
@@ -407,7 +407,7 @@ public static class SubmissionEndpoints
                 : current.ShareBlocked ? "Staff marked this photo as not shareable: it shows a receipt or personal details. It still counts as proof."
                 : ShareableKinds.Contains(current.Kind)
                     ? "Only verified photos can be shared. This one is still being checked."
-                    : "Tickets, screenshots, and receipts can't be shared; they can show barcodes or personal details.");
+                    : "Tickets and screenshots can't be shared; they can show barcodes or personal details.");
         }
 
         // Re-checked in the UPDATE: staff may have rejected or blocked it since it was loaded.
@@ -536,6 +536,7 @@ public static class SubmissionEndpoints
 
     // Staff mark a submission not shareable (a merch photo that is really a receipt, personal details in view;
     // migration 0061): it comes off the feed and can't go back on. It stays as proof with its points. Reversible.
+    // Decided 2026-11-07: this mark is the one answer to receipts on the feed (the `receipt` kind was retired, 0062).
     private static async Task<IResult> SetShareableAsync(
         ClaimsPrincipal user, Guid submissionId, JsonElement body, HttpRequest request, NpgsqlDataSource db, SignedUrls urls,
         CancellationToken cancellationToken)

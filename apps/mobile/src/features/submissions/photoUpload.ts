@@ -7,23 +7,19 @@ export type SubmissionKind = components['schemas']['SubmissionKind'];
 
 /**
  * The kinds a fan can post, in the order the app offers them. Only merch and concert photos can ever be shared to the
- * feed; tickets and receipts are proof only. Screenshots are proof-only and not offered yet.
+ * feed; tickets are proof only. Screenshots are proof-only and not offered yet. (A `receipt` kind existed for one day,
+ * 2026-11-06; decided 2026-11-07: receipts on the feed are handled by the staff "not shareable" mark instead.)
  */
 export const POST_KINDS: { kind: SubmissionKind; label: string; hint: string }[] = [
   { kind: 'concert_photo', label: 'Concert photo', hint: 'A photo you took at the show.' },
   { kind: 'merch', label: 'Merch', hint: 'Merch you bought: a shirt, a record, a poster.' },
   { kind: 'ticket', label: 'Ticket', hint: 'Proof only: tickets are never shown to other fans.' },
-  {
-    kind: 'receipt',
-    label: 'Receipt',
-    hint: 'An order confirmation or receipt. Proof only: staff check it and it earns points like merch, but it is never shown on the feed.',
-  },
 ];
 
 /** The kinds that can be shared to the home feed once verified (and not marked not shareable by staff). */
 export const SHAREABLE_KINDS: readonly SubmissionKind[] = ['merch', 'concert_photo'];
 
-/** Tickets, receipts, and screenshots are proof only: they can show barcodes, order numbers, or personal details. */
+/** Tickets and screenshots are proof only: they can show barcodes, order numbers, or personal details. */
 export function neverShared(kind: SubmissionKind): boolean {
   return !SHAREABLE_KINDS.includes(kind);
 }
@@ -31,7 +27,7 @@ export function neverShared(kind: SubmissionKind): boolean {
 /** What the fan sees under a post that staff marked not shareable; it keeps its status and points. */
 export const SHARE_BLOCKED_LINE = 'Staff marked this as not shareable (it shows a receipt or personal details). It still counts as proof.';
 
-/** What the fan sees under a ticket or receipt: never on the feed, whatever its status. */
+/** What the fan sees under a ticket: never on the feed, whatever its status. */
 export const NEVER_SHARED_LINE = 'Proof only: never shown on the feed.';
 
 export const MAX_WIDTH = 2048;

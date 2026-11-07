@@ -15,15 +15,15 @@ trigger) and queues redaction and archiving (`workers/image-redaction`). Migrati
 | --- | --- | --- | --- |
 | `ticket` | a ticket | 50 | never (barcodes, personal details) |
 | `screenshot` | a streaming or purchase screenshot | 5 | never |
-| `receipt` (2026-11-06) | an order confirmation or receipt | 20 (as merch) | never |
 | `merch` | merch the fan owns | 20 | shareable once verified |
 | `concert_photo` | a photo from the show (pinned to a listed show or a typed-in concert) | 5 | shareable once verified |
 
-Receipts exist so a receipt isn't sent as "merch" and shared. When one is anyway, staff mark the submission **not
-shareable** (`PUT /admin/submissions/{id}/shareable` with `shareable: false` and a note): it comes off the feed at
-once (`share_blocked_at`, trigger clears `shared_at`), can't be shared again (share guard), and keeps its status and
-points; the fan sees `share_blocked` and a reason on their post. Staff can lift it. Both options from the 2026-10-26
-request are built; which to keep is an owner decision (`docs/OWNER_TODO.md` C).
+A receipt or order confirmation sent as "merch" must not reach the feed. Staff mark the submission **not shareable**
+(`PUT /admin/submissions/{id}/shareable` with `shareable: false` and a note): it comes off the feed at once
+(`share_blocked_at`, trigger clears `shared_at`), can't be shared again (share guard), and keeps its status and
+points; the fan sees `share_blocked` and a reason on their post. Staff can lift it. Decided 2026-11-07: this mark is
+the only mechanism. A separate `receipt` kind existed for one day (0061) and is retired: migration 0062 refuses it
+(`submissions_kind_not_receipt`) and switches off `receipt_verified`; the enum value stays, unused.
 
 ## Checks staff see (`verification_checks`)
 - `manual`: every approve/reject, with the reviewer.

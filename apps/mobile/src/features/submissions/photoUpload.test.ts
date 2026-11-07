@@ -60,12 +60,11 @@ test('status labels', () => {
   expect(statusLabel({ ...base, status: 'rejected', rejection_reason: 'Blurry' })).toBe('Not accepted: Blurry');
 });
 
-test('only merch and concert photos can be shared; tickets, receipts, and screenshots are proof only', () => {
-  expect(POST_KINDS.map((k) => k.kind)).toEqual(['concert_photo', 'merch', 'ticket', 'receipt']);
+test('only merch and concert photos can be shared; tickets and screenshots are proof only', () => {
+  expect(POST_KINDS.map((k) => k.kind)).toEqual(['concert_photo', 'merch', 'ticket']);
   expect(neverShared('merch')).toBe(false);
   expect(neverShared('concert_photo')).toBe(false);
   expect(neverShared('ticket')).toBe(true);
-  expect(neverShared('receipt')).toBe(true);
   expect(neverShared('screenshot')).toBe(true);
 });
 

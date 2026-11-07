@@ -1,7 +1,7 @@
 namespace FandomScore.Worker.ImageRedaction;
 
 /// <summary>
-/// Configuration section <c>Redaction</c>: printed order numbers on tickets, screenshots, and receipts are found with
+/// Configuration section <c>Redaction</c>: printed order numbers on tickets and screenshots are found with
 /// OCR only when a Tesseract command is configured (<c>Redaction__TesseractCommand=tesseract</c>, with the binary and
 /// its language data in the image or on the host). Unset, the worker does what it did before: barcodes and QR codes
 /// only, and staff draw boxes over printed numbers. Which OCR to run for real (Tesseract in the image, or a cloud
