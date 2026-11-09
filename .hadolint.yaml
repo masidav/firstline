@@ -6,3 +6,7 @@ ignored:
   # `cd apps/mobile && npm ci` in one RUN keeps each web build's steps in a single layer; WORKDIR would not change
   # the result.
   - DL3003
+  # apt versions in the worker image (tesseract-ocr, tesseract-ocr-eng) are not pinned: Ubuntu drops superseded
+  # versions from the archive, so a pinned version breaks the build at the next security update, and the image is
+  # rebuilt on every deploy, so the current noble packages are what is wanted. The base image tag is pinned.
+  - DL3008

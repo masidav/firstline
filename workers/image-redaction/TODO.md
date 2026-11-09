@@ -26,10 +26,10 @@ Use `- [x]` only after the task is implemented and verified.
       `Redaction__TesseractCommand` set, tickets, screenshots, and receipts have their order and confirmation numbers
       blacked out, counted (`text_redacted`, `extracted` counts only), and hashed into `order_ref_hash`; a number
       another fan already verified sends the file to staff. Verified: RedactionJobTests (finder rules, TSV parsing, a
-      fake Tesseract end to end, the duplicate case, OCR off and failing). Still open: Tesseract isn't in the chiseled
-      worker image (owner to-do; `services/api/src/integrations/ocr/TODO.md`), and the rules haven't met a real
-      ticket. Whether staff find printed numbers often is measurable: count archived files with `staff_boxes` (query in
-      `services/api/src/features/redaction/README.md`).*
+      fake Tesseract end to end, the duplicate case, OCR off and failing). Decided 2026-11-06: Tesseract is in the
+      worker image (`Dockerfile` target `worker`, no longer chiseled; checked once on a synthetic ticket in the built
+      image). Still open: the rules haven't met a real ticket. Whether staff find printed numbers often is measurable:
+      count archived files with `staff_boxes` (query in `services/api/src/features/redaction/README.md`).*
 - [x] Let staff draw boxes themselves on a file the scanner can't settle. *Done 2026-11-05 (migration 0056,
       `StaffBox.cs`): the archive decision carries up to 20 boxes as fractions of the image; the job paints them
       black before scanning; the app's Photo redaction screen has a "Draw boxes" mode (drag with mouse or finger).

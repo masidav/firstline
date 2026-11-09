@@ -237,10 +237,10 @@ Rules already in code provisionally; confirm or change each (details in `PROJECT
 - [x] Receipts (2026-11-06, migration 0061; both options from the 2026-10-26 request were built). *Decided
   2026-11-07: keep only the staff "not shareable" mark (off the feed for good, status and points kept; staff set it in
   review, before or after verifying). The `receipt` proof kind is retired (migration 0062, contract 2.0.0).*
-- [ ] Printed order numbers (2026-11-06): the worker blacks them out and keeps one hash per submission (one order,
-  one fan) when a Tesseract command is configured. Turning it on means a worker image with `tesseract-ocr` (the
-  current image is chiseled) or a cloud vision API instead; decide once real tickets have been through review
-  (`workers/image-redaction/README.md`, "Printed order numbers").
+- [x] Printed order numbers (2026-11-06): the worker blacks them out and keeps one hash per submission (one order,
+  one fan). *Decided 2026-11-06: Tesseract in the worker image (the `worker` Docker target is no longer chiseled; OCR
+  is on wherever that image runs). Still to do once real tickets exist: check what it misses and tune the finder
+  (`workers/image-redaction/README.md`, "Printed order numbers").*
 
 Still open:
 - [ ] Which of the proposed verification signals to build next, and their weights

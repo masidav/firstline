@@ -3,12 +3,11 @@
 Use `- [x]` only after the task is implemented and verified. Adapt this checklist to existing code; do not duplicate working functionality.
 
 ## Implementation checklist
-- [ ] Choose on-device OCR and/or server-side OCR providers after reviewing platform support and cost. *Still open
-      2026-11-06, but no longer blocking: the worker runs the Tesseract command line when `Redaction__TesseractCommand`
-      is set (`workers/image-redaction/TextFinder.cs`; off by default, and the chiseled worker image has no Tesseract).
-      To turn it on: a worker image, or a `redaction` Deployment image, with `tesseract-ocr` and `tesseract-ocr-eng`,
-      and the setting in the overlay. A cloud vision API would be a second `ITextFinder`; the finder rules and storage
-      don't change.*
+- [x] Choose on-device OCR and/or server-side OCR providers after reviewing platform support and cost. *Decided
+      2026-11-06: Tesseract, server-side, in the worker image (`Dockerfile` target `worker`: `tesseract-ocr`,
+      `tesseract-ocr-eng`, `Redaction__TesseractCommand=tesseract`). Nothing leaves the worker. A cloud vision API
+      would be a second `ITextFinder` (`workers/image-redaction/TextFinder.cs`) if Tesseract proves too weak on real
+      photos; the finder rules and storage wouldn't change.*
 - [x] Define the normalized extraction schema. *Counts only, by decision: `submissions.extracted` holds `ocr`, `words`,
       `order_numbers_redacted`, `checked_at`; the numbers themselves are never stored, only the first one's SHA-256 in
       `order_ref_hash` (normalized to capitals and digits).*

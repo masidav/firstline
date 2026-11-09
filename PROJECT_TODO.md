@@ -277,10 +277,16 @@ Details: [Album journal API](services/api/src/features/album-journal/TODO.md) ·
       `Redaction__TesseractCommand` set, the worker runs Tesseract on verified tickets, screenshots, and receipts after
       the codes are blacked out, paints over order, confirmation, and booking numbers, stores counts only
       (`text_redacted`, `extracted`) plus the first number's SHA-256 in `order_ref_hash`, and sends a file whose number
-      another verified submission already carries to staff (one order, one fan). The provider decision stays open:
-      the chiseled worker image has no Tesseract (`docs/OWNER_TODO.md` C; `services/api/src/integrations/ocr/TODO.md`).
-      Verified: `dotnet test` 475/475 (RedactionJobTests: finder rules, TSV parsing, a fake Tesseract end to end, the
-      duplicate case, OCR off and failing). Not yet met a real ticket.*
+      another verified submission already carries to staff (one order, one fan). Decided 2026-11-06: Tesseract in the
+      worker image (`Dockerfile` target `worker`, no longer chiseled: `tesseract-ocr` + English data,
+      `Redaction__TesseractCommand=tesseract`), so OCR is on in the `worker` and `redaction` Deployments and off
+      locally unless `.env` sets it. Verified: `dotnet test` 475/475 (RedactionJobTests: finder rules, TSV parsing, a
+      fake Tesseract end to end, the duplicate case, OCR off and failing); `docker build --target worker` and, in that
+      image as the `app` user, Tesseract 5.3.4 on a synthetic ticket read "ORDER", "#", "12345678", "Confirmation",
+      "no.", "ABC-98765" (and the time, price, and date the finder skips) as level-5 TSV rows with boxes, the format
+      `TesseractCliTextFinder.ParseTsv` takes. Cost: Tesseract and its English data add about 52 MB to the worker
+      image (the published worker itself is about 500 MB, SkiaSharp and ZXing included).
+      Not yet met a real ticket photo (David's set).*
 - [x] The same photo from two fans is flagged (2026-11-06, migration 0061): a new submission whose file another fan
       already sent (and that wasn't rejected) is accepted with a failed `file_hash` check staff see in review.
       Verified: ProofApiTests.

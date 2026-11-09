@@ -59,10 +59,12 @@ number matches another verified submission") with an `order_ref` check that fail
 (`submissions_order_ref_uidx` from the initial schema finally has data). Tesseract failing or timing out counts as
 "didn't run" (no counts claimed), never as "nothing to redact".
 
-Which OCR to run for real is still the open decision in `services/api/src/integrations/ocr/TODO.md`: the worker image
-is chiseled and has no Tesseract, so turning this on means a worker image with `tesseract-ocr` and its language data
-(or a sidecar), an owner to-do. Tests fake the executable with a shell script (`RedactionJobTests`, "printed order
-numbers").
+Decided 2026-11-06: Tesseract in the worker image. The `worker` target in the root `Dockerfile` is the full Ubuntu
+.NET runtime image (not chiseled, unlike the API and migrator) with `tesseract-ocr` and `tesseract-ocr-eng`, and it
+sets `Redaction__TesseractCommand=tesseract`, so OCR is on wherever that image runs (the `worker` and `redaction`
+Deployments; only the latter reaches the quarantine bucket). Locally it stays off unless `.env` sets the command.
+Tests fake the executable with a shell script (`RedactionJobTests`, "printed order numbers"); the real binary was
+checked once on a synthetic ticket in the built image (PROJECT_TODO Phase 7, 2026-11-06).
 
 ## Guarantees and limits
 - Only verified submissions that weren't taken down are archived. Rejected and taken-down files are deleted after 30

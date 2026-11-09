@@ -7,7 +7,9 @@
 #   docker build --target promoter-web -t fandomscore-promoter-web .   # promoter dashboard
 #   docker build --target testkit      -t fandomscore-testkit      .   # migrate + seed for the apps' e2e stack
 # Runtime images are Ubuntu "chiseled" (no shell or package manager) and run as the non-root `app` user
-# (by its numeric id, APP_UID=1654, so Kubernetes' runAsNonRoot can verify it).
+# (by its numeric id, APP_UID=1654, so Kubernetes' runAsNonRoot can verify it). The worker is the exception: it
+# carries Tesseract for printed order numbers on proof photos (decided 2026-11-06), so it is the full Ubuntu runtime
+# image with the OCR packages installed, still running as `app`.
 
 ARG DOTNET_VERSION=10.0
 
@@ -50,10 +52,16 @@ EXPOSE 8080
 ENTRYPOINT ["dotnet", "FandomScore.Api.dll"]
 
 # --- Worker: background jobs from the Postgres queue. Serves nothing but its liveness endpoint (Health__Port). ---
-FROM mcr.microsoft.com/dotnet/runtime:${DOTNET_VERSION}-noble-chiseled AS worker
+# Not chiseled: the redaction job runs the Tesseract command line on verified tickets, screenshots, and receipts
+# (workers/image-redaction/README.md, "Printed order numbers"). The English language data is the only one needed:
+# order numbers are digits and capitals. Redaction__TesseractCommand turns OCR on in this image (empty elsewhere).
+FROM mcr.microsoft.com/dotnet/runtime:${DOTNET_VERSION}-noble AS worker
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /out/worker .
-ENV DOTNET_ENVIRONMENT=Production Health__Port=8081
+ENV DOTNET_ENVIRONMENT=Production Health__Port=8081 Redaction__TesseractCommand=tesseract
 USER $APP_UID
 EXPOSE 8081
 ENTRYPOINT ["dotnet", "FandomScore.Worker.dll"]
