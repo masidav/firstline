@@ -134,12 +134,11 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   Claude records it in `tools/load/README.md`. If it stops partway it cleans up itself and prints the manual
   commands if that fails. The steps it runs are the numbered list in `tools/load/README.md`, "Running it on beta".
 
-- [ ] **11. Add the `ANTHROPIC_API_KEY` repository secret** (or delete the workflow). Deferred 2026-11-05: keep the
-  workflow, add the secret later; until then it fails on the 1st of each month. `.github/workflows/product-docs.yml`
-  ("Product docs", the 1st at 09:00 UTC; weekly until 2026-11-07, made monthly to save on cost) rewrites the product
-  docs with Claude and commits the result; it failed every week from 2026-10-26 because the secret is missing (run
-  41507776960: "Either ANTHROPIC_API_KEY ... is required"). GitHub → Settings → Secrets and variables → Actions →
-  New repository secret. Billed to your Anthropic account per run (one Opus run a month).
+- [x] **11. Add the `ANTHROPIC_API_KEY` repository secret.** Done 2026-11-07 (`gh secret list` shows it, checked
+  2026-11-09). `.github/workflows/product-docs.yml` ("Product docs", the 1st at 09:00 UTC; weekly until 2026-11-07,
+  made monthly to save on cost) rewrites the product docs with Claude and commits the result; it failed every week
+  from 2026-10-26 while the secret was missing. The key itself is first exercised by the 2026-12-01 run (or run it
+  by hand: Actions → Product docs → Run workflow). Billed to your Anthropic account per run (one Opus run a month).
 
 - [ ] **12. Make your second email address staff too** (added 2026-11-07). Staff is a flag on the user row, so
   the account has to exist first: open https://app.beta.firstline-5730kl.com, Continue with Google with the second
@@ -203,9 +202,10 @@ sign-in. Spotify, concerts, and Apple need provider accounts first (section B).
   d57590971@gmail.com through Gmail's SMTP relay (built the same day: `Email__Provider=smtp`, the overlay already has
   the From address and the relay settings; `Email__Enabled` stays false until the password exists). Staff notices
   queue an email to each staff member's account address, and each staff member has a Profile switch for it. Steps:
-  1. `cd infrastructure/terraform/envs/beta && terraform apply` (creates the secret `Email__Smtp__Password` and lets
-     the worker read it; plus the usual cosmetic dashboard change). Do this before turning beta on again: the worker
-     now mounts that secret and its pods won't start until it has a version.
+  1. Done 2026-11-09: `terraform apply` on beta created the secret `Email__Smtp__Password` and lets the worker
+     read it (checked: the secret exists, the worker's service account is its reader). It has no version yet, and
+     the worker mounts it, so its pods won't start until step 2 (or the placeholder) is done: do that before
+     turning beta on again.
   2. In the Google account d57590971@gmail.com: turn on 2-Step Verification, then Security → App passwords → create
      one (name it "Fandom Score beta"). Store it without it landing in your shell history:
      ```bash
