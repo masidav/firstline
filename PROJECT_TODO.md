@@ -529,8 +529,13 @@ Details: [Notifications](services/api/src/features/notifications/TODO.md) · [Mo
       *Started 2026-10-29: `docs/security/gaming-strategies.md` (10 strategies). The biggest gap then, "click
       everything" (likes, saves, follows, playlists in minutes), is detected since 2026-10-30 (`burst_engagement`,
       migrations 0045 and 0048). Repeat before each pilot.*
+- [ ] Bot and fake-account detection on the home feed (requested 2026-11-10). *Todo list written 2026-11-10 from the
+      papers in `docs/supplemental/`: `services/api/src/features/feed/TODO.md`. Nothing built. Owner decisions it
+      raises: the bar a new account must pass before its posts reach everyone, whether Instagram and X handles show
+      on new accounts, which account-level outcomes staff get, what a fake-profile rule flag blocks, and which check
+      (phone, CAPTCHA, email) restores reach.*
 
-Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Apple Music](services/api/src/integrations/apple-music/TODO.md)
+Details: [Fraud](services/api/src/features/fraud/TODO.md) · [Feed integrity](services/api/src/features/feed/TODO.md) · [Apple Music](services/api/src/integrations/apple-music/TODO.md)
 
 ## Phase 11 — Promoter allocation platform (B2B)
 - [ ] Promoter and artist organizations with staff roles and permissions. *Promoter organizations done 2026-10-27
