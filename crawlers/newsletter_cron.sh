@@ -17,7 +17,9 @@ else
   exit 1
 fi
 echo "$(date -Is) run start"
-cd "$here" && python3 industry_newsletter.py --state "$state_dir/newsletter.state.json" --out "$state_dir/last-email.txt" "$@"
+# Cron has a minimal PATH (system python lacks the deps); NEWSLETTER_PYTHON picks the interpreter.
+py="${NEWSLETTER_PYTHON:-$(command -v python3)}"
+cd "$here" && "$py" industry_newsletter.py --state "$state_dir/newsletter.state.json" --out "$state_dir/last-email.txt" "$@"
 rc=$?
 echo "$(date -Is) run end rc=$rc"
 exit $rc
